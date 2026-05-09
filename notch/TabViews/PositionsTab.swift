@@ -10,6 +10,7 @@ struct PositionsLeftView: View {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Color(hex: "#FF3B30"))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("ENTRIES BLOCKED")
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -19,9 +20,20 @@ struct PositionsLeftView: View {
                             .font(.system(size: 8, weight: .medium, design: .monospaced))
                             .foregroundColor(Color(hex: "#00E5C0"))
                             .tracking(0.5)
+                        if let cs = viewModel.killSwitchCountdownSecs {
+                            Text("Countdown: \(cs)s")
+                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color.white.opacity(0.55))
+                        }
                     }
                     Spacer()
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    viewModel.killSwitchCountdownSecs.map {
+                        "Kill switch active. Entries blocked. Exits allowed. Countdown \($0) seconds."
+                    } ?? "Kill switch active. Entries blocked. Exits allowed."
+                )
                 .padding(10)
                 .background(Color(hex: "#FF3B30").opacity(0.08))
                 .cornerRadius(10)
@@ -122,10 +134,10 @@ struct PositionsRightView: View {
             Spacer()
 
             VStack(spacing: 6) {
-                dangerButton("Exit All Positions") {
+                dangerButton("Exit All Positions", accessibilityLabel: "Exit all open positions") {
                     Task { await viewModel.exitAllPositions() }
                 }
-                ghostButton("Cancel All Orders") {
+                ghostButton("Cancel All Orders", accessibilityLabel: "Cancel all open orders") {
                     Task { await viewModel.cancelAllOrders() }
                 }
             }

@@ -128,7 +128,7 @@ func emptyState(_ message: String) -> some View {
 }
 
 @ViewBuilder
-func primaryButton(_ label: String, action: @escaping () -> Void) -> some View {
+func primaryButton(_ label: String, accessibilityLabel: String? = nil, action: @escaping () -> Void) -> some View {
     Button(action: action) {
         Text(label)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -137,6 +137,7 @@ func primaryButton(_ label: String, action: @escaping () -> Void) -> some View {
             .padding(.vertical, 9)
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(accessibilityLabel ?? label)
     .background(Color(hex: "#00E5C0"))
     .cornerRadius(10)
     .shadow(
@@ -146,7 +147,7 @@ func primaryButton(_ label: String, action: @escaping () -> Void) -> some View {
 }
 
 @ViewBuilder
-func dangerButton(_ label: String, action: @escaping () -> Void) -> some View {
+func dangerButton(_ label: String, accessibilityLabel: String? = nil, action: @escaping () -> Void) -> some View {
     Button(action: action) {
         Text(label)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -155,6 +156,7 @@ func dangerButton(_ label: String, action: @escaping () -> Void) -> some View {
             .padding(.vertical, 9)
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(accessibilityLabel ?? label)
     .background(Color(hex: "#FF3B30").opacity(0.08))
     .cornerRadius(10)
     .overlay(
@@ -164,7 +166,7 @@ func dangerButton(_ label: String, action: @escaping () -> Void) -> some View {
 }
 
 @ViewBuilder
-func ghostButton(_ label: String, action: @escaping () -> Void) -> some View {
+func ghostButton(_ label: String, accessibilityLabel: String? = nil, action: @escaping () -> Void) -> some View {
     Button(action: action) {
         Text(label)
             .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -173,6 +175,7 @@ func ghostButton(_ label: String, action: @escaping () -> Void) -> some View {
             .padding(.vertical, 8)
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(accessibilityLabel ?? label)
     .background(Color.white.opacity(0.03))
     .cornerRadius(10)
     .overlay(

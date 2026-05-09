@@ -13,6 +13,8 @@ struct LeftZoneView: View {
             case .workflows: WorkflowLeftView(viewModel: viewModel)
             case .tai: TAILeftView(viewModel: viewModel)
             case .positions: PositionsLeftView(viewModel: viewModel)
+            case .capture:
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .transition(.opacity.combined(with: .move(edge: .leading)))
@@ -31,6 +33,8 @@ struct RightZoneView: View {
             case .workflows: WorkflowRightView(viewModel: viewModel)
             case .tai: TAIRightView(viewModel: viewModel)
             case .positions: PositionsRightView(viewModel: viewModel)
+            case .capture:
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .transition(.opacity.combined(with: .move(edge: .trailing)))
@@ -42,6 +46,7 @@ struct RightZoneView: View {
 
 struct ExpandedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,33 +56,42 @@ struct ExpandedNotchView: View {
             }
 
             ZStack {
-                Color(hex: "#050505")
+                // Phase 10 - Reduce Transparency
+                if reduceTransparency {
+                    Color(hex: "#050505")
+                } else {
+                    Color(hex: "#050505")
 
-                RadialGradient(
-                    colors: [
-                        NotchTheme.scoreGlow(viewModel.compositeScore),
-                        Color.clear,
-                    ],
-                    center: .top,
-                    startRadius: 0,
-                    endRadius: 200
-                )
-                .opacity(0.6)
-                .allowsHitTesting(false)
-
-                HStack(spacing: 0) {
-                    LeftZoneView(viewModel: viewModel)
-                        .frame(width: 300)
-                        .padding(.leading, 20)
-
-                    CenterZoneView(viewModel: viewModel)
-                        .frame(width: 300)
-
-                    RightZoneView(viewModel: viewModel)
-                        .frame(width: 300)
-                        .padding(.trailing, 20)
+                    RadialGradient(
+                        colors: [
+                            NotchTheme.scoreGlow(viewModel.compositeScore),
+                            Color.clear,
+                        ],
+                        center: .top,
+                        startRadius: 0,
+                        endRadius: 200
+                    )
+                    .opacity(viewModel.activeTab == .capture ? 0.35 : 0.6)
+                    .allowsHitTesting(false)
                 }
-                .frame(height: 200)
+
+                if viewModel.activeTab == .capture {
+                    JournalCapturePanelView(viewModel: viewModel)
+                } else {
+                    HStack(spacing: 0) {
+                        LeftZoneView(viewModel: viewModel)
+                            .frame(width: 300)
+                            .padding(.leading, 20)
+
+                        CenterZoneView(viewModel: viewModel)
+                            .frame(width: 300)
+
+                        RightZoneView(viewModel: viewModel)
+                            .frame(width: 300)
+                            .padding(.trailing, 20)
+                    }
+                    .frame(height: 200)
+                }
             }
             .overlay(
                 Rectangle()

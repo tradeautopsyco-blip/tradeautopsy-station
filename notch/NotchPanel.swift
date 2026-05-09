@@ -16,6 +16,7 @@ extension NotchTab {
         case .workflows: return "arrow.triangle.2.circlepath"
         case .tai: return "brain.head.profile"
         case .positions: return "chart.bar.fill"
+        case .capture: return "square.and.pencil"
         }
     }
 
@@ -26,6 +27,18 @@ extension NotchTab {
         case .workflows: return "FLOWS"
         case .tai: return "TAI"
         case .positions: return "POS"
+        case .capture: return "CAP"
+        }
+    }
+
+    var accessibilityPillLabel: String {
+        switch self {
+        case .pulse: return "Open Pulse tab"
+        case .brief: return "Open Brief tab"
+        case .workflows: return "Open Workflows tab"
+        case .tai: return "Open TAI tab"
+        case .positions: return "Open Positions tab"
+        case .capture: return "Open Capture tab"
         }
     }
 }

@@ -94,11 +94,25 @@ struct PulseRightView: View {
 
             Spacer()
 
+            if !viewModel.agentLocalDiagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LOCAL AGENT")
+                        .microLabel()
+                    Text(viewModel.agentLocalDiagnostics)
+                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .foregroundColor(Color.white.opacity(0.45))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .glassCard(radius: 8)
+            }
+
             VStack(spacing: 6) {
-                primaryButton("ACTIVATE ALGO") {
+                primaryButton("ACTIVATE ALGO", accessibilityLabel: "Activate trading algorithm") {
                     Task { await viewModel.sendTAIMessage("Activate algo mode") }
                 }
-                dangerButton("KILL SWITCH") {
+                dangerButton("KILL SWITCH", accessibilityLabel: "Activate kill switch") {
                     Task { await viewModel.activateKillSwitch() }
                 }
             }

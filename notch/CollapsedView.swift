@@ -3,6 +3,7 @@ import SwiftUI
 /// Collapsed notch — hover expands. Non–physical-notch Macs get a glass pill (see `hasPhysicalNotch`).
 struct CollapsedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     private var coreStrip: some View {
         HStack(spacing: 10) {
@@ -33,12 +34,47 @@ struct CollapsedNotchView: View {
                     )
             }
 
-            HStack(spacing: 3) {
-                ForEach(0 ..< 3, id: \.self) { _ in
-                    Circle()
-                        .fill(Color.white.opacity(0.2))
-                        .frame(width: 3, height: 3)
+            if viewModel.journalCaptureLastPendingCaptureId != nil {
+                Rectangle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(width: 0.5, height: 12)
+
+                Button {
+                    Task { await viewModel.attachJournalCaptureScreenshotToPending() }
+                } label: {
+                    Group {
+                        if viewModel.journalCaptureScreenshotBusy {
+                            ProgressView()
+                                .scaleEffect(0.45)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "camera.viewfinder")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .foregroundColor(screenshotPillAccent(viewModel))
                 }
+                .buttonStyle(.plain)
+                .help("Attach screenshot to your last pending capture")
+                .accessibilityLabel("Attach screenshot to pending capture")
+                .disabled(viewModel.journalCaptureScreenshotBusy)
+            }
+
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(viewModel.daemonConnectionColor)
+                    .frame(width: 6, height: 6)
+                    .accessibilityLabel("Agent connection: \(viewModel.daemonConnectionLabel)")
+                if viewModel.brokerSyncClass != .notConnected {
+                    Circle()
+                        .fill(viewModel.brokerSyncClass.indicatorColor)
+                        .frame(width: 4, height: 4)
+                        .accessibilityLabel("Broker: \(viewModel.brokerSyncClass.displayLabel)")
+                }
+                Text(viewModel.daemonConnectionLabel)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundColor(Color.white.opacity(0.65))
+                    .lineLimit(1)
             }
             .padding(.leading, 2)
         }
@@ -49,7 +85,7 @@ struct CollapsedNotchView: View {
 
     private var scoreIndicator: some View {
         Group {
-            if viewModel.shouldPulse {
+            if viewModel.shouldPulse && !accessibilityReduceMotion {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                     let t = timeline.date.timeIntervalSinceReferenceDate
                     let scale = 1.0 + 0.12 * sin(t * (2 * .pi / 1.2))
@@ -103,5 +139,24 @@ struct CollapsedNotchView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func screenshotPillAccent(_ vm: NotchViewModel) -> Color {
+        let err = vm.journalCaptureScreenshotError?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !err.isEmpty {
+            return Color(hex: "#FF3B30")
+        }
+        return Color(hex: "#00E5C0")
+    }
+}
+
+private extension BrokerSyncClass {
+    var indicatorColor: Color {
+        switch self {
+        case .notConnected: return Color.white.opacity(0.15)
+        case .synced: return Color(hex: "#00E5C0")
+        case .stale: return Color(hex: "#F5A524")
+        case .disconnected: return Color(hex: "#FF3B30")
+        }
     }
 }

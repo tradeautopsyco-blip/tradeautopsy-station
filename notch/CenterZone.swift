@@ -68,7 +68,7 @@ struct CenterZoneView: View {
             .scaleEffect(viewModel.scoreRingPulseScale)
             .animation(.spring(response: 0.25, dampingFraction: 0.65), value: viewModel.scoreRingPulseScale)
 
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 ForEach(NotchTab.allCases) { tab in
                     tabPill(tab)
                 }
@@ -83,9 +83,7 @@ struct CenterZoneView: View {
         let isSelected = viewModel.activeTab == tab
 
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                viewModel.activeTab = tab
-            }
+            viewModel.selectTab(tab)
         } label: {
             HStack(spacing: isSelected ? 5 : 0) {
                 Image(systemName: tab.icon)
@@ -109,7 +107,7 @@ struct CenterZoneView: View {
                         .transition(.opacity.combined(with: .scale))
                 }
             }
-            .padding(.horizontal, isSelected ? 10 : 8)
+            .padding(.horizontal, isSelected ? 8 : 6)
             .padding(.vertical, 5)
             .background(
                 ZStack {
@@ -128,6 +126,7 @@ struct CenterZoneView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(tab.accessibilityPillLabel)
         .animation(.spring(response: 0.25), value: isSelected)
     }
 }
