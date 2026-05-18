@@ -1,21 +1,5 @@
 import Foundation
 
-enum BrokerSyncClass: String, Equatable {
-    case notConnected = "not_connected"
-    case synced = "synced"
-    case stale = "stale"
-    case disconnected = "disconnected"
-
-    var displayLabel: String {
-        switch self {
-        case .notConnected: return "Not connected"
-        case .synced: return "Synced"
-        case .stale: return "Stale"
-        case .disconnected: return "Disconnected"
-        }
-    }
-}
-
 enum DaemonConnectionState: String {
     case idle
     case connecting

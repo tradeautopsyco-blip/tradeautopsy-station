@@ -77,6 +77,7 @@ struct PulseRightView: View {
                             : Color(hex: "#FF3B30").opacity(0.2),
                         radius: 10
                     )
+                    .accessibilityLabel("Session P&L: \(viewModel.formattedSessionPnL)")
             }
             .padding(12)
             .glassCard(radius: 10)
@@ -115,6 +116,8 @@ struct PulseRightView: View {
                 dangerButton("KILL SWITCH", accessibilityLabel: "Activate kill switch") {
                     Task { await viewModel.activateKillSwitch() }
                 }
+                .accessibilityHint("Blocks all new entries for the session")
+                .accessibilityAddTraits(.isButton)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -20,7 +20,8 @@ struct DictationWaveformStrip: View {
                     .modifier(ConditionalAnimation(reduceMotion: reduceMotion, value: level))
             }
         }
-        .accessibilityLabel("Audio waveform")
+        .accessibilityLabel(isActive ? "Recording waveform, active" : "Waveform inactive")
+        .accessibilityHidden(!isActive)
     }
 }
 
@@ -72,7 +73,14 @@ struct DictationMicAndWaveform: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(viewModel.isDictating ? "Stop dictation" : "Start dictation")
-            .accessibilityHint("Double-tap to latch on-device dictation. Hold the Fn key to push to talk.")
+            .accessibilityHint("Uses on-device speech recognition, no data leaves this Mac")
+            .accessibilityAddTraits(.isButton)
+        }
+        .onChange(of: viewModel.isDictating) { _, on in
+            NotchVoiceOver.announce(
+                on ? "Dictation recording" : "Dictation ready",
+                assertive: false
+            )
         }
     }
 }

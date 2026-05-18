@@ -21,16 +21,24 @@ struct VisualEffectView: NSViewRepresentable {
 // MARK: - Glass modifiers
 
 struct GlassCard: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var radius: CGFloat = 12
 
     func body(content: Content) -> some View {
         content
             .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .fill(Color(hex: "#030303").opacity(0.8))
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .fill(Color.white.opacity(0.03))
+                Group {
+                    if reduceTransparency {
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            .fill(Color(hex: "#0d0d0d").opacity(0.97))
+                    } else {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                                .fill(Color(hex: "#030303").opacity(0.8))
+                            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                                .fill(Color.white.opacity(0.03))
+                        }
+                    }
                 }
             )
             .overlay(
@@ -41,24 +49,32 @@ struct GlassCard: ViewModifier {
 }
 
 struct GlassPanel: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var radius: CGFloat = 16
 
     func body(content: Content) -> some View {
         content
             .background(
-                ZStack {
-                    VisualEffectView(
-                        material: .hudWindow,
-                        blendingMode: .behindWindow
-                    )
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .fill(Color.black.opacity(0.75))
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .fill(Color.white.opacity(0.02))
+                Group {
+                    if reduceTransparency {
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            .fill(Color(hex: "#0d0d0d").opacity(0.97))
+                    } else {
+                        ZStack {
+                            VisualEffectView(
+                                material: .hudWindow,
+                                blendingMode: .behindWindow
+                            )
+                            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                                .fill(Color.black.opacity(0.75))
+                            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                                .fill(Color.white.opacity(0.02))
+                        }
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        )
+                    }
                 }
-                .clipShape(
-                    RoundedRectangle(cornerRadius: radius, style: .continuous)
-                )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)

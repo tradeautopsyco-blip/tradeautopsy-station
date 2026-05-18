@@ -6,6 +6,15 @@ import Foundation
 import Security
 import SwiftUI
 
+/// Local optimistic “armed” state after `POST …/declare` until `live-state` shows matching `pending_declaration`.
+struct BarOptimisticArmedSnapshot: Equatable {
+    let declarationId: String
+    let submittedAt: TimeInterval
+    let symbol: String
+    let side: String
+    let quantityLabel: String
+}
+
 // MARK: - Edge / caution rows (brief right zone)
 
 struct EdgeSymbolRow: Identifiable {
@@ -54,6 +63,18 @@ struct MorningBrief: Equatable {
     var cautionSymbols: [CautionSymbolRow]
     var recommendation: String
     var fetchedAt: Date
+    // MARK: Behavioral morning brief (#127)
+    var tradeCount: Int
+    var isNewUser: Bool
+    var patterns: [BriefBehavioralPattern]
+    var ownMetrics: BriefOwnMetrics?
+    var behavioralDateLine: String?
+    var behavioralHeadline: String?
+    var sessionPnLKpi: Double?
+    var planAdherencePct: Double?
+    var winRateKpi: Double?
+    var leftOnTableInr: Double?
+    var nonNegotiableRule: String?
 }
 
 struct WorkflowStatus: Identifiable {
@@ -78,13 +99,13 @@ struct WorkflowRun: Identifiable {
     var success: Bool
 }
 
-struct RecentTrade: Identifiable {
+struct RecentTradeRow: Identifiable, Equatable {
     var id: String
     var symbol: String
     var side: String
     var qty: Int
     var price: Double
-    var filledAt: String
+    var filledAtMs: Int
 }
 
 struct TAIMessage: Identifiable {
@@ -100,8 +121,17 @@ enum NotchTab: String, CaseIterable, Hashable {
     case workflows = "WORKFLOWS"
     case tai = "TAI"
     case positions = "POSITIONS"
+    /// Behavioral circuit — consumes hosted `notch` (M4/M5/M9 projection).
+    case plan = "PLAN"
     /// Journal toolbar capture — design §6.3 (expanded panel).
     case capture = "CAPTURE"
+}
+
+enum BarSurfacePhase: String {
+    case livePlan
+    case armed
+    case declaration
+    case debrief
 }
 
 enum TaiMode: String, CaseIterable, Hashable {
@@ -127,6 +157,9 @@ final class NotchViewModel: ObservableObject {
     @Published var tradesToday: Int = 0
     @Published var signals = SignalBreakdown()
     @Published var positions: [NotchPosition] = []
+
+    /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
+    var hasOpenPositions: Bool { !positions.isEmpty }
     @Published var openOrders: Int = 0
     @Published var killSwitchActive: Bool = false
     @Published var killSwitchCountdownSecs: Int?
@@ -141,10 +174,8 @@ final class NotchViewModel: ObservableObject {
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
     @Published var brokerSessionActive: Bool = false
-    /// Hover-driven + programmatic expansion (BoringNotch-style).
+    /// User click + programmatic expansion (never hover-to-expand).
     @Published var isExpanded: Bool = false
-    /// After FFI/programmatic expand, ignore hover-leave collapse until the cursor enters the panel again.
-    var hoverCollapseEnabled: Bool = true
     /// One-shot ring scale pulse after smart trigger (0.3s).
     @Published var scoreRingPulseScale: CGFloat = 1.0
     /// Full-panel tint pulse (smart triggers).
@@ -152,8 +183,10 @@ final class NotchViewModel: ObservableObject {
     @Published var backgroundPulseOpacity: Double = 0
     @Published var daemonConnectionState: DaemonConnectionState = .idle
     @Published var daemonProtocolError: DaemonProtocolErrorClass?
-    @Published var brokerSyncClass: BrokerSyncClass = .notConnected
-    @Published var brokerLastError: String?
+    @Published var brokerSyncClass: String = "not_connected"
+    @Published var sessionState: String = "active"
+    @Published var isAuthenticated: Bool = true
+    @Published var authProvider: String?
     /// Phase 9 — founder QA snapshot text from `/api/daemon/health` (+ metrics URL hint).
     @Published var agentLocalDiagnostics: String = ""
     @Published var dictationWaveform: [Float] = Array(repeating: 0, count: WaveformNineDotRing.dotCount)
@@ -175,11 +208,71 @@ final class NotchViewModel: ObservableObject {
     @Published var journalCaptureLastPendingCaptureId: String?
     @Published var journalCaptureScreenshotBusy: Bool = false
     @Published var journalCaptureScreenshotError: String?
-    @Published var recentTrades: [RecentTrade] = []
-    @Published var sessionAuthenticated: Bool = true
-    @Published var sessionLabel: String?
+    @Published var recentTrades: [RecentTradeRow] = []
 
-    /// Called from `NotchPanelController` to front the panel on hover-expand.
+    // MARK: - Bar / Plan (notch v1 — server projection only)
+
+    @Published var barLiveState: BarLiveStateResponse?
+    @Published var barFeaturesActiveFromApi: Bool?
+    /// Live-state GET in flight (`/api/daemon/bar/live-state`).
+    @Published var barStateLoading: Bool = false
+    @Published var barStateError: String?
+    @Published var barLastFetched: Date?
+    @Published var barSurfacePhase: BarSurfacePhase = .declaration
+    @Published var barDebriefPending: Bool = false
+    @Published var stopMeStep: Int = 0
+    /// Confirms intent before reason pick — requires `stopMeRequiredTaps` on the entry control (#124 parity).
+    @Published var stopMeTapCount: Int = 0
+    @Published var stopMeReason: String = ""
+    @Published var barStopMeBusy: Bool = false
+    let stopMeRequiredTaps: Int = 3
+    let stopMeReasonChips: [String] = [
+        "Tilt / revenge",
+        "Overtrading",
+        "Moved my stop",
+        "Size mistake",
+        "Done for the day",
+    ]
+    @Published var barDeclarationBusy: Bool = false
+    @Published var barProtectiveBusy: Bool = false
+    /// #5 — post-trade debrief PATCH via agent.
+    @Published var barPostTradeDebriefBusy: Bool = false
+    @Published var barPostTradeDebriefLastError: String?
+    /// #4 — swing daily check-in POST via agent.
+    @Published var barSwingCheckInBusy: Bool = false
+    @Published var barSwingCheckInLastError: String?
+    /// Broker slug for `place_sl` — must match server `resolveBrokerOrderPort` (e.g. `kotak_neo` when live Kotak is wired).
+    @Published var barProtectiveBrokerSlug: String = "mockbroker"
+    @Published var barDeclarationLastError: String?
+    @Published private(set) var barOptimisticArmedDisplay: BarOptimisticArmedSnapshot?
+    /// Server `declaration_id` after successful declare; cleared when optimistic armed is cleared (#119).
+    @Published private(set) var barPublishedDeclarationId: String?
+    @Published var barDeclarationConfirmWarning: String?
+
+    /// Live plan "interference" question — chosen chip id: `no` | `maybe` | `yes`.
+    @Published var barInterferenceChoice: String?
+    @Published var barInterferenceEcho: String?
+
+    /// When `barSurfacePhase` is `.declaration`, gate the heavy form behind this affordance.
+    @Published var showingDeclarationForm: Bool = false
+
+    /// Derived from pending declaration kind, then persisted last-known, then `intraday` (#114).
+    @Published private(set) var activeArchetype: TraderArchetype = .intraday
+
+    /// Optional mirror for a 6-step declaration UX (wired when integrating with notch declare).
+    @Published var declarationStep: Int = 1
+
+    @Published var declEmotionalCalm: Int = 0
+    @Published var declEmotionalConfidence: Int = 0
+    @Published var declEntryPrice: String = ""
+    @Published var declStopLoss: String = ""
+    @Published var declTarget: String = ""
+    @Published var declSetupType: String = ""
+    @Published var declInvalidationType: String = ""
+    @Published var declInvalidationCondition: String = ""
+    @Published var declProtectiveSLConsent: Bool = true
+
+    /// Called from `NotchPanelController` to front the panel when expanding explicitly.
     var onRequestOrderFront: (() -> Void)?
 
     /// Mirrors `NSScreen.safeAreaInsets.top` for layout (notch camera strip).
@@ -195,6 +288,17 @@ final class NotchViewModel: ObservableObject {
         let raw = formatINR(sessionPnL)
         if sessionPnL >= 0 { return "+\(raw)" }
         return raw
+    }
+
+    /// Collapsed macOS strip (#126) — derived from published `barLiveState` + archetype only.
+    var collapsedNotchPresentation: CollapsedNotchPresentation {
+        CollapsedNotchPresentation.build(
+            notch: barLiveState,
+            archetype: activeArchetype,
+            compositeScore: compositeScore,
+            behavioralStateLabel: behavioralState,
+            referenceNow: Date(),
+        )
     }
 
     var winRateFormatted: String {
@@ -286,10 +390,12 @@ final class NotchViewModel: ObservableObject {
     private var pollTrades: Timer?
     private var connectionTick: Timer?
     private var lastBriefFetchDay: String?
-    private var expandHoverTimer: Timer?
-    private var collapseHoverTimer: Timer?
+    private var killSwitchCountdownTimer: Timer?
     private var daemonEventsTask: Task<Void, Never>?
     private var toolbarShowCoalesceTask: Task<Void, Never>?
+    private var barLiveStatePollTimer: Timer?
+    /// Incremented when `live-state` fails while [hybrid armed](BarOptimisticArmedSnapshot) is active; cleared on 200.
+    private var barOptimisticReconcilePollFailures: Int = 0
     /// Interactive screenshot temp file — removed after upload or from `stopPolling()` (Phase 7 hygiene).
     private var journalCaptureScreenshotTempURL: URL?
     private var connectionFSM = DaemonConnectionFSM()
@@ -308,16 +414,644 @@ final class NotchViewModel: ObservableObject {
             "tradeautopsy.notch.journalCapture.lastPendingForScreenshot"
     }
 
+    private enum BarOptimisticArmedPersistence {
+        static let declarationIdKey = "tradeautopsy.notch.bar.optimisticDeclarationId"
+        static let submittedAtKey = "tradeautopsy.notch.bar.optimisticSubmittedAt"
+        static let symbolKey = "tradeautopsy.notch.bar.optimisticSymbol"
+        static let sideKey = "tradeautopsy.notch.bar.optimisticSide"
+        static let qtyKey = "tradeautopsy.notch.bar.optimisticQuantityLabel"
+    }
+
+    private let barOptimisticArmedMaxAgeSeconds: TimeInterval = 45
+    private let barOptimisticArmedMaxPollFailures = 3
+
+    private let barArchetypeStore: BarArchetypeStore
+    private let barDeclareHTTPExecutor: BarDeclareHTTPExecuting
+    /// Tests pass a no-op to avoid `fetchBarLiveState()` hitting `URLSession.shared` (#120).
+    private let barDeclareSuccessFollowUp: (@MainActor () async -> Void)?
+
+    init(
+        barArchetypeStore: BarArchetypeStore = UserDefaultsBarArchetypeStore(),
+        barDeclareHTTPExecutor: BarDeclareHTTPExecuting = URLSessionBarDeclareHTTPExecutor(),
+        barDeclareSuccessFollowUp: (@MainActor () async -> Void)? = nil
+    ) {
+        self.barArchetypeStore = barArchetypeStore
+        self.barDeclareHTTPExecutor = barDeclareHTTPExecutor
+        self.barDeclareSuccessFollowUp = barDeclareSuccessFollowUp
+        restoreOptimisticArmedFromDefaults()
+        refreshActiveArchetype()
+        recomputeBarSurfacePhase()
+    }
+
+    private func refreshActiveArchetype() {
+        let pendingKind = barLiveState?.pendingDeclaration?.declarationKind
+        let liveArch = barLiveState?.archetype
+        let last = barArchetypeStore.loadLastKnownArchetype()
+        let resolved = TraderArchetype.resolve(
+            pendingDeclarationKind: pendingKind,
+            liveArchetype: liveArch,
+            lastKnown: last,
+        )
+        activeArchetype = resolved
+        barArchetypeStore.saveLastKnownArchetype(resolved)
+    }
+
+    /// Persists archetype tab selection and updates routing for the native declaration shell (#121).
+    func setUserDeclarationArchetype(_ archetype: TraderArchetype) {
+        barArchetypeStore.saveLastKnownArchetype(archetype)
+        activeArchetype = archetype
+    }
+
+    private func persistOptimisticArmed(_ snapshot: BarOptimisticArmedSnapshot) {
+        let d = UserDefaults.standard
+        d.set(snapshot.declarationId, forKey: BarOptimisticArmedPersistence.declarationIdKey)
+        d.set(snapshot.submittedAt, forKey: BarOptimisticArmedPersistence.submittedAtKey)
+        d.set(snapshot.symbol, forKey: BarOptimisticArmedPersistence.symbolKey)
+        d.set(snapshot.side, forKey: BarOptimisticArmedPersistence.sideKey)
+        d.set(snapshot.quantityLabel, forKey: BarOptimisticArmedPersistence.qtyKey)
+        barOptimisticArmedDisplay = snapshot
+        barPublishedDeclarationId = BarDeclarationIdReducer.apply(
+            event: .declareSucceeded(snapshot.declarationId),
+            state: barPublishedDeclarationId,
+        )
+    }
+
+    private func clearOptimisticArmedStorage() {
+        let d = UserDefaults.standard
+        d.removeObject(forKey: BarOptimisticArmedPersistence.declarationIdKey)
+        d.removeObject(forKey: BarOptimisticArmedPersistence.submittedAtKey)
+        d.removeObject(forKey: BarOptimisticArmedPersistence.symbolKey)
+        d.removeObject(forKey: BarOptimisticArmedPersistence.sideKey)
+        d.removeObject(forKey: BarOptimisticArmedPersistence.qtyKey)
+        barOptimisticArmedDisplay = nil
+        barPublishedDeclarationId = BarDeclarationIdReducer.apply(
+            event: .declarationClosed,
+            state: barPublishedDeclarationId,
+        )
+        barOptimisticReconcilePollFailures = 0
+    }
+
+    private func restoreOptimisticArmedFromDefaults() {
+        let d = UserDefaults.standard
+        guard let id = d.string(forKey: BarOptimisticArmedPersistence.declarationIdKey), !id.isEmpty,
+              let ts = d.object(forKey: BarOptimisticArmedPersistence.submittedAtKey) as? TimeInterval
+        else {
+            barOptimisticArmedDisplay = nil
+            barPublishedDeclarationId = BarDeclarationIdReducer.apply(
+                event: .declarationClosed,
+                state: barPublishedDeclarationId,
+            )
+            return
+        }
+        if Date().timeIntervalSince1970 - ts > barOptimisticArmedMaxAgeSeconds {
+            clearOptimisticArmedStorage()
+            return
+        }
+        let sym = d.string(forKey: BarOptimisticArmedPersistence.symbolKey) ?? "—"
+        let side = d.string(forKey: BarOptimisticArmedPersistence.sideKey) ?? "—"
+        let qty = d.string(forKey: BarOptimisticArmedPersistence.qtyKey) ?? "—"
+        barOptimisticArmedDisplay = BarOptimisticArmedSnapshot(
+            declarationId: id,
+            submittedAt: ts,
+            symbol: sym,
+            side: side,
+            quantityLabel: qty,
+        )
+        barPublishedDeclarationId = BarDeclarationIdReducer.apply(
+            event: .declareSucceeded(id),
+            state: barPublishedDeclarationId,
+        )
+    }
+
+    private func recordOptimisticPollFailure() {
+        guard barOptimisticArmedDisplay != nil else { return }
+        barOptimisticReconcilePollFailures += 1
+    }
+
+    private func resetOptimisticPollFailures() {
+        barOptimisticReconcilePollFailures = 0
+    }
+
+    private func parseDeclarationPostBodySummary(_ body: Data) -> (symbol: String, side: String, qtyLabel: String)? {
+        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let sym = o["symbol"] as? String,
+              let side = o["side"] as? String
+        else { return nil }
+        let qtyLabel: String
+        if let q = o["quantity"] as? Double {
+            qtyLabel = q == floor(q) ? String(Int(q)) : String(q)
+        } else if let q = o["quantity"] as? Int {
+            qtyLabel = String(q)
+        } else if let qs = o["quantity"] as? String {
+            qtyLabel = qs
+        } else { return nil }
+        return (sym.uppercased(), upperTrimSide(side), qtyLabel)
+    }
+
+    private func upperTrimSide(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
     /// §6.6 Policy C (swift slice): while the draft has non-whitespace text, trade UUID + pending toggle are fixed.
     var journalCaptureLinkLocked: Bool {
         !journalCaptureDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func selectTab(_ tab: NotchTab) {
-        withAnimation(NotchTheme.springExpand) {
-            activeTab = tab
+        activeTab = tab
+        if tab != .plan {
+            showingDeclarationForm = false
         }
         dictationUsesCaptureDraft = (tab == .capture)
+        syncBarLiveStatePollingForVisibility()
+    }
+
+    /// Starts the 2s live-state timer when the expanded panel shows the PLAN tab; stops otherwise.
+    func syncBarLiveStatePollingForVisibility() {
+        if isExpanded, activeTab == .plan {
+            startBarPolling()
+        } else {
+            stopBarPolling()
+        }
+    }
+
+    func startBarPolling() {
+        startBarLiveStatePolling()
+    }
+
+    func stopBarPolling() {
+        stopBarLiveStatePolling()
+    }
+
+    func showExitConfirmation() {
+        openPlanExitInBrowser()
+    }
+
+    func dismissBarDebrief() {
+        barDebriefPending = false
+        recomputeBarSurfacePhase()
+    }
+
+    func resetStopMeFlow() {
+        stopMeStep = 0
+        stopMeTapCount = 0
+        stopMeReason = ""
+    }
+
+    func openPlanExitInBrowser() {
+        // Notch is standalone — never open the web dashboard in a browser.
+    }
+
+    private func startBarLiveStatePolling() {
+        stopBarLiveStatePolling()
+        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isExpanded, self.activeTab == .plan else { return }
+                await self.fetchBarLiveState()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        barLiveStatePollTimer = t
+        Task { await fetchBarLiveState() }
+    }
+
+    private func stopBarLiveStatePolling() {
+        barLiveStatePollTimer?.invalidate()
+        barLiveStatePollTimer = nil
+    }
+
+    func fetchBarLiveState() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/live-state") else { return }
+        barStateLoading = true
+        defer { barStateLoading = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200 else {
+                recordOptimisticPollFailure()
+                barStateError = "Live state failed (\(code))"
+                recomputeBarSurfacePhase()
+                return
+            }
+            let decoded = try JSONDecoder().decode(BarLiveStateAPIResponse.self, from: data)
+            let newState = decoded.notch
+            let newFeaturesActive = decoded.barFeaturesActive
+            let oldState = barLiveState
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.daemonProtocolError != nil {
+                    self.daemonProtocolError = nil
+                }
+                withAnimation(.none) {
+                    var needsRecompute = false
+                    var didPublishMeaningfulData = false
+
+                    if self.barLiveState != newState {
+                        self.barLiveState = newState
+                        needsRecompute = true
+                        didPublishMeaningfulData = true
+                        if oldState?.archetype != newState?.archetype {
+                            self.refreshActiveArchetype()
+                        }
+                    }
+
+                    if self.barFeaturesActiveFromApi != newFeaturesActive {
+                        self.barFeaturesActiveFromApi = newFeaturesActive
+                        needsRecompute = true
+                        didPublishMeaningfulData = true
+                        if newFeaturesActive == false {
+                            self.clearOptimisticArmedStorage()
+                        }
+                    }
+
+                    if needsRecompute {
+                        self.recomputeBarSurfacePhase()
+                    }
+
+                    if didPublishMeaningfulData {
+                        self.barLastFetched = Date()
+                    }
+
+                    if self.barStateError != nil {
+                        self.barStateError = nil
+                    }
+                }
+                self.resetOptimisticPollFailures()
+            }
+        } catch {
+            recordOptimisticPollFailure()
+            barStateError = error.localizedDescription
+            recomputeBarSurfacePhase()
+        }
+    }
+
+    func recomputeBarSurfacePhase() {
+        let matchedDeclTrimmed =
+            barLiveState?.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if matchedDeclTrimmed.isEmpty {
+            stopMeStep = 0
+        }
+        if barDebriefPending {
+            barSurfacePhase = .debrief
+            return
+        }
+        let hasPos = !positions.isEmpty
+        if hasPos {
+            clearOptimisticArmedStorage()
+            barSurfacePhase = .livePlan
+            return
+        }
+        if let pending = barLiveState?.pendingDeclaration, pending.status.uppercased() == "PENDING" {
+            clearOptimisticArmedStorage()
+            barSurfacePhase = .armed
+            return
+        }
+        if let snap = barOptimisticArmedDisplay {
+            let age = Date().timeIntervalSince1970 - snap.submittedAt
+            let overAge = age > barOptimisticArmedMaxAgeSeconds
+            let tooManyFailures = barOptimisticReconcilePollFailures >= barOptimisticArmedMaxPollFailures
+            if overAge || tooManyFailures {
+                clearOptimisticArmedStorage()
+                barDeclarationConfirmWarning = "Could not confirm declaration — check web Bar."
+                barSurfacePhase = .declaration
+                return
+            }
+            barSurfacePhase = .armed
+            return
+        }
+        let planRaw = barLiveState?.planState?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasPlanSignal = !planRaw.isEmpty
+        // Hosted `plan_state` can be set without a matched declaration; native declare UX lives on `.declaration`.
+        if hasPlanSignal, !showingDeclarationForm {
+            barSurfacePhase = .livePlan
+        } else {
+            barSurfacePhase = .declaration
+        }
+    }
+
+    /// PLAN tab — surfaces `declarationFormRoot` immediately (no poll wait).
+    func presentBarDeclarationForm() {
+        showingDeclarationForm = true
+        recomputeBarSurfacePhase()
+    }
+
+    private struct BarDeclareOkResponse: Decodable {
+        let ok: Bool?
+        let declarationId: String?
+    }
+
+    func submitBarDeclaration(body: Data) async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/declare") else { return }
+        let summary = parseDeclarationPostBodySummary(body)
+        barDeclarationBusy = true
+        barDeclarationLastError = nil
+        barDeclarationConfirmWarning = nil
+        defer { barDeclarationBusy = false }
+        do {
+            let (data, resp) =
+                try await barDeclareHTTPExecutor.data(for: authorizedRequest(url: url, method: "POST", body: body))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                let hint = String(data: data, encoding: .utf8)?.prefix(280) ?? ""
+                barDeclarationLastError = "Declaration failed (\(code)) \(hint)"
+                return
+            }
+            daemonProtocolError = nil
+            barStateError = nil
+            barDeclarationLastError = nil
+            if let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data),
+               let declId = parsed.declarationId, !declId.isEmpty
+            {
+                let now = Date().timeIntervalSince1970
+                let snap = BarOptimisticArmedSnapshot(
+                    declarationId: declId,
+                    submittedAt: now,
+                    symbol: summary?.symbol ?? "—",
+                    side: summary?.side ?? "—",
+                    quantityLabel: summary?.qtyLabel ?? "—",
+                )
+                persistOptimisticArmed(snap)
+                barOptimisticReconcilePollFailures = 0
+            }
+            recomputeBarSurfacePhase()
+            if let follow = barDeclareSuccessFollowUp {
+                await follow()
+            } else {
+                await fetchBarLiveState()
+            }
+        } catch {
+            barDeclarationLastError = error.localizedDescription
+            recomputeBarSurfacePhase()
+        }
+    }
+
+    private func notePositionTransitionForBar(previousCount: Int, newCount: Int) {
+        barDebriefPending = BarDebriefArming.applyPoll(
+            previousCount: previousCount,
+            newCount: newCount,
+            pending: barDebriefPending,
+        )
+        if newCount > 0 {
+            clearOptimisticArmedStorage()
+        }
+    }
+
+    func submitBarStopMe() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/stop-me") else { return }
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        let reason = stopMeReason.isEmpty ? "notch_stop_me" : stopMeReason
+        let body: [String: Any] = [
+            "reason": reason,
+            "triggered_at_ms": ms,
+        ]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        barStopMeBusy = true
+        defer { barStopMeBusy = false }
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url, method: "POST", body: payload))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                barStateError = "Stop me failed (\(code))"
+                return
+            }
+            daemonProtocolError = nil
+            resetStopMeFlow()
+            killSwitchActive = true
+            barStateError = nil
+        } catch {
+            barStateError = error.localizedDescription
+        }
+    }
+
+    /// True when hosted live-state says SL is missing, we have a matched declaration id, and symbol/qty can be inferred.
+    var canSubmitNotchPlaceSl: Bool {
+        guard let p = barLiveState else { return false }
+        let st = p.slStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        guard st == "missing" else { return false }
+        guard let tid = p.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !tid.isEmpty else {
+            return false
+        }
+        guard let px = p.slPrice, px > 0 else { return false }
+        if !positions.isEmpty { return true }
+        if let pd = p.pendingDeclaration, !pd.symbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        return false
+    }
+
+    /// Live-trade interference chips — POSTs choice to hosted `ingestSignal` via agent.
+    func applyBarInterferenceTap(_ choice: String) {
+        barInterferenceChoice = choice
+        let planRed = BarInterferenceEchoReducer.planIsRed(
+            planState: barLiveState?.planState,
+            isRedTerminal: barLiveState?.isRedTerminal ?? false,
+        )
+        let c = choice.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch c {
+        case "no":
+            barInterferenceEcho = "Good. Nothing to act on. Let the plan run."
+        case "maybe":
+            barInterferenceEcho =
+                "Uncertainty is not a reason to act. If no rule triggered, do nothing. Write the feeling below."
+        case "yes":
+            barInterferenceEcho =
+                planRed
+                ? "Your thesis is already dead. This exit is the plan. Execute it."
+                : "Your time invalidation is approaching. Do not add risk — write the impulse below and wait."
+        default:
+            barInterferenceEcho = nil
+        }
+        if choice == "no" {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if barInterferenceChoice == "no" { barInterferenceEcho = nil }
+            }
+        }
+        Task { await submitBarLiveInterference(choice: choice) }
+    }
+
+    /// Footer “Hold and watch” — dismisses interference UI and logs the same path as “No — following plan” (#113).
+    func holdAndWatchBarLive() {
+        barInterferenceChoice = nil
+        barInterferenceEcho = nil
+        Task { await submitBarLiveInterference(choice: "no") }
+    }
+
+    func submitBarLiveInterference(choice: String) async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/live-interference") else { return }
+        let planRaw = barLiveState?.planState?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let declFromMatch = barLiveState?.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let declPending = barLiveState?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let declId: String? = {
+            if let m = declFromMatch, !m.isEmpty { return m }
+            if let p = declPending, !p.isEmpty { return p }
+            return nil
+        }()
+        var body: [String: Any] = [
+            "choice": choice,
+            "at_ms": Int(Date().timeIntervalSince1970 * 1000),
+        ]
+        if !planRaw.isEmpty {
+            body["plan_state"] = planRaw
+        }
+        if let declId {
+            body["declaration_id"] = declId
+        }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: payload),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
+                barDeclarationLastError = "Live interference failed (\(code)) \(hint)"
+                return
+            }
+            daemonProtocolError = nil
+            barDeclarationLastError = nil
+        } catch {
+            barDeclarationLastError = error.localizedDescription
+        }
+    }
+
+    /// Protective `place_sl` for matched declarations (Notch) — same daemon route as modify/cancel.
+    func submitBarPlaceSlFromNotch() async {
+        guard let payload = barLiveState else { return }
+        guard let declId = payload.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !declId.isEmpty
+        else {
+            barDeclarationLastError = "No matched declaration — open web Bar."
+            return
+        }
+        guard let trigger = payload.slPrice, trigger > 0 else {
+            barDeclarationLastError = "Stop price unknown — wait for live state."
+            return
+        }
+
+        let symbol: String
+        let sideRaw: String
+        let qty: Double
+
+        if let pos = positions.first {
+            symbol = pos.symbol
+            sideRaw = pos.direction
+            qty = Double(abs(pos.qty))
+        } else if let pd = payload.pendingDeclaration {
+            symbol = pd.symbol
+            sideRaw = pd.side
+            qty = pd.quantity
+        } else {
+            barDeclarationLastError = "Need an open position snapshot to place SL from Notch."
+            return
+        }
+
+        let symUpper = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !symUpper.isEmpty, qty > 0 else {
+            barDeclarationLastError = "Symbol or quantity missing."
+            return
+        }
+
+        let sideUpper = barOrderSideFromHint(sideRaw)
+        let broker = barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !broker.isEmpty else {
+            barDeclarationLastError = "Broker slug not configured."
+            return
+        }
+
+        let placeBody: [String: Any] = [
+            "action": "place_sl",
+            "declaration_id": declId,
+            "symbol": symUpper,
+            "side": sideUpper,
+            "quantity": qty,
+            "trigger_price": trigger,
+            "broker": broker,
+            "product": "MIS",
+            "reason": "notch_place_sl",
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: placeBody) else {
+            barDeclarationLastError = "Could not build place_sl JSON."
+            return
+        }
+        await submitBarProtective(body: data)
+    }
+
+    private func barOrderSideFromHint(_ raw: String) -> String {
+        let u = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if u.contains("SELL") || u.contains("SHORT") { return "SELL" }
+        return "BUY"
+    }
+
+    /// Forward modify/cancel protective SL JSON to hosted engine via agent (`ActiveSLRecord` body).
+    func submitBarProtective(body: Data) async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/protective") else { return }
+        barProtectiveBusy = true
+        defer { barProtectiveBusy = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: body),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
+                barDeclarationLastError = "Protective order failed (\(code)) \(hint)"
+                return
+            }
+            daemonProtocolError = nil
+            barDeclarationLastError = nil
+            await fetchBarLiveState()
+        } catch {
+            barDeclarationLastError = error.localizedDescription
+        }
+    }
+
+    /// #5 — forward full JSON to hosted `ingestSignal` path (agent unwraps daemon auth).
+    func submitBarPostTradeDebrief(body: Data) async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/post-trade-debrief") else { return }
+        barPostTradeDebriefBusy = true
+        barPostTradeDebriefLastError = nil
+        defer { barPostTradeDebriefBusy = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "PATCH", body: body),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
+                barPostTradeDebriefLastError = "Debrief save failed (\(code)) \(hint)"
+                return
+            }
+            daemonProtocolError = nil
+            barPostTradeDebriefLastError = nil
+            dismissBarDebrief()
+        } catch {
+            barPostTradeDebriefLastError = error.localizedDescription
+        }
+    }
+
+    /// #4 — swing capitulation / thesis check-in → `bar_notch_swing_check_in`.
+    func submitSwingCheckIn(body: Data) async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/swing-check-in") else { return }
+        barSwingCheckInBusy = true
+        barSwingCheckInLastError = nil
+        defer { barSwingCheckInBusy = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: body),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
+                barSwingCheckInLastError = "Swing check-in failed (\(code)) \(hint)"
+                return
+            }
+            daemonProtocolError = nil
+            barSwingCheckInLastError = nil
+            await fetchBarLiveState()
+        } catch {
+            barSwingCheckInLastError = error.localizedDescription
+        }
     }
 
     func persistJournalCaptureDraftLocally() {
@@ -350,8 +1084,8 @@ final class NotchViewModel: ObservableObject {
     }
 
     func finalizeJournalCapture() async {
-        guard sessionAuthenticated else {
-            journalCaptureLastError = "Session expired — tap Sign In before finalizing."
+        guard isAuthenticated && (sessionState == "active" || sessionState == "expiring_soon") else {
+            journalCaptureLastError = "Sign in required to finalize captures."
             journalCaptureLastSuccess = nil
             return
         }
@@ -613,6 +1347,7 @@ final class NotchViewModel: ObservableObject {
     func stopPolling() {
         toolbarShowCoalesceTask?.cancel()
         toolbarShowCoalesceTask = nil
+        stopBarLiveStatePolling()
         daemonEventsTask?.cancel()
         daemonEventsTask = nil
         pollFast?.invalidate()
@@ -625,13 +1360,13 @@ final class NotchViewModel: ObservableObject {
         pollTrades = nil
         connectionTick?.invalidate()
         connectionTick = nil
+        stopKillSwitchCountdownTimer()
         daemonConnectionState = .idle
         daemonProtocolError = nil
         connectionFSM = DaemonConnectionFSM()
         pinnedAgentBootId = nil
         pinnedAgentSsePubKeyB64 = nil
         agentLocalDiagnostics = ""
-        stopHoverTimers()
         if let u = journalCaptureScreenshotTempURL {
             JournalInteractiveScreenshot.removeTempFile(at: u)
             journalCaptureScreenshotTempURL = nil
@@ -639,52 +1374,30 @@ final class NotchViewModel: ObservableObject {
         dictationSession?.stopAllForHostTeardown()
     }
 
-    private func stopHoverTimers() {
-        expandHoverTimer?.invalidate()
-        expandHoverTimer = nil
-        collapseHoverTimer?.invalidate()
-        collapseHoverTimer = nil
-    }
-
-    /// Next cursor enter re-enables hover-leave collapse after programmatic open.
-    func prepareProgrammaticExpansion() {
-        hoverCollapseEnabled = false
-    }
-
-    func handleHover(_ hovering: Bool) {
-        if hovering {
-            collapseHoverTimer?.invalidate()
-            collapseHoverTimer = nil
-            hoverCollapseEnabled = true
-            expandHoverTimer?.invalidate()
-            let t = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                Task { @MainActor in
-                    withAnimation(NotchTheme.springExpand) {
-                        self.isExpanded = true
-                    }
-                    NSApp.activate(ignoringOtherApps: true)
-                    self.onRequestOrderFront?()
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            expandHoverTimer = t
-        } else {
-            expandHoverTimer?.invalidate()
-            expandHoverTimer = nil
-            guard hoverCollapseEnabled else { return }
-            collapseHoverTimer?.invalidate()
-            let t = Timer(timeInterval: 0.2, repeats: false) { [weak self] _ in
-                guard let self else { return }
-                Task { @MainActor in
-                    withAnimation(NotchTheme.springExpand) {
-                        self.isExpanded = false
-                    }
-                }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            collapseHoverTimer = t
+    func expandFromCollapsedChromeTap() {
+        guard !isExpanded else { return }
+        withAnimation(NotchTheme.springExpand) {
+            isExpanded = true
         }
+        onRequestOrderFront?()
+        syncBarLiveStatePollingForVisibility()
+    }
+
+    /// Global monitor only receives clicks from *other* apps — use for dismiss-outside-expanded-panel.
+    func collapseExpandedFromOutsideClick() {
+        guard isExpanded else { return }
+        withAnimation(NotchTheme.springExpand) {
+            isExpanded = false
+        }
+        syncBarLiveStatePollingForVisibility()
+    }
+
+    func collapseExpandedFromChromeTap() {
+        guard isExpanded else { return }
+        withAnimation(NotchTheme.springExpand) {
+            isExpanded = false
+        }
+        syncBarLiveStatePollingForVisibility()
     }
 
     func pulseBackground(color: Color, duration: TimeInterval) {
@@ -845,30 +1558,39 @@ final class NotchViewModel: ObservableObject {
     }
 
     private func applyToolbarShowPayload(_ payload: [String: Any]) {
-        let tradeId = payload["trade_id"] as? String
-        let symbol = payload["symbol"] as? String
-        let side = (payload["side"] as? String)?.uppercased() ?? ""
-        let qty: Int = {
-            if let q = payload["qty"] as? Int { return q }
-            if let d = payload["qty"] as? Double { return Int(d) }
-            return 0
+        let tradeIdRaw = payload["trade_id"] as? String
+        let tradeId = tradeIdRaw.flatMap { s in
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let symbolRaw = payload["symbol"] as? String
+        let symbol = symbolRaw.flatMap { s in
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let side = payload["side"] as? String ?? ""
+        let qtyStr: String = {
+            if let q = payload["qty"] as? Int { return String(q) }
+            if let d = payload["qty"] as? Double { return String(Int(d)) }
+            return ""
         }()
-        let price: Double = {
-            if let p = payload["price"] as? Double { return p }
-            if let i = payload["price"] as? Int { return Double(i) }
-            return 0
+        let priceStr: String = {
+            if let p = payload["price"] as? Double { return String(format: "%.2f", p) }
+            if let i = payload["price"] as? Int { return String(format: "%.2f", Double(i)) }
+            return "—"
         }()
 
         let banner: String
-        if let sym = symbol, !sym.isEmpty {
-            let priceText = formatINR(price)
-            banner = "Trade detected — \(sym) \(side) \(qty)@\(priceText)"
+        if tradeId != nil, let sym = symbol {
+            banner = "Trade detected · \(sym) \(side) \(qtyStr) @ \(priceStr)"
         } else {
-            banner = "Trade detected — details syncing…"
+            banner = "New trade · tap to capture"
         }
+
         journalCaptureBanner = banner
-        if !journalCaptureLinkLocked {
-            journalCaptureTradeIdRaw = tradeId ?? ""
+        dictationUsesCaptureDraft = true
+        if let tid = tradeId, !journalCaptureLinkLocked {
+            journalCaptureTradeIdRaw = tid
         }
         Task { [weak self] in
             await self?.notchHost?.expandToCapture()
@@ -882,31 +1604,32 @@ final class NotchViewModel: ObservableObject {
             let oldKs = killSwitchActive
             let active = payload["active"] as? Bool ?? false
             killSwitchActive = active
-            if active, !oldKs {
-                checkKillSwitchTransition(from: false, to: true)
-            }
-            if !active {
+            if active {
+                if !oldKs {
+                    checkKillSwitchTransition(from: oldKs, to: true)
+                }
+                if let c = payload["countdown_secs"] as? Int {
+                    killSwitchCountdownSecs = c
+                } else if let d = payload["countdown_secs"] as? Double {
+                    killSwitchCountdownSecs = Int(d)
+                } else {
+                    killSwitchCountdownSecs = nil
+                }
+                startKillSwitchCountdownTimerIfNeeded()
+            } else {
+                killSwitchActive = false
                 killSwitchCountdownSecs = nil
+                stopKillSwitchCountdownTimer()
                 if oldKs {
                     pulseAttention = .none
                 }
-            } else if let c = payload["countdown_secs"] as? Int {
-                killSwitchCountdownSecs = c
-            } else if let d = payload["countdown_secs"] as? Double {
-                killSwitchCountdownSecs = Int(d)
-            } else {
-                killSwitchCountdownSecs = nil
             }
             return true
 
         case "broker_sync_state":
-            if let c = payload["class"] as? String,
-               let mapped = BrokerSyncClass(rawValue: c) {
-                brokerSyncClass = mapped
-            } else {
-                brokerSyncClass = .notConnected
-            }
-            brokerLastError = payload["last_error"] as? String
+            let c = (payload["class"] as? String)?.lowercased() ?? "not_connected"
+            brokerSyncClass = c
+            brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             return true
 
         case "toolbar_show":
@@ -917,26 +1640,41 @@ final class NotchViewModel: ObservableObject {
             }
             return true
 
-        case "session_state", "state_changed":
-            let authed = payload["authenticated"] as? Bool ?? true
-            sessionAuthenticated = authed
-            sessionLabel = payload["session_label"] as? String
-            if !authed {
-                journalCaptureLastError = "Session expired — sign in to continue"
-            } else {
-                journalCaptureLastError = nil
+        case "session_state":
+            let st = (payload["state"] as? String)?.lowercased() ?? "active"
+            sessionState = st
+            if st == "expired" || st == "signed_out" {
+                isAuthenticated = false
+                daemonProtocolError = .sigInvalid
+                lastAlert = "Session expired — please sign in again."
             }
             return true
 
         case "auth_state":
-            let valid = payload["valid"] as? Bool ?? true
-            if !valid {
-                sessionAuthenticated = false
-                journalCaptureLastError = "Session expired — sign in to continue"
-            } else {
-                sessionAuthenticated = true
-                journalCaptureLastError = nil
+            isAuthenticated = payload["authenticated"] as? Bool ?? true
+            authProvider = payload["provider"] as? String
+            if !isAuthenticated {
+                daemonProtocolError = .sigInvalid
+                lastAlert = "Sign in required."
             }
+            return true
+
+        case "state_changed":
+            let old = compositeScore
+            if let bs = payload["behavioral_state"] as? String, !bs.isEmpty {
+                behavioralState = bs
+            }
+            if let s = payload["composite_score"] as? Double {
+                compositeScore = s
+            } else if let i = payload["composite_score"] as? Int {
+                compositeScore = Double(i)
+            }
+            checkSmartTriggers(oldScore: old, newScore: compositeScore)
+            return true
+
+        case "trade_exit":
+            barDebriefPending = BarDebriefArming.applyExplicitTradeExit()
+            recomputeBarSurfacePhase()
             return true
 
         default:
@@ -951,7 +1689,8 @@ final class NotchViewModel: ObservableObject {
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
             if let sc = j["syncState"] as? String {
-                brokerSyncClass = BrokerSyncClass(rawValue: sc) ?? .notConnected
+                brokerSyncClass = sc.lowercased()
+                brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             }
             if let arr = j["trades"] as? [[String: Any]] {
                 recentTrades = arr.compactMap { row in
@@ -971,14 +1710,18 @@ final class NotchViewModel: ObservableObject {
                         return 0
                     }()
                     let side = (row["side"] as? String) ?? (row["direction"] as? String) ?? ""
-                    let filledAt = (row["filled_at"] as? String) ?? (row["detected_at"] as? String) ?? ""
-                    return RecentTrade(
+                    let filledAtMs: Int = {
+                        if let m = row["filled_at_ms"] as? Int { return m }
+                        if let m = row["filled_at_ms"] as? Double { return Int(m) }
+                        return 0
+                    }()
+                    return RecentTradeRow(
                         id: rid,
                         symbol: sym,
                         side: side,
                         qty: qty,
                         price: price,
-                        filledAt: filledAt
+                        filledAtMs: filledAtMs
                     )
                 }
             }
@@ -1266,6 +2009,7 @@ final class NotchViewModel: ObservableObject {
 
     func fetchPositions() async {
         guard let url = URL(string: baseURL() + "/api/daemon/positions") else { return }
+        let previousPositionCount = positions.count
         do {
             let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
             let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -1288,7 +2032,9 @@ final class NotchViewModel: ObservableObject {
                     out.append(NotchPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))
                 }
             }
+            notePositionTransitionForBar(previousCount: previousPositionCount, newCount: out.count)
             positions = out
+            recomputeBarSurfacePhase()
             if killSwitchActive != oldKs {
                 checkKillSwitchTransition(from: oldKs, to: killSwitchActive)
             }
@@ -1347,35 +2093,8 @@ final class NotchViewModel: ObservableObject {
                 return
             }
             daemonProtocolError = nil
-            let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let summary = (j["summary"] as? String) ?? (j["briefing"] as? String) ?? ""
-            let nifty = (j["niftyFutures"] as? Double) ?? (j["nifty_futures"] as? Double) ?? 0
-            let bn = (j["bankniftyFutures"] as? Double) ?? (j["banknifty_futures"] as? Double) ?? 0
-            let niftyCh = (j["niftyChangePct"] as? Double) ?? (j["nifty_change_pct"] as? Double) ?? 0
-            let bnCh = (j["bankniftyChangePct"] as? Double) ?? (j["banknifty_change_pct"] as? Double) ?? 0
-            let vix = (j["vix"] as? Double) ?? 0
-            let edges = (j["edgeSymbols"] as? [String]) ?? (j["edge_symbols"] as? [String]) ?? []
-            var cautions: [CautionSymbolRow] = []
-            if let arr = j["cautionSymbols"] as? [[String: Any]] {
-                cautions = arr.compactMap { row in
-                    guard let sym = row["symbol"] as? String else { return nil }
-                    let reason = row["reason"] as? String ?? row["note"] as? String ?? ""
-                    return CautionSymbolRow(symbol: sym, reason: reason)
-                }
-            }
-            let rec = (j["recommendation"] as? String) ?? ""
-            morningBrief = MorningBrief(
-                summary: summary,
-                niftyFutures: nifty,
-                bankniftyFutures: bn,
-                niftyChangePct: niftyCh,
-                bankniftyChangePct: bnCh,
-                vix: vix,
-                edgeSymbols: edges,
-                cautionSymbols: cautions,
-                recommendation: rec,
-                fetchedAt: Date()
-            )
+            let decoded = try JSONDecoder().decode(BriefMorningBriefResponse.self, from: data)
+            morningBrief = decoded.makeMorningBrief(fetchedAt: Date())
             lastBriefFetchDay = todayKeyIST()
             let hour = istCalendar().component(.hour, from: Date())
             let minute = istCalendar().component(.minute, from: Date())
@@ -1385,6 +2104,18 @@ final class NotchViewModel: ObservableObject {
         } catch {
             lastAlert = error.localizedDescription
         }
+    }
+
+    /// Brief tab CTA — jump to PLAN and surface declaration entry (#127).
+    func startTradingFromMorningBrief() {
+        activeTab = .plan
+        presentBarDeclarationForm()
+    }
+
+    /// Test seam — apply a daemon morning-brief JSON fixture without network.
+    func applyMorningBriefFixtureForTesting(_ data: Data) throws {
+        let decoded = try JSONDecoder().decode(BriefMorningBriefResponse.self, from: data)
+        morningBrief = decoded.makeMorningBrief(fetchedAt: Date(timeIntervalSince1970: 0))
     }
 
     func sendTAIMessage(_ text: String) async {
@@ -1492,28 +2223,8 @@ final class NotchViewModel: ObservableObject {
     }
 
     func openDeepLink(_ urlString: String) {
-        if let u = URL(string: urlString), NSWorkspace.shared.open(u) {
-            return
-        }
-        if urlString.hasPrefix("tradeautopsy://"),
-           let fallback = URL(string: webBaseURL + "/dashboard") {
-            NSWorkspace.shared.open(fallback)
-        }
-    }
-
-    func beginOAuthSignIn() async {
-        guard let url = URL(string: baseURL() + "/api/daemon/auth/begin") else { return }
-        let body = try? JSONSerialization.data(withJSONObject: ["source": "notch"])
-        let req = authorizedRequest(url: url, method: "POST", body: body)
-        do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            guard (resp as? HTTPURLResponse)?.statusCode == 200,
-                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let loginUrl = j["loginUrl"] as? String,
-                  !loginUrl.isEmpty
-            else { return }
-            openDeepLink(loginUrl)
-        } catch {}
+        // Notch must not open page URLs in the system browser or foreground the Next.js app.
+        _ = urlString
     }
 
     func sessionSummaryForClose() -> String {
@@ -1521,12 +2232,13 @@ final class NotchViewModel: ObservableObject {
         return "Session · P&L \(formatINR(sessionPnL)) · \(tradesToday) trades · WR \(wr)"
     }
 
-    /// Collapsed / center strip label: FLOW · CALM · TILTED · DANGER
+    /// Collapsed / center strip label — aligns with validated ladder: warning 0.25 · soft 0.35 · hard 0.45 (`AGENTS.md`).
     var displayBehavioralState: String {
         let raw = behavioralState.uppercased()
         if raw.contains("TILT") || raw.contains("REVENGE") { return "TILTED" }
-        if compositeScore > 0.30 { return "DANGER" }
-        if compositeScore < 0.20 { return "FLOW" }
+        if compositeScore >= 0.45 { return "DANGER" }
+        if compositeScore >= 0.25 { return "CAUTION" }
+        if compositeScore < 0.15 { return "FLOW" }
         return "CALM"
     }
 
@@ -1653,6 +2365,47 @@ final class NotchViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 500_000_000)
             scoreRingPulseScale = 1.0
         }
+    }
+
+    private func startKillSwitchCountdownTimerIfNeeded() {
+        guard killSwitchCountdownSecs != nil else { return }
+        stopKillSwitchCountdownTimer()
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                guard let remaining = self.killSwitchCountdownSecs, remaining > 0 else {
+                    self.stopKillSwitchCountdownTimer()
+                    return
+                }
+                self.killSwitchCountdownSecs = remaining - 1
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        killSwitchCountdownTimer = t
+    }
+
+    private func stopKillSwitchCountdownTimer() {
+        killSwitchCountdownTimer?.invalidate()
+        killSwitchCountdownTimer = nil
+    }
+}
+
+// MARK: - VoiceOver (macOS SwiftUI has no `View.accessibilityLiveRegion`)
+
+enum NotchVoiceOver {
+    static func announce(_ message: String, assertive: Bool) {
+        let element =
+            NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible)
+        guard let element else { return }
+        let level: NSAccessibilityPriorityLevel = assertive ? .high : .medium
+        NSAccessibility.post(
+            element: element,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message as NSString,
+                .priority: NSNumber(value: level.rawValue),
+            ]
+        )
     }
 }
 

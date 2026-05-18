@@ -126,7 +126,9 @@ struct CenterZoneView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(tab.accessibilityPillLabel)
+        .accessibilityLabel("\(tab.accessibilityTabName) tab")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(viewModel.activeTab == tab ? "selected" : "")
         .animation(.spring(response: 0.25), value: isSelected)
     }
 }

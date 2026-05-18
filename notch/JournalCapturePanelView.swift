@@ -10,68 +10,53 @@ struct JournalCapturePanelView: View {
         viewModel.journalCaptureLinkLocked
     }
 
-    var body: some View {
-        Group {
-            if viewModel.daemonProtocolError == .protoVersion {
-                protoVersionGate
-            } else {
-                captureScrollContent
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear {
-            viewModel.updateDictationReduceMotion(accessibilityReduceMotion)
-        }
-        .onChange(of: accessibilityReduceMotion) { v in
-            viewModel.updateDictationReduceMotion(v)
-        }
+    private var showSessionBanner: Bool {
+        !viewModel.isAuthenticated
+            || viewModel.sessionState == "expired"
+            || viewModel.sessionState == "signed_out"
     }
 
-    private var protoVersionGate: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .foregroundColor(Color(hex: "#F5A524"))
-                    .accessibilityHidden(true)
-                Text("Agent update required — restart the app.")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.white.opacity(0.9))
-                    .accessibilityLabel("Agent update required. Restart the app.")
+    var body: some View {
+        captureScrollContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onAppear {
+                viewModel.updateDictationReduceMotion(accessibilityReduceMotion)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(hex: "#F5A524").opacity(0.08))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color(hex: "#F5A524").opacity(0.28), lineWidth: 0.5)
-            )
-            .cornerRadius(10)
-
-            Button {
-                withAnimation(NotchTheme.springExpand) {
-                    viewModel.isExpanded = false
-                }
-            } label: {
-                Text("Close")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color(hex: "#050505"))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color(hex: "#00E5C0"))
-                    .cornerRadius(10)
+            .onChange(of: accessibilityReduceMotion) { v in
+                viewModel.updateDictationReduceMotion(v)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close capture panel")
-
-            Spacer()
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
     }
 
     private var captureScrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                if showSessionBanner {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.crop.circle.badge.exclamationmark")
+                            .foregroundColor(Color(hex: "#FF9500"))
+                            .font(.system(size: 12))
+                            .accessibilityHidden(true)
+                        Text("Session expired")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(Color.white.opacity(0.85))
+                        Spacer()
+                        Button("Sign in") {
+                            viewModel.openDeepLink(viewModel.webBaseURL + "/login?toolbar_reauth=1")
+                        }
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(Color(hex: "#00E5C0"))
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Sign in to TradeAutopsy")
+                    }
+                    .padding(10)
+                    .background(Color(hex: "#FF9500").opacity(0.08))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color(hex: "#FF9500").opacity(0.2), lineWidth: 0.5)
+                    )
+                }
+
                 captureHeader
 
                 if let banner = viewModel.journalCaptureBanner, !banner.isEmpty {
@@ -110,7 +95,8 @@ struct JournalCapturePanelView: View {
                         RoundedRectangle(cornerRadius: 12)
                             .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                     )
-                    .accessibilityLabel("Journal entry")
+                    .accessibilityLabel("Journal entry text field")
+                    .accessibilityHint("Describe what happened in this trade")
 
                 Text("Link to trade")
                     .font(.system(size: 9, weight: .semibold, design: .rounded))
@@ -124,7 +110,8 @@ struct JournalCapturePanelView: View {
                         .foregroundColor(Color.white.opacity(0.65))
                 }
                 .disabled(linkLocked)
-                .accessibilityLabel("Save capture as pending without trade link")
+                .accessibilityLabel("Save as pending capture")
+                .accessibilityHint("Use when no trade is linked yet")
                 .accessibilityValue(viewModel.journalCaptureExplicitPending ? "on" : "off")
 
                 if linkLocked {
@@ -168,7 +155,8 @@ struct JournalCapturePanelView: View {
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Attach region screenshot to pending capture")
+                        .accessibilityLabel("Attach screenshot")
+                        .accessibilityHint("Captures a region of your screen and attaches it to this journal entry")
                         .disabled(viewModel.journalCaptureScreenshotBusy)
 
                         if let sErr = viewModel.journalCaptureScreenshotError, !sErr.isEmpty {
@@ -201,7 +189,8 @@ struct JournalCapturePanelView: View {
                             .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Save capture draft locally")
+                    .accessibilityLabel("Save draft locally")
+                    .accessibilityHint("Saves this text on your Mac without sending it to the server")
 
                     Button {
                         Task { await viewModel.finalizeJournalCapture() }
@@ -223,6 +212,7 @@ struct JournalCapturePanelView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Finalize journal capture")
+                    .accessibilityHint("Saves this note permanently and queues it for processing")
                     .disabled(viewModel.journalCaptureBusy)
 
                     Spacer()
@@ -239,25 +229,19 @@ struct JournalCapturePanelView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close capture panel")
                 }
-
-                if !viewModel.sessionAuthenticated {
-                    Button {
-                        Task { await viewModel.beginOAuthSignIn() }
-                    } label: {
-                        Text("Sign In")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(Color(hex: "#00E5C0"))
-                            .cornerRadius(10)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Sign in to TradeAutopsy")
-                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                Group {
+                    if reduceTransparency {
+                        Color(hex: "#0d0d0d").opacity(0.97)
+                    } else {
+                        Color.clear.background(.ultraThinMaterial).opacity(0.18)
+                    }
+                }
+            )
         }
     }
 
@@ -285,70 +269,38 @@ struct JournalCapturePanelView: View {
                             .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                     )
                     .disabled(linkLocked)
-                    .accessibilityLabel("Trade UUID optional")
+                    .accessibilityLabel("Trade UUID text field")
             } else {
-                Menu {
-                    ForEach(viewModel.recentTrades) { trade in
-                        Button("\(trade.symbol) \(trade.side.uppercased()) \(trade.qty)") {
-                            guard !linkLocked else { return }
-                            viewModel.journalCaptureTradeIdRaw = trade.id
-                        }
+                Picker("Link to trade", selection: $viewModel.journalCaptureTradeIdRaw) {
+                    Text("None").tag("")
+                    ForEach(viewModel.recentTrades) { t in
+                        Text("\(t.symbol) \(t.side) \(t.qty) @ \(String(format: "%.2f", t.price))")
+                            .tag(t.id)
+                            .font(.system(size: 11, design: .monospaced))
                     }
-                    Divider()
-                    Button("Enter ID manually") {}
-                } label: {
-                    HStack {
-                        if let sel = viewModel.recentTrades.first(where: { $0.id == viewModel.journalCaptureTradeIdRaw }) {
-                            Text("\(sel.symbol) \(sel.side.uppercased()) \(sel.qty)")
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white)
-                        } else {
-                            Text("Select recent trade (optional)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(Color.white.opacity(0.35))
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9))
-                            .foregroundColor(Color.white.opacity(0.3))
-                            .accessibilityHidden(true)
-                    }
-                    .padding(10)
-                    .background(journalChromeFill(opacity: linkLocked ? 0.03 : 0.06))
-                    .cornerRadius(10)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 0.5))
                 }
+                .pickerStyle(.menu)
                 .disabled(linkLocked)
-                .accessibilityLabel("Link trade")
-
-                Text("Or enter UUID:")
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.white.opacity(0.4))
-
-                TextField("Trade UUID (optional if pending)", text: $viewModel.journalCaptureTradeIdRaw)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundColor(.white)
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(journalChromeFill(opacity: linkLocked ? 0.03 : 0.06))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                    )
-                    .disabled(linkLocked)
-                    .accessibilityLabel("Enter trade UUID manually")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.white)
+                .accessibilityLabel("Link to recent trade")
             }
         }
     }
 
     private var captureHeader: some View {
-        HStack {
-            Text("CAPTURE")
-                .font(.system(size: 9, weight: .bold, design: .rounded))
-                .foregroundColor(Color(hex: "#00E5C0"))
-                .tracking(1.0)
-            Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("CAPTURE")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(Color(hex: "#00E5C0"))
+                    .tracking(1.0)
+                Spacer()
+            }
+            Text("Cross-link with Circuit: finalize from hosted web capture when signed in.")
+                .font(.system(size: 8, weight: .medium, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.42))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

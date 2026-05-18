@@ -16,6 +16,7 @@ extension NotchTab {
         case .workflows: return "arrow.triangle.2.circlepath"
         case .tai: return "brain.head.profile"
         case .positions: return "chart.bar.fill"
+        case .plan: return "shield.lefthalf.filled"
         case .capture: return "square.and.pencil"
         }
     }
@@ -27,6 +28,7 @@ extension NotchTab {
         case .workflows: return "FLOWS"
         case .tai: return "TAI"
         case .positions: return "POS"
+        case .plan: return "PLAN"
         case .capture: return "CAP"
         }
     }
@@ -38,13 +40,27 @@ extension NotchTab {
         case .workflows: return "Open Workflows tab"
         case .tai: return "Open TAI tab"
         case .positions: return "Open Positions tab"
+        case .plan: return "Open Plan tab"
         case .capture: return "Open Capture tab"
+        }
+    }
+
+    var accessibilityTabName: String {
+        switch self {
+        case .pulse: return "Pulse"
+        case .brief: return "Brief"
+        case .workflows: return "Workflows"
+        case .tai: return "TAI"
+        case .positions: return "Positions"
+        case .plan: return "Plan"
+        case .capture: return "Capture"
         }
     }
 }
 
 struct NotchRootView: View {
     @ObservedObject var vm: NotchViewModel
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var expansion: CGFloat {
         vm.isExpanded ? 1.0 : 0.0
@@ -52,7 +68,14 @@ struct NotchRootView: View {
 
     var body: some View {
         ZStack {
-            NotchTheme.bgApp
+            Group {
+                if reduceTransparency {
+                    Color(hex: "#0d0d0d").opacity(0.97)
+                } else {
+                    NotchTheme.bgApp
+                        .background(.ultraThinMaterial)
+                }
+            }
 
             vm.backgroundPulseColor
                 .opacity(vm.backgroundPulseOpacity)
@@ -89,10 +112,11 @@ struct NotchRootView: View {
         )
         .animation(NotchTheme.springExpand, value: vm.isExpanded)
         .animation(NotchTheme.springExpand, value: expansion)
-        .background(
-            MouseTracker { hovering in
-                vm.handleHover(hovering)
-            }
-        )
+        .onChange(of: vm.isExpanded) { _, _ in
+            vm.syncBarLiveStatePollingForVisibility()
+        }
+        .onChange(of: vm.activeTab) { _, _ in
+            vm.syncBarLiveStatePollingForVisibility()
+        }
     }
 }

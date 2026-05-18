@@ -8,12 +8,18 @@ protocol NotchLauncherHost: AnyObject {
     func expandToBrief() async
     func expandToTAI() async
     func expandToPositions() async
+    func expandToPlan() async
+    func expandToCapture() async
 }
 
 /// Owns `NSPanel` + view model; driven from Rust via C ABI.
 @MainActor
 final class NotchLauncher: NSObject, NotchLauncherHost {
     private var panelController: NotchPanelController?
+    private var globalHotkeyMonitor: Any?
+    private var localHotkeyMonitor: Any?
+    private var fnGlobalMonitor: Any?
+    private var fnLocalMonitor: Any?
     let viewModel = NotchViewModel()
 
     func configure(secret: String, port: UInt16, webBase: String) {
@@ -33,14 +39,84 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
         if panelController == nil {
             panelController = NotchPanelController(viewModel: viewModel)
         }
+        installHotkeyMonitorsIfNeeded()
+        installFnKeyMonitorsIfNeeded()
+        viewModel.ensureDictationWired()
         viewModel.startPolling()
         panelController?.show()
     }
 
     func dismiss() {
         viewModel.stopPolling()
+        uninstallHotkeyMonitors()
+        uninstallFnKeyMonitors()
         panelController?.hide()
         panelController = nil
+    }
+
+    private func installHotkeyMonitorsIfNeeded() {
+        guard globalHotkeyMonitor == nil, localHotkeyMonitor == nil else { return }
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard Self.isToggleShortcut(event) else { return }
+            DispatchQueue.main.async {
+                self?.panelController?.toggle()
+            }
+        }
+        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard Self.isToggleShortcut(event) else { return event }
+            self?.panelController?.toggle()
+            return nil
+        }
+    }
+
+    private func uninstallHotkeyMonitors() {
+        if let monitor = globalHotkeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalHotkeyMonitor = nil
+        }
+        if let monitor = localHotkeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            localHotkeyMonitor = nil
+        }
+    }
+
+    private func installFnKeyMonitorsIfNeeded() {
+        guard fnGlobalMonitor == nil, fnLocalMonitor == nil else { return }
+        fnGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
+            Self.handleFnEvent(e, launcher: self)
+        }
+        fnLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
+            Self.handleFnEvent(e, launcher: self)
+            return e
+        }
+    }
+
+    private func uninstallFnKeyMonitors() {
+        if let monitor = fnGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            fnGlobalMonitor = nil
+        }
+        if let monitor = fnLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            fnLocalMonitor = nil
+        }
+    }
+
+    private static func handleFnEvent(_ e: NSEvent, launcher: NotchLauncher?) {
+        let mask = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let fnDown = mask.contains(.function)
+        DispatchQueue.main.async {
+            launcher?.viewModel.dictationPushToTalk(
+                fnDown: fnDown,
+                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
+        }
+    }
+
+    static func isToggleShortcut(_ event: NSEvent) -> Bool {
+        let isSpace = event.keyCode == 49
+        let optionOnly = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option
+        return isSpace && optionOnly
     }
 
     func updateScore(score: Double, state: String) {
@@ -70,8 +146,8 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
     func notifyMarketClose() {
         let msg = viewModel.sessionSummaryForClose()
         viewModel.lastAlert = msg
-        viewModel.prepareProgrammaticExpansion()
         viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
         Task {
             try? await Task.sleep(nanoseconds: 30_000_000_000)
             viewModel.isExpanded = false
@@ -83,27 +159,39 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
     }
 
     func expandToPulse() async {
-        viewModel.prepareProgrammaticExpansion()
-        viewModel.activeTab = .pulse
+        viewModel.selectTab(.pulse)
         viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
     }
 
     func expandToBrief() async {
-        viewModel.prepareProgrammaticExpansion()
-        viewModel.activeTab = .brief
+        viewModel.selectTab(.brief)
         viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
     }
 
     func expandToTAI() async {
-        viewModel.prepareProgrammaticExpansion()
-        viewModel.activeTab = .tai
+        viewModel.selectTab(.tai)
         viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
     }
 
     func expandToPositions() async {
-        viewModel.prepareProgrammaticExpansion()
-        viewModel.activeTab = .positions
+        viewModel.selectTab(.positions)
         viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
+    }
+
+    func expandToPlan() async {
+        viewModel.selectTab(.plan)
+        viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
+    }
+
+    func expandToCapture() async {
+        viewModel.selectTab(.capture)
+        viewModel.isExpanded = true
+        viewModel.onRequestOrderFront?()
     }
 }
 

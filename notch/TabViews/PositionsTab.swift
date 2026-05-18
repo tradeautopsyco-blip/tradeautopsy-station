@@ -24,16 +24,23 @@ struct PositionsLeftView: View {
                             Text("Countdown: \(cs)s")
                                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                                 .foregroundColor(Color.white.opacity(0.55))
+                                .accessibilityHidden(true)
                         }
                     }
                     Spacer()
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
-                    viewModel.killSwitchCountdownSecs.map {
-                        "Kill switch active. Entries blocked. Exits allowed. Countdown \($0) seconds."
-                    } ?? "Kill switch active. Entries blocked. Exits allowed."
+                    "Kill switch active. New entries blocked. Exits allowed."
                 )
+                .accessibilityAddTraits(.isStaticText)
+                .onChange(of: viewModel.killSwitchActive) { _, active in
+                    guard active else { return }
+                    NotchVoiceOver.announce(
+                        "Kill switch active. New entries blocked. Exits allowed.",
+                        assertive: true
+                    )
+                }
                 .padding(10)
                 .background(Color(hex: "#FF3B30").opacity(0.08))
                 .cornerRadius(10)
@@ -85,6 +92,9 @@ struct PositionsLeftView: View {
                         }
                         .padding(9)
                         .glassCard(radius: 8)
+                        .accessibilityLabel(
+                            "\(pos.symbol) \(pos.direction) \(pos.qty) quantity, unrealized \(formatPnL(pos.unrealizedPnL))"
+                        )
                     }
                 }
             }
@@ -134,12 +144,25 @@ struct PositionsRightView: View {
             Spacer()
 
             VStack(spacing: 6) {
-                dangerButton("Exit All Positions", accessibilityLabel: "Exit all open positions") {
+                dangerButton("Exit All Positions", accessibilityLabel: "Exit all positions") {
                     Task { await viewModel.exitAllPositions() }
                 }
+                .accessibilityHint("Sends market orders to close all open positions")
                 ghostButton("Cancel All Orders", accessibilityLabel: "Cancel all open orders") {
                     Task { await viewModel.cancelAllOrders() }
                 }
+            }
+
+            if !viewModel.isAuthenticated {
+                Button("Sign in") {
+                    viewModel.openDeepLink(viewModel.webBaseURL + "/login?toolbar_reauth=1")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(Color(hex: "#00E5C0"))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sign in to view live positions")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
