@@ -1,0 +1,147 @@
+//! Shared wire v1 signing for integration tests (issue #58).
+
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
+use chrono::SecondsFormat;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tradeautopsy_agent::{
+    AgentConfig, BrokerAdapter, BrokerSyncConfig, WireVerifier, WIRE_PROTO_VERSION,
+};
+
+pub const TEST_SECRET: &str = "integration-test-daemon-secret-min-32b";
+pub const TEST_USER_ID: &str = "ac35ef44-6366-40d6-89d4-95530e8e3dbf";
+
+pub struct TestAgentOptions {
+    pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
+    pub recent_trades_db_path: Option<PathBuf>,
+    pub broker_initial_delay_ms: u64,
+    pub broker_base_poll_ms: u64,
+    pub toolbar_coalesce_ms: u64,
+    pub failure_escalate_after: u32,
+    pub broker_backoff_tick_1_ms: u64,
+    pub broker_backoff_tick_2_ms: u64,
+    pub failures_until_open: u32,
+    pub fresh_secs: u64,
+    pub stale_secs: u64,
+    /// Phase 9 — Prometheus loopback (`127.0.0.1`). `None` = disabled (default).
+    pub metrics_port: Option<u16>,
+    /// Phase 9 — hosted daemon base URL override for proxy integration tests.
+    pub upstream_base_url_override: Option<String>,
+}
+
+impl Default for TestAgentOptions {
+    fn default() -> Self {
+        Self {
+            broker_adapter: None,
+            recent_trades_db_path: None,
+            broker_initial_delay_ms: 0,
+            broker_base_poll_ms: 250,
+            toolbar_coalesce_ms: 50,
+            failure_escalate_after: 3,
+            broker_backoff_tick_1_ms: 15_000,
+            broker_backoff_tick_2_ms: 30_000,
+            failures_until_open: 5,
+            fresh_secs: 6,
+            stale_secs: 30,
+            metrics_port: None,
+            upstream_base_url_override: None,
+        }
+    }
+}
+
+fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
+    cfg.broker_adapter = opts.broker_adapter.clone();
+    if let Some(p) = &opts.recent_trades_db_path {
+        cfg.recent_trades_db_path = p.clone();
+    }
+    cfg.broker_sync = BrokerSyncConfig {
+        initial_startup_delay: Duration::from_millis(opts.broker_initial_delay_ms),
+        base_poll_interval: Duration::from_millis(opts.broker_base_poll_ms),
+        coalesce_window: Duration::from_millis(opts.toolbar_coalesce_ms),
+        failure_escalate_after: opts.failure_escalate_after,
+        backoff_tick_1: Duration::from_millis(opts.broker_backoff_tick_1_ms),
+        backoff_tick_2: Duration::from_millis(opts.broker_backoff_tick_2_ms),
+        failures_until_open: opts.failures_until_open,
+        fresh_secs: opts.fresh_secs,
+        stale_secs: opts.stale_secs,
+    };
+    cfg.metrics_port = opts.metrics_port;
+    if let Some(base) = &opts.upstream_base_url_override {
+        cfg.upstream.base_url = base.trim_end_matches('/').to_string();
+    }
+}
+
+pub fn spawn_test_agent_with_options(
+    port: u16,
+    opts: TestAgentOptions,
+) -> tokio::task::JoinHandle<()> {
+    let mut cfg = AgentConfig::test_on_port(port, TEST_SECRET.to_string());
+    apply_broker_options(&mut cfg, &opts);
+    if opts.recent_trades_db_path.is_none() {
+        let _ = std::fs::remove_file(&cfg.recent_trades_db_path);
+    }
+    tokio::spawn(async move {
+        tradeautopsy_agent::run_agent(cfg)
+            .await
+            .expect("agent should bind");
+    })
+}
+
+#[allow(dead_code)]
+pub fn spawn_test_agent(port: u16) -> tokio::task::JoinHandle<()> {
+    spawn_test_agent_with_options(port, TestAgentOptions::default())
+}
+
+/// Apply wire v1 headers for a canonical request. `path` must match `Uri::path` (e.g. `/api/daemon/health`).
+pub fn apply_wire_v1(
+    builder: reqwest::RequestBuilder,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    overrides: WireHeaderOverrides<'_>,
+) -> reqwest::RequestBuilder {
+    let verifier = WireVerifier::new(TEST_SECRET);
+    let request_id = overrides
+        .request_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| ulid::Ulid::new().to_string());
+    let ts = overrides
+        .timestamp
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
+    let nonce_bytes: [u8; 16] = overrides
+        .nonce_16
+        .unwrap_or_else(|| *uuid::Uuid::new_v4().as_bytes());
+    let nonce_b64 = B64.encode(nonce_bytes);
+    let sig = verifier.compute_signature(method, path, &ts, &request_id, body);
+    let sig_b64 = overrides
+        .signature_b64
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| B64.encode(sig));
+
+    let proto = overrides.proto_version.unwrap_or(WIRE_PROTO_VERSION);
+
+    builder
+        .header("x-proto-version", proto)
+        .header("x-daemon-secret", TEST_SECRET)
+        .header("x-user-id", TEST_USER_ID)
+        .header("x-request-id", request_id.as_str())
+        .header("x-timestamp", ts.as_str())
+        .header("x-nonce", nonce_b64)
+        .header("x-signature", sig_b64)
+}
+
+#[derive(Default)]
+pub struct WireHeaderOverrides<'a> {
+    pub proto_version: Option<&'a str>,
+    pub request_id: Option<&'a str>,
+    pub timestamp: Option<String>,
+    pub nonce_16: Option<[u8; 16]>,
+    /// Replace computed HMAC (for negative tests).
+    pub signature_b64: Option<&'a str>,
+}
+
+pub fn client() -> reqwest::Client {
+    reqwest::Client::new()
+}

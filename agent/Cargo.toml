@@ -1,0 +1,48 @@
+[package]
+name = "tradeautopsy-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Headless TradeAutopsy agent — localhost API (extracted daemon)"
+
+[[bin]]
+name = "tradeautopsy-agent"
+path = "src/main.rs"
+
+[lib]
+name = "tradeautopsy_agent"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["macros"] }
+base64 = "0.22"
+hmac = "0.12"
+http = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ulid = "1"
+uuid = "1"
+futures = "0.3"
+chrono = { version = "0.4.44", features = ["clock", "std"] }
+hex = "0.4"
+http-body-util = "0.1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+async-trait = "0.1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+
+[dev-dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", features = ["clock"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+ulid = "1"
+uuid = { version = "1", features = ["v4"] }
+serial_test = "3"
+wiremock = "0.6"
