@@ -622,8 +622,15 @@ final class NotchViewModel: ObservableObject {
 
     func fetchBarLiveState() async {
         guard let url = URL(string: baseURL() + "/api/daemon/bar/live-state") else { return }
-        barStateLoading = true
-        defer { barStateLoading = false }
+        let isFirstFetch = barLiveState == nil
+        if isFirstFetch {
+            barStateLoading = true
+        }
+        defer {
+            if isFirstFetch {
+                barStateLoading = false
+            }
+        }
         do {
             let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0

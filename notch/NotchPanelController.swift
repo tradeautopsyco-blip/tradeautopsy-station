@@ -35,7 +35,7 @@ final class TradeAutopsyNotchPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown {
             // Don't call `makeKey()` — it fights `.nonactivatingPanel` and steals activation.
-            if firstResponder === self {
+            if firstResponder === self || firstResponder == nil {
                 makeFirstResponder(contentView)
             }
         }

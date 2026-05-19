@@ -10,6 +10,7 @@ enum BarNotchScreen: String, CaseIterable {
     case patterns = "Patterns"
     case fidelity = "Fidelity score"
     case triage = "Triage"
+    case settings = "Settings"
 
     var isSessionGroup: Bool {
         switch self {
@@ -28,6 +29,7 @@ enum BarNotchScreen: String, CaseIterable {
         case .patterns: return "brain"
         case .fidelity: return "chart.bar.fill"
         case .triage: return "arrow.down.circle"
+        case .settings: return "gear"
         }
     }
 }
@@ -131,14 +133,12 @@ struct BarNotchShell: View {
 
             Spacer(minLength: 0)
 
+            Rectangle()
+                .fill(BarDS.Border.section)
+                .frame(height: BarDS.borderThin)
             archetypePill
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(BarDS.Border.section)
-                        .frame(height: BarDS.borderThin)
-                }
         }
         .frame(width: 192, alignment: .topLeading)
         .background(BarDS.Fill.sidebar)
@@ -272,18 +272,30 @@ struct BarNotchShell: View {
 
     private var archetypePill: some View {
         let a = viewModel.activeArchetype
-        return HStack(spacing: 7) {
-            Circle()
-                .fill(archetypeDot(a))
-                .frame(width: 6, height: 6)
-            Text(archetypeLabel(a))
-                .font(BarDS.bodyFont(11, weight: .regular))
-                .foregroundColor(BarDS.Text.hint)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        return HStack(spacing: 0) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(archetypeDot(a))
+                    .frame(width: 6, height: 6)
+                Text(archetypeLabel(a))
+                    .font(BarDS.bodyFont(11, weight: .regular))
+                    .foregroundColor(BarDS.Text.hint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer()
+
             Image(systemName: "gearshape")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundColor(BarDS.Text.muted)
-                .accessibilityHidden(true)
+                .font(.system(size: 14))
+                .foregroundColor(
+                    activeScreen == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
+                )
+                .frame(width: 36, height: 36)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    activeScreen = .settings
+                }
+                .accessibilityLabel("Settings")
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
@@ -322,6 +334,8 @@ struct BarNotchShell: View {
                 .font(BarDS.monoFont(11, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
 
+            brokerConnectionPill
+
             statePill
 
             Button {
@@ -345,6 +359,49 @@ struct BarNotchShell: View {
             Rectangle()
                 .fill(BarDS.Border.section)
                 .frame(height: BarDS.borderThin)
+        }
+    }
+
+    private var brokerConnectionPill: some View {
+        let style = brokerPillStyle
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(style.dot)
+                .frame(width: 6, height: 6)
+            Text(style.label)
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(style.titleColor)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .background(style.bg)
+        .clipShape(Capsule())
+    }
+
+    private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
+        let sync = viewModel.barLiveState?.syncState.uppercased() ?? ""
+        switch sync {
+        case "GREEN":
+            return (
+                BarDS.Accent.teal,
+                "Kotak Neo · live",
+                BarDS.Accent.teal,
+                BarDS.Accent.teal.opacity(0.10),
+            )
+        case "AMBER":
+            return (
+                BarDS.Accent.amber,
+                "Kotak Neo · degraded",
+                BarDS.Accent.amber,
+                BarDS.Accent.amber.opacity(0.10),
+            )
+        default:
+            return (
+                BarDS.Accent.red,
+                "No broker · offline",
+                BarDS.Accent.red,
+                BarDS.Accent.red.opacity(0.10),
+            )
         }
     }
 
@@ -461,7 +518,9 @@ struct BarNotchShell: View {
     private var mainScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if viewModel.barFeaturesActiveFromApi == false {
+                if activeScreen == .settings {
+                    BarSettingsView(viewModel: viewModel)
+                } else if viewModel.barFeaturesActiveFromApi == false {
                     barGateRequired
                 } else if activeScreen == .pretrade {
                     BarDeclarationFlowView(viewModel: viewModel)
@@ -523,6 +582,8 @@ struct BarNotchShell: View {
             BarFidelityRouteView(viewModel: viewModel)
         case .triage:
             BarTriageRouteView(viewModel: viewModel)
+        case .settings:
+            BarSettingsView(viewModel: viewModel)
         }
     }
 

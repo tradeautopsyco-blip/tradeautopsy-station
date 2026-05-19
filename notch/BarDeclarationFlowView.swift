@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Pre-trade declaration — linear steps (#121 / unified reference mockups 3–4).
+/// Pre-trade declaration — single scrollable page (#121 / unified reference mockups 3–4).
 struct BarDeclarationFlowView: View {
     @ObservedObject var viewModel: NotchViewModel
-
-    @State private var step: Int = 0
 
     /// Scale A (calm, 1 best) — `0` until user taps (mirrors `declEmotionalCalm`).
     /// Scale B (confidence, 5 best) — `0` until user taps (`declEmotionalConfidence`).
@@ -68,41 +66,38 @@ struct BarDeclarationFlowView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if step == 0 {
-                    archetypeTabRow
+                archetypeTabRow
+
+                BarSectionLabel(text: "Step 1 of 4 — State check")
+                stateCheckCard
+
+                BarSectionLabel(text: "Step 2 of 4 — Risk numbers")
+                riskNumbersCard
+
+                BarSectionLabel(text: "Step 3 of 4 — Setup & invalidation")
+                setupAndInvalidationCard
+
+                BarSectionLabel(text: "Step 4 of 4 — Review & consent")
+                BarToggleRow(
+                    label: "Auto-place stop loss on fill",
+                    sub: "Pre-authorized — placed within 500ms of broker fill",
+                    isOn: $viewModel.declProtectiveSLConsent,
+                )
+                .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
+
+                BarBigButton(
+                    label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
+                    style: .primary,
+                ) {
+                    Task { await submit() }
                 }
+                .disabled(viewModel.barDeclarationBusy)
+                .opacity(viewModel.barDeclarationBusy ? 0.45 : 1)
 
-                Text(stepTitle)
-                    .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
-                    .foregroundColor(BarDS.Accent.teal)
-                    .kerning(0.08 * 10)
-                    .textCase(.uppercase)
-
-                stepContent
-
-                if step == 1 {
-                    HStack(spacing: 12) {
-                        Button("Back") { step -= 1 }
-                            .buttonStyle(.plain)
-                            .font(BarDS.bodyFont(11, weight: .semibold))
-                            .foregroundColor(BarDS.Text.secondary)
-                        Spacer(minLength: 0)
-                        Button("Next") {
-                            if stepValid(1) {
-                                step += 1
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .font(BarDS.bodyFont(11, weight: .semibold))
-                        .foregroundColor(stepValid(1) ? BarDS.Accent.teal : BarDS.Text.hint)
-                        .disabled(!stepValid(1))
-                    }
-                    .padding(.top, 4)
-                }
-
-                if step == 2 {
-                    consentAndSubmit
-                }
+                Text("Completed in \(elapsedLiveSeconds)s")
+                    .font(BarDS.bodyFont(10, weight: .regular))
+                    .foregroundColor(Color(hex: "#333333"))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .onAppear {
@@ -127,58 +122,62 @@ struct BarDeclarationFlowView: View {
                 viewModel.setUserDeclarationArchetype(.swing)
             }
         }
-        .padding(.bottom, 14)
+        .padding(.bottom, 4)
     }
 
-    private var stepTitle: String {
-        switch step {
-        case 0: return "Step 1 of 3 — State check"
-        case 1: return "Step 2 of 3 — Declaration kind"
-        case 2: return "Step 3 of 3 — Review & consent"
-        default: return ""
-        }
-    }
+    private var stateCheckCard: some View {
+        BarCard {
+            Text("How are you feeling?")
+                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
+                .foregroundColor(BarDS.Text.primary)
+                .padding(.bottom, 3)
+            Text("Two readings. Answer honestly — it changes what the system flags.")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 10)
 
-    @ViewBuilder
-    private var stepContent: some View {
-        switch step {
-        case 0:
-            pretradeIntradayForm
-        case 1:
-            declarationKindChipGrid
-            if kind == .scalper_session {
-                BarInputField(placeholder: "Scalper session id", text: $scalperSessionId, marginBottom: 0)
-                    .padding(.top, 8)
-            }
-        case 2:
-            reviewRecapRows
-            Text(
-                "Confirm risk acceptance below — submit completes your declaration with the daemon.",
+            BarSectionLabel(text: "Psychological calm — 1 is best")
+            feelRow(
+                value: Binding(
+                    get: { viewModel.declEmotionalCalm },
+                    set: { viewModel.declEmotionalCalm = $0 },
+                ),
+                labels: [1: "Calm", 2: "Focused", 3: "Tense", 4: "Anxious", 5: "Angry"],
+                feel: calmFeelState,
             )
-            .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .regular))
-            .foregroundColor(BarDS.Text.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 6)
-        default:
-            EmptyView()
+
+            BarSectionLabel(text: "Confidence — 5 is best")
+            feelRow(
+                value: Binding(
+                    get: { viewModel.declEmotionalConfidence },
+                    set: { viewModel.declEmotionalConfidence = $0 },
+                ),
+                labels: [1: "Low", 2: "Flat", 3: "Neutral", 4: "Good", 5: "Sharp"],
+                feel: confidenceFeelState,
+            )
+
+            Group {
+                if viewModel.declEmotionalCalm >= 4 {
+                    stateWarningBox(
+                        text: "State \(viewModel.declEmotionalCalm) — position size halved. Trade will be flagged.",
+                        kind: .red,
+                    )
+                    .transition(.opacity)
+                } else if viewModel.declEmotionalCalm == 3 {
+                    stateWarningBox(
+                        text: "State 3 — trade with heightened awareness.",
+                        kind: .amber,
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: viewModel.declEmotionalCalm)
         }
     }
 
-    private var pretradeIntradayForm: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BarCard {
-                Text("How are you feeling?")
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-                    .padding(.bottom, 4)
-                Text("Two readings. Answer honestly — it changes what the system flags.")
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
-                    .foregroundColor(BarDS.Text.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                emotionalCheckInSection
-            }
-
-            BarSectionLabel(text: "Define the numbers")
+    private var riskNumbersCard: some View {
+        BarCard {
             BarInputField(placeholder: "Entry price", text: $entryPriceText)
             BarInputField(placeholder: "Stop loss — exact price", text: $stopLossText)
             BarInputField(placeholder: "Target price", text: $targetPriceText)
@@ -197,7 +196,11 @@ struct BarDeclarationFlowView: View {
             }
 
             riskRewardSpecRow
+        }
+    }
 
+    private var setupAndInvalidationCard: some View {
+        BarCard {
             BarSectionLabel(text: "Setup type")
             BarFlowLayout(spacing: 5, rowSpacing: 5) {
                 ForEach(Self.intradaySetupChipsSpecOrder, id: \.rawValue) { chip in
@@ -216,37 +219,6 @@ struct BarDeclarationFlowView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.15), value: selectedInvalidationKind)
-
-            BarToggleRow(
-                label: "Auto-place stop loss on fill",
-                sub: "Pre-authorized — placed within 500ms of broker fill",
-                isOn: $viewModel.declProtectiveSLConsent,
-            )
-            .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
-
-            pretradeConfirmButtonBlock
-        }
-    }
-
-    private var pretradeConfirmButtonBlock: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: { Task { await submit() } }) {
-                Text("Confirm — enter trade →")
-                    .font(BarDS.bodyFont(14, weight: .medium))
-                    .foregroundColor(Color(hex: "#0a0a0a"))
-                    .frame(maxWidth: .infinity)
-                    .padding(12)
-                    .background(Color(hex: "#ededed"))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-
-            Text("Completed in \(elapsedLiveSeconds)s")
-                .font(BarDS.bodyFont(10, weight: .regular))
-                .foregroundColor(Color(hex: "#333333"))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.top, 6)
         }
     }
 
@@ -417,92 +389,6 @@ struct BarDeclarationFlowView: View {
         }
     }
 
-    private var reviewRecapRows: some View {
-        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let side = sideBuy ? "BUY" : "SELL"
-        let entry = entryPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tgt = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return VStack(alignment: .leading, spacing: 8) {
-            BarSectionLabel(text: "Declaration summary")
-            BarPlanRowsCard(
-                rows: [
-                    ("Symbol", sym.isEmpty ? "—" : sym, BarDS.Text.primary),
-                    ("Side", side, BarDS.Text.primary),
-                    ("Quantity", quantityText.isEmpty ? "—" : quantityText, BarDS.Text.primary),
-                    ("Stop", stopLossText.isEmpty ? "—" : stopLossText, BarDS.Text.primary),
-                    ("Entry", entry.isEmpty ? "—" : entry, BarDS.Text.primary),
-                    ("Target", tgt.isEmpty ? "—" : tgt, BarDS.Text.primary),
-                    ("Setup", viewModel.declSetupType.isEmpty ? "—" : viewModel.declSetupType, BarDS.Text.primary),
-                    ("Invalidation", selectedInvalidationKind?.chipTitle ?? "—", BarDS.Text.primary),
-                    ("Kind", kind.label, BarDS.Text.primary),
-                ],
-            )
-        }
-    }
-
-    private var declarationKindChipGrid: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            BarSectionLabel(text: "Declaration kind")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                ForEach(DeclarationKind.allCases) { k in
-                    BarChip(label: k.label, selected: kind == k) {
-                        kind = k
-                    }
-                }
-            }
-        }
-    }
-
-    private var consentAndSubmit: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BarBigButton(
-                label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
-                style: .primary,
-            ) {
-                Task { await submit() }
-            }
-            .disabled(!submitEnabled || viewModel.barDeclarationBusy)
-            .opacity(submitEnabled && !viewModel.barDeclarationBusy ? 1 : 0.45)
-        }
-        .padding(.top, 8)
-    }
-
-    private var submitEnabled: Bool {
-        guard viewModel.barLiveState?.blocksDeclarationSubmit != true else { return false }
-        guard viewModel.declProtectiveSLConsent else { return false }
-        return stepValid(0) && stepValid(1) && stepValid(2)
-    }
-
-    private func stepValid(_ s: Int) -> Bool {
-        switch s {
-        case 0:
-            guard viewModel.declEmotionalCalm >= 1, viewModel.declEmotionalCalm <= 5,
-                  viewModel.declEmotionalConfidence >= 1, viewModel.declEmotionalConfidence <= 5 else { return false }
-            guard BarIntradayDeclareValidator.stickyPreTradeConfirmEnabled(
-                calm: viewModel.declEmotionalCalm >= 1 ? viewModel.declEmotionalCalm : nil,
-                confidence: viewModel.declEmotionalConfidence >= 1 ? viewModel.declEmotionalConfidence : nil,
-                stopLossText: stopLossText,
-            ) else { return false }
-            let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !sym.isEmpty else { return false }
-            guard let q = Double(quantityText.trimmingCharacters(in: .whitespaces)), q > 0 else { return false }
-            guard !viewModel.declSetupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-            guard selectedInvalidationKind != nil else { return false }
-            let inv = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !inv.isEmpty else { return false }
-            return true
-        case 1:
-            if kind == .scalper_session {
-                return !scalperSessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-            return true
-        case 2:
-            return true
-        default:
-            return true
-        }
-    }
-
     private func submit() async {
         viewModel.barDeclarationLastError = nil
         guard let data = buildJsonBody() else {
@@ -513,21 +399,34 @@ struct BarDeclarationFlowView: View {
     }
 
     private func buildJsonBody() -> Data? {
-        guard stepValid(0), stepValid(1), stepValid(2) else { return nil }
-        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard let qty = Double(quantityText.trimmingCharacters(in: .whitespaces)),
-              let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)) else { return nil }
-
+        guard viewModel.barLiveState?.blocksDeclarationSubmit != true else { return nil }
+        guard viewModel.declProtectiveSLConsent else { return nil }
         guard (1 ... 5).contains(viewModel.declEmotionalCalm),
               (1 ... 5).contains(viewModel.declEmotionalConfidence) else { return nil }
+        guard BarIntradayDeclareValidator.stickyPreTradeConfirmEnabled(
+            calm: viewModel.declEmotionalCalm,
+            confidence: viewModel.declEmotionalConfidence,
+            stopLossText: stopLossText,
+        ) else { return nil }
+        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !sym.isEmpty else { return nil }
+        guard let qty = Double(quantityText.trimmingCharacters(in: .whitespaces)), qty > 0,
+              let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)) else { return nil }
+        guard !viewModel.declSetupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard selectedInvalidationKind != nil else { return nil }
+        let invTrim = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !invTrim.isEmpty else { return nil }
+        if kind == .scalper_session,
+           scalperSessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nil
+        }
+
         let calm = viewModel.declEmotionalCalm
         let conf = viewModel.declEmotionalConfidence
         let entryTrim = entryPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetTrim = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let entryOpt = Double(entryTrim)
         let targetOpt = targetTrim.isEmpty ? nil : Double(targetTrim)
-
-        let invTrim = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let obj = BarIntradayDeclarationPayload.buildJSONObject(
             symbol: sym,
@@ -537,7 +436,7 @@ struct BarDeclarationFlowView: View {
             declarationKind: kind.rawValue,
             moodStress: Double(calm),
             moodImpulse: Double(conf),
-            invalidationNote: invTrim.isEmpty ? nil : invTrim,
+            invalidationNote: invTrim,
             protectiveSlConsent: viewModel.declProtectiveSLConsent,
             entryPrice: entryOpt,
             targetPrice: targetOpt,
@@ -578,45 +477,6 @@ struct BarDeclarationFlowView: View {
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    private var emotionalCheckInSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            BarSectionLabel(text: "Psychological calm — 1 is best")
-            feelRow(
-                value: Binding(
-                    get: { viewModel.declEmotionalCalm },
-                    set: { viewModel.declEmotionalCalm = $0 },
-                ),
-                labels: [1: "Calm", 2: "Focused", 3: "Tense", 4: "Anxious", 5: "Angry"],
-                feel: calmFeelState,
-            )
-            Group {
-                if viewModel.declEmotionalCalm >= 4 {
-                    stateWarningBox(
-                        text: "State \(viewModel.declEmotionalCalm) — position size halved. Trade will be flagged.",
-                        kind: .red,
-                    )
-                    .transition(.opacity)
-                } else if viewModel.declEmotionalCalm == 3 {
-                    stateWarningBox(
-                        text: "State 3 — trade with heightened awareness.",
-                        kind: .amber,
-                    )
-                    .transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: viewModel.declEmotionalCalm)
-            BarSectionLabel(text: "Confidence — 5 is best")
-            feelRow(
-                value: Binding(
-                    get: { viewModel.declEmotionalConfidence },
-                    set: { viewModel.declEmotionalConfidence = $0 },
-                ),
-                labels: [1: "Low", 2: "Flat", 3: "Neutral", 4: "Good", 5: "Sharp"],
-                feel: confidenceFeelState,
-            )
-        }
     }
 
     private enum CalmWarnKind { case amber, red }
