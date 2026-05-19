@@ -291,7 +291,7 @@ struct BarStateBanner: View {
                     .kerning(0.06 * 10)
                 Text(sentence)
                     .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                    .foregroundColor(BarDS.Text.primary)
+                    .foregroundColor(kind.titleColor)
                     .lineSpacing(BarDS.FontSize.body * (1.5 - 1.0))
                     .fixedSize(horizontal: false, vertical: true)
             }

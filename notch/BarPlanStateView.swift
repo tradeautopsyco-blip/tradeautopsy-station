@@ -1125,9 +1125,31 @@ struct BarPlanStateView: View {
         }
 
         let upper = trimmedPlan.isEmpty ? "GREEN" : trimmedPlan.uppercased()
-        let sentence = payload?.primarySentence ?? fallbackSentence(planUpper: upper)
+        let sentence = resolvedPlanBannerSentence(planUpper: upper, apiSentence: payload?.primarySentence)
         let terminal = payload?.isRedTerminal ?? false
         return .serverPlan(state: upper, sentence: sentence, terminal: terminal)
+    }
+
+    /// Ignore API `primary_sentence` when it matches another plan state's default copy.
+    private func resolvedPlanBannerSentence(planUpper: String, apiSentence: String?) -> String {
+        let fallback = fallbackSentence(planUpper: planUpper)
+        guard let raw = apiSentence?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return fallback
+        }
+        if apiSentenceContradictsPlanState(sentence: raw, planUpper: planUpper) {
+            return fallback
+        }
+        return raw
+    }
+
+    private func apiSentenceContradictsPlanState(sentence: String, planUpper: String) -> Bool {
+        let current = planUpper.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        for state in ["GREEN", "AMBER", "RED"] where state != current {
+            if sentence == fallbackSentence(planUpper: state) {
+                return true
+            }
+        }
+        return false
     }
 
     private func fallbackSentence(planUpper: String) -> String {
