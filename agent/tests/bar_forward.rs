@@ -15,7 +15,7 @@ use std::time::Duration;
 
 #[tokio::test]
 async fn bar_live_state_proxies_get_to_upstream() {
-    const AGENT_PORT: u16 = 19_601;
+    const AGENT_PORT: u16 = 39_601;
     let upstream = Router::new().route(
         "/api/bar/v1/live-state",
         get(|| async {
@@ -64,7 +64,7 @@ async fn bar_live_state_proxies_get_to_upstream() {
 
 #[tokio::test]
 async fn bar_declare_proxies_post_body_to_upstream() {
-    const AGENT_PORT: u16 = 19_602;
+    const AGENT_PORT: u16 = 39_602;
     let upstream = Router::new().route(
         "/api/bar/v1/declarations",
         post(|axum::Json(b): axum::Json<Value>| async move {
@@ -122,7 +122,7 @@ async fn bar_declare_proxies_post_body_to_upstream() {
 
 #[tokio::test]
 async fn bar_declare_forwards_daemon_auth_headers_to_upstream() {
-    const AGENT_PORT: u16 = 19_606;
+    const AGENT_PORT: u16 = 39_606;
     let captured = Arc::new(Mutex::new(None::<(String, String)>));
     let captured_clone = Arc::clone(&captured);
     let upstream = Router::new().route(
@@ -205,7 +205,7 @@ async fn bar_declare_forwards_daemon_auth_headers_to_upstream() {
 
 #[tokio::test]
 async fn bar_stop_me_proxies_post_to_upstream() {
-    const AGENT_PORT: u16 = 19_603;
+    const AGENT_PORT: u16 = 39_603;
     let upstream = Router::new().route(
         "/api/bar/v1/declarations/stop-me",
         post(|| async { Json(json!({ "ok": true, "kill_switch_active": true, "level": 3 })) }),
@@ -253,7 +253,7 @@ async fn bar_stop_me_proxies_post_to_upstream() {
 
 #[tokio::test]
 async fn bar_stop_me_clear_proxies_post_to_upstream() {
-    const AGENT_PORT: u16 = 19_607;
+    const AGENT_PORT: u16 = 39_607;
     let upstream = Router::new().route(
         "/api/bar/v1/declarations/stop-me/clear",
         post(|| async { Json(json!({ "ok": true, "kill_switch_active": false })) }),
@@ -302,7 +302,7 @@ async fn bar_stop_me_clear_proxies_post_to_upstream() {
 
 #[tokio::test]
 async fn bar_swing_check_in_proxies_post_to_upstream() {
-    const AGENT_PORT: u16 = 19_604;
+    const AGENT_PORT: u16 = 39_604;
     let upstream = Router::new().route(
         "/api/bar/v1/notch/swing-check-in",
         post(|axum::Json(b): axum::Json<Value>| async move {
@@ -354,7 +354,7 @@ async fn bar_swing_check_in_proxies_post_to_upstream() {
 
 #[tokio::test]
 async fn bar_post_trade_debrief_proxies_patch_to_upstream() {
-    const AGENT_PORT: u16 = 19_605;
+    const AGENT_PORT: u16 = 39_605;
     let upstream = Router::new().route(
         "/api/bar/v1/post-trade-debrief",
         patch(|axum::Json(b): axum::Json<Value>| async move {
