@@ -56,6 +56,7 @@ struct BarNotchShell: View {
         .onAppear {
             syncActiveScreenFromPhase(animated: false)
             syncDeclarationFormFlagToActiveScreen()
+            Task { await viewModel.fetchBarLiveState() }
         }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
             syncActiveScreenFromPhase(animated: true)

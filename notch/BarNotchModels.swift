@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Envelope for `GET /api/daemon/bar/live-state` (agent-forwarded hosted JSON).
 /// Top-level keys match Next.js **`NextResponse.json`** (camelCase); **`notch`** subtree is snake_case per `NotchBarLiveStateV1`.
@@ -16,6 +17,48 @@ struct BarLiveStateAPIResponse: Decodable {
 
 // MARK: - Notch subtree (NotchBarLiveStateV1)
 
+struct BarUndeclaredPosition: Decodable, Equatable {
+    let symbol: String
+    let side: String
+    let quantity: Int
+    let filledAtMs: Int64?
+    let broker: String?
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, side, quantity, broker
+        case filledAtMs = "filledAtMs"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        symbol = try c.decode(String.self, forKey: .symbol)
+        side = try c.decode(String.self, forKey: .side)
+        if let q = try c.decodeIfPresent(Int.self, forKey: .quantity) {
+            quantity = q
+        } else if let qd = try c.decodeIfPresent(Double.self, forKey: .quantity) {
+            quantity = Int(qd)
+        } else {
+            quantity = 0
+        }
+        if let ms = try c.decodeIfPresent(Int64.self, forKey: .filledAtMs) {
+            filledAtMs = ms
+        } else if let msd = try c.decodeIfPresent(Double.self, forKey: .filledAtMs) {
+            filledAtMs = Int64(msd)
+        } else {
+            filledAtMs = nil
+        }
+        broker = try c.decodeIfPresent(String.self, forKey: .broker)
+    }
+
+    init(symbol: String, side: String, quantity: Int, filledAtMs: Int64?, broker: String?) {
+        self.symbol = symbol
+        self.side = side
+        self.quantity = quantity
+        self.filledAtMs = filledAtMs
+        self.broker = broker
+    }
+}
+
 struct BarLiveStateResponse: Decodable {
     let planState: String?
     let primarySentence: String?
@@ -29,6 +72,8 @@ struct BarLiveStateResponse: Decodable {
     let pendingDeclaration: BarPendingDeclaration?
     let archetype: String?
     let slStatus: String?
+    let slFailureReason: String?
+    let undeclaredPosition: BarUndeclaredPosition?
     let slPrice: Double?
     let entryTimeISO: String?
     let isSessionLevel: Bool?
@@ -50,6 +95,13 @@ struct BarLiveStateResponse: Decodable {
     let matchedDeclarationId: String?
     /// Declared vs actual escrow lane (#125); omitted or empty until server forwards.
     let escrowMatchReport: BarEscrowMatchReport?
+    /// Connected broker for protective `place_sl` (e.g. `kotak_neo`).
+    let protectiveBrokerSlug: String?
+    /// 0–1 validated composite from hosted brain (#180).
+    let behavioralScore: Double?
+    /// FLOW | CALM | CAUTION | SOFT_BLOCK | DANGER (#180).
+    let behavioralVerdict: String?
+    let behaviorSignals: [BarBehaviorSignalRow]
 
     enum CodingKeys: String, CodingKey {
         case planState = "plan_state"
@@ -64,6 +116,8 @@ struct BarLiveStateResponse: Decodable {
         case pendingDeclaration = "pending_declaration"
         case archetype
         case slStatus = "sl_status"
+        case slFailureReason = "sl_failure_reason"
+        case undeclaredPosition = "undeclared_position"
         case slPrice = "sl_price"
         case entryTimeISO = "entry_time_iso"
         case isSessionLevel = "is_session_level"
@@ -82,6 +136,10 @@ struct BarLiveStateResponse: Decodable {
         case protectiveExistingSl = "protective_existing_sl"
         case matchedDeclarationId = "matched_declaration_id"
         case escrowMatchReport = "escrow_match_report"
+        case protectiveBrokerSlug = "protective_broker_slug"
+        case behavioralScore = "behavioral_score"
+        case behavioralVerdict = "behavioral_verdict"
+        case behaviorSignals = "behavior_signals"
     }
 
     init(from decoder: Decoder) throws {
@@ -99,6 +157,8 @@ struct BarLiveStateResponse: Decodable {
         pendingDeclaration = try c.decodeIfPresent(BarPendingDeclaration.self, forKey: .pendingDeclaration)
         archetype = try c.decodeIfPresent(String.self, forKey: .archetype)
         slStatus = try c.decodeIfPresent(String.self, forKey: .slStatus)
+        slFailureReason = try c.decodeIfPresent(String.self, forKey: .slFailureReason)
+        undeclaredPosition = try c.decodeIfPresent(BarUndeclaredPosition.self, forKey: .undeclaredPosition)
         slPrice = try c.decodeIfPresent(Double.self, forKey: .slPrice)
         entryTimeISO = try c.decodeIfPresent(String.self, forKey: .entryTimeISO)
         isSessionLevel = try c.decodeIfPresent(Bool.self, forKey: .isSessionLevel)
@@ -117,6 +177,10 @@ struct BarLiveStateResponse: Decodable {
         protectiveExistingSl = try c.decodeIfPresent(BarProtectiveExistingSlSnapshot.self, forKey: .protectiveExistingSl)
         matchedDeclarationId = try c.decodeIfPresent(String.self, forKey: .matchedDeclarationId)
         escrowMatchReport = try c.decodeIfPresent(BarEscrowMatchReport.self, forKey: .escrowMatchReport)
+        protectiveBrokerSlug = try c.decodeIfPresent(String.self, forKey: .protectiveBrokerSlug)
+        behavioralScore = try c.decodeIfPresent(Double.self, forKey: .behavioralScore)
+        behavioralVerdict = try c.decodeIfPresent(String.self, forKey: .behavioralVerdict)
+        behaviorSignals = try c.decodeIfPresent([BarBehaviorSignalRow].self, forKey: .behaviorSignals) ?? []
     }
 
     init(
@@ -132,6 +196,8 @@ struct BarLiveStateResponse: Decodable {
         pendingDeclaration: BarPendingDeclaration?,
         archetype: String? = nil,
         slStatus: String? = nil,
+        slFailureReason: String? = nil,
+        undeclaredPosition: BarUndeclaredPosition? = nil,
         slPrice: Double? = nil,
         entryTimeISO: String? = nil,
         isSessionLevel: Bool? = nil,
@@ -150,6 +216,10 @@ struct BarLiveStateResponse: Decodable {
         protectiveExistingSl: BarProtectiveExistingSlSnapshot? = nil,
         matchedDeclarationId: String? = nil,
         escrowMatchReport: BarEscrowMatchReport? = nil,
+        protectiveBrokerSlug: String? = nil,
+        behavioralScore: Double? = nil,
+        behavioralVerdict: String? = nil,
+        behaviorSignals: [BarBehaviorSignalRow] = [],
     ) {
         self.planState = planState
         self.primarySentence = primarySentence
@@ -163,6 +233,8 @@ struct BarLiveStateResponse: Decodable {
         self.pendingDeclaration = pendingDeclaration
         self.archetype = archetype
         self.slStatus = slStatus
+        self.slFailureReason = slFailureReason
+        self.undeclaredPosition = undeclaredPosition
         self.slPrice = slPrice
         self.entryTimeISO = entryTimeISO
         self.isSessionLevel = isSessionLevel
@@ -181,10 +253,43 @@ struct BarLiveStateResponse: Decodable {
         self.protectiveExistingSl = protectiveExistingSl
         self.matchedDeclarationId = matchedDeclarationId
         self.escrowMatchReport = escrowMatchReport
+        self.protectiveBrokerSlug = protectiveBrokerSlug
+        self.behavioralScore = behavioralScore
+        self.behavioralVerdict = behavioralVerdict
+        self.behaviorSignals = behaviorSignals
     }
 
     /// Mirrors web Bar `intervention.blocksProceed` — disables declaration submit in Notch (`BarDeclarationFlowView`).
     var blocksDeclarationSubmit: Bool { declarationSubmitBlocked == true }
+}
+
+/// Orange banner when latest fill was impulsive / undeclared (#137).
+struct BarUndeclaredPositionBanner: View {
+    let position: BarUndeclaredPosition?
+
+    var body: some View {
+        if let pos = position {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.system(size: 13))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Undeclared position")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.orange)
+                    Text("\(pos.symbol) \(pos.side) \(pos.quantity)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 8)
+        }
+    }
 }
 
 extension BarLiveStateResponse: Equatable {
@@ -194,7 +299,10 @@ extension BarLiveStateResponse: Equatable {
             lhs.matchedDeclarationId == rhs.matchedDeclarationId &&
             lhs.composite?.state == rhs.composite?.state &&
             lhs.activeInterventions.count == rhs.activeInterventions.count &&
-            lhs.declarationSubmitBlocked == rhs.declarationSubmitBlocked
+            lhs.declarationSubmitBlocked == rhs.declarationSubmitBlocked &&
+            lhs.behavioralScore == rhs.behavioralScore &&
+            lhs.behavioralVerdict == rhs.behavioralVerdict &&
+            lhs.behaviorSignals == rhs.behaviorSignals
     }
 }
 
@@ -420,4 +528,27 @@ final class UserDefaultsBarArchetypeStore: BarArchetypeStore {
     func saveLastKnownArchetype(_ archetype: TraderArchetype) {
         defaults.set(archetype.rawValue, forKey: storageKey)
     }
+}
+
+// MARK: - Instrument search (#148)
+
+struct InstrumentResult: Codable, Identifiable, Equatable {
+    var id: String { trading_symbol }
+    let trading_symbol: String
+    let name: String
+    let exchange: String
+    let segment: String?
+    let instrument_token: Int64?
+    let last_price: Double
+}
+
+struct InstrumentSearchResponse: Codable {
+    let symbols: [InstrumentResult]
+}
+
+struct LTPResponse: Codable {
+    let ltp: Double?
+    let source: String?
+    /// `session_expired` | `broker_error` when quote failed (#149).
+    let error: String?
 }

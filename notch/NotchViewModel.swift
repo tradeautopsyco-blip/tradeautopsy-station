@@ -221,6 +221,9 @@ final class NotchViewModel: ObservableObject {
     @Published var barSurfacePhase: BarSurfacePhase = .declaration
     @Published var barDebriefPending: Bool = false
     @Published var stopMeStep: Int = 0
+    /// Exit trade / cancel declaration — 0 hidden, 1 confirm, 2 submitting (#144).
+    @Published var cancelDeclStep: Int = 0
+    @Published var cancelDeclError: String?
     /// Confirms intent before reason pick — requires `stopMeRequiredTaps` on the entry control (#124 parity).
     @Published var stopMeTapCount: Int = 0
     @Published var stopMeReason: String = ""
@@ -256,6 +259,11 @@ final class NotchViewModel: ObservableObject {
     /// When `barSurfacePhase` is `.declaration`, gate the heavy form behind this affordance.
     @Published var showingDeclarationForm: Bool = false
 
+    /// Pre-trade symbol field — shared with declaration form autocomplete (#148).
+    @Published var barDeclarationSymbol: String = ""
+    @Published var symbolSuggestions: [InstrumentResult] = []
+    @Published var showSymbolSuggestions: Bool = false
+
     /// Derived from pending declaration kind, then persisted last-known, then `intraday` (#114).
     @Published private(set) var activeArchetype: TraderArchetype = .intraday
 
@@ -265,6 +273,8 @@ final class NotchViewModel: ObservableObject {
     @Published var declEmotionalCalm: Int = 0
     @Published var declEmotionalConfidence: Int = 0
     @Published var declEntryPrice: String = ""
+    /// Set when LTP fetch returns `session_expired` — show reconnect hint on entry field (#149).
+    @Published var barLtpFetchError: String?
     @Published var declStopLoss: String = ""
     @Published var declTarget: String = ""
     @Published var declSetupType: String = ""
@@ -274,6 +284,9 @@ final class NotchViewModel: ObservableObject {
 
     /// Called from `NotchPanelController` to front the panel when expanding explicitly.
     var onRequestOrderFront: (() -> Void)?
+
+    private var symbolSearchTask: Task<Void, Never>?
+    private var ignoreSymbolSearchUntilEdit = false
 
     /// Mirrors `NSScreen.safeAreaInsets.top` for layout (notch camera strip).
     @Published var notchTopInset: CGFloat = 0
@@ -423,7 +436,7 @@ final class NotchViewModel: ObservableObject {
     }
 
     private let barOptimisticArmedMaxAgeSeconds: TimeInterval = 45
-    private let barOptimisticArmedMaxPollFailures = 3
+    private let barOptimisticArmedMaxPollFailures = 6
 
     private let barArchetypeStore: BarArchetypeStore
     private let barDeclareHTTPExecutor: BarDeclareHTTPExecuting
@@ -598,6 +611,23 @@ final class NotchViewModel: ObservableObject {
         stopMeReason = ""
     }
 
+    func resetCancelDecl() {
+        cancelDeclStep = 0
+        cancelDeclError = nil
+    }
+
+    /// Pending or optimistic declaration id while armed — for cancel (#144).
+    var barCancelDeclarationId: String? {
+        let pending = barLiveState?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !pending.isEmpty { return pending }
+        if let pub = barPublishedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !pub.isEmpty {
+            return pub
+        }
+        let opt = barOptimisticArmedDisplay?.declarationId.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !opt.isEmpty { return opt }
+        return nil
+    }
+
     func openPlanExitInBrowser() {
         // Notch is standalone — never open the web dashboard in a browser.
     }
@@ -661,6 +691,16 @@ final class NotchViewModel: ObservableObject {
                         if oldState?.archetype != newState?.archetype {
                             self.refreshActiveArchetype()
                         }
+                    }
+
+                    // Hosted `notch.behavioral_score` wins over pulse/SSE — apply every poll (#180).
+                    newState?.applyBehavioralToViewModel(self)
+
+                    if let slug = newState?.protectiveBrokerSlug?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                        !slug.isEmpty
+                    {
+                        self.barProtectiveBrokerSlug = slug
                     }
 
                     if self.barFeaturesActiveFromApi != newFeaturesActive {
@@ -743,6 +783,115 @@ final class NotchViewModel: ObservableObject {
         recomputeBarSurfacePhase()
     }
 
+    func searchSymbols(_ query: String) {
+        symbolSearchTask?.cancel()
+        if ignoreSymbolSearchUntilEdit {
+            ignoreSymbolSearchUntilEdit = false
+            return
+        }
+        guard query.count >= 2 else {
+            symbolSuggestions = []
+            showSymbolSuggestions = false
+            return
+        }
+        symbolSearchTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard !Task.isCancelled else { return }
+            guard
+                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                let url = URL(string: self.baseURL() + "/instruments/search?q=\(encoded)")
+            else { return }
+            var req = URLRequest(url: url)
+            req.setValue(self.daemonSecret, forHTTPHeaderField: "x-daemon-secret")
+            req.setValue(self.daemonUserId, forHTTPHeaderField: "x-user-id")
+            do {
+                let (data, _) = try await URLSession.shared.data(for: req)
+                let resp = try JSONDecoder().decode(InstrumentSearchResponse.self, from: data)
+                self.symbolSuggestions = resp.symbols
+                self.showSymbolSuggestions = !resp.symbols.isEmpty
+            } catch {
+                // silent — don't surface search errors to user
+            }
+        }
+    }
+
+    func selectSymbol(_ result: InstrumentResult) {
+        symbolSearchTask?.cancel()
+        ignoreSymbolSearchUntilEdit = true
+        barDeclarationSymbol = result.trading_symbol
+        barLtpFetchError = nil
+        showSymbolSuggestions = false
+        symbolSuggestions = []
+        fetchLTP(
+            symbol: result.trading_symbol,
+            exchange: result.exchange,
+            segment: result.segment ?? result.exchange
+        )
+    }
+
+    func fetchLTP(symbol: String, exchange: String, segment: String) {
+        guard
+            let sym = symbol.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            let exc = exchange.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            let seg = segment.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            let url = URL(string: "\(baseURL())/instruments/ltp?symbol=\(sym)&exchange=\(exc)&segment=\(seg)")
+        else { return }
+        Task {
+            var req = URLRequest(url: url)
+            req.setValue(daemonSecret, forHTTPHeaderField: "x-daemon-secret")
+            req.setValue(daemonUserId, forHTTPHeaderField: "x-user-id")
+            do {
+                let (data, _) = try await URLSession.shared.data(for: req)
+                let resp = try JSONDecoder().decode(LTPResponse.self, from: data)
+                await MainActor.run {
+                    if resp.error == "session_expired" {
+                        barLtpFetchError = "Reconnect broker to load live price"
+                        return
+                    }
+                    barLtpFetchError = nil
+                    if let ltp = resp.ltp, ltp > 0 {
+                        applyLTP(ltp)
+                    }
+                }
+            } catch {
+                // silent — LTP failure must not block declaration
+            }
+        }
+    }
+
+    func applyLTP(_ ltp: Double) {
+        if declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || declEntryPrice == "0"
+        {
+            declEntryPrice = String(format: "%.2f", ltp)
+        }
+    }
+
+    func dismissSymbolSuggestions() {
+        symbolSearchTask?.cancel()
+        symbolSearchTask = nil
+        ignoreSymbolSearchUntilEdit = false
+        showSymbolSuggestions = false
+        symbolSuggestions = []
+    }
+
+    /// Broker-backed defaults for the declare form — wire ticker + open qty, not display names.
+    func barDeclarationPrefillDefaults() -> (symbol: String, sideBuy: Bool, quantity: String)? {
+        if let pos = positions.first(where: { $0.qty != 0 }) {
+            guard let sym = BarBrokerTicker.normalize(raw: pos.symbol), !sym.isEmpty else { return nil }
+            let sideBuy = !pos.direction.uppercased().contains("SELL")
+            return (sym, sideBuy, String(abs(pos.qty)))
+        }
+        if let trade = recentTrades.first {
+            guard let sym = BarBrokerTicker.normalize(raw: trade.symbol), !sym.isEmpty else { return nil }
+            let sideBuy = !trade.side.uppercased().contains("SELL")
+            let qty = trade.qty > 0 ? String(trade.qty) : ""
+            return (sym, sideBuy, qty)
+        }
+        return nil
+    }
+
     private struct BarDeclareOkResponse: Decodable {
         let ok: Bool?
         let declarationId: String?
@@ -759,33 +908,35 @@ final class NotchViewModel: ObservableObject {
             let (data, resp) =
                 try await barDeclareHTTPExecutor.data(for: authorizedRequest(url: url, method: "POST", body: body))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            guard (200...299).contains(code) else {
+            if (200...299).contains(code) {
+                showingDeclarationForm = false
+                daemonProtocolError = nil
+                barStateError = nil
+                barDeclarationLastError = nil
+                barDeclarationConfirmWarning = nil
+                if let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data),
+                   let declId = parsed.declarationId, !declId.isEmpty
+                {
+                    let now = Date().timeIntervalSince1970
+                    let snap = BarOptimisticArmedSnapshot(
+                        declarationId: declId,
+                        submittedAt: now,
+                        symbol: summary?.symbol ?? "—",
+                        side: summary?.side ?? "—",
+                        quantityLabel: summary?.qtyLabel ?? "—",
+                    )
+                    persistOptimisticArmed(snap)
+                    barOptimisticReconcilePollFailures = 0
+                }
+                recomputeBarSurfacePhase()
+                if let follow = barDeclareSuccessFollowUp {
+                    await follow()
+                } else {
+                    await fetchBarLiveState()
+                }
+            } else {
                 let hint = String(data: data, encoding: .utf8)?.prefix(280) ?? ""
                 barDeclarationLastError = "Declaration failed (\(code)) \(hint)"
-                return
-            }
-            daemonProtocolError = nil
-            barStateError = nil
-            barDeclarationLastError = nil
-            if let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data),
-               let declId = parsed.declarationId, !declId.isEmpty
-            {
-                let now = Date().timeIntervalSince1970
-                let snap = BarOptimisticArmedSnapshot(
-                    declarationId: declId,
-                    submittedAt: now,
-                    symbol: summary?.symbol ?? "—",
-                    side: summary?.side ?? "—",
-                    quantityLabel: summary?.qtyLabel ?? "—",
-                )
-                persistOptimisticArmed(snap)
-                barOptimisticReconcilePollFailures = 0
-            }
-            recomputeBarSurfacePhase()
-            if let follow = barDeclareSuccessFollowUp {
-                await follow()
-            } else {
-                await fetchBarLiveState()
             }
         } catch {
             barDeclarationLastError = error.localizedDescription
@@ -828,6 +979,67 @@ final class NotchViewModel: ObservableObject {
             barStateError = nil
         } catch {
             barStateError = error.localizedDescription
+        }
+    }
+
+    private struct BarCancelErrResponse: Decodable {
+        struct ErrDetail: Decodable {
+            let code: String?
+        }
+
+        let error: ErrDetail?
+    }
+
+    func submitCancelDeclaration(declarationId: String, reasonChip: String) async {
+        guard cancelDeclStep == 1 else { return }
+        cancelDeclStep = 2
+        cancelDeclError = nil
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/cancel-declaration") else {
+            cancelDeclStep = 0
+            cancelDeclError = "Could not cancel — try again"
+            return
+        }
+        let trimmedId = declarationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else {
+            cancelDeclStep = 0
+            cancelDeclError = "Could not cancel — try again"
+            return
+        }
+        let body: [String: Any] = [
+            "declaration_id": trimmedId,
+            "cancel_reason_chip": reasonChip,
+        ]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
+            cancelDeclStep = 0
+            cancelDeclError = "Could not cancel — try again"
+            return
+        }
+        do {
+            let (data, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: payload),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if (200...299).contains(code) {
+                daemonProtocolError = nil
+                cancelDeclStep = 0
+                clearOptimisticArmedStorage()
+                recomputeBarSurfacePhase()
+                await fetchBarLiveState()
+                return
+            }
+            if code == 409,
+               let parsed = try? JSONDecoder().decode(BarCancelErrResponse.self, from: data),
+               parsed.error?.code == "declaration_cancel_blocked"
+            {
+                cancelDeclError = "SL order active — cancel SL first"
+                cancelDeclStep = 0
+                return
+            }
+            cancelDeclError = "Could not cancel — try again"
+            cancelDeclStep = 0
+        } catch {
+            cancelDeclError = "Could not cancel — try again"
+            cancelDeclStep = 0
         }
     }
 
@@ -931,7 +1143,12 @@ final class NotchViewModel: ObservableObject {
             barDeclarationLastError = "No matched declaration — open web Bar."
             return
         }
-        guard let trigger = payload.slPrice, trigger > 0 else {
+        let trigger: Double
+        if let stop = payload.pendingDeclaration?.stopLoss, stop > 0 {
+            trigger = stop
+        } else if let sl = payload.slPrice, sl > 0 {
+            trigger = sl
+        } else {
             barDeclarationLastError = "Stop price unknown — wait for live state."
             return
         }
@@ -940,21 +1157,34 @@ final class NotchViewModel: ObservableObject {
         let sideRaw: String
         let qty: Double
 
-        if let pos = positions.first {
-            symbol = pos.symbol
-            sideRaw = pos.direction
-            qty = Double(abs(pos.qty))
-        } else if let pd = payload.pendingDeclaration {
+        // Use matched declaration as source of truth for symbol/side/qty.
+        // Fall back to positions only if no declaration is present.
+        if let pd = payload.pendingDeclaration {
             symbol = pd.symbol
             sideRaw = pd.side
             qty = pd.quantity
+        } else if let pos = positions.first(where: { candidate in
+            guard let breakdown = payload.composite?.breakdown, !breakdown.isEmpty else { return false }
+            return breakdown.contains { $0.symbol.uppercased() == candidate.symbol.uppercased() }
+        }) {
+            symbol = pos.symbol
+            sideRaw = pos.direction
+            qty = Double(abs(pos.qty))
+        } else if let pos = positions.first {
+            symbol = pos.symbol
+            sideRaw = pos.direction
+            qty = Double(abs(pos.qty))
         } else {
             barDeclarationLastError = "Need an open position snapshot to place SL from Notch."
             return
         }
 
-        let symUpper = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !symUpper.isEmpty, qty > 0 else {
+        guard let symNorm = BarBrokerTicker.normalize(raw: symbol) else {
+            barDeclarationLastError = "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
+            return
+        }
+        let symUpper = symNorm
+        guard qty > 0 else {
             barDeclarationLastError = "Symbol or quantity missing."
             return
         }
@@ -981,6 +1211,7 @@ final class NotchViewModel: ObservableObject {
             barDeclarationLastError = "Could not build place_sl JSON."
             return
         }
+        print("[Notch] place_sl symbol=\(symUpper) qty=\(qty) trigger=\(trigger) broker=\(broker)")
         await submitBarProtective(body: data)
     }
 
@@ -2032,7 +2263,11 @@ final class NotchViewModel: ObservableObject {
             var out: [NotchPosition] = []
             if let arr = j["positions"] as? [[String: Any]] {
                 for p in arr {
-                    let sym = (p["symbol"] as? String) ?? (p["tradingSymbol"] as? String) ?? "—"
+                    let sym =
+                        BarBrokerTicker.fromPositionRow(p)
+                        ?? (p["tradingSymbol"] as? String)
+                        ?? (p["symbol"] as? String)
+                        ?? "—"
                     let qty = (p["quantity"] as? Int) ?? (p["qty"] as? Int) ?? 0
                     let pnl = (p["unrealizedPnl"] as? Double) ?? (p["unrealized_pnl"] as? Double) ?? 0
                     let dir = (p["direction"] as? String) ?? (p["side"] as? String) ?? ""
