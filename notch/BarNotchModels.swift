@@ -102,6 +102,8 @@ struct BarLiveStateResponse: Decodable {
     /// FLOW | CALM | CAUTION | SOFT_BLOCK | DANGER (#180).
     let behavioralVerdict: String?
     let behaviorSignals: [BarBehaviorSignalRow]
+    /// Applied score multipliers from hosted brain (#184).
+    let behavioralMultipliers: [BarBehavioralMultiplierRow]
 
     enum CodingKeys: String, CodingKey {
         case planState = "plan_state"
@@ -140,6 +142,7 @@ struct BarLiveStateResponse: Decodable {
         case behavioralScore = "behavioral_score"
         case behavioralVerdict = "behavioral_verdict"
         case behaviorSignals = "behavior_signals"
+        case behavioralMultipliers = "behavioral_multipliers"
     }
 
     init(from decoder: Decoder) throws {
@@ -181,6 +184,8 @@ struct BarLiveStateResponse: Decodable {
         behavioralScore = try c.decodeIfPresent(Double.self, forKey: .behavioralScore)
         behavioralVerdict = try c.decodeIfPresent(String.self, forKey: .behavioralVerdict)
         behaviorSignals = try c.decodeIfPresent([BarBehaviorSignalRow].self, forKey: .behaviorSignals) ?? []
+        behavioralMultipliers =
+            try c.decodeIfPresent([BarBehavioralMultiplierRow].self, forKey: .behavioralMultipliers) ?? []
     }
 
     init(
@@ -220,6 +225,7 @@ struct BarLiveStateResponse: Decodable {
         behavioralScore: Double? = nil,
         behavioralVerdict: String? = nil,
         behaviorSignals: [BarBehaviorSignalRow] = [],
+        behavioralMultipliers: [BarBehavioralMultiplierRow] = [],
     ) {
         self.planState = planState
         self.primarySentence = primarySentence
@@ -257,6 +263,7 @@ struct BarLiveStateResponse: Decodable {
         self.behavioralScore = behavioralScore
         self.behavioralVerdict = behavioralVerdict
         self.behaviorSignals = behaviorSignals
+        self.behavioralMultipliers = behavioralMultipliers
     }
 
     /// Mirrors web Bar `intervention.blocksProceed` — disables declaration submit in Notch (`BarDeclarationFlowView`).

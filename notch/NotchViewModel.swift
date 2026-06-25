@@ -152,6 +152,8 @@ enum PulseAttention {
 final class NotchViewModel: ObservableObject {
     @Published var compositeScore: Double = 0
     @Published var behavioralState: String = "CALM"
+    /// Joined multiplier labels from hosted live-state (#184).
+    @Published var barBehavioralMultiplierLabel: String?
     @Published var sessionPnL: Double = 0
     @Published var winRate: Double = 0
     @Published var tradesToday: Int = 0
@@ -228,6 +230,7 @@ final class NotchViewModel: ObservableObject {
     @Published var stopMeTapCount: Int = 0
     @Published var stopMeReason: String = ""
     @Published var barStopMeBusy: Bool = false
+    @Published var barStopMeClearBusy: Bool = false
     let stopMeRequiredTaps: Int = 3
     let stopMeReasonChips: [String] = [
         "Tilt / revenge",
@@ -435,8 +438,8 @@ final class NotchViewModel: ObservableObject {
         static let qtyKey = "tradeautopsy.notch.bar.optimisticQuantityLabel"
     }
 
-    private let barOptimisticArmedMaxAgeSeconds: TimeInterval = 45
-    private let barOptimisticArmedMaxPollFailures = 6
+    private let barOptimisticArmedMaxAgeSeconds: TimeInterval = BarOptimisticArmedReconcilePolicy.maxAgeSeconds
+    private let barOptimisticArmedMaxPollFailures = BarOptimisticArmedReconcilePolicy.maxPollFailures
 
     private let barArchetypeStore: BarArchetypeStore
     private let barDeclareHTTPExecutor: BarDeclareHTTPExecuting
@@ -755,12 +758,12 @@ final class NotchViewModel: ObservableObject {
             return
         }
         if let snap = barOptimisticArmedDisplay {
-            let age = Date().timeIntervalSince1970 - snap.submittedAt
-            let overAge = age > barOptimisticArmedMaxAgeSeconds
-            let tooManyFailures = barOptimisticReconcilePollFailures >= barOptimisticArmedMaxPollFailures
-            if overAge || tooManyFailures {
+            if BarOptimisticArmedReconcilePolicy.shouldClearOptimistic(
+                snapshot: snap,
+                pollFailures: barOptimisticReconcilePollFailures
+            ) {
                 clearOptimisticArmedStorage()
-                barDeclarationConfirmWarning = "Could not confirm declaration — check web Bar."
+                barDeclarationConfirmWarning = BarOptimisticArmedReconcilePolicy.confirmWarningMessage
                 barSurfacePhase = .declaration
                 return
             }
@@ -819,12 +822,19 @@ final class NotchViewModel: ObservableObject {
     func selectSymbol(_ result: InstrumentResult) {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
-        barDeclarationSymbol = result.trading_symbol
+        guard let ticker = BarBrokerTicker.normalize(raw: result.trading_symbol) else {
+            barDeclarationLastError = "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
+            showSymbolSuggestions = false
+            symbolSuggestions = []
+            return
+        }
+        barDeclarationSymbol = ticker
+        barDeclarationLastError = nil
         barLtpFetchError = nil
         showSymbolSuggestions = false
         symbolSuggestions = []
         fetchLTP(
-            symbol: result.trading_symbol,
+            symbol: ticker,
             exchange: result.exchange,
             segment: result.segment ?? result.exchange
         )
@@ -935,8 +945,9 @@ final class NotchViewModel: ObservableObject {
                     await fetchBarLiveState()
                 }
             } else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(280) ?? ""
-                barDeclarationLastError = "Declaration failed (\(code)) \(hint)"
+                barDeclarationLastError = BarDeclareHTTPErrorPresentation.message(httpStatus: code, body: data)
+                clearOptimisticArmedStorage()
+                recomputeBarSurfacePhase()
             }
         } catch {
             barDeclarationLastError = error.localizedDescription
@@ -979,6 +990,30 @@ final class NotchViewModel: ObservableObject {
             barStateError = nil
         } catch {
             barStateError = error.localizedDescription
+        }
+    }
+
+    func clearBarStopMeKillSwitch() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/stop-me/clear") else { return }
+        let ms = Int(Date().timeIntervalSince1970 * 1000)
+        let body: [String: Any] = ["released_at_ms": ms]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        barStopMeClearBusy = true
+        defer { barStopMeClearBusy = false }
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url, method: "POST", body: payload))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                barDeclarationLastError = "Could not resume trading (\(code))"
+                return
+            }
+            daemonProtocolError = nil
+            killSwitchActive = false
+            barDeclarationLastError = nil
+            barStateError = nil
+            await fetchBarLiveState()
+        } catch {
+            barDeclarationLastError = error.localizedDescription
         }
     }
 

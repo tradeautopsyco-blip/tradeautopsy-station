@@ -335,6 +335,12 @@ struct BarNotchShell: View {
                 .font(BarDS.monoFont(11, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
 
+            if let mult = viewModel.barBehavioralMultiplierLabel, !mult.isEmpty {
+                Text(mult)
+                    .font(BarDS.monoFont(10, weight: .medium))
+                    .foregroundColor(BarDS.Accent.amber)
+            }
+
             brokerConnectionPill
 
             statePill

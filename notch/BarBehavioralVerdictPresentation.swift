@@ -56,11 +56,24 @@ enum BarBehavioralVerdictPresentation {
     static func behavioralStateLabel(score: Double, verdict: BarBehavioralVerdictBand?) -> String {
         displayLabel(score: score, verdict: verdict)
     }
+
+    /// Joined multiplier labels for metric strip (#184).
+    static func multiplierDisplay(_ rows: [BarBehavioralMultiplierRow]) -> String? {
+        let labels = rows.map(\.label).filter { !$0.isEmpty }
+        guard !labels.isEmpty else { return nil }
+        return labels.joined(separator: " · ")
+    }
 }
 
 struct BarBehaviorSignalRow: Decodable, Equatable {
     let signal: String
     let value: Double
+}
+
+struct BarBehavioralMultiplierRow: Decodable, Equatable {
+    let key: String
+    let factor: Double
+    let label: String
 }
 
 extension BarLiveStateResponse {
@@ -80,5 +93,7 @@ extension BarLiveStateResponse {
                 verdict: nil
             )
         }
+        viewModel.barBehavioralMultiplierLabel =
+            BarBehavioralVerdictPresentation.multiplierDisplay(behavioralMultipliers)
     }
 }

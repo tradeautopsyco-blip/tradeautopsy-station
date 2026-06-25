@@ -30,6 +30,8 @@ struct BarPlanStateView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            BarUndeclaredPositionBanner(position: payload?.undeclaredPosition)
+
             planStateBanner
 
             if shouldShowMetricStrip { liveMetricStrip }
@@ -83,6 +85,11 @@ struct BarPlanStateView: View {
 
             if embedEscrow {
                 BarEscrowMatchView(report: payload?.escrowMatchReport)
+            }
+
+            if shouldShowExitTradeSection {
+                exitTradeSection
+                    .padding(.top, 8)
             }
 
             if shouldShowStopMeSection {
@@ -147,7 +154,10 @@ struct BarPlanStateView: View {
     }
 
     private var shouldShowPlanSnapshot: Bool {
-        viewModel.hasOpenPositions || payload?.pendingDeclaration != nil
+        viewModel.hasOpenPositions
+            || payload?.pendingDeclaration != nil
+            || viewModel.barSurfacePhase == .armed
+            || viewModel.barOptimisticArmedDisplay != nil
     }
 
     /// Mockup 5 — show interference whenever PLAN SNAPSHOT / live plan context is active (#113).
@@ -172,6 +182,11 @@ struct BarPlanStateView: View {
         payload?.dailyCheckInRequired == true
     }
 
+    /// Armed phase only — cancel pending declaration before fill (#144).
+    private var shouldShowExitTradeSection: Bool {
+        viewModel.barSurfacePhase == .armed && viewModel.barCancelDeclarationId != nil
+    }
+
     /// Kill switch chips + confirm only when a live matched declaration backs the active trade (#bar).
     private var shouldShowStopMeSection: Bool {
         guard viewModel.hasOpenPositions else { return false }
@@ -180,8 +195,13 @@ struct BarPlanStateView: View {
     }
 
     private var shouldShowDeclareBeforeTradeCTA: Bool {
-        let trimmed = payload?.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty && !viewModel.showingDeclarationForm
+        BarLiveTradeDeclareCTA.shouldShow(
+            surfacePhase: viewModel.barSurfacePhase,
+            showingDeclarationForm: viewModel.showingDeclarationForm,
+            matchedDeclarationId: payload?.matchedDeclarationId,
+            hasPendingDeclaration: payload?.pendingDeclaration != nil,
+            hasOptimisticArmed: viewModel.barOptimisticArmedDisplay != nil,
+        )
     }
 
     private var declareBeforeTradeCTA: some View {
@@ -1059,6 +1079,21 @@ struct BarPlanStateView: View {
     @ViewBuilder
     private var protectiveSlHintRow: some View {
         let st = payload?.slStatus?.lowercased() ?? ""
+        if let reason = payload?.slFailureReason, !reason.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.system(size: 12))
+                Text("SL rejected: \(reason)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color.red.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
         if st == "missing", let px = payload?.slPrice {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Set SL at ₹\(formatINRAmount(px)) — not placed at broker yet.")
@@ -1361,6 +1396,58 @@ struct BarPlanStateView: View {
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 EmptyView()
+            }
+        }
+    }
+
+    // MARK: - Exit trade (cancel declaration)
+
+    private var exitTradeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if viewModel.cancelDeclStep == 0 {
+                Button {
+                    viewModel.cancelDeclStep = 1
+                } label: {
+                    Text("Exit trade")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.orange)
+                }
+                .buttonStyle(.plain)
+            } else if viewModel.cancelDeclStep == 1 {
+                HStack {
+                    Button("Cancel") {
+                        viewModel.resetCancelDecl()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(Color.white.opacity(0.45))
+                    Spacer()
+                    Text("Cancel declaration?")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Confirm") {
+                        let declId = viewModel.barCancelDeclarationId ?? ""
+                        Task {
+                            await viewModel.submitCancelDeclaration(
+                                declarationId: declId,
+                                reasonChip: "manual_exit",
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.red)
+                }
+            } else if viewModel.cancelDeclStep == 2 {
+                Text("Cancelling...")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            if let err = viewModel.cancelDeclError {
+                Text(err)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
             }
         }
     }

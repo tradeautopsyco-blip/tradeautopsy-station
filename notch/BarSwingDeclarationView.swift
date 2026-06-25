@@ -23,19 +23,14 @@ struct BarSwingDeclarationView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                if viewModel.barLiveState?.blocksDeclarationSubmit == true {
-                    Text("Circuit active — finish or clear the web Bar intervention before declaring.")
-                        .font(BarDS.bodyFont(11, weight: .semibold))
-                        .foregroundColor(BarDS.Accent.amber)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(BarDS.Semantic.amberBg())
-                        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
-                                .stroke(BarDS.Semantic.amberBorder(), lineWidth: BarDS.borderThin),
-                        )
-                }
+                BarDeclarationSubmitBlockedBanner(
+                    blocked: viewModel.barLiveState?.blocksDeclarationSubmit == true,
+                    activeInterventions: viewModel.barLiveState?.activeInterventions ?? [],
+                    clearKillSwitchBusy: viewModel.barStopMeClearBusy,
+                    onClearKillSwitch: {
+                        Task { await viewModel.clearBarStopMeKillSwitch() }
+                    },
+                )
 
                 if let e = viewModel.barDeclarationLastError, !e.isEmpty {
                     Text(e)

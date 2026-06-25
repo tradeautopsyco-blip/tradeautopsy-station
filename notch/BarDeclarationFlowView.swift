@@ -6,13 +6,11 @@ struct BarDeclarationFlowView: View {
 
     /// Scale A (calm, 1 best) — `0` until user taps (mirrors `declEmotionalCalm`).
     /// Scale B (confidence, 5 best) — `0` until user taps (`declEmotionalConfidence`).
-    @State private var symbol: String = ""
     @State private var sideBuy: Bool = true
     @State private var quantityText: String = ""
     @State private var stopLossText: String = ""
     @State private var kind: DeclarationKind = .intraday
     @State private var scalperSessionId: String = ""
-    @State private var entryPriceText: String = ""
     @State private var targetPriceText: String = ""
     @State private var declarationStartedAt: Date? = nil
     @State private var recapClock: Date = Date()
@@ -39,19 +37,16 @@ struct BarDeclarationFlowView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                if viewModel.barLiveState?.blocksDeclarationSubmit == true {
-                    Text("Circuit active — finish or clear the web Bar intervention before declaring.")
-                        .font(BarDS.bodyFont(11, weight: .semibold))
-                        .foregroundColor(BarDS.Accent.amber)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(BarDS.Semantic.amberBg())
-                        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
-                                .stroke(BarDS.Semantic.amberBorder(), lineWidth: BarDS.borderThin),
-                        )
-                }
+                BarUndeclaredPositionBanner(position: viewModel.barLiveState?.undeclaredPosition)
+
+                BarDeclarationSubmitBlockedBanner(
+                    blocked: viewModel.barLiveState?.blocksDeclarationSubmit == true,
+                    activeInterventions: viewModel.barLiveState?.activeInterventions ?? [],
+                    clearKillSwitchBusy: viewModel.barStopMeClearBusy,
+                    onClearKillSwitch: {
+                        Task { await viewModel.clearBarStopMeKillSwitch() }
+                    },
+                )
 
                 if let e = viewModel.barDeclarationLastError, !e.isEmpty {
                     Text(e)
@@ -91,8 +86,18 @@ struct BarDeclarationFlowView: View {
                 ) {
                     Task { await submit() }
                 }
-                .disabled(viewModel.barDeclarationBusy)
-                .opacity(viewModel.barDeclarationBusy ? 0.45 : 1)
+                .disabled(!submitReadiness.ready || viewModel.barDeclarationBusy)
+                .opacity(submitReadiness.ready && !viewModel.barDeclarationBusy ? 1 : 0.3)
+
+                if !submitReadiness.ready,
+                   viewModel.barDeclarationLastError == nil,
+                   let hint = submitReadiness.hint,
+                   !viewModel.barDeclarationBusy {
+                    Text(hint)
+                        .font(BarDS.bodyFont(10, weight: .medium))
+                        .foregroundColor(BarDS.Text.hint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Text("Completed in \(elapsedLiveSeconds)s")
                     .font(BarDS.bodyFont(10, weight: .regular))
@@ -106,8 +111,42 @@ struct BarDeclarationFlowView: View {
                 viewModel.declInvalidationType = ""
                 viewModel.declInvalidationCondition = ""
             }
+            applyBrokerDeclarationPrefillIfNeeded()
+        }
+        .onChange(of: viewModel.showingDeclarationForm) { _, showing in
+            if !showing {
+                viewModel.dismissSymbolSuggestions()
+            }
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { recapClock = $0 }
+        .onChange(of: viewModel.declEmotionalCalm) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.declEmotionalConfidence) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: stopLossText) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: quantityText) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.barDeclarationSymbol) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.declSetupType) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.declInvalidationType) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.declInvalidationCondition) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onChange(of: viewModel.declProtectiveSLConsent) { _, _ in viewModel.barDeclarationLastError = nil }
+    }
+
+    private var submitReadiness: (ready: Bool, hint: String?) {
+        BarIntradayDeclareValidator.submitReadiness(
+            BarIntradayDeclarationSubmitInput(
+                blocksDeclarationSubmit: viewModel.barLiveState?.blocksDeclarationSubmit == true,
+                protectiveSlConsent: viewModel.declProtectiveSLConsent,
+                calm: viewModel.declEmotionalCalm,
+                confidence: viewModel.declEmotionalConfidence,
+                stopLossText: stopLossText,
+                symbolRaw: viewModel.barDeclarationSymbol,
+                quantityText: quantityText,
+                setupType: viewModel.declSetupType,
+                invalidationTypeRaw: viewModel.declInvalidationType,
+                invalidationCondition: viewModel.declInvalidationCondition,
+                declarationKindWire: declarationKindWire(for: viewModel.activeArchetype),
+                scalperSessionId: scalperSessionId,
+            ),
+        )
     }
 
     private var archetypeTabRow: some View {
@@ -178,10 +217,15 @@ struct BarDeclarationFlowView: View {
 
     private var riskNumbersCard: some View {
         BarCard {
-            BarInputField(placeholder: "Entry price", text: $entryPriceText)
+            BarInputField(placeholder: "Entry price", text: $viewModel.declEntryPrice)
+            if let ltpErr = viewModel.barLtpFetchError, !ltpErr.isEmpty {
+                Text(ltpErr)
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.amber)
+            }
             BarInputField(placeholder: "Stop loss — exact price", text: $stopLossText)
             BarInputField(placeholder: "Target price", text: $targetPriceText)
-            BarInputField(placeholder: "Symbol (e.g. RELIANCE)", text: $symbol)
+            symbolAutocompleteField
             HStack(spacing: 5) {
                 pretradeSidePill(title: "BUY", selected: sideBuy) { sideBuy = true }
                 pretradeSidePill(title: "SELL", selected: !sideBuy) { sideBuy = false }
@@ -267,7 +311,7 @@ struct BarDeclarationFlowView: View {
     }
 
     private var rrComputedRatio: Double? {
-        guard let e = Double(entryPriceText.trimmingCharacters(in: .whitespaces)),
+        guard let e = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespaces)),
               let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces))
         else { return nil }
         let tStr = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -392,7 +436,7 @@ struct BarDeclarationFlowView: View {
     private func submit() async {
         viewModel.barDeclarationLastError = nil
         guard let data = buildJsonBody() else {
-            viewModel.barDeclarationLastError = "Fix trade fields before submitting."
+            viewModel.barDeclarationLastError = submitReadiness.hint ?? "Fix trade fields before submitting."
             return
         }
         await viewModel.submitBarDeclaration(body: data)
@@ -408,40 +452,41 @@ struct BarDeclarationFlowView: View {
             confidence: viewModel.declEmotionalConfidence,
             stopLossText: stopLossText,
         ) else { return nil }
-        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        guard !sym.isEmpty else { return nil }
+        guard let sym = BarBrokerTicker.normalize(raw: viewModel.barDeclarationSymbol) else { return nil }
         guard let qty = Double(quantityText.trimmingCharacters(in: .whitespaces)), qty > 0,
               let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)) else { return nil }
         guard !viewModel.declSetupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         guard selectedInvalidationKind != nil else { return nil }
         let invTrim = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !invTrim.isEmpty else { return nil }
-        if kind == .scalper_session,
+        let wireKind = declarationKindWire(for: viewModel.activeArchetype)
+        if wireKind == "scalper_session",
            scalperSessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return nil
         }
 
         let calm = viewModel.declEmotionalCalm
         let conf = viewModel.declEmotionalConfidence
-        let entryTrim = entryPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entryTrim = viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetTrim = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let entryOpt = Double(entryTrim)
-        let targetOpt = targetTrim.isEmpty ? nil : Double(targetTrim)
+        let includeEntryTarget = wireKind == "swing" || wireKind == "positional"
+        let entryOpt = includeEntryTarget && !entryTrim.isEmpty ? Double(entryTrim) : nil
+        let targetOpt = includeEntryTarget && !targetTrim.isEmpty ? Double(targetTrim) : nil
 
         let obj = BarIntradayDeclarationPayload.buildJSONObject(
             symbol: sym,
             sideBuy: sideBuy,
             quantity: qty,
             stopLoss: sl,
-            declarationKind: kind.rawValue,
+            declarationKind: wireKind,
             moodStress: Double(calm),
             moodImpulse: Double(conf),
             invalidationNote: invTrim,
             protectiveSlConsent: viewModel.declProtectiveSLConsent,
             entryPrice: entryOpt,
             targetPrice: targetOpt,
-            scalperSessionId: kind == .scalper_session ? scalperSessionId : nil,
-            isSessionLevel: kind == .scalper_session,
+            scalperSessionId: wireKind == "scalper_session" ? scalperSessionId : nil,
+            isSessionLevel: wireKind == "scalper_session",
             setupTypeLabel: viewModel.declSetupType.isEmpty ? nil : viewModel.declSetupType,
             invalidationTypeWire: selectedInvalidationKind?.rawValue,
         )
@@ -449,7 +494,7 @@ struct BarDeclarationFlowView: View {
     }
 
     private var maxPlannedLossINR: String? {
-        guard let e = Double(entryPriceText.trimmingCharacters(in: .whitespaces)),
+        guard let e = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespaces)),
               let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)),
               let q = Double(quantityText.trimmingCharacters(in: .whitespaces)), q > 0
         else { return nil }
@@ -536,6 +581,78 @@ struct BarDeclarationFlowView: View {
         case 3: return .amber
         case 4, 5: return .teal
         default: return .unselected
+        }
+    }
+
+    private var symbolAutocompleteField: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            BarInputField(
+                placeholder: "Symbol (e.g. RELIANCE)",
+                text: $viewModel.barDeclarationSymbol,
+                marginBottom: viewModel.showSymbolSuggestions ? 0 : 7,
+            )
+            .onChange(of: viewModel.barDeclarationSymbol) { _, newValue in
+                viewModel.searchSymbols(newValue)
+            }
+
+            if viewModel.showSymbolSuggestions {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(viewModel.symbolSuggestions.prefix(5)) { result in
+                            Button(action: { viewModel.selectSymbol(result) }) {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(result.trading_symbol)
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text(result.name)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Text(result.exchange)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
+                        }
+                    }
+                }
+                .frame(maxHeight: 160)
+                .background(.regularMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1)))
+                .padding(.bottom, 7)
+            }
+        }
+    }
+
+    /// Maps Notch archetype tab → API `declaration_kind` (scalper → `scalper_session`).
+    /// Prefill empty fields from daemon positions / recent fills (trdSym-backed).
+    private func applyBrokerDeclarationPrefillIfNeeded() {
+        guard viewModel.barDeclarationSymbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              quantityText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let pre = viewModel.barDeclarationPrefillDefaults()
+        else { return }
+        viewModel.barDeclarationSymbol = pre.symbol
+        sideBuy = pre.sideBuy
+        if !pre.quantity.isEmpty {
+            quantityText = pre.quantity
+        }
+    }
+
+    private func declarationKindWire(for archetype: TraderArchetype) -> String {
+        switch archetype {
+        case .intraday:
+            return "intraday"
+        case .scalper:
+            return "scalper_session"
+        case .swing:
+            return "swing"
         }
     }
 }
