@@ -1188,43 +1188,18 @@ final class NotchViewModel: ObservableObject {
             return
         }
 
-        let symbol: String
-        let sideRaw: String
-        let qty: Double
-
-        // Use matched declaration as source of truth for symbol/side/qty.
-        // Fall back to positions only if no declaration is present.
-        if let pd = payload.pendingDeclaration {
-            symbol = pd.symbol
-            sideRaw = pd.side
-            qty = pd.quantity
-        } else if let pos = positions.first(where: { candidate in
-            guard let breakdown = payload.composite?.breakdown, !breakdown.isEmpty else { return false }
-            return breakdown.contains { $0.symbol.uppercased() == candidate.symbol.uppercased() }
-        }) {
-            symbol = pos.symbol
-            sideRaw = pos.direction
-            qty = Double(abs(pos.qty))
-        } else if let pos = positions.first {
-            symbol = pos.symbol
-            sideRaw = pos.direction
-            qty = Double(abs(pos.qty))
-        } else {
-            barDeclarationLastError = "Need an open position snapshot to place SL from Notch."
+        let leg: BarPlaceSlPayloadBuilder.TradeLeg
+        switch BarPlaceSlPayloadBuilder.resolveTradeLeg(liveState: payload, positions: positions) {
+        case let .success(resolved):
+            leg = resolved
+        case let .failure(message):
+            barDeclarationLastError = message
             return
         }
 
-        guard let symNorm = BarBrokerTicker.normalize(raw: symbol) else {
-            barDeclarationLastError = "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
-            return
-        }
-        let symUpper = symNorm
-        guard qty > 0 else {
-            barDeclarationLastError = "Symbol or quantity missing."
-            return
-        }
-
-        let sideUpper = barOrderSideFromHint(sideRaw)
+        let symUpper = leg.symbol
+        let sideUpper = barOrderSideFromHint(leg.sideRaw)
+        let qty = leg.qty
         let broker = barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !broker.isEmpty else {
             barDeclarationLastError = "Broker slug not configured."
