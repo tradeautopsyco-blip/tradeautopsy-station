@@ -76,15 +76,28 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
              FROM recent_fills ORDER BY inserted_at_ms DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
+            let trade_id: String = r.get(0)?;
+            let symbol: String = r.get(1)?;
+            let side: String = r.get(2)?;
+            let qty: f64 = r.get(3)?;
+            let price: f64 = r.get(4)?;
+            let filled_at: String = r.get(5)?;
+            let broker: String = r.get(6)?;
+            let fill_id: String = r.get(7)?;
+            let filled_at_ms: i64 = DateTime::parse_from_rfc3339(&filled_at)
+                .map(|dt| dt.timestamp_millis())
+                .unwrap_or(0);
             Ok(json!({
-                "tradeId": r.get::<_, String>(0)?,
-                "symbol": r.get::<_, String>(1)?,
-                "side": r.get::<_, String>(2)?,
-                "qty": r.get::<_, f64>(3)?,
-                "price": r.get::<_, f64>(4)?,
-                "filledAt": r.get::<_, String>(5)?,
-                "broker": r.get::<_, String>(6)?,
-                "fillId": r.get::<_, String>(7)?,
+                "tradeId": &trade_id,
+                "trade_id": trade_id,
+                "symbol": symbol,
+                "side": side,
+                "qty": qty,
+                "price": price,
+                "filledAt": filled_at,
+                "filled_at_ms": filled_at_ms,
+                "broker": broker,
+                "fillId": fill_id,
             }))
         })?;
         let mut out = Vec::new();

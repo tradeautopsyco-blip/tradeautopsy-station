@@ -2,9 +2,10 @@
 
 mod common;
 
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use std::sync::{Arc, Mutex};
 use common::{
     apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
 };
@@ -120,6 +121,89 @@ async fn bar_declare_proxies_post_body_to_upstream() {
 }
 
 #[tokio::test]
+async fn bar_declare_forwards_daemon_auth_headers_to_upstream() {
+    const AGENT_PORT: u16 = 19_606;
+    let captured = Arc::new(Mutex::new(None::<(String, String)>));
+    let captured_clone = Arc::clone(&captured);
+    let upstream = Router::new().route(
+        "/api/bar/v1/declarations",
+        post(
+            move |headers: HeaderMap, axum::Json(b): axum::Json<Value>| async move {
+                let secret = headers
+                    .get("x-daemon-secret")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let user = headers
+                    .get("x-user-id")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                *captured_clone.lock().expect("lock") = Some((secret, user));
+                if b.get("symbol").and_then(|v| v.as_str()) == Some("RELIANCE") {
+                    (
+                        StatusCode::OK,
+                        Json(json!({ "ok": true, "declarationId": "d-auth-test" })),
+                    )
+                } else {
+                    (StatusCode::BAD_REQUEST, Json(json!({ "ok": false })))
+                }
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/declare";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let payload = json!({
+        "symbol": "RELIANCE",
+        "declaration_kind": "intraday",
+        "side": "BUY",
+        "quantity": 1,
+        "stop_loss": 2450,
+        "declaration_payload": { "v": 1, "s1": {}, "protective_sl_consent": true }
+    });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 200);
+    let out: Value = resp.json().await.expect("json");
+    assert_eq!(out["declarationId"], "d-auth-test");
+
+    let (secret, user) = captured.lock().expect("lock").take().expect("headers captured");
+    assert!(!secret.is_empty(), "x-daemon-secret must be forwarded");
+    assert_eq!(user, common::TEST_USER_ID);
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn bar_stop_me_proxies_post_to_upstream() {
     const AGENT_PORT: u16 = 19_603;
     let upstream = Router::new().route(
@@ -163,6 +247,55 @@ async fn bar_stop_me_proxies_post_to_upstream() {
     assert_eq!(resp.status(), 200);
     let out: Value = resp.json().await.expect("json");
     assert_eq!(out["ok"], true);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bar_stop_me_clear_proxies_post_to_upstream() {
+    const AGENT_PORT: u16 = 19_607;
+    let upstream = Router::new().route(
+        "/api/bar/v1/declarations/stop-me/clear",
+        post(|| async { Json(json!({ "ok": true, "kill_switch_active": false })) }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/stop-me/clear";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let payload = json!({ "released_at_ms": 1700000000001i64 });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 200);
+    let out: Value = resp.json().await.expect("json");
+    assert_eq!(out["ok"], true);
+    assert_eq!(out["kill_switch_active"], false);
 
     handle.abort();
 }

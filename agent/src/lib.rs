@@ -3,6 +3,7 @@ mod bar_fill_ingress;
 mod broker;
 mod broker_sync;
 mod event_bus;
+mod instruments;
 mod metrics;
 mod outbox;
 mod recent_trades;
@@ -18,6 +19,7 @@ pub use outbox::{
     queued_response_json, CaptureOutbox, DeadLetterStatusItem, OutboxConfig, OutboxCounts,
     OutboxStatusSnapshot, ProcessNowResult,
 };
+pub use instruments::InstrumentStore;
 pub use recent_trades::RecentTradesStore;
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
@@ -76,6 +78,7 @@ pub struct AgentConfig {
     pub upstream: UpstreamConfig,
     pub outbox: OutboxConfig,
     pub recent_trades_db_path: PathBuf,
+    pub instruments_db_path: PathBuf,
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub broker_sync: BrokerSyncConfig,
     pub bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
@@ -104,6 +107,13 @@ impl AgentConfig {
                 p.push("tradeautopsy-agent-recent-trades.db");
                 p
             });
+        let instruments_db_path = std::env::var("AGENT_INSTRUMENTS_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = std::env::temp_dir();
+                p.push("instruments.db");
+                p
+            });
         let metrics_port: Option<u16> = match std::env::var("AGENT_METRICS_PORT").ok() {
             Some(s) => match s.parse::<u16>() {
                 Ok(0) => None,
@@ -121,6 +131,7 @@ impl AgentConfig {
             upstream,
             outbox,
             recent_trades_db_path,
+            instruments_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress,
@@ -132,6 +143,8 @@ impl AgentConfig {
         let daemon_secret = daemon_secret.into();
         let mut recent_trades_db_path = std::env::temp_dir();
         recent_trades_db_path.push(format!("rta-recent-{port}.db"));
+        let mut instruments_db_path = std::env::temp_dir();
+        instruments_db_path.push(format!("rta-instruments-{port}.db"));
         Self {
             port,
             daemon_secret: daemon_secret.clone(),
@@ -143,6 +156,7 @@ impl AgentConfig {
             upstream: UpstreamConfig::from_env(&daemon_secret),
             outbox: OutboxConfig::from_env(),
             recent_trades_db_path,
+            instruments_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress: None,
@@ -203,6 +217,23 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let upstream = Arc::new(UpstreamClient::new(config.upstream)?);
     let outbox = Arc::new(CaptureOutbox::new(config.outbox, upstream.clone())?);
     let recent_trades = RecentTradesStore::open(&config.recent_trades_db_path)?;
+    let instruments = Arc::new(InstrumentStore::new(
+        config
+            .instruments_db_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("instruments db path is not valid UTF-8"))?,
+    )?);
+    let inst_clone = instruments.clone();
+    tokio::spawn(async move {
+        match inst_clone.needs_refresh() {
+            Ok(true) => match inst_clone.refresh_from_zerodha().await {
+                Ok(n) => tracing::info!("instruments refreshed: {n} rows"),
+                Err(e) => tracing::warn!("instrument refresh failed: {e}"),
+            },
+            Ok(false) => tracing::debug!("instruments cache still fresh"),
+            Err(e) => tracing::warn!("instrument refresh check failed: {e}"),
+        }
+    });
 
     let broker_status = Arc::new(std::sync::Mutex::new(BrokerRuntimeState::default()));
 
@@ -231,6 +262,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         outbox: outbox.clone(),
         upstream,
         recent_trades,
+        instruments,
         broker_status: broker_status.clone(),
         broker_limits: config.broker_sync.clone(),
     };

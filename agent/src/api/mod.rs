@@ -1,6 +1,7 @@
 use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
     event_bus::EventBus,
+    instruments::InstrumentStore,
     metrics::AgentMetrics,
     recent_trades::RecentTradesStore,
     sse_signing::SseSigner,
@@ -17,6 +18,7 @@ mod bar;
 mod broker_sync_state;
 mod capture;
 mod health;
+mod instruments;
 mod outbox_status;
 mod phase8;
 mod recent_trades;
@@ -34,13 +36,14 @@ pub struct AppState {
     pub outbox: Arc<CaptureOutbox>,
     pub upstream: Arc<UpstreamClient>,
     pub recent_trades: RecentTradesStore,
+    pub instruments: Arc<InstrumentStore>,
     pub broker_status: Arc<std::sync::Mutex<BrokerRuntimeState>>,
     pub broker_limits: BrokerSyncConfig,
 }
 
 pub fn router(state: AppState) -> Router {
     let state_for_layer = state.clone();
-    Router::new()
+    let protected = Router::new()
         .route("/api/daemon/health", get(health::handler))
         .route("/api/daemon/events/stream", get(sse::handler))
         .route(
@@ -74,6 +77,14 @@ pub fn router(state: AppState) -> Router {
         .route("/api/daemon/bar/declare", post(bar::declare_handler))
         .route("/api/daemon/bar/stop-me", post(bar::stop_me_handler))
         .route(
+            "/api/daemon/bar/stop-me/clear",
+            post(bar::stop_me_clear_handler),
+        )
+        .route(
+            "/api/daemon/bar/cancel-declaration",
+            post(bar::cancel_declaration_handler),
+        )
+        .route(
             "/api/daemon/bar/protective",
             post(bar::protective_handler),
         )
@@ -98,6 +109,11 @@ pub fn router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(
             state_for_layer,
             wire::verify_middleware,
-        ))
+        ));
+
+    Router::new()
+        .route("/instruments/search", get(instruments::search_instruments))
+        .route("/instruments/ltp", get(instruments::get_ltp))
+        .merge(protected)
         .with_state(state)
 }
