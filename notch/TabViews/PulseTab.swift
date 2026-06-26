@@ -114,6 +114,7 @@ struct PulseRightView: View {
                     Task { await viewModel.sendTAIMessage("Activate algo mode") }
                 }
                 dangerButton("KILL SWITCH", accessibilityLabel: "Activate kill switch") {
+                    NotchHaptics.play(.heavy)
                     Task { await viewModel.activateKillSwitch() }
                 }
                 .accessibilityHint("Blocks all new entries for the session")

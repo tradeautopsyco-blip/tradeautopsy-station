@@ -2426,10 +2426,45 @@ final class NotchViewModel: ObservableObject {
     }
 
     func activateKillSwitch() async {
-        guard let url = URL(string: baseURL() + "/api/daemon/kill-switch") else { return }
-        let body = try? JSONSerialization.data(withJSONObject: ["level": 3, "reason": "notch_manual"])
-        let req = authorizedRequest(url: url, method: "POST", body: body)
-        _ = try? await URLSession.shared.data(for: req)
+        if barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "mockbroker" {
+            await fetchBarLiveState()
+        }
+        switch KillSwitchFirePayloadBuilder.build(protectiveBrokerSlug: barProtectiveBrokerSlug) {
+        case let .failure(error):
+            lastAlert = error.localizedDescription
+            return
+        case let .success(bodyDict):
+            guard let url = URL(string: baseURL() + "/api/daemon/kill-switch") else { return }
+            guard let body = try? JSONSerialization.data(withJSONObject: bodyDict) else { return }
+            let req = authorizedRequest(url: url, method: "POST", body: body)
+            do {
+                let (data, resp) = try await URLSession.shared.data(for: req)
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                guard (200...299).contains(code) else {
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let err = json["error"] as? String, !err.isEmpty {
+                        lastAlert = err
+                    } else {
+                        handleDaemonErrorResponse(data: data, statusCode: code)
+                    }
+                    return
+                }
+                let levelInt = bodyDict["level"] as? Int ?? 3
+                let levelStr = levelInt >= 3 ? "L3" : (levelInt == 2 ? "L2" : "L\(levelInt)")
+                _ = applyDaemonEventPayload(
+                    type: "kill_switch_state",
+                    payload: [
+                        "active": true,
+                        "level": levelStr,
+                        "countdown_secs": 90,
+                        "requires_ack": levelInt >= 3,
+                    ],
+                    immediateToolbarShow: false
+                )
+            } catch {
+                lastAlert = error.localizedDescription
+            }
+        }
     }
 
     /// Overlay "I'm Calm" — ack telemetry then dismiss DNS + fog (#189).

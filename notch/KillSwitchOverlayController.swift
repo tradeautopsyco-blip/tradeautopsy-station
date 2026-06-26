@@ -16,7 +16,7 @@ final class KillSwitchOverlayPanel: NSPanel {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
         isFloatingPanel = true
         level = .screenSaver
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .moveToActiveSpace]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         backgroundColor = .clear
         isOpaque = false

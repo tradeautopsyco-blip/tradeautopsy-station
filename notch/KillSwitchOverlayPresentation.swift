@@ -9,7 +9,7 @@ enum KillSwitchOverlayPresentation {
     ) -> Bool {
         guard active else { return false }
         let normalized = level?.uppercased()
-        if normalized == "L2" || normalized == "L3" {
+        if normalized == "L2" || normalized == "L3" || normalized == "2" || normalized == "3" {
             return true
         }
         return countdownSecs != nil
