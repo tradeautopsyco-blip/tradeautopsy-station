@@ -165,6 +165,12 @@ final class NotchViewModel: ObservableObject {
     @Published var openOrders: Int = 0
     @Published var killSwitchActive: Bool = false
     @Published var killSwitchCountdownSecs: Int?
+    /// L1 / L2 / L3 from agent SSE `kill_switch_state`.
+    @Published var killSwitchLevel: String?
+    @Published var killSwitchRequiresAck: Bool = false
+    /// Fullscreen overlay (#189) — L2/L3 with countdown.
+    @Published var killSwitchOverlayVisible: Bool = false
+    @Published var killSwitchDismissBusy: Bool = false
     @Published var morningBrief: MorningBrief?
     @Published var activeWorkflows: [WorkflowStatus] = []
     @Published var recentWorkflowRuns: [WorkflowRun] = []
@@ -1192,8 +1198,8 @@ final class NotchViewModel: ObservableObject {
         switch BarPlaceSlPayloadBuilder.resolveTradeLeg(liveState: payload, positions: positions) {
         case let .success(resolved):
             leg = resolved
-        case let .failure(message):
-            barDeclarationLastError = message
+        case let .failure(error):
+            barDeclarationLastError = error.localizedDescription
             return
         }
 
@@ -1856,6 +1862,10 @@ final class NotchViewModel: ObservableObject {
                 if !oldKs {
                     checkKillSwitchTransition(from: oldKs, to: true)
                 }
+                if let lv = payload["level"] as? String, !lv.isEmpty {
+                    killSwitchLevel = lv
+                }
+                killSwitchRequiresAck = payload["requires_ack"] as? Bool ?? false
                 if let c = payload["countdown_secs"] as? Int {
                     killSwitchCountdownSecs = c
                 } else if let d = payload["countdown_secs"] as? Double {
@@ -1867,11 +1877,14 @@ final class NotchViewModel: ObservableObject {
             } else {
                 killSwitchActive = false
                 killSwitchCountdownSecs = nil
+                killSwitchLevel = nil
+                killSwitchRequiresAck = false
                 stopKillSwitchCountdownTimer()
                 if oldKs {
                     pulseAttention = .none
                 }
             }
+            refreshKillSwitchOverlayVisibility()
             return true
 
         case "broker_sync_state":
@@ -2419,6 +2432,62 @@ final class NotchViewModel: ObservableObject {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// Overlay "I'm Calm" — ack telemetry then dismiss DNS + fog (#189).
+    func dismissKillSwitchFromOverlay() async {
+        guard KillSwitchOverlayPresentation.calmButtonEnabled(countdownSecs: killSwitchCountdownSecs) else {
+            return
+        }
+        killSwitchDismissBusy = true
+        defer { killSwitchDismissBusy = false }
+        if killSwitchRequiresAck {
+            await ackKillSwitchOverlay()
+        }
+        guard let url = URL(string: baseURL() + "/api/daemon/dismiss-kill-switch") else { return }
+        let body: [String: Any] = ["reason": "user_calm"]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        do {
+            let (_, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: payload),
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else {
+                lastAlert = "Could not dismiss kill switch (\(code))"
+                return
+            }
+            killSwitchActive = false
+            killSwitchCountdownSecs = nil
+            killSwitchLevel = nil
+            killSwitchRequiresAck = false
+            stopKillSwitchCountdownTimer()
+            refreshKillSwitchOverlayVisibility()
+            pulseAttention = .none
+        } catch {
+            lastAlert = error.localizedDescription
+        }
+    }
+
+    /// `POST /api/daemon/kill-switch/ack` — ingestSignal telemetry (Slice B #189).
+    func ackKillSwitchOverlay() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/kill-switch/ack") else { return }
+        var body: [String: Any] = [
+            "countdown_remaining_secs": killSwitchCountdownSecs ?? 0,
+        ]
+        if let lv = killSwitchLevel, !lv.isEmpty {
+            body["level"] = lv
+        }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        let req = authorizedRequest(url: url, method: "POST", body: payload)
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    private func refreshKillSwitchOverlayVisibility() {
+        killSwitchOverlayVisible = KillSwitchOverlayPresentation.shouldShowFullscreenOverlay(
+            active: killSwitchActive,
+            level: killSwitchLevel,
+            countdownSecs: killSwitchCountdownSecs
+        )
+    }
+
     func exitAllPositions() async {
         guard let url = URL(string: baseURL() + "/api/daemon/cancel-all") else { return }
         let req = authorizedRequest(url: url, method: "POST", body: Data("{}".utf8))
@@ -2630,6 +2699,7 @@ final class NotchViewModel: ObservableObject {
                     return
                 }
                 self.killSwitchCountdownSecs = remaining - 1
+                self.refreshKillSwitchOverlayVisibility()
             }
         }
         RunLoop.main.add(t, forMode: .common)

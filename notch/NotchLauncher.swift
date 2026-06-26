@@ -16,6 +16,7 @@ protocol NotchLauncherHost: AnyObject {
 @MainActor
 final class NotchLauncher: NSObject, NotchLauncherHost {
     private var panelController: NotchPanelController?
+    private var killSwitchOverlayController: KillSwitchOverlayController?
     private var globalHotkeyMonitor: Any?
     private var localHotkeyMonitor: Any?
     private var fnGlobalMonitor: Any?
@@ -39,6 +40,9 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
         if panelController == nil {
             panelController = NotchPanelController(viewModel: viewModel)
         }
+        if killSwitchOverlayController == nil {
+            killSwitchOverlayController = KillSwitchOverlayController(viewModel: viewModel)
+        }
         installHotkeyMonitorsIfNeeded()
         installFnKeyMonitorsIfNeeded()
         viewModel.ensureDictationWired()
@@ -52,6 +56,7 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
         uninstallFnKeyMonitors()
         panelController?.hide()
         panelController = nil
+        killSwitchOverlayController = nil
     }
 
     private func installHotkeyMonitorsIfNeeded() {
