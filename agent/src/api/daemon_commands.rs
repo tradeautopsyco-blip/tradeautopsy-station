@@ -3,6 +3,7 @@
 use super::capture::forward_daemon_json_with_optional_429_retry;
 use super::kill_switch::{apply_kill_switch_level, dismiss_kill_switch_state};
 use super::AppState;
+use crate::resolve_kill_switch_broker::resolve_kill_switch_broker;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -31,12 +32,9 @@ pub fn level_from_payload(payload: &Value) -> u64 {
         .unwrap_or(1)
 }
 
-pub fn broker_from_payload(payload: &Value) -> String {
-    payload
-        .get("broker")
-        .and_then(|v| v.as_str())
-        .unwrap_or("zerodha")
-        .to_string()
+pub fn broker_from_payload(payload: &Value) -> Result<String, String> {
+    let raw = payload.get("broker").and_then(|v| v.as_str());
+    resolve_kill_switch_broker(raw, std::env::var("AGENT_PROTECTIVE_BROKER_SLUG").ok().as_deref())
 }
 
 pub fn trigger_from_payload(payload: &Value) -> Option<String> {
@@ -57,7 +55,7 @@ pub async fn execute_daemon_command(
     match kind {
         DaemonCommandKind::FogOfWar => {
             let level = level_from_payload(payload);
-            let broker = broker_from_payload(payload);
+            let broker = broker_from_payload(payload)?;
             let trigger = trigger_from_payload(payload);
             apply_kill_switch_level(state, level, &broker, trigger.as_deref()).await?;
             if level >= 3 {

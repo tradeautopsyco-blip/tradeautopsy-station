@@ -3,8 +3,10 @@ mod bar_fill_ingress;
 mod broker;
 mod broker_sync;
 mod dns_block;
+mod resolve_kill_switch_broker;
 mod event_bus;
 mod instruments;
+mod kill_switch_audit;
 mod metrics;
 mod outbox;
 mod recent_trades;
@@ -15,6 +17,7 @@ pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
 pub use broker::{BrokerAdapter, BrokerError, BrokerFill, SeqMockBrokerAdapter};
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
+pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
 pub use event_bus::{AgentEvent, EventBus};
 pub use metrics::AgentMetrics;
 pub use outbox::{
@@ -22,6 +25,10 @@ pub use outbox::{
     OutboxStatusSnapshot, ProcessNowResult,
 };
 pub use instruments::InstrumentStore;
+pub use kill_switch_audit::{
+    canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
+    KillSwitchAuditSigner, KillSwitchAuditStore,
+};
 pub use recent_trades::RecentTradesStore;
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
@@ -85,6 +92,7 @@ pub struct AgentConfig {
     pub outbox: OutboxConfig,
     pub recent_trades_db_path: PathBuf,
     pub instruments_db_path: PathBuf,
+    pub kill_switch_audit_db_path: PathBuf,
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub broker_sync: BrokerSyncConfig,
     pub bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
@@ -122,6 +130,7 @@ impl AgentConfig {
                 p.push("instruments.db");
                 p
             });
+        let kill_switch_audit_db_path = KillSwitchAuditStore::db_path_from_env_or_default();
         let metrics_port: Option<u16> = match std::env::var("AGENT_METRICS_PORT").ok() {
             Some(s) => match s.parse::<u16>() {
                 Ok(0) => None,
@@ -144,6 +153,7 @@ impl AgentConfig {
             outbox,
             recent_trades_db_path,
             instruments_db_path,
+            kill_switch_audit_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress,
@@ -158,6 +168,8 @@ impl AgentConfig {
         recent_trades_db_path.push(format!("rta-recent-{port}.db"));
         let mut instruments_db_path = std::env::temp_dir();
         instruments_db_path.push(format!("rta-instruments-{port}.db"));
+        let mut kill_switch_audit_db_path = std::env::temp_dir();
+        kill_switch_audit_db_path.push(format!("rta-kill-switch-audit-{port}.db"));
         Self {
             port,
             daemon_secret: daemon_secret.clone(),
@@ -170,6 +182,7 @@ impl AgentConfig {
             outbox: OutboxConfig::from_env(),
             recent_trades_db_path,
             instruments_db_path,
+            kill_switch_audit_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress: None,
@@ -231,6 +244,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let upstream = Arc::new(UpstreamClient::new(config.upstream)?);
     let outbox = Arc::new(CaptureOutbox::new(config.outbox, upstream.clone())?);
     let recent_trades = RecentTradesStore::open(&config.recent_trades_db_path)?;
+    let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
+    let audit_signer = Arc::new(KillSwitchAuditSigner::from_env_or_generate());
     let instruments = Arc::new(InstrumentStore::new(
         config
             .instruments_db_path
@@ -282,6 +297,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         broker_status: broker_status.clone(),
         broker_limits: config.broker_sync.clone(),
         fog_active: fog_active.clone(),
+        kill_switch_audit,
+        audit_signer,
+        last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
     };
     let router = api::router(state.clone());
 

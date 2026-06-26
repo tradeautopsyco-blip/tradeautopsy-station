@@ -88,6 +88,7 @@ pub fn spawn_test_agent_with_options(
     if opts.recent_trades_db_path.is_none() {
         let _ = std::fs::remove_file(&cfg.recent_trades_db_path);
     }
+    let _ = std::fs::remove_file(&cfg.kill_switch_audit_db_path);
     tokio::spawn(async move {
         tradeautopsy_agent::run_agent(cfg)
             .await

@@ -20,9 +20,11 @@ const UPSTOX_HOSTS: &[&str] = &["api.upstox.com", "api-v2.upstox.com"];
 
 /// Broker slug → sinkhole hostnames (pure, testable).
 pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
-    match broker {
+    let slug = broker.trim().to_ascii_lowercase();
+    match slug.as_str() {
         "zerodha" | "kite" => ZERODHA_HOSTS,
         "upstox" => UPSTOX_HOSTS,
+        "kotak" | "kotak_neo" => KOTAK_HOSTS,
         _ => KOTAK_HOSTS,
     }
 }
@@ -195,7 +197,101 @@ mod macos {
 }
 
 #[cfg(target_os = "macos")]
+static WATCHER_HANDLE: std::sync::Mutex<Option<notify::RecommendedWatcher>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+static ARMED_BROKER: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn start_hosts_watcher(broker: String) {
+    use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+    use tracing::{info, warn};
+
+    if let Ok(mut armed) = ARMED_BROKER.lock() {
+        *armed = Some(broker.clone());
+    }
+
+    let mut guard = WATCHER_HANDLE.lock().expect("watcher lock");
+    if guard.is_some() {
+        return;
+    }
+
+    let watch_path = hosts_file_path();
+    let broker_clone = broker.clone();
+    let watcher = RecommendedWatcher::new(
+        move |res: Result<notify::Event, notify::Error>| {
+            if let Ok(event) = res {
+                if matches!(event.kind, EventKind::Modify(_)) {
+                    if !macos::is_block_active() {
+                        let armed_broker = ARMED_BROKER
+                            .lock()
+                            .ok()
+                            .and_then(|g| g.clone())
+                            .unwrap_or(broker_clone.clone());
+                        warn!(
+                            "KillSwitch: /etc/hosts tampered — re-applying block for broker={armed_broker}"
+                        );
+                        let _ = macos::apply_hosts_block(&armed_broker);
+                    }
+                }
+            }
+        },
+        Config::default(),
+    );
+
+    match watcher {
+        Ok(mut w) => {
+            if let Err(e) = w.watch(&watch_path, RecursiveMode::NonRecursive) {
+                warn!("KillSwitch: failed to watch hosts file: {e}");
+                return;
+            }
+            info!("KillSwitch: hosts watcher started for broker={broker}");
+            *guard = Some(w);
+        }
+        Err(e) => warn!("KillSwitch: failed to create watcher: {e}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn stop_hosts_watcher() {
+    let mut guard = WATCHER_HANDLE.lock().expect("watcher lock");
+    if guard.take().is_some() {
+        tracing::info!("KillSwitch: hosts watcher stopped");
+    }
+    if let Ok(mut armed) = ARMED_BROKER.lock() {
+        *armed = None;
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn enable_block_with_watcher(broker: &str) -> Result<(), String> {
+    let broker_owned = broker.to_string();
+    let result = macos::apply_hosts_block(&broker_owned);
+    if result.is_ok() {
+        start_hosts_watcher(broker_owned);
+    }
+    result
+}
+
+#[cfg(target_os = "macos")]
+pub fn disable_block_and_watcher() -> Result<(), String> {
+    stop_hosts_watcher();
+    macos::disable_block()
+}
+
+#[cfg(target_os = "macos")]
 pub use macos::{apply_hosts_block, disable_block, is_block_active};
+
+#[cfg(not(target_os = "macos"))]
+pub fn enable_block_with_watcher(_broker: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn disable_block_and_watcher() -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "macos"))]
 pub fn flush_browser_dns() {}
@@ -230,6 +326,13 @@ mod tests {
     fn upstox_broker_maps_to_upstox_hosts() {
         let hosts = hosts_for_broker("upstox");
         assert!(hosts.contains(&"api.upstox.com"));
+    }
+
+    #[test]
+    fn kotak_neo_maps_to_kotak_hosts() {
+        let hosts = hosts_for_broker("kotak_neo");
+        assert!(hosts.contains(&"neo.kotaksecurities.com"));
+        assert!(hosts.contains(&"cis.kotaksecurities.com"));
     }
 
     #[test]

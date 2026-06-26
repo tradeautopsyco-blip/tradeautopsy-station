@@ -2,6 +2,7 @@ use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
     event_bus::EventBus,
     instruments::InstrumentStore,
+    kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
     metrics::AgentMetrics,
     recent_trades::RecentTradesStore,
     sse_signing::SseSigner,
@@ -44,6 +45,9 @@ pub struct AppState {
     pub broker_limits: BrokerSyncConfig,
     /// L1 fog-of-war armed (#190).
     pub fog_active: Arc<AtomicBool>,
+    pub kill_switch_audit: KillSwitchAuditStore,
+    pub audit_signer: Arc<KillSwitchAuditSigner>,
+    pub last_l3_broker: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -116,6 +120,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/kill-switch/ack",
             post(phase8::kill_switch_ack_handler),
+        )
+        .route(
+            "/api/daemon/kill-switch/audit",
+            get(kill_switch::kill_switch_audit_handler),
         )
         .route("/api/daemon/auth/begin", post(phase8::auth_begin_handler))
         .route("/api/daemon/auth/finish", post(phase8::auth_finish_handler))
