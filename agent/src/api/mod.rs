@@ -12,13 +12,16 @@ use axum::{
     routing::{get, patch, post},
     Router,
 };
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 mod bar;
 mod broker_sync_state;
 mod capture;
+pub mod daemon_commands;
 mod health;
 mod instruments;
+mod kill_switch;
 mod outbox_status;
 mod phase8;
 mod recent_trades;
@@ -39,6 +42,8 @@ pub struct AppState {
     pub instruments: Arc<InstrumentStore>,
     pub broker_status: Arc<std::sync::Mutex<BrokerRuntimeState>>,
     pub broker_limits: BrokerSyncConfig,
+    /// L1 fog-of-war armed (#190).
+    pub fog_active: Arc<AtomicBool>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -99,6 +104,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/bar/post-trade-debrief",
             patch(bar::post_trade_debrief_handler),
+        )
+        .route(
+            "/api/daemon/kill-switch",
+            post(kill_switch::kill_switch_handler),
+        )
+        .route(
+            "/api/daemon/dismiss-kill-switch",
+            post(kill_switch::dismiss_kill_switch_handler),
         )
         .route(
             "/api/daemon/kill-switch/ack",

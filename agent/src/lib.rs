@@ -2,6 +2,7 @@ mod api;
 mod bar_fill_ingress;
 mod broker;
 mod broker_sync;
+mod dns_block;
 mod event_bus;
 mod instruments;
 mod metrics;
@@ -13,6 +14,7 @@ mod wire;
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
 pub use broker::{BrokerAdapter, BrokerError, BrokerFill, SeqMockBrokerAdapter};
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
+pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
 pub use event_bus::{AgentEvent, EventBus};
 pub use metrics::AgentMetrics;
 pub use outbox::{
@@ -24,11 +26,15 @@ pub use recent_trades::RecentTradesStore;
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
 
+pub use api::daemon_commands::{
+    parse_daemon_command_type, DaemonCommandKind,
+};
+
 use crate::broker_sync::spawn_broker_stack;
 use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -82,6 +88,8 @@ pub struct AgentConfig {
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub broker_sync: BrokerSyncConfig,
     pub bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
+    /// User id for `GET /api/daemon/command` poll (#190). `None` disables poll loop.
+    pub daemon_poll_user_id: Option<String>,
 }
 
 impl AgentConfig {
@@ -123,6 +131,10 @@ impl AgentConfig {
             None => Some(9138),
         };
         let bar_fill_ingress = BarBrokerFillIngressConfig::from_env();
+        let daemon_poll_user_id = std::env::var("AGENT_DAEMON_USER_ID")
+            .ok()
+            .or_else(|| std::env::var("AGENT_BAR_INGEST_USER_ID").ok())
+            .filter(|s| uuid::Uuid::parse_str(s).is_ok());
         Ok(Self {
             port,
             daemon_secret,
@@ -135,6 +147,7 @@ impl AgentConfig {
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress,
+            daemon_poll_user_id,
         })
     }
 
@@ -160,6 +173,7 @@ impl AgentConfig {
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress: None,
+            daemon_poll_user_id: None,
         }
     }
 }
@@ -252,6 +266,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         );
     }
 
+    let fog_active = Arc::new(AtomicBool::new(false));
+
     let state = api::AppState {
         event_bus: event_bus.clone(),
         runtime: runtime.clone(),
@@ -265,8 +281,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         instruments,
         broker_status: broker_status.clone(),
         broker_limits: config.broker_sync.clone(),
+        fog_active: fog_active.clone(),
     };
-    let router = api::router(state);
+    let router = api::router(state.clone());
 
     metrics.set_uptime_secs(runtime.uptime_secs());
 
@@ -292,6 +309,24 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         background.spawn(async move {
             worker.run_worker_loop().await;
         });
+    }
+
+    if let Some(user_id) = config.daemon_poll_user_id.clone() {
+        let poll_ms = std::env::var("AGENT_COMMAND_POLL_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10_000);
+        tracing::info!(
+            user_id = %user_id,
+            poll_ms,
+            "daemon_commands poll loop starting"
+        );
+        api::daemon_commands::spawn_daemon_command_poll_loop(
+            state.clone(),
+            user_id,
+            poll_ms,
+            fog_active,
+        );
     }
 
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));

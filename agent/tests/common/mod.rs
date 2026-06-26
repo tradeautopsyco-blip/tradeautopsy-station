@@ -29,6 +29,9 @@ pub struct TestAgentOptions {
     pub metrics_port: Option<u16>,
     /// Phase 9 — hosted daemon base URL override for proxy integration tests.
     pub upstream_base_url_override: Option<String>,
+    /// Slice B — daemon command poll user (#190).
+    pub daemon_poll_user_id: Option<String>,
+    pub command_poll_ms: u64,
 }
 
 impl Default for TestAgentOptions {
@@ -47,6 +50,8 @@ impl Default for TestAgentOptions {
             stale_secs: 30,
             metrics_port: None,
             upstream_base_url_override: None,
+            daemon_poll_user_id: None,
+            command_poll_ms: 500,
         }
     }
 }
@@ -71,6 +76,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     if let Some(base) = &opts.upstream_base_url_override {
         cfg.upstream.base_url = base.trim_end_matches('/').to_string();
     }
+    cfg.daemon_poll_user_id = opts.daemon_poll_user_id.clone();
 }
 
 pub fn spawn_test_agent_with_options(
