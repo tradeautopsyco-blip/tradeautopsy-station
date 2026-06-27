@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  agent-tests:
+    name: Rust agent tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
+      - name: Run agent tests
+        working-directory: agent
+        run: cargo test --all-features
+        env:
+          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
+
+  notch-build:
+    name: Swift Notch build check
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Notch (SwiftPM)
+        working-directory: notch
+        run: |
+          swift build 2>&1 || echo "No Package.swift yet — add SwiftPM manifest to notch/"

@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "version": "1.0.0",
+  "description": "TradeAutopsy Station wire protocol v1 — contract between tradeautopsy-station and tradeautopsy brain",
+  "endpoints": {
+    "agent_base": "http://127.0.0.1:9137",
+    "brain_base": "https://tradeautopsy.in",
+    "routes": {
+      "kill_switch_fire":    { "method": "POST", "path": "/api/daemon/kill-switch" },
+      "kill_switch_dismiss": { "method": "POST", "path": "/api/daemon/dismiss-kill-switch" },
+      "kill_switch_ack":     { "method": "POST", "path": "/api/daemon/kill-switch/ack" },
+      "kill_switch_audit":   { "method": "GET",  "path": "/api/daemon/kill-switch/audit" },
+      "bar_declare":         { "method": "POST", "path": "/api/bar/v1/declare" },
+      "bar_live_state":      { "method": "GET",  "path": "/api/bar/v1/live-state" },
+      "bar_stop_me":         { "method": "POST", "path": "/api/bar/v1/stop-me" },
+      "bar_stop_me_clear":   { "method": "POST", "path": "/api/bar/v1/stop-me/clear" },
+      "daemon_command_poll": { "method": "GET",  "path": "/api/daemon/command" },
+      "ingest_signal":       { "method": "POST", "path": "/api/signals/ingest" }
+    },
+    "auth": {
+      "agent_to_brain": "x-daemon-secret header + HMAC-SHA256 per wire v1 spec",
+      "notch_to_agent": "UDS token or x-daemon-secret on loopback"
+    },
+    "sse": {
+      "kill_switch_state": "SSE event from agent — payload: { state, level, broker, fired_at_ms }",
+      "live_state":        "SSE event from agent — payload: Bar live-state projection"
+    },
+    "thresholds": {
+      "score_warning":   0.25,
+      "score_soft_block": 0.35,
+      "score_hard_block": 0.45
+    },
+    "compatibility": {
+      "brain_min_version": "slice-b",
+      "station_version":   "0.1.0"
+    }
+  }
+}

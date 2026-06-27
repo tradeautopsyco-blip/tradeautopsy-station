@@ -1,0 +1,27 @@
+# Rust
+agent/target/
+agent/Cargo.lock.bak
+
+# Swift / Xcode
+notch/*.xcodeproj/
+notch/*.xcworkspace/
+notch/DerivedData/
+notch/.build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Secrets — never commit
+.env
+.env.local
+*.p12
+*.mobileprovision
+
+# Editor
+.cursor/
+.vscode/
