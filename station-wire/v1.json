@@ -32,7 +32,8 @@
     },
     "compatibility": {
       "brain_min_version": "slice-b",
-      "station_version":   "0.1.0"
+      "station_version":   "0.2.0",
+      "phase": "phase-0-shell"
     }
   }
 }

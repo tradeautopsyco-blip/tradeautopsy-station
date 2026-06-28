@@ -37,3 +37,19 @@ jobs:
         working-directory: notch
         run: |
           swift build 2>&1 || echo "No Package.swift yet — add SwiftPM manifest to notch/"
+
+  station-build:
+    name: Station build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Station (SwiftPM)
+        run: swift build --package-path station/
+
+  station-tests:
+    name: Station tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Station tests
+        run: swift test --package-path station/
