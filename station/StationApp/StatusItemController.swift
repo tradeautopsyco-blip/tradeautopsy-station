@@ -46,7 +46,7 @@ public final class StatusItemController: StatusItemControlling {
     }
 
     @objc private func openStation(_ sender: Any?) {
-        // Placeholder — window chrome is a later slice.
+        coordinator?.openStation()
     }
 
     @objc private func toggleNotch(_ sender: Any?) {

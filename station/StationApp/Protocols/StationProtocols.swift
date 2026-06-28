@@ -35,3 +35,22 @@ public protocol NotchPollingControlling: AnyObject {
     func startPolling()
     func stopPolling()
 }
+
+@MainActor
+public protocol StationWindowControlling: AnyObject {
+    func show(orderFrontOnly: Bool)
+    func showAndActivate()
+    func hide()
+    func persistFrame()
+    func restoreFrame()
+    var isVisible: Bool { get }
+}
+
+@MainActor
+public protocol StationLaunchStoring: AnyObject {
+    var isFirstLaunchCompleted: Bool { get }
+    func setFirstLaunchCompleted()
+    var wasWindowVisibleBeforeQuit: Bool { get }
+    func setWasWindowVisibleBeforeQuit(_ visible: Bool)
+    var loginAtBoot: Bool { get }
+}

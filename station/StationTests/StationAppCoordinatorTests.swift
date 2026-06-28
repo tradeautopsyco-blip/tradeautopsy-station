@@ -10,7 +10,9 @@ struct StationAppCoordinatorTests {
         statusItemController: FakeStatusItemController,
         hotkeyRegistrar: FakeHotkeyRegistrar,
         notchHost: FakeNotchHost,
-        notchPolling: FakeNotchPolling
+        notchPolling: FakeNotchPolling,
+        windowController: FakeStationWindowController,
+        launchStore: FakeLaunchStore
     ) {
         let agentSupervisor = FakeAgentSupervisor()
         agentSupervisor.scenario = scenario
@@ -18,14 +20,28 @@ struct StationAppCoordinatorTests {
         let hotkeyRegistrar = FakeHotkeyRegistrar()
         let notchHost = FakeNotchHost()
         let notchPolling = FakeNotchPolling()
+        let windowController = FakeStationWindowController()
+        let launchStore = FakeLaunchStore()
+        launchStore.isFirstLaunchCompleted = true
         let coordinator = StationAppCoordinator(
             agentSupervisor: agentSupervisor,
             statusItemController: statusItemController,
             hotkeyRegistrar: hotkeyRegistrar,
             notchHost: notchHost,
-            notchPolling: notchPolling
+            notchPolling: notchPolling,
+            windowController: windowController,
+            launchStore: launchStore
         )
-        return (coordinator, agentSupervisor, statusItemController, hotkeyRegistrar, notchHost, notchPolling)
+        return (
+            coordinator,
+            agentSupervisor,
+            statusItemController,
+            hotkeyRegistrar,
+            notchHost,
+            notchPolling,
+            windowController,
+            launchStore
+        )
     }
 
     // T1: Launch with healthy agent fake → no warning; notch start called; polling started

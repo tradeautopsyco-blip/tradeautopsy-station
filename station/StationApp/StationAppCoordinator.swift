@@ -15,19 +15,25 @@ public final class StationAppCoordinator: ObservableObject {
     private let hotkeyRegistrar: HotkeyRegistering
     private let notchHost: NotchHosting
     private let notchPolling: NotchPollingControlling
+    private let windowController: StationWindowControlling
+    private let launchStore: StationLaunchStoring
 
     public init(
         agentSupervisor: AgentSupervising,
         statusItemController: StatusItemControlling,
         hotkeyRegistrar: HotkeyRegistering,
         notchHost: NotchHosting,
-        notchPolling: NotchPollingControlling
+        notchPolling: NotchPollingControlling,
+        windowController: StationWindowControlling,
+        launchStore: StationLaunchStoring
     ) {
         self.agentSupervisor = agentSupervisor
         self.statusItemController = statusItemController
         self.hotkeyRegistrar = hotkeyRegistrar
         self.notchHost = notchHost
         self.notchPolling = notchPolling
+        self.windowController = windowController
+        self.launchStore = launchStore
 
         agentSupervisor.onHealthChange = { [weak self] isHealthy in
             Task { @MainActor in
@@ -37,6 +43,7 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func launch() async {
+        windowController.restoreFrame()
         await agentSupervisor.start()
         syncAgentHealthFromSupervisor()
         statusItemController.install(coordinator: self)
@@ -46,6 +53,17 @@ public final class StationAppCoordinator: ObservableObject {
         }
 
         registerHotkeys()
+        presentWindowOnLaunchIfNeeded()
+    }
+
+    public func openStation() {
+        windowController.showAndActivate()
+        launchStore.setWasWindowVisibleBeforeQuit(true)
+    }
+
+    public func closeWindow() {
+        windowController.hide()
+        launchStore.setWasWindowVisibleBeforeQuit(false)
     }
 
     public func retryAgent() async {
@@ -59,6 +77,9 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func quit() async {
+        if windowController.isVisible {
+            windowController.hide()
+        }
         hotkeyRegistrar.unregisterAll()
         await agentSupervisor.shutdown()
         notchPolling.stopPolling()
@@ -82,6 +103,28 @@ public final class StationAppCoordinator: ObservableObject {
 
     private func registerHotkeys() {
         hotkeyRegistrar.registerToggleNotch { }
-        hotkeyRegistrar.registerOpenStation { }
+        hotkeyRegistrar.registerOpenStation { [weak self] in
+            Task { @MainActor in
+                self?.openStation()
+            }
+        }
+    }
+
+    private func presentWindowOnLaunchIfNeeded() {
+        if !launchStore.isFirstLaunchCompleted {
+            windowController.show(orderFrontOnly: true)
+            launchStore.setFirstLaunchCompleted()
+            launchStore.setWasWindowVisibleBeforeQuit(true)
+            return
+        }
+
+        if launchStore.wasWindowVisibleBeforeQuit {
+            windowController.show(orderFrontOnly: true)
+            return
+        }
+
+        if launchStore.loginAtBoot {
+            return
+        }
     }
 }

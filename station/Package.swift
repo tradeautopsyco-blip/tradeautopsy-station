@@ -18,6 +18,9 @@ let package = Package(
     targets: [
         .target(
             name: "Station",
+            dependencies: [
+                .product(name: "Notch", package: "Notch"),
+            ],
             path: "StationApp",
             exclude: ["StationApp.swift", "Info.plist"],
             linkerSettings: [

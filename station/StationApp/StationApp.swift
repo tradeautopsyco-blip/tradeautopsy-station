@@ -18,13 +18,18 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let notchHost = NotchABIHost()
+        let launchStore = UserDefaultsLaunchStore()
+        let windowController = StationWindowController()
         let coordinator = StationAppCoordinator(
             agentSupervisor: AgentSupervisor(),
             statusItemController: StatusItemController(),
             hotkeyRegistrar: HotkeyRegistrar(),
             notchHost: notchHost,
-            notchPolling: notchHost
+            notchPolling: notchHost,
+            windowController: windowController,
+            launchStore: launchStore
         )
+        windowController.install(coordinator: coordinator)
         self.coordinator = coordinator
 
         Task {
