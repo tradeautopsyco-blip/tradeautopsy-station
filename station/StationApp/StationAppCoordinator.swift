@@ -7,6 +7,9 @@ public final class StationAppCoordinator: ObservableObject {
     /// Shell navigation stays enabled even when the agent is unhealthy (TRD §6.3).
     public var isShellNavigable: Bool { true }
 
+    /// Pulse strip shows em-dash placeholders when agent data is unavailable (TRD §11.2).
+    public var isPulseStripDegraded: Bool { !agentSupervisor.isHealthy }
+
     private let agentSupervisor: AgentSupervising
     private let statusItemController: StatusItemControlling
     private let hotkeyRegistrar: HotkeyRegistering
@@ -25,6 +28,12 @@ public final class StationAppCoordinator: ObservableObject {
         self.hotkeyRegistrar = hotkeyRegistrar
         self.notchHost = notchHost
         self.notchPolling = notchPolling
+
+        agentSupervisor.onHealthChange = { [weak self] isHealthy in
+            Task { @MainActor in
+                self?.handleAgentHealthChange(isHealthy: isHealthy)
+            }
+        }
     }
 
     public func launch() async {
@@ -40,6 +49,7 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func retryAgent() async {
+        agentHealthWarning = nil
         await agentSupervisor.retry()
         syncAgentHealthFromSupervisor()
 
@@ -63,6 +73,11 @@ public final class StationAppCoordinator: ObservableObject {
     private func syncAgentHealthFromSupervisor() {
         agentHealthWarning = agentSupervisor.currentWarning
         statusItemController.updateAgentStatus(isHealthy: agentSupervisor.isHealthy)
+    }
+
+    private func handleAgentHealthChange(isHealthy: Bool) {
+        syncAgentHealthFromSupervisor()
+        objectWillChange.send()
     }
 
     private func registerHotkeys() {
