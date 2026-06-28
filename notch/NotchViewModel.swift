@@ -44,12 +44,19 @@ struct SignalRow: Identifiable {
     var value: Double
 }
 
-struct NotchPosition: Identifiable {
-    var id: String { symbol + "\(qty)" }
-    var symbol: String
-    var qty: Int
-    var unrealizedPnL: Double
-    var direction: String
+public struct NotchPosition: Identifiable {
+    public var id: String { symbol + "\(qty)" }
+    public var symbol: String
+    public var qty: Int
+    public var unrealizedPnL: Double
+    public var direction: String
+
+    public init(symbol: String, qty: Int, unrealizedPnL: Double, direction: String) {
+        self.symbol = symbol
+        self.qty = qty
+        self.unrealizedPnL = unrealizedPnL
+        self.direction = direction
+    }
 }
 
 struct MorningBrief: Equatable {
@@ -149,16 +156,16 @@ enum PulseAttention {
 }
 
 @MainActor
-final class NotchViewModel: ObservableObject {
+public final class NotchViewModel: ObservableObject {
     @Published var compositeScore: Double = 0
     @Published var behavioralState: String = "CALM"
     /// Joined multiplier labels from hosted live-state (#184).
     @Published var barBehavioralMultiplierLabel: String?
-    @Published var sessionPnL: Double = 0
+    @Published public var sessionPnL: Double = 0
     @Published var winRate: Double = 0
     @Published var tradesToday: Int = 0
     @Published var signals = SignalBreakdown()
-    @Published var positions: [NotchPosition] = []
+    @Published public var positions: [NotchPosition] = []
 
     /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
     var hasOpenPositions: Bool { !positions.isEmpty }
@@ -181,7 +188,7 @@ final class NotchViewModel: ObservableObject {
     @Published var activeTab: NotchTab = .pulse
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
-    @Published var brokerSessionActive: Bool = false
+    @Published public var brokerSessionActive: Bool = false
     /// User click + programmatic expansion (never hover-to-expand).
     @Published var isExpanded: Bool = false
     /// One-shot ring scale pulse after smart trigger (0.3s).
@@ -395,7 +402,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    var totalUnrealizedPnL: Double { unrealizedTotal }
+    public var totalUnrealizedPnL: Double { unrealizedTotal }
 
     var totalExposure: Double { totalExposureApprox }
 
@@ -451,6 +458,14 @@ final class NotchViewModel: ObservableObject {
     private let barDeclareHTTPExecutor: BarDeclareHTTPExecuting
     /// Tests pass a no-op to avoid `fetchBarLiveState()` hitting `URLSession.shared` (#120).
     private let barDeclareSuccessFollowUp: (@MainActor () async -> Void)?
+
+    public convenience init() {
+        self.init(
+            barArchetypeStore: UserDefaultsBarArchetypeStore(),
+            barDeclareHTTPExecutor: URLSessionBarDeclareHTTPExecutor(),
+            barDeclareSuccessFollowUp: nil
+        )
+    }
 
     init(
         barArchetypeStore: BarArchetypeStore = UserDefaultsBarArchetypeStore(),
@@ -1546,7 +1561,7 @@ final class NotchViewModel: ObservableObject {
         return lastCode
     }
 
-    func startPolling() {
+    public func startPolling() {
         stopPolling()
         loadJournalCaptureDraftLocally()
         startDaemonEventsStream()
@@ -1598,7 +1613,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    func stopPolling() {
+    public func stopPolling() {
         toolbarShowCoalesceTask?.cancel()
         toolbarShowCoalesceTask = nil
         stopBarLiveStatePolling()
@@ -2767,7 +2782,7 @@ enum NotchVoiceOver {
 }
 
 extension NotchViewModel {
-    func formatINR(_ v: Double) -> String {
+    public func formatINR(_ v: Double) -> String {
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "INR"

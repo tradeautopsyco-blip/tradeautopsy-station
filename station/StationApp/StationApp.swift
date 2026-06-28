@@ -17,19 +17,27 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: StationAppCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let notchHost = NotchABIHost()
+        let inputMonitoringChecker = DefaultInputMonitoringChecker()
         let launchStore = UserDefaultsLaunchStore()
         let windowController = StationWindowController()
         let phaseProvider = DefaultBarSurfacePhaseProvider()
+        let notchViewModel = NotchViewModel()
+        let notchHost = HostedNotchLauncher(viewModel: notchViewModel)
+        let secret = ProcessInfo.processInfo.environment["AGENT_SECRET"] ?? ""
+        let port = AgentLoopback.port
+        let base = "http://127.0.0.1:\(port)"
+        notchHost.configure(secret: secret, port: port, webBase: base)
         let coordinator = StationAppCoordinator(
             agentSupervisor: AgentSupervisor(),
             statusItemController: StatusItemController(),
-            hotkeyRegistrar: HotkeyRegistrar(),
+            hotkeyRegistrar: HotkeyRegistrar(inputMonitoringChecker: inputMonitoringChecker),
             notchHost: notchHost,
             notchPolling: notchHost,
             windowController: windowController,
             launchStore: launchStore,
-            phaseProvider: phaseProvider
+            phaseProvider: phaseProvider,
+            notchViewModel: notchViewModel,
+            inputMonitoringChecker: inputMonitoringChecker
         )
         windowController.install(coordinator: coordinator)
         self.coordinator = coordinator
@@ -43,48 +51,6 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await coordinator?.quit()
         }
-    }
-}
-
-/// Hosts the notch via existing C ABI (`tradeautopsy_notch_*`) without requiring Notch type exports.
-@MainActor
-final class NotchABIHost: NotchHosting, NotchPollingControlling {
-    func start() async {
-        let secret = ProcessInfo.processInfo.environment["AGENT_SECRET"] ?? ""
-        let port = AgentLoopback.port
-        let base = "http://127.0.0.1:\(port)"
-        secret.withCString { secretPtr in
-            base.withCString { basePtr in
-                tradeautopsy_notch_launch(secretPtr, port, basePtr)
-            }
-        }
-    }
-
-    func dismiss() {
-        tradeautopsy_notch_dismiss()
-    }
-
-    func startPolling() {
-        // `tradeautopsy_notch_launch` → `NotchLauncher.start()` already starts polling.
-    }
-
-    func stopPolling() {
-        // `tradeautopsy_notch_dismiss` → `NotchLauncher.dismiss()` stops polling.
-    }
-}
-
-@MainActor
-final class HotkeyRegistrar: HotkeyRegistering {
-    func registerToggleNotch(_ handler: @escaping () -> Void) {
-        // Placeholder — hotkey centralization is issue #7.
-    }
-
-    func registerOpenStation(_ handler: @escaping () -> Void) {
-        // Placeholder — hotkey centralization is a later slice.
-    }
-
-    func unregisterAll() {
-        // Placeholder — hotkey centralization is a later slice.
     }
 }
 

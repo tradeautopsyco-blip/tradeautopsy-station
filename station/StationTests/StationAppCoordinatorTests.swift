@@ -1,4 +1,5 @@
 import Foundation
+import Notch
 import Testing
 @testable import Station
 
@@ -18,7 +19,8 @@ struct StationAppCoordinatorTests {
         windowController: FakeStationWindowController,
         launchStore: FakeLaunchStore,
         phaseProvider: FakeBarSurfacePhaseProvider,
-        deskRouteStore: FakeDeskRouteStore
+        deskRouteStore: FakeDeskRouteStore,
+        loginItemService: FakeLoginItemService
     ) {
         let agentSupervisor = FakeAgentSupervisor()
         agentSupervisor.scenario = scenario
@@ -29,6 +31,7 @@ struct StationAppCoordinatorTests {
         let windowController = FakeStationWindowController()
         let launchStore = FakeLaunchStore()
         let phaseProvider = FakeBarSurfacePhaseProvider()
+        let loginItemService = FakeLoginItemService()
         launchStore.isFirstLaunchCompleted = true
         let coordinator = StationAppCoordinator(
             agentSupervisor: agentSupervisor,
@@ -39,6 +42,7 @@ struct StationAppCoordinatorTests {
             windowController: windowController,
             launchStore: launchStore,
             phaseProvider: phaseProvider,
+            loginItemService: loginItemService,
             deskRouteStore: deskRouteStore,
             dateProvider: dateProvider
         )
@@ -52,7 +56,8 @@ struct StationAppCoordinatorTests {
             windowController,
             launchStore,
             phaseProvider,
-            deskRouteStore
+            deskRouteStore,
+            loginItemService
         )
     }
 
@@ -165,6 +170,27 @@ struct StationAppCoordinatorTests {
 
         harness.phaseProvider.setPhase(.armed)
         #expect(harness.coordinator.activeRoute == .settings)
+    }
+
+    // T_single_viewmodel: coordinator has exactly one NotchViewModel; NotchLauncher receives same instance
+    @Test func coordinatorOwnsSingleNotchViewModelSharedWithNotchHost() {
+        let viewModel = NotchViewModel()
+        let notchHost = TrackingNotchHost(viewModel: viewModel)
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: notchHost,
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: FakeBarSurfacePhaseProvider(),
+            notchViewModel: viewModel
+        )
+
+        #expect(coordinator.notchViewModel === viewModel)
+        #expect(notchHost.injectedViewModel === viewModel)
+        #expect(notchHost.injectedViewModel === coordinator.notchViewModel)
     }
 
     // T1: Launch with healthy agent fake → no warning; notch start called; polling started
@@ -294,5 +320,61 @@ struct StationAppCoordinatorTests {
 
         #expect(harness.agentSupervisor.shutdownCallCount == 1)
         #expect(harness.agentSupervisor.ownsSpawnedAgent == false)
+    }
+
+    // T_login_item_toggle: coordinator.toggleLaunchAtLogin() → setRegistered with correct value
+    @Test func loginItemToggleCallsSetRegisteredWithNextValue() async {
+        let loginItemService = FakeLoginItemService()
+        let statusItemController = FakeStatusItemController()
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: statusItemController,
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: FakeBarSurfacePhaseProvider(),
+            loginItemService: loginItemService
+        )
+
+        await coordinator.launch()
+        #expect(coordinator.launchAtLoginEnabled == false)
+
+        coordinator.toggleLaunchAtLogin()
+        #expect(loginItemService.setRegisteredCalls == [true])
+        #expect(coordinator.launchAtLoginEnabled == true)
+        #expect(statusItemController.lastLaunchAtLoginEnabled == true)
+
+        coordinator.toggleLaunchAtLogin()
+        #expect(loginItemService.setRegisteredCalls == [true, false])
+        #expect(coordinator.launchAtLoginEnabled == false)
+    }
+
+    @Test func firstLaunchShowsLoginItemPromptOnceUntilDismissed() async {
+        let launchStore = FakeLaunchStore()
+        launchStore.isFirstLaunchCompleted = false
+        let loginItemService = FakeLoginItemService()
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: launchStore,
+            phaseProvider: FakeBarSurfacePhaseProvider(),
+            loginItemService: loginItemService
+        )
+
+        await coordinator.launch()
+        #expect(coordinator.showLoginItemPrompt == true)
+
+        coordinator.skipLoginItemPrompt()
+        #expect(coordinator.showLoginItemPrompt == false)
+        #expect(loginItemService.isPromptDismissed == true)
+
+        await coordinator.launch()
+        #expect(coordinator.showLoginItemPrompt == false)
     }
 }

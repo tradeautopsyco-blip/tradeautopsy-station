@@ -22,12 +22,14 @@ public protocol HotkeyRegistering: AnyObject {
 public protocol StatusItemControlling: AnyObject {
     func install(coordinator: StationAppCoordinator)
     func updateAgentStatus(isHealthy: Bool)
+    func updateLaunchAtLoginEnabled(_ enabled: Bool)
 }
 
 @MainActor
 public protocol NotchHosting: AnyObject {
     func start() async
     func dismiss()
+    func toggle()
 }
 
 @MainActor
@@ -53,4 +55,13 @@ public protocol StationLaunchStoring: AnyObject {
     var wasWindowVisibleBeforeQuit: Bool { get }
     func setWasWindowVisibleBeforeQuit(_ visible: Bool)
     var loginAtBoot: Bool { get }
+}
+
+@MainActor
+public protocol LoginItemServicing: AnyObject {
+    var isRegistered: Bool { get }
+    func setRegistered(_ enabled: Bool) throws
+    func syncStatusOnLaunch()
+    var isPromptDismissed: Bool { get }
+    func markPromptDismissed()
 }

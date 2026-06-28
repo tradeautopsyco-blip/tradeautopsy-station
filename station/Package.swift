@@ -25,6 +25,7 @@ let package = Package(
             exclude: ["StationApp.swift", "Info.plist"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("ServiceManagement"),
             ]
         ),
         .executableTarget(
@@ -56,6 +57,7 @@ let package = Package(
             name: "StationTests",
             dependencies: [
                 "Station",
+                .product(name: "Notch", package: "Notch"),
                 .product(name: "Testing", package: "swift-testing"),
             ],
             path: "StationTests"

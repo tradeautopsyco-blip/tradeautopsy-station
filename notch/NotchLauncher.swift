@@ -14,16 +14,31 @@ protocol NotchLauncherHost: AnyObject {
 
 /// Owns `NSPanel` + view model; driven from Rust via C ABI.
 @MainActor
-final class NotchLauncher: NSObject, NotchLauncherHost {
+public final class NotchLauncher: NSObject, NotchLauncherHost {
     private var panelController: NotchPanelController?
     private var killSwitchOverlayController: KillSwitchOverlayController?
     private var globalHotkeyMonitor: Any?
     private var localHotkeyMonitor: Any?
     private var fnGlobalMonitor: Any?
     private var fnLocalMonitor: Any?
-    let viewModel = NotchViewModel()
+    public let isHostedByStation: Bool
+    public let viewModel: NotchViewModel
 
-    func configure(secret: String, port: UInt16, webBase: String) {
+    public init(isHostedByStation: Bool = false, injectedViewModel: NotchViewModel? = nil) {
+        self.isHostedByStation = isHostedByStation
+        self.viewModel = injectedViewModel ?? NotchViewModel()
+        super.init()
+    }
+
+    var hasInstalledToggleHotkeyMonitors: Bool {
+        globalHotkeyMonitor != nil || localHotkeyMonitor != nil
+    }
+
+    public func toggle() {
+        panelController?.toggle()
+    }
+
+    public func configure(secret: String, port: UInt16, webBase: String) {
         viewModel.daemonSecret = secret
         viewModel.daemonPort = port
         let base = webBase.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -35,7 +50,7 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
         viewModel.notchHost = self
     }
 
-    func start() {
+    public func start() {
         viewModel.stopPolling()
         if panelController == nil {
             panelController = NotchPanelController(viewModel: viewModel)
@@ -43,16 +58,20 @@ final class NotchLauncher: NSObject, NotchLauncherHost {
         if killSwitchOverlayController == nil {
             killSwitchOverlayController = KillSwitchOverlayController(viewModel: viewModel)
         }
-        installHotkeyMonitorsIfNeeded()
+        if !isHostedByStation {
+            installHotkeyMonitorsIfNeeded()
+        }
         installFnKeyMonitorsIfNeeded()
         viewModel.ensureDictationWired()
         viewModel.startPolling()
         panelController?.show()
     }
 
-    func dismiss() {
+    public func dismiss() {
         viewModel.stopPolling()
-        uninstallHotkeyMonitors()
+        if !isHostedByStation {
+            uninstallHotkeyMonitors()
+        }
         uninstallFnKeyMonitors()
         panelController?.hide()
         panelController = nil
@@ -210,7 +229,7 @@ private final class NotchGlobal {
 extension NotchLauncher {
     static func sharedLauncher() -> NotchLauncher {
         if let l = NotchGlobal.shared.launcher { return l }
-        let l = NotchLauncher()
+        let l = NotchLauncher(isHostedByStation: false)
         NotchGlobal.shared.launcher = l
         return l
     }

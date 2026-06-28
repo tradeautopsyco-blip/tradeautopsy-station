@@ -5,10 +5,10 @@ protocol BarDeclareHTTPExecuting: Sendable {
     func data(for request: URLRequest) async throws -> (Data, URLResponse)
 }
 
-struct URLSessionBarDeclareHTTPExecutor: BarDeclareHTTPExecuting {
+public struct URLSessionBarDeclareHTTPExecutor: BarDeclareHTTPExecuting {
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    public init(session: URLSession = .shared) {
         self.session = session
     }
 

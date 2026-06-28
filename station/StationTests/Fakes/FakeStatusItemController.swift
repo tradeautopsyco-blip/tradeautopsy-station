@@ -15,4 +15,12 @@ final class FakeStatusItemController: StatusItemControlling {
         updateAgentStatusCallCount += 1
         lastReportedHealthy = isHealthy
     }
+
+    private(set) var updateLaunchAtLoginEnabledCallCount = 0
+    private(set) var lastLaunchAtLoginEnabled: Bool?
+
+    func updateLaunchAtLoginEnabled(_ enabled: Bool) {
+        updateLaunchAtLoginEnabledCallCount += 1
+        lastLaunchAtLoginEnabled = enabled
+    }
 }

@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 public final class StatusItemController: StatusItemControlling {
     private var statusItem: NSStatusItem?
+    private var launchAtLoginItem: NSMenuItem?
     private weak var coordinator: StationAppCoordinator?
 
     public init() {}
@@ -25,6 +26,10 @@ public final class StatusItemController: StatusItemControlling {
         statusItem?.button?.contentTintColor = isHealthy ? .systemGreen : .systemRed
     }
 
+    public func updateLaunchAtLoginEnabled(_ enabled: Bool) {
+        launchAtLoginItem?.state = enabled ? .on : .off
+    }
+
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
@@ -35,6 +40,17 @@ public final class StatusItemController: StatusItemControlling {
         let toggleItem = NSMenuItem(title: "Toggle Notch", action: #selector(toggleNotch(_:)), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(toggleItem)
+
+        menu.addItem(.separator())
+
+        let launchAtLogin = NSMenuItem(
+            title: "Launch at Login",
+            action: #selector(toggleLaunchAtLogin(_:)),
+            keyEquivalent: ""
+        )
+        launchAtLogin.target = self
+        menu.addItem(launchAtLogin)
+        launchAtLoginItem = launchAtLogin
 
         menu.addItem(.separator())
 
@@ -50,7 +66,11 @@ public final class StatusItemController: StatusItemControlling {
     }
 
     @objc private func toggleNotch(_ sender: Any?) {
-        // Placeholder — hotkey centralization is a later slice.
+        coordinator?.toggleNotch()
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: Any?) {
+        coordinator?.toggleLaunchAtLogin()
     }
 
     @objc private func quit(_ sender: Any?) {

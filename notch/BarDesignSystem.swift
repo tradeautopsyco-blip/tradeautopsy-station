@@ -19,12 +19,12 @@ public enum BarDS {
         public static let hint = Color(hex: "#555555")
     }
 
-    enum Accent {
-        static let teal = Color(hex: "#00e5c0")
-        static let amber = Color(hex: "#eab308")
-        static let red = Color(hex: "#ef4444")
-        static let green = Color(hex: "#22c55e")
-        static let blue = Color(hex: "#60a5fa")
+    public enum Accent {
+        public static let teal = Color(hex: "#00e5c0")
+        public static let amber = Color(hex: "#eab308")
+        public static let red = Color(hex: "#ef4444")
+        public static let green = Color(hex: "#22c55e")
+        public static let blue = Color(hex: "#60a5fa")
         /// Invalidation chip selected
         static let blueFill = Color(hex: "#3b82f6").opacity(0.08)
         static let blueBorder = Color(hex: "#3b82f6").opacity(0.25)
@@ -54,10 +54,10 @@ public enum BarDS {
         static func greenBorder() -> Color { Color(hex: "#22c55e").opacity(0.20) }
     }
 
-    enum Radius {
-        static let card: CGFloat = 8
-        static let small: CGFloat = 6
-        static let pill: CGFloat = 20
+    public enum Radius {
+        public static let card: CGFloat = 8
+        public static let small: CGFloat = 6
+        public static let pill: CGFloat = 20
     }
 
     public static let borderThin: CGFloat = 0.5
