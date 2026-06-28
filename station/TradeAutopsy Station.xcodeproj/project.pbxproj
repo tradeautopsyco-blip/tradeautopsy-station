@@ -1,0 +1,370 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		843663B76BDCAB6619BB3EB6 /* Notch in Frameworks */ = {isa = PBXBuildFile; productRef = AFC60E701A4B6530969C3463 /* Notch */; };
+		BB8F410CCE2DDA704C491339 /* StationApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D125B05DB7B3FC956851D8 /* StationApp.swift */; };
+		E0D51A50A15E61020F99B357 /* Station in Frameworks */ = {isa = PBXBuildFile; productRef = 98424BC17ADC2F719A3E09C1 /* Station */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		00D125B05DB7B3FC956851D8 /* StationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationApp.swift; sourceTree = "<group>"; };
+		1803F1DBF941BC1F4C99ED51 /* station */ = {isa = PBXFileReference; lastKnownFileType = folder; name = station; path = .; sourceTree = SOURCE_ROOT; };
+		1EB9CF8CF2D1E2AD2C16483D /* TradeAutopsy Station.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TradeAutopsy Station.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		391874E7615D745CD1E239EE /* notch */ = {isa = PBXFileReference; lastKnownFileType = folder; name = notch; path = ../notch; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		84AFB1D13F2F8313F7BF819E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				843663B76BDCAB6619BB3EB6 /* Notch in Frameworks */,
+				E0D51A50A15E61020F99B357 /* Station in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1BD2D13C9056E6DF0E07A305 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1EB9CF8CF2D1E2AD2C16483D /* TradeAutopsy Station.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		3BF38E9299BB49B551E76BC0 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				391874E7615D745CD1E239EE /* notch */,
+				1803F1DBF941BC1F4C99ED51 /* station */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		B892996D503726C3F71B7B67 = {
+			isa = PBXGroup;
+			children = (
+				3BF38E9299BB49B551E76BC0 /* Packages */,
+				DC97A23CCFBE071347808BA1 /* StationApp */,
+				1BD2D13C9056E6DF0E07A305 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DC97A23CCFBE071347808BA1 /* StationApp */ = {
+			isa = PBXGroup;
+			children = (
+				00D125B05DB7B3FC956851D8 /* StationApp.swift */,
+			);
+			path = StationApp;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F5F49CF7BC0E0E5828F18701 /* TradeAutopsy Station */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0753C4A40AD370B4991C8B50 /* Build configuration list for PBXNativeTarget "TradeAutopsy Station" */;
+			buildPhases = (
+				82A71B735EA93247F921B214 /* Sources */,
+				84AFB1D13F2F8313F7BF819E /* Frameworks */,
+				1D449A1042D36A3F90901D33 /* Copy Agent Binary */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "TradeAutopsy Station";
+			packageProductDependencies = (
+				AFC60E701A4B6530969C3463 /* Notch */,
+				98424BC17ADC2F719A3E09C1 /* Station */,
+			);
+			productName = "TradeAutopsy Station";
+			productReference = 1EB9CF8CF2D1E2AD2C16483D /* TradeAutopsy Station.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FEE2E9EE2DBBA56966952A52 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					F5F49CF7BC0E0E5828F18701 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = B1620E85DCC832DDB9FA0639 /* Build configuration list for PBXProject "TradeAutopsy Station" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = B892996D503726C3F71B7B67;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B91F1E543B12986CFEFDDE7E /* XCLocalSwiftPackageReference "../notch" */,
+				DE9034F55AD4A35646747B2F /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1BD2D13C9056E6DF0E07A305 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F5F49CF7BC0E0E5828F18701 /* TradeAutopsy Station */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1D449A1042D36A3F90901D33 /* Copy Agent Binary */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Agent Binary";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\nchmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		82A71B735EA93247F921B214 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB8F410CCE2DDA704C491339 /* StationApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		37E4943DD67D7E780EF561D5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		8C8ED0B4F09BFA1AD981D496 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StationApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = in.tradeautopsy.station;
+				PRODUCT_NAME = "TradeAutopsy Station";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		B2E5A10684E58D37138B3623 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StationApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = in.tradeautopsy.station;
+				PRODUCT_NAME = "TradeAutopsy Station";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		E564951C2B629E13E207B95F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0753C4A40AD370B4991C8B50 /* Build configuration list for PBXNativeTarget "TradeAutopsy Station" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8C8ED0B4F09BFA1AD981D496 /* Debug */,
+				B2E5A10684E58D37138B3623 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B1620E85DCC832DDB9FA0639 /* Build configuration list for PBXProject "TradeAutopsy Station" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E564951C2B629E13E207B95F /* Debug */,
+				37E4943DD67D7E780EF561D5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B91F1E543B12986CFEFDDE7E /* XCLocalSwiftPackageReference "../notch" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../notch;
+		};
+		DE9034F55AD4A35646747B2F /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		98424BC17ADC2F719A3E09C1 /* Station */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Station;
+		};
+		AFC60E701A4B6530969C3463 /* Notch */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Notch;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FEE2E9EE2DBBA56966952A52 /* Project object */;
+}

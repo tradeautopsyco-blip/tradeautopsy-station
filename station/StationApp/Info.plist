@@ -4,8 +4,10 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>TradeAutopsy Station</string>
     <key>CFBundleExecutable</key>
-    <string>StationApp</string>
+    <string>TradeAutopsy Station</string>
     <key>CFBundleIdentifier</key>
     <string>in.tradeautopsy.station</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -22,5 +24,7 @@
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>TradeAutopsy Station needs Input Monitoring to register global hotkeys (⌥Space) for intervention from any app.</string>
 </dict>
 </plist>
