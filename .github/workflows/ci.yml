@@ -53,3 +53,56 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Station tests
         run: swift test --package-path station/
+
+  build-app:
+    name: Build Station.app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build agent binary
+        working-directory: agent
+        run: cargo build --release
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Regenerate Xcode project
+        working-directory: station
+        run: xcodegen generate
+
+      - name: Build Station.app
+        working-directory: station
+        run: |
+          xcodebuild \
+            -project "TradeAutopsy Station.xcodeproj" \
+            -scheme "TradeAutopsy Station" \
+            -configuration Debug \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Locate .app
+        id: locate
+        run: |
+          APP=$(find station/build -name "TradeAutopsy Station.app" -type d | head -1)
+          echo "app_path=$APP" >> $GITHUB_OUTPUT
+
+      - name: Zip .app for upload
+        run: |
+          cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
+          zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
+          echo "zip_path=$(pwd)/TradeAutopsyStation.zip" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradeAutopsy-Station-app
+          path: ${{ env.zip_path }}
+          retention-days: 7
