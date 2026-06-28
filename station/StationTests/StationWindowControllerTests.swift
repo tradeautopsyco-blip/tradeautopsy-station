@@ -27,7 +27,8 @@ struct StationWindowControllerTests {
             notchHost: notchHost,
             notchPolling: notchPolling,
             windowController: windowController,
-            launchStore: launchStore
+            launchStore: launchStore,
+            phaseProvider: FakeBarSurfacePhaseProvider()
         )
         return (coordinator, agentSupervisor, windowController, launchStore)
     }

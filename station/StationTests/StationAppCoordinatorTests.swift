@@ -4,7 +4,11 @@ import Testing
 
 @MainActor
 struct StationAppCoordinatorTests {
-    private func makeHarness(scenario: FakeAgentSupervisor.Scenario = .healthy) -> (
+    private func makeHarness(
+        scenario: FakeAgentSupervisor.Scenario = .healthy,
+        deskRouteStore: FakeDeskRouteStore = FakeDeskRouteStore(),
+        dateProvider: @escaping () -> Date = Date.init
+    ) -> (
         coordinator: StationAppCoordinator,
         agentSupervisor: FakeAgentSupervisor,
         statusItemController: FakeStatusItemController,
@@ -12,7 +16,9 @@ struct StationAppCoordinatorTests {
         notchHost: FakeNotchHost,
         notchPolling: FakeNotchPolling,
         windowController: FakeStationWindowController,
-        launchStore: FakeLaunchStore
+        launchStore: FakeLaunchStore,
+        phaseProvider: FakeBarSurfacePhaseProvider,
+        deskRouteStore: FakeDeskRouteStore
     ) {
         let agentSupervisor = FakeAgentSupervisor()
         agentSupervisor.scenario = scenario
@@ -22,6 +28,7 @@ struct StationAppCoordinatorTests {
         let notchPolling = FakeNotchPolling()
         let windowController = FakeStationWindowController()
         let launchStore = FakeLaunchStore()
+        let phaseProvider = FakeBarSurfacePhaseProvider()
         launchStore.isFirstLaunchCompleted = true
         let coordinator = StationAppCoordinator(
             agentSupervisor: agentSupervisor,
@@ -30,7 +37,10 @@ struct StationAppCoordinatorTests {
             notchHost: notchHost,
             notchPolling: notchPolling,
             windowController: windowController,
-            launchStore: launchStore
+            launchStore: launchStore,
+            phaseProvider: phaseProvider,
+            deskRouteStore: deskRouteStore,
+            dateProvider: dateProvider
         )
         return (
             coordinator,
@@ -40,8 +50,121 @@ struct StationAppCoordinatorTests {
             notchHost,
             notchPolling,
             windowController,
-            launchStore
+            launchStore,
+            phaseProvider,
+            deskRouteStore
         )
+    }
+
+    // T4: Phase transition, no manual pick → activeRoute updates
+    @Test func phaseTransitionWithoutManualPickUpdatesActiveRoute() {
+        let harness = makeHarness()
+        #expect(harness.coordinator.activeRoute == .preTrade)
+
+        harness.phaseProvider.setPhase(.armed)
+
+        #expect(harness.coordinator.activeRoute == .liveTrade)
+    }
+
+    // T5: Manual Session pick → no auto-follow for 60s
+    @Test func manualSessionPickBlocksAutoFollowFor60Seconds() {
+        var now = Date(timeIntervalSince1970: 1_000_000)
+        let harness = makeHarness(dateProvider: { now })
+        harness.coordinator.navigateTo(.today)
+        #expect(harness.coordinator.activeRoute == .today)
+
+        harness.phaseProvider.setPhase(.armed)
+        #expect(harness.coordinator.activeRoute == .today)
+
+        now = now.addingTimeInterval(30)
+        harness.phaseProvider.setPhase(.livePlan)
+        #expect(harness.coordinator.activeRoute == .today)
+
+        now = now.addingTimeInterval(31)
+        harness.phaseProvider.setPhase(.debrief)
+        #expect(harness.coordinator.activeRoute == .postTrade)
+    }
+
+    // T6: Desk route persistence → save/load round-trip
+    @Test func deskRoutePersistsAcrossCoordinatorInstances() {
+        let deskRouteStore = FakeDeskRouteStore()
+        let phaseProvider = FakeBarSurfacePhaseProvider()
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: phaseProvider,
+            deskRouteStore: deskRouteStore
+        )
+
+        coordinator.navigateTo(.brokers)
+
+        #expect(deskRouteStore.saveCallCount == 1)
+        #expect(deskRouteStore.savedDeskRoute == .brokers)
+
+        let relaunched = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: phaseProvider,
+            deskRouteStore: deskRouteStore
+        )
+
+        #expect(relaunched.activeRoute == .brokers)
+    }
+
+    @Test func deskRouteRoundTripsThroughUserDefaults() {
+        let suiteName = "StationTests.DeskRoute.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = UserDefaultsDeskRouteStore(defaults: defaults)
+        store.saveDeskRoute(.escrowMatch)
+
+        let loaded = UserDefaultsDeskRouteStore(defaults: defaults)
+        #expect(loaded.savedDeskRoute == .escrowMatch)
+    }
+
+    // T7: Launch route → saved Desk restored; Session from phase (not saved Session)
+    @Test func launchRouteRestoresDeskAndIgnoresSavedSession() {
+        let deskRouteStore = FakeDeskRouteStore()
+        deskRouteStore.saveDeskRoute(.patterns)
+
+        let deskHarness = makeHarness(deskRouteStore: deskRouteStore)
+        #expect(deskHarness.coordinator.activeRoute == .patterns)
+
+        deskRouteStore.saveDeskRoute(.today)
+        let sessionHarness = makeHarness(deskRouteStore: deskRouteStore)
+        sessionHarness.phaseProvider.barSurfacePhase = .armed
+        let relaunched = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: sessionHarness.phaseProvider,
+            deskRouteStore: deskRouteStore
+        )
+        #expect(relaunched.activeRoute == .liveTrade)
+    }
+
+    @Test func deskRouteNeverAutoFollowsPhase() {
+        let harness = makeHarness()
+        harness.coordinator.navigateTo(.settings)
+        #expect(harness.coordinator.activeRoute == .settings)
+
+        harness.phaseProvider.setPhase(.armed)
+        #expect(harness.coordinator.activeRoute == .settings)
     }
 
     // T1: Launch with healthy agent fake → no warning; notch start called; polling started

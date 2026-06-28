@@ -127,7 +127,7 @@ enum NotchTab: String, CaseIterable, Hashable {
     case capture = "CAPTURE"
 }
 
-enum BarSurfacePhase: String {
+public enum BarSurfacePhase: String {
     case livePlan
     case armed
     case declaration

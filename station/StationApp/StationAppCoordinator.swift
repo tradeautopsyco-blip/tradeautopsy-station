@@ -1,7 +1,9 @@
 import Foundation
+import Notch
 
 @MainActor
 public final class StationAppCoordinator: ObservableObject {
+    @Published public private(set) var activeRoute: StationRoute
     @Published public private(set) var agentHealthWarning: AgentHealthWarning?
 
     /// Shell navigation stays enabled even when the agent is unhealthy (TRD §6.3).
@@ -17,6 +19,11 @@ public final class StationAppCoordinator: ObservableObject {
     private let notchPolling: NotchPollingControlling
     private let windowController: StationWindowControlling
     private let launchStore: StationLaunchStoring
+    private let phaseProvider: BarSurfacePhaseProviding
+    private let deskRouteStore: DeskRouteStoring
+    private let dateProvider: () -> Date
+
+    private var manualSessionPickAt: Date?
 
     public init(
         agentSupervisor: AgentSupervising,
@@ -25,7 +32,10 @@ public final class StationAppCoordinator: ObservableObject {
         notchHost: NotchHosting,
         notchPolling: NotchPollingControlling,
         windowController: StationWindowControlling,
-        launchStore: StationLaunchStoring
+        launchStore: StationLaunchStoring,
+        phaseProvider: BarSurfacePhaseProviding,
+        deskRouteStore: DeskRouteStoring = UserDefaultsDeskRouteStore(),
+        dateProvider: @escaping () -> Date = Date.init
     ) {
         self.agentSupervisor = agentSupervisor
         self.statusItemController = statusItemController
@@ -34,12 +44,34 @@ public final class StationAppCoordinator: ObservableObject {
         self.notchPolling = notchPolling
         self.windowController = windowController
         self.launchStore = launchStore
+        self.phaseProvider = phaseProvider
+        self.deskRouteStore = deskRouteStore
+        self.dateProvider = dateProvider
+
+        self.activeRoute = NavigationPolicy.launchRoute(
+            saved: deskRouteStore.savedDeskRoute,
+            phase: phaseProvider.barSurfacePhase
+        )
+
+        phaseProvider.onPhaseChange = { [weak self] phase in
+            self?.handlePhaseChange(phase)
+        }
 
         agentSupervisor.onHealthChange = { [weak self] isHealthy in
             Task { @MainActor in
                 self?.handleAgentHealthChange(isHealthy: isHealthy)
             }
         }
+    }
+
+    public func navigateTo(_ route: StationRoute) {
+        if route.isSession {
+            manualSessionPickAt = dateProvider()
+        }
+        if route.isDesk {
+            deskRouteStore.saveDeskRoute(route)
+        }
+        activeRoute = route
     }
 
     public func launch() async {
@@ -84,6 +116,18 @@ public final class StationAppCoordinator: ObservableObject {
         await agentSupervisor.shutdown()
         notchPolling.stopPolling()
         notchHost.dismiss()
+    }
+
+    private func handlePhaseChange(_ phase: BarSurfacePhase) {
+        guard let nextRoute = NavigationPolicy.shouldAutoFollowPhase(
+            active: activeRoute,
+            phase: phase,
+            manualSessionPickAt: manualSessionPickAt,
+            now: dateProvider()
+        ) else {
+            return
+        }
+        activeRoute = nextRoute
     }
 
     private func startNotchAndPolling() async {

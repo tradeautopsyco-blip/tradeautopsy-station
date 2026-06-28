@@ -19,8 +19,8 @@ public struct StationShellView: View {
             }
 
             HStack(spacing: 0) {
-                sidebarPlaceholder
-                contentPlaceholder
+                StationSidebar(coordinator: coordinator)
+                StationPlaceholderView(route: coordinator.activeRoute)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,34 +43,5 @@ public struct StationShellView: View {
                 .fill(BarDS.Border.divider)
                 .frame(height: BarDS.borderThin)
         }
-    }
-
-    private var sidebarPlaceholder: some View {
-        VStack(alignment: .leading) {
-            Text("Sidebar")
-                .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .semibold))
-                .foregroundStyle(BarDS.Text.labels)
-                .textCase(.uppercase)
-            Spacer()
-        }
-        .padding(16)
-        .frame(width: 220)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(BarDS.Fill.sidebar)
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(BarDS.Border.divider)
-                .frame(width: BarDS.borderThin)
-        }
-    }
-
-    private var contentPlaceholder: some View {
-        VStack {
-            Text("Select a screen")
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
-                .foregroundStyle(BarDS.Text.muted)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BarDS.Fill.sidebar)
     }
 }

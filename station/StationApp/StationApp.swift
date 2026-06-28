@@ -20,6 +20,7 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
         let notchHost = NotchABIHost()
         let launchStore = UserDefaultsLaunchStore()
         let windowController = StationWindowController()
+        let phaseProvider = DefaultBarSurfacePhaseProvider()
         let coordinator = StationAppCoordinator(
             agentSupervisor: AgentSupervisor(),
             statusItemController: StatusItemController(),
@@ -27,7 +28,8 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
             notchHost: notchHost,
             notchPolling: notchHost,
             windowController: windowController,
-            launchStore: launchStore
+            launchStore: launchStore,
+            phaseProvider: phaseProvider
         )
         windowController.install(coordinator: coordinator)
         self.coordinator = coordinator
