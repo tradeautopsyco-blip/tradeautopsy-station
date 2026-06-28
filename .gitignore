@@ -7,6 +7,7 @@ notch/*.xcodeproj/
 notch/*.xcworkspace/
 notch/DerivedData/
 notch/.build/
+station/.build/
 *.ipa
 *.dSYM.zip
 *.dSYM
