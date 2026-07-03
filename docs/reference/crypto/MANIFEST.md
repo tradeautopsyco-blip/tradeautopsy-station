@@ -30,6 +30,32 @@
 
 ---
 
+## Asset Class Mechanics Files
+
+Added 2026-07-02. See `ASSET-CLASS-INDEX.md` for the full comparison table and reading order.
+
+| File | Asset Class | P&L Formula Status | TradeAutopsy Status |
+|---|---|---|---|
+| `ASSET-CLASS-INDEX.md` | — (index) | — | Reference |
+| `binance-us/spot/MECHANICS.md` | Spot | ✅ Confirmed (WAC) | **Shipping — Today v1** |
+| `binance-global/margin/MECHANICS.md` | Margin | ❌ NOT SPECIFIED IN SOURCE | Reference only |
+| `binance-global/futures-usdm/MECHANICS.md` | Futures USDⓈ-M | ❌ NOT SPECIFIED IN SOURCE | Reference only |
+| `binance-global/futures-coinm/MECHANICS.md` | Futures COIN-M | ❌ NOT SPECIFIED IN SOURCE — highest bug risk | Reference only |
+| `binance-global/options/MECHANICS.md` | Options | ❌ NOT SPECIFIED IN SOURCE — most structurally different | Reference only |
+
+**Confirmed fact backing this table:** Binance.US offers spot and staking only — no margin,
+no futures, no options. Margin/futures/COIN-M/options are Binance Global exclusives and are
+not reachable through the currently-connected broker. These 4 files exist per Rule 8
+(reference material can get ahead of the build) — they are not scheduled work.
+
+**Before building any of the 4 reference-only asset classes:** the P&L formula marked
+NOT SPECIFIED IN SOURCE must be resolved against the actual OpenAPI schema
+(`schema__1_.yaml` for Margin, `schema__3_.yaml` for Futures USDⓈ-M, `schema__4_.yaml` for
+Futures COIN-M, `schema__5_.yaml` for Options) or official worked examples — not derived from
+general crypto-industry knowledge.
+
+---
+
 ## Binance.US Spot — Open Blockers
 
 These block Backend Box v1 release. Need live verification against docs.binance.us — not a full re-scrape, just these three points.
