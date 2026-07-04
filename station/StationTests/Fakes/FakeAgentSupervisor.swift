@@ -55,6 +55,13 @@ final class FakeAgentSupervisor: AgentSupervising {
         onHealthChange?(false)
     }
 
+    func simulateRuntimeRecovery() {
+        guard !isHealthy else { return }
+        isHealthy = true
+        currentWarning = nil
+        onHealthChange?(true)
+    }
+
     private func applyScenario() {
         switch scenario {
         case .healthy:

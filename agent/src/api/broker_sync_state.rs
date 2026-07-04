@@ -3,6 +3,7 @@
 use crate::api::AppState;
 use axum::extract::State;
 use axum::Json;
+use chrono::Utc;
 use serde_json::{json, Value};
 
 pub async fn handler(State(state): State<AppState>) -> Json<Value> {
@@ -16,14 +17,20 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         state.broker_limits.fresh_secs,
         state.broker_limits.stale_secs,
     );
+    let now_ms = Utc::now().timestamp_millis();
 
     Json(json!({
         "syncState": sync_state,
+        "runtimeStatus": state.broker_sync_control.card_status().as_str(),
         "broker": snap.backend_broker_label,
         "lastPollAtMs": snap.last_poll_at_ms,
         "lastSuccessAtMs": snap.last_success_at_ms,
         "circuitOpen": snap.circuit_open,
         "consecutiveFailures": snap.consecutive_failures,
         "lastError": snap.last_error,
+        "dataClasses": snap.data_classes,
+        "requiresManualRetry": snap.data_classes.any_requires_manual_retry(),
+        "rateLimitRetryAtMs": snap.data_classes.earliest_rate_limit_retry_ms(now_ms),
+        "failingDataClasses": snap.data_classes.failing_class_labels(),
     }))
 }

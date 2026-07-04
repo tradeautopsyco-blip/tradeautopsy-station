@@ -60,7 +60,13 @@ extension NotchTab {
 
 struct NotchRootView: View {
     @ObservedObject var vm: NotchViewModel
+    let hostedExpandedContent: (() -> AnyView)?
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    init(vm: NotchViewModel, hostedExpandedContent: (() -> AnyView)? = nil) {
+        self.vm = vm
+        self.hostedExpandedContent = hostedExpandedContent
+    }
 
     private var expansion: CGFloat {
         vm.isExpanded ? 1.0 : 0.0
@@ -88,8 +94,13 @@ struct NotchRootView: View {
 
             Group {
                 if vm.isExpanded {
-                    ExpandedNotchView(viewModel: vm)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    if let hostedExpandedContent {
+                        hostedExpandedContent()
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    } else {
+                        ExpandedNotchView(viewModel: vm)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 } else {
                     CollapsedNotchView(viewModel: vm)
                         .transition(.opacity)

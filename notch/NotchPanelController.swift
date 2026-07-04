@@ -69,9 +69,14 @@ final class NotchPanelController {
     /// Expanded panel body size — locked for session to avoid resize flicker on content changes.
     private var sessionLockedExpandedContentSize: CGSize?
 
-    init(viewModel: NotchViewModel) {
+    private let hostedExpandedContent: (() -> AnyView)?
+
+    init(viewModel: NotchViewModel, hostedExpandedContent: (() -> AnyView)? = nil) {
         self.viewModel = viewModel
-        let host = NSHostingController(rootView: NotchRootView(vm: viewModel))
+        self.hostedExpandedContent = hostedExpandedContent
+        let host = NSHostingController(
+            rootView: NotchRootView(vm: viewModel, hostedExpandedContent: hostedExpandedContent)
+        )
         self.hosting = host
 
         let panel = TradeAutopsyNotchPanel(

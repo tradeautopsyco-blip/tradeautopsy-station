@@ -5,7 +5,9 @@ pub fn normalize_broker_ticker(raw: &str) -> Option<String> {
         return None;
     }
 
-    for suffix in ["-EQ", "-BE", "-SM", "-IL", "-BL", "-N1", "-N2", "-N3", "-N4"] {
+    for suffix in [
+        "-EQ", "-BE", "-SM", "-IL", "-BL", "-N1", "-N2", "-N3", "-N4",
+    ] {
         if let Some(stripped) = s.strip_suffix(suffix) {
             s = stripped.to_string();
             break;

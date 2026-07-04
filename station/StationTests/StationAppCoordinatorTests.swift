@@ -1,6 +1,7 @@
 import Foundation
 import Notch
 import Testing
+@testable import Notch
 @testable import Station
 
 @MainActor
@@ -33,6 +34,7 @@ struct StationAppCoordinatorTests {
         let phaseProvider = FakeBarSurfacePhaseProvider()
         let loginItemService = FakeLoginItemService()
         launchStore.isFirstLaunchCompleted = true
+        let brokerControl = FakeBrokerControlClient()
         let coordinator = StationAppCoordinator(
             agentSupervisor: agentSupervisor,
             statusItemController: statusItemController,
@@ -44,7 +46,8 @@ struct StationAppCoordinatorTests {
             phaseProvider: phaseProvider,
             loginItemService: loginItemService,
             deskRouteStore: deskRouteStore,
-            dateProvider: dateProvider
+            dateProvider: dateProvider,
+            brokerControl: brokerControl
         )
         return (
             coordinator,
@@ -193,6 +196,54 @@ struct StationAppCoordinatorTests {
         #expect(notchHost.injectedViewModel === coordinator.notchViewModel)
     }
 
+    @Test func changingActiveRouteDoesNotExpandNotch() {
+        let viewModel = NotchViewModel()
+        viewModel.isExpanded = false
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: FakeBarSurfacePhaseProvider(),
+            notchViewModel: viewModel
+        )
+
+        coordinator.navigateTo(.brokers)
+        #expect(coordinator.activeRoute == .brokers)
+        #expect(viewModel.isExpanded == false)
+
+        coordinator.navigateTo(.liveTrade)
+        #expect(coordinator.activeRoute == .liveTrade)
+        #expect(viewModel.isExpanded == false)
+    }
+
+    @Test func phaseTransitionUpdatesActiveRouteWithoutExpandingNotch() {
+        let viewModel = NotchViewModel()
+        viewModel.isExpanded = false
+        let phaseProvider = FakeBarSurfacePhaseProvider()
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: FakeHotkeyRegistrar(),
+            notchHost: FakeNotchHost(),
+            notchPolling: FakeNotchPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: FakeLaunchStore(),
+            phaseProvider: phaseProvider,
+            notchViewModel: viewModel,
+            deskRouteStore: FakeDeskRouteStore()
+        )
+        #expect(coordinator.activeRoute == .preTrade)
+
+        phaseProvider.setPhase(.armed)
+
+        #expect(coordinator.activeRoute == .liveTrade)
+        #expect(viewModel.isExpanded == false)
+    }
+
     // T1: Launch with healthy agent fake → no warning; notch start called; polling started
     @Test func launchWithHealthyAgentStartsNotchAndPolling() async {
         let harness = makeHarness(scenario: .healthy)
@@ -279,6 +330,28 @@ struct StationAppCoordinatorTests {
         #expect(harness.coordinator.agentHealthWarning?.reason == .runtimeDisconnected)
         #expect(harness.coordinator.isPulseStripDegraded)
         #expect(harness.statusItemController.lastReportedHealthy == false)
+        #expect(harness.notchPolling.stopPollingCallCount == 1)
+    }
+
+    @Test func agentRecoveryRestartsPolling() async {
+        let harness = makeHarness(scenario: .healthy)
+        await harness.coordinator.launch()
+        #expect(harness.coordinator.isPulseStripDegraded == false)
+        #expect(harness.notchPolling.startPollingCallCount == 1)
+
+        harness.agentSupervisor.simulateRuntimeDisconnect()
+        await Task.yield()
+
+        #expect(harness.coordinator.isPulseStripDegraded)
+        #expect(harness.notchPolling.stopPollingCallCount == 1)
+
+        harness.agentSupervisor.simulateRuntimeRecovery()
+        await Task.yield()
+
+        #expect(harness.coordinator.isPulseStripDegraded == false)
+        #expect(harness.coordinator.agentHealthWarning == nil)
+        #expect(harness.notchPolling.startPollingCallCount == 2)
+        #expect(harness.statusItemController.lastReportedHealthy == true)
     }
 
     // T_retry_resets: crashLoopExceeded → retry() → counter reset, supervisor start called again

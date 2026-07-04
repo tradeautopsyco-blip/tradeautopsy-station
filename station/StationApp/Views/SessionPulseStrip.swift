@@ -11,16 +11,19 @@ public struct SessionPulseStrip: View {
     }
 
     private var presentation: SessionPulseStripPresentation {
+        let todayDegraded = coordinator.todayViewModel.presentation.state == .agentDown
+            || coordinator.todayViewModel.presentation.state == .syncUnavailable
         let isDegraded = SessionPulseStripPresentation.isDegraded(
             agentHealthWarning: coordinator.agentHealthWarning,
-            brokerSessionActive: viewModel.brokerSessionActive
+            brokerSessionActive: viewModel.brokerSessionActive,
+            todayDegraded: todayDegraded
         )
         return SessionPulseStripPresentation.build(
-            sessionPnL: viewModel.sessionPnL,
+            sessionPnLUsd: coordinator.todayViewModel.sessionPnLUsd,
             unrealizedTotal: viewModel.totalUnrealizedPnL,
             positions: viewModel.positions,
             isDegraded: isDegraded,
-            formatINR: viewModel.formatINR
+            formatUSD: TodayScreenPresentation.formatSignedUSD
         )
     }
 

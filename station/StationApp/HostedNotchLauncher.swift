@@ -1,5 +1,6 @@
 import Foundation
 import Notch
+import SwiftUI
 
 @MainActor
 public final class HostedNotchLauncher: NotchHosting, NotchPollingControlling {
@@ -9,6 +10,12 @@ public final class HostedNotchLauncher: NotchHosting, NotchPollingControlling {
     public init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
         self.launcher = NotchLauncher(isHostedByStation: true, injectedViewModel: viewModel)
+    }
+
+    public func bindCoordinator(_ coordinator: StationAppCoordinator) {
+        launcher.setHostedExpandedContent {
+            AnyView(HostedExpandedNotchShell(coordinator: coordinator))
+        }
     }
 
     public func configure(secret: String, port: UInt16, webBase: String) {

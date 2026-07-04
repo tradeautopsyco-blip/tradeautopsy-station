@@ -8,10 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
 
-pub async fn live_state_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn live_state_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
     let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
         return (

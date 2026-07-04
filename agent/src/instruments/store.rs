@@ -39,8 +39,7 @@ impl InstrumentStore {
 
     pub fn needs_refresh(&self) -> anyhow::Result<bool> {
         let guard = self.conn.lock().expect("sqlite mutex poisoned");
-        let count: i64 =
-            guard.query_row("SELECT COUNT(*) FROM instruments", [], |r| r.get(0))?;
+        let count: i64 = guard.query_row("SELECT COUNT(*) FROM instruments", [], |r| r.get(0))?;
         if count == 0 {
             return Ok(true);
         }
@@ -84,7 +83,10 @@ impl InstrumentStore {
             .context("begin instruments refresh transaction")?;
 
         tx.execute("DELETE FROM instruments", [])?;
-        tx.execute("INSERT INTO instruments_fts(instruments_fts) VALUES('rebuild')", [])?;
+        tx.execute(
+            "INSERT INTO instruments_fts(instruments_fts) VALUES('rebuild')",
+            [],
+        )?;
 
         let mut reader = csv::ReaderBuilder::new()
             .flexible(true)
@@ -109,7 +111,8 @@ impl InstrumentStore {
         }
 
         drop(insert);
-        tx.commit().context("commit instruments refresh transaction")?;
+        tx.commit()
+            .context("commit instruments refresh transaction")?;
         Ok(total)
     }
 
@@ -163,9 +166,10 @@ impl InstrumentStore {
             } else {
                 continue;
             }
-            if out.iter().any(|existing: &InstrumentResult| {
-                existing.trading_symbol == item.trading_symbol
-            }) {
+            if out
+                .iter()
+                .any(|existing: &InstrumentResult| existing.trading_symbol == item.trading_symbol)
+            {
                 continue;
             }
             out.push(item);
@@ -225,10 +229,7 @@ mod tests {
     use super::*;
 
     fn seed_store() -> InstrumentStore {
-        let dir = std::env::temp_dir().join(format!(
-            "ta-instruments-test-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ta-instruments-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("instruments.db");
         let _ = std::fs::remove_file(&path);

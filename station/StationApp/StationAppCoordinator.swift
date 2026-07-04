@@ -6,6 +6,8 @@ public final class StationAppCoordinator: ObservableObject {
     @Published public private(set) var activeRoute: StationRoute
     @Published public private(set) var agentHealthWarning: AgentHealthWarning?
     public let notchViewModel: NotchViewModel
+    public let brokersViewModel: BrokersViewModel
+    public let todayViewModel: TodayViewModel
     @Published public private(set) var inputMonitoringWarning: InputMonitoringWarning?
     @Published public private(set) var launchAtLoginEnabled = false
     @Published public private(set) var showLoginItemPrompt = false
@@ -30,6 +32,8 @@ public final class StationAppCoordinator: ObservableObject {
     private let dateProvider: () -> Date
 
     private var manualSessionPickAt: Date?
+    private var notchAndPollingStarted = false
+    private var pollingStoppedForUnhealthyAgent = false
 
     public init(
         agentSupervisor: AgentSupervising,
@@ -44,7 +48,9 @@ public final class StationAppCoordinator: ObservableObject {
         notchViewModel: NotchViewModel? = nil,
         deskRouteStore: DeskRouteStoring = UserDefaultsDeskRouteStore(),
         dateProvider: @escaping () -> Date = Date.init,
-        inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker()
+        inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker(),
+        brokerControl: BrokerControlling? = nil,
+        todayClient: TodayAgentClient? = nil
     ) {
         self.agentSupervisor = agentSupervisor
         self.statusItemController = statusItemController
@@ -59,6 +65,41 @@ public final class StationAppCoordinator: ObservableObject {
         self.phaseProvider = phaseProvider
         self.deskRouteStore = deskRouteStore
         self.dateProvider = dateProvider
+
+        let resolvedCredentialStore = KeychainBrokerCredentialStore()
+        let resolvedMetadataStore = UserDefaultsBrokerMetadataStore()
+        let resolvedRuntimeClient = LocalAgentBrokerRuntimeClient()
+        let resolvedSyncControl = AgentBrokerSyncControl(
+            credentialStore: resolvedCredentialStore,
+            runtimeClient: resolvedRuntimeClient
+        )
+        let resolvedBrokerControl = brokerControl ?? LocalBrokerControlClient(
+            agentSupervisor: agentSupervisor,
+            credentialStore: resolvedCredentialStore,
+            metadataStore: resolvedMetadataStore,
+            syncControl: resolvedSyncControl,
+            runtimeClient: resolvedRuntimeClient
+        )
+        let connectController = BrokerConnectController(
+            identity: .binanceUSProd,
+            credentialStore: resolvedCredentialStore,
+            validator: BinanceUSCredentialValidator(),
+            syncControl: resolvedSyncControl,
+            metadataStore: resolvedMetadataStore
+        )
+        self.brokersViewModel = BrokersViewModel(
+            brokerControl: resolvedBrokerControl,
+            connectController: connectController
+        )
+
+        let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
+            isAgentHealthy: { agentSupervisor.isHealthy }
+        )
+        self.todayViewModel = TodayViewModel(
+            client: resolvedTodayClient,
+            notchViewModel: self.notchViewModel,
+            agentHealthy: { agentSupervisor.isHealthy }
+        )
 
         self.activeRoute = NavigationPolicy.launchRoute(
             saved: deskRouteStore.savedDeskRoute,
@@ -193,8 +234,13 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     private func startNotchAndPolling() async {
+        guard !notchAndPollingStarted else { return }
         await notchHost.start()
         notchPolling.startPolling()
+        notchViewModel.startPolling()
+        notchAndPollingStarted = true
+        pollingStoppedForUnhealthyAgent = false
+        await todayViewModel.load()
     }
 
     private func syncAgentHealthFromSupervisor() {
@@ -204,6 +250,23 @@ public final class StationAppCoordinator: ObservableObject {
 
     private func handleAgentHealthChange(isHealthy: Bool) {
         syncAgentHealthFromSupervisor()
+        Task { await brokersViewModel.load() }
+        Task { await todayViewModel.load() }
+
+        if isHealthy {
+            if !notchAndPollingStarted {
+                Task { await startNotchAndPolling() }
+            } else if pollingStoppedForUnhealthyAgent {
+                notchPolling.startPolling()
+                notchViewModel.startPolling()
+                pollingStoppedForUnhealthyAgent = false
+            }
+        } else if notchAndPollingStarted {
+            notchPolling.stopPolling()
+            notchViewModel.stopPolling()
+            pollingStoppedForUnhealthyAgent = true
+        }
+
         objectWillChange.send()
     }
 

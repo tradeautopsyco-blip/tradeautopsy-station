@@ -62,10 +62,7 @@ pub async fn get_ltp(
         return Json(json!({ "ltp": null, "source": "none" }));
     }
 
-    let url = format!(
-        "{}/api/bar/v1/broker/ltp",
-        state.upstream.config.base_url
-    );
+    let url = format!("{}/api/bar/v1/broker/ltp", state.upstream.config.base_url);
     let body = json!({
         "trading_symbol": symbol,
         "exchange": exchange,

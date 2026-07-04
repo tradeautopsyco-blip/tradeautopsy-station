@@ -86,14 +86,8 @@ impl KillSwitchAuditSigner {
         trigger: Option<&str>,
         hosts_json: &str,
     ) -> String {
-        let msg = canonical_audit_message(
-            event_type,
-            fired_at_ms,
-            level,
-            broker,
-            trigger,
-            hosts_json,
-        );
+        let msg =
+            canonical_audit_message(event_type, fired_at_ms, level, broker, trigger, hosts_json);
         let sig: Signature = self.key.sign(msg.as_bytes());
         B64.encode(sig.to_bytes())
     }
@@ -290,7 +284,14 @@ mod tests {
     fn audit_signature_roundtrip_verifies() {
         let signer = KillSwitchAuditSigner::from_seed([7u8; 32]);
         let hosts_json = r#"["kite.zerodha.com"]"#;
-        let sig = signer.sign_record("fire", 1_700_000_000_000, 3, "zerodha", Some("manual"), hosts_json);
+        let sig = signer.sign_record(
+            "fire",
+            1_700_000_000_000,
+            3,
+            "zerodha",
+            Some("manual"),
+            hosts_json,
+        );
         assert!(verify_audit_signature(
             signer.key.verifying_key(),
             "fire",
@@ -323,10 +324,7 @@ mod tests {
     #[test]
     fn append_only_store_persists_verifiable_row() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!(
-            "rta-audit-store-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let path = dir.join(format!("rta-audit-store-{}.db", uuid::Uuid::new_v4()));
         let _ = std::fs::remove_file(&path);
 
         let store = KillSwitchAuditStore::open(&path).expect("open store");
@@ -356,10 +354,7 @@ mod tests {
     #[test]
     fn tampered_stored_row_fails_verify_record() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!(
-            "rta-audit-tamper-{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let path = dir.join(format!("rta-audit-tamper-{}.db", uuid::Uuid::new_v4()));
         let _ = std::fs::remove_file(&path);
 
         let store = KillSwitchAuditStore::open(&path).expect("open store");

@@ -26,15 +26,17 @@ pub fn parse_daemon_command_type(command_type: &str) -> Option<DaemonCommandKind
 }
 
 pub fn level_from_payload(payload: &Value) -> u64 {
-    payload
-        .get("level")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(1)
+    payload.get("level").and_then(|v| v.as_u64()).unwrap_or(1)
 }
 
 pub fn broker_from_payload(payload: &Value) -> Result<String, String> {
     let raw = payload.get("broker").and_then(|v| v.as_str());
-    resolve_kill_switch_broker(raw, std::env::var("AGENT_PROTECTIVE_BROKER_SLUG").ok().as_deref())
+    resolve_kill_switch_broker(
+        raw,
+        std::env::var("AGENT_PROTECTIVE_BROKER_SLUG")
+            .ok()
+            .as_deref(),
+    )
 }
 
 pub fn trigger_from_payload(payload: &Value) -> Option<String> {
@@ -158,7 +160,10 @@ async fn poll_and_execute(
         if parse_daemon_command_type(cmd_type).is_none() {
             continue;
         }
-        if execute_daemon_command(state, user_id, cmd_type, &payload).await.is_ok() {
+        if execute_daemon_command(state, user_id, cmd_type, &payload)
+            .await
+            .is_ok()
+        {
             executed += 1;
             if cmd_type == "clear_fog" {
                 fog_active.store(false, Ordering::SeqCst);

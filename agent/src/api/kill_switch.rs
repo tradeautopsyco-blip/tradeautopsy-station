@@ -23,7 +23,12 @@ pub struct AuditTailQuery {
 
 fn broker_from_body(body: &Value) -> Result<String, String> {
     let raw = body.get("broker").and_then(|v| v.as_str());
-    resolve_kill_switch_broker(raw, std::env::var("AGENT_PROTECTIVE_BROKER_SLUG").ok().as_deref())
+    resolve_kill_switch_broker(
+        raw,
+        std::env::var("AGENT_PROTECTIVE_BROKER_SLUG")
+            .ok()
+            .as_deref(),
+    )
 }
 
 fn level_from_body(body: &Value) -> u64 {
@@ -37,12 +42,7 @@ fn hosts_for_audit(broker: &str) -> Vec<String> {
         .collect()
 }
 
-fn append_audit_fire(
-    state: &AppState,
-    level: i32,
-    broker: &str,
-    trigger: Option<&str>,
-) {
+fn append_audit_fire(state: &AppState, level: i32, broker: &str, trigger: Option<&str>) {
     match state.kill_switch_audit.append_signed(
         state.audit_signer.as_ref(),
         KillSwitchAuditAppend {
@@ -125,8 +125,8 @@ pub async fn apply_kill_switch_level(
         let block_result = tokio::task::spawn_blocking(move || {
             dns_block::enable_block_with_watcher(&broker_for_block)
         })
-            .await
-            .map_err(|e| format!("hosts block task: {e}"))?;
+        .await
+        .map_err(|e| format!("hosts block task: {e}"))?;
         block_result?;
         append_audit_fire(state, level as i32, &broker, trigger);
         state.fog_active.store(true, Ordering::SeqCst);

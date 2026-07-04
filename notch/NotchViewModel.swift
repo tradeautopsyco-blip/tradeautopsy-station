@@ -170,14 +170,20 @@ public final class NotchViewModel: ObservableObject {
     /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
     var hasOpenPositions: Bool { !positions.isEmpty }
     @Published var openOrders: Int = 0
-    @Published var killSwitchActive: Bool = false
-    @Published var killSwitchCountdownSecs: Int?
+    @Published public var killSwitchActive: Bool = false
+    @Published public var killSwitchCountdownSecs: Int?
+    /// Seconds since the last kill-switch state update (SSE or daemon poll). `Int.max` if never received.
+    public var killSwitchStateAgeSecs: Int {
+        guard let killSwitchStateReceivedAt else { return Int.max }
+        return max(0, Int(Date().timeIntervalSince(killSwitchStateReceivedAt)))
+    }
+    private var killSwitchStateReceivedAt: Date?
     /// L1 / L2 / L3 from agent SSE `kill_switch_state`.
     @Published var killSwitchLevel: String?
     @Published var killSwitchRequiresAck: Bool = false
     /// Fullscreen overlay (#189) — L2/L3 with countdown.
     @Published var killSwitchOverlayVisible: Bool = false
-    @Published var killSwitchDismissBusy: Bool = false
+    @Published public var killSwitchDismissBusy: Bool = false
     @Published var morningBrief: MorningBrief?
     @Published var activeWorkflows: [WorkflowStatus] = []
     @Published var recentWorkflowRuns: [WorkflowRun] = []
@@ -273,7 +279,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var barInterferenceEcho: String?
 
     /// When `barSurfacePhase` is `.declaration`, gate the heavy form behind this affordance.
-    @Published var showingDeclarationForm: Bool = false
+    @Published public var showingDeclarationForm: Bool = false
 
     /// Pre-trade symbol field — shared with declaration form autocomplete (#148).
     @Published var barDeclarationSymbol: String = ""
@@ -305,7 +311,7 @@ public final class NotchViewModel: ObservableObject {
     private var ignoreSymbolSearchUntilEdit = false
 
     /// Mirrors `NSScreen.safeAreaInsets.top` for layout (notch camera strip).
-    @Published var notchTopInset: CGFloat = 0
+    @Published public var notchTopInset: CGFloat = 0
 
     /// `true` when the built-in display reports a top safe-area inset (physical notch / housing).
     var hasPhysicalNotch: Bool { notchTopInset > 0 }
@@ -1008,6 +1014,7 @@ public final class NotchViewModel: ObservableObject {
             daemonProtocolError = nil
             resetStopMeFlow()
             killSwitchActive = true
+            recordKillSwitchStateReceived()
             barStateError = nil
         } catch {
             barStateError = error.localizedDescription
@@ -1030,6 +1037,7 @@ public final class NotchViewModel: ObservableObject {
             }
             daemonProtocolError = nil
             killSwitchActive = false
+            recordKillSwitchStateReceived()
             barDeclarationLastError = nil
             barStateError = nil
             await fetchBarLiveState()
@@ -1661,7 +1669,7 @@ public final class NotchViewModel: ObservableObject {
         syncBarLiveStatePollingForVisibility()
     }
 
-    func collapseExpandedFromChromeTap() {
+    public func collapseExpandedFromChromeTap() {
         guard isExpanded else { return }
         withAnimation(NotchTheme.springExpand) {
             isExpanded = false
@@ -1873,6 +1881,7 @@ public final class NotchViewModel: ObservableObject {
             let oldKs = killSwitchActive
             let active = payload["active"] as? Bool ?? false
             killSwitchActive = active
+            recordKillSwitchStateReceived()
             if active {
                 if !oldKs {
                     checkKillSwitchTransition(from: oldKs, to: true)
@@ -2296,7 +2305,10 @@ public final class NotchViewModel: ObservableObject {
             daemonProtocolError = nil
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
             let oldKs = killSwitchActive
-            if let k = j["kill_switch_active"] as? Bool { killSwitchActive = k }
+            if let k = j["kill_switch_active"] as? Bool {
+                killSwitchActive = k
+                recordKillSwitchStateReceived()
+            }
             if let o = j["open_orders"] as? Int { openOrders = o }
             var out: [NotchPosition] = []
             if let arr = j["positions"] as? [[String: Any]] {
@@ -2483,7 +2495,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Overlay "I'm Calm" — ack telemetry then dismiss DNS + fog (#189).
-    func dismissKillSwitchFromOverlay() async {
+    public func dismissKillSwitchFromOverlay() async {
         guard KillSwitchOverlayPresentation.calmButtonEnabled(countdownSecs: killSwitchCountdownSecs) else {
             return
         }
@@ -2508,6 +2520,7 @@ public final class NotchViewModel: ObservableObject {
             killSwitchCountdownSecs = nil
             killSwitchLevel = nil
             killSwitchRequiresAck = false
+            recordKillSwitchStateReceived()
             stopKillSwitchCountdownTimer()
             refreshKillSwitchOverlayVisibility()
             pulseAttention = .none
@@ -2759,6 +2772,15 @@ public final class NotchViewModel: ObservableObject {
     private func stopKillSwitchCountdownTimer() {
         killSwitchCountdownTimer?.invalidate()
         killSwitchCountdownTimer = nil
+    }
+
+    private func recordKillSwitchStateReceived() {
+        killSwitchStateReceivedAt = Date()
+    }
+
+    /// Inject a cached kill-switch timestamp (unit tests only).
+    public func setKillSwitchStateReceivedAt(_ date: Date?) {
+        killSwitchStateReceivedAt = date
     }
 }
 

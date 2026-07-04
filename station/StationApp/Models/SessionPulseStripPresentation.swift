@@ -19,11 +19,11 @@ public struct SessionPulseStripPresentation: Equatable {
     public let showsDegradedIndicator: Bool
 
     public static func build(
-        sessionPnL: Double,
+        sessionPnLUsd: Double?,
         unrealizedTotal: Double,
         positions: [NotchPosition],
         isDegraded: Bool,
-        formatINR: (Double) -> String
+        formatUSD: (Double) -> String
     ) -> SessionPulseStripPresentation {
         if isDegraded {
             return SessionPulseStripPresentation(
@@ -37,13 +37,13 @@ public struct SessionPulseStripPresentation: Equatable {
             )
         }
 
-        let sessionText = formatSignedINR(sessionPnL, formatINR: formatINR)
-        let unrealizedText = formatSignedINR(unrealizedTotal, formatINR: formatINR)
+        let sessionText = formatSessionPnL(sessionPnLUsd, formatUSD: formatUSD)
+        let unrealizedText = formatSignedUSD(unrealizedTotal, formatUSD: formatUSD)
         let count = positions.count
 
         return SessionPulseStripPresentation(
             sessionPnLText: sessionText,
-            sessionPnLStyle: pnlStyle(for: sessionPnL),
+            sessionPnLStyle: pnlStyle(for: sessionPnLUsd ?? 0),
             unrealizedPnLText: unrealizedText,
             unrealizedPnLStyle: pnlStyle(for: unrealizedTotal),
             positionCountText: count == 0 ? nil : String(count),
@@ -54,16 +54,22 @@ public struct SessionPulseStripPresentation: Equatable {
 
     public static func isDegraded(
         agentHealthWarning: AgentHealthWarning?,
-        brokerSessionActive: Bool
+        brokerSessionActive: Bool,
+        todayDegraded: Bool = false
     ) -> Bool {
-        agentHealthWarning != nil || !brokerSessionActive
+        agentHealthWarning != nil || !brokerSessionActive || todayDegraded
     }
 
-    private static func formatSignedINR(_ value: Double, formatINR: (Double) -> String) -> String {
+    private static func formatSessionPnL(_ value: Double?, formatUSD: (Double) -> String) -> String {
+        guard let value else { return degradedPlaceholder }
+        return formatSignedUSD(value, formatUSD: formatUSD)
+    }
+
+    private static func formatSignedUSD(_ value: Double, formatUSD: (Double) -> String) -> String {
         if value >= 0 {
-            return "+\(formatINR(value))"
+            return "+\(formatUSD(value))"
         }
-        return formatINR(value)
+        return formatUSD(value)
     }
 
     private static func pnlStyle(for value: Double) -> PnLStyle {

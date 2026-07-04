@@ -14,11 +14,7 @@ pub fn to_kotak_segment(exchange: &str, segment: &str) -> &'static str {
 
 /// Builds Kotak LTP path segment: "{exchangeSegment}|{tradingSymbol}"
 pub fn kotak_ltp_key(exchange: &str, segment: &str, trading_symbol: &str) -> String {
-    format!(
-        "{}|{}",
-        to_kotak_segment(exchange, segment),
-        trading_symbol
-    )
+    format!("{}|{}", to_kotak_segment(exchange, segment), trading_symbol)
 }
 
 #[cfg(test)]

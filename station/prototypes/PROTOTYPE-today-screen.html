@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — Today screen v1 (grill + first-principles spec)
+  Question: "What should simplified Today look like in Station?"
+  Variants: ?variant=A active | B empty | C degraded
+  Run: open station/prototypes/PROTOTYPE-today-screen.html
+  DELETE or absorb when Today ships for real.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Today · TradeAutopsy Station</title>
+  <style>
+    :root {
+      --bg-0: #000000;
+      --bg-1: #0a0a0a;
+      --bg-2: #0d0d0d;
+      --bg-3: #1c1c1e;
+      --bg-4: #2c2c2e;
+      --bd: rgba(255,255,255,.06);
+      --bd-loud: rgba(255,255,255,.12);
+      --t-1: #ededed;
+      --t-2: #98989f;
+      --t-3: #636366;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      /* Grill-locked palette — Binance + white neutral, no amber */
+      --green: #0ECB81;
+      --green-bg: rgba(14,203,129,.08);
+      --green-bd: rgba(14,203,129,.22);
+      --red: #F6465D;
+      --red-bg: rgba(246,70,93,.10);
+      --red-bd: rgba(246,70,93,.28);
+      --watch: #FF7A6B;
+      --watch-bg: rgba(255,122,107,.10);
+      --watch-bd: rgba(255,122,107,.28);
+      --white: #ededed;
+      --sidebar-w: 220px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: #050505;
+      color: var(--t-1);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .app {
+      width: 1100px;
+      height: 700px;
+      background: var(--bg-0);
+      border-radius: 18px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 30px 80px rgba(0,0,0,.65), 0 0 0 .5px rgba(255,255,255,.04);
+    }
+    .proto-tag {
+      position: fixed; top: 12px; left: 12px; z-index: 200;
+      font: 600 10px/1 var(--mono); letter-spacing: .06em;
+      text-transform: uppercase; color: var(--watch);
+      background: var(--watch-bg); border: 1px solid var(--watch-bd);
+      padding: 6px 10px; border-radius: 999px;
+    }
+    /* Pulse strip */
+    .pulse {
+      height: 38px; flex-shrink: 0;
+      background: var(--bg-1);
+      border-bottom: 1px solid var(--bd);
+      display: flex; align-items: center; padding: 0 16px; gap: 14px;
+      font-family: var(--mono); font-size: 11px;
+    }
+    .pulse .lbl { color: var(--t-3); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .pulse .val { color: var(--t-1); }
+    .pulse .val.pos { color: var(--green); }
+    .pulse .val.neg { color: var(--red); }
+    .pulse .val.muted { color: var(--t-2); }
+    .pulse .sep { width: 1px; height: 16px; background: var(--bd-loud); }
+    .pulse .right { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--t-3); font-size: 10px; }
+    .dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px rgba(14,203,129,.45); }
+    .dot-warn { width: 6px; height: 6px; border-radius: 50%; background: var(--watch); }
+    /* Body */
+    .body { flex: 1; display: flex; min-height: 0; }
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0;
+      background: var(--bg-1); border-right: 1px solid var(--bd);
+      display: flex; flex-direction: column;
+    }
+    .sb-label {
+      padding: 14px 16px 6px; font-size: 11px; font-weight: 600;
+      letter-spacing: .06em; text-transform: uppercase; color: var(--t-3);
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 7px 10px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; color: var(--t-2); cursor: default;
+    }
+    .nav-item.active { background: var(--bg-3); color: var(--t-1); }
+    .nav-item .ico { width: 16px; text-align: center; opacity: .7; font-size: 13px; }
+    .nav-item.active .ico { opacity: 1; }
+    .sb-spacer { flex: 1; }
+    .sb-foot {
+      padding: 12px 16px; border-top: 1px solid var(--bd);
+      font-family: var(--mono); font-size: 10px; color: var(--t-3);
+    }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 4px; }
+    .sb-foot .ok { color: var(--green); }
+    /* Main */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-0); }
+    .topbar {
+      height: 44px; flex-shrink: 0;
+      border-bottom: 1px solid var(--bd);
+      display: flex; align-items: center; padding: 0 16px; gap: 10px;
+    }
+    .topbar h1 { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+    .topbar .sub { font-family: var(--mono); font-size: 11px; color: var(--t-3); }
+    .scroll { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
+    /* Section label */
+    .sec {
+      font-size: 13px; font-weight: 600; color: var(--t-2);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .sec .meta { margin-left: auto; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--t-3); }
+    /* Circuit breaker */
+    .cb {
+      display: none; align-items: center; gap: 12px;
+      padding: 12px 16px; border-radius: 16px;
+      background: var(--red-bg); border: 1px solid var(--red-bd);
+      border-left: 3px solid var(--red);
+    }
+    .cb.show { display: flex; }
+    .cb-icon { font-size: 18px; color: var(--red); }
+    .cb-h { font-size: 13px; font-weight: 600; color: var(--red); }
+    .cb-sub { font-size: 11px; color: rgba(246,70,93,.65); margin-top: 2px; line-height: 1.45; }
+    .cb-btn {
+      margin-left: auto; flex-shrink: 0;
+      border: 1px solid var(--red-bd); background: transparent;
+      color: var(--red); padding: 6px 14px; border-radius: 999px;
+      font-size: 11px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+    .cb-btn:hover { background: rgba(246,70,93,.08); }
+    .cb-btn:disabled { opacity: .45; cursor: not-allowed; }
+    /* Hero — 3 tiles */
+    .hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .tile {
+      background: var(--bg-3); border-radius: 16px; padding: 16px;
+      border: 1px solid transparent; min-height: 104px; position: relative; overflow: hidden;
+    }
+    .tile.pos { background: var(--green-bg); border-color: var(--green-bd); }
+    .tile.neg { background: var(--red-bg); border-color: var(--red-bd); }
+    .tile .lbl {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--t-3); margin-bottom: 10px; font-weight: 600;
+    }
+    .tile .val {
+      font-size: 30px; font-weight: 700; letter-spacing: -.02em;
+      line-height: 1; font-variant-numeric: tabular-nums;
+    }
+    .tile .val.pos { color: var(--green); }
+    .tile .val.neg { color: var(--red); }
+    .tile .val.neutral { color: var(--white); }
+    .tile .val.empty { color: var(--t-2); font-size: 26px; }
+    .tile .sub { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--t-3); line-height: 1.4; }
+    .tile .bar { position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: var(--t-3); }
+    .tile.pos .bar { background: var(--green); }
+    .tile.neg .bar { background: var(--red); width: 62%; }
+    /* Signals — top 2 */
+    .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sig {
+      background: var(--bg-3); border-radius: 16px; padding: 14px;
+      border: 1px solid transparent;
+    }
+    .sig.fire { background: var(--red-bg); border-color: var(--red-bd); }
+    .sig.watch { background: var(--watch-bg); border-color: var(--watch-bd); }
+    .sig.ok { border-color: var(--bd); }
+    .sig-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .sig-name { font-size: 12px; font-weight: 600; color: var(--t-1); }
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; font-weight: 600; font-family: var(--mono);
+      padding: 3px 9px; border-radius: 999px; border: 1px solid;
+    }
+    .badge.fire { color: var(--red); background: var(--red-bg); border-color: var(--red-bd); }
+    .badge.watch { color: var(--watch); background: var(--watch-bg); border-color: var(--watch-bd); }
+    .badge.ok { color: var(--green); background: var(--green-bg); border-color: var(--green-bd); }
+    .badge.learn { color: var(--t-2); background: var(--bg-4); border-color: var(--bd); }
+    .sig-bar { height: 3px; background: rgba(255,255,255,.05); border-radius: 2px; margin-bottom: 10px; overflow: hidden; }
+    .sig-bar i { display: block; height: 100%; border-radius: 2px; }
+    .sig.fire .sig-bar i { background: var(--red); width: 88%; }
+    .sig.watch .sig-bar i { background: var(--watch); width: 55%; }
+    .sig.ok .sig-bar i { background: var(--green); width: 22%; }
+    .sig-desc { font-size: 11px; color: var(--t-2); line-height: 1.55; }
+    /* Table */
+    .tbl { background: var(--bg-3); border-radius: 16px; overflow: hidden; border: 1px solid var(--bd); }
+    .tbl-row {
+      display: flex; align-items: center; padding: 0 14px; height: 36px;
+      font-size: 12px; border-bottom: 1px solid var(--bd);
+    }
+    .tbl-row:last-child { border-bottom: none; }
+    .tbl-row.head {
+      height: 30px; background: var(--bg-2); font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .08em; color: var(--t-3);
+    }
+    .tbl-row.flagged { background: rgba(246,70,93,.04); }
+    .c-time { width: 52px; font-family: var(--mono); font-size: 11px; color: var(--t-3); }
+    .c-side { width: 48px; }
+    .c-sym { flex: 1; font-family: var(--mono); font-size: 11px; color: var(--t-1); }
+    .c-num { width: 76px; font-family: var(--mono); font-size: 11px; text-align: right; color: var(--t-2); }
+    .c-pnl { width: 88px; font-family: var(--mono); font-size: 11px; text-align: right; font-weight: 600; }
+    .c-pnl.pos { color: var(--green); }
+    .c-pnl.neg { color: var(--red); }
+    .c-pnl.empty { color: var(--t-2); font-weight: 500; }
+    .c-flag { width: 92px; text-align: right; }
+    .ty {
+      display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 2px 7px; border-radius: 999px; border: 1px solid;
+    }
+    .ty.buy { color: var(--green); background: var(--green-bg); border-color: var(--green-bd); }
+    .ty.sell { color: var(--red); background: var(--red-bg); border-color: var(--red-bd); }
+    /* Empty state */
+    .empty-box {
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; padding: 48px 24px; background: var(--bg-3); border-radius: 16px;
+      border: 1px dashed var(--bd-loud); text-align: center;
+    }
+    .empty-box.show { display: flex; }
+    .empty-box .ico { font-size: 32px; opacity: .35; }
+    .empty-box .p { font-size: 13px; font-weight: 600; color: var(--t-2); }
+    .empty-box .s { font-size: 11px; font-family: var(--mono); color: var(--t-3); max-width: 360px; line-height: 1.5; }
+    /* Degraded banner */
+    .warn-strip {
+      display: none; padding: 10px 14px; border-radius: 12px;
+      background: var(--bg-3); border: 1px solid var(--bd-loud);
+      font-size: 12px; color: var(--t-2); line-height: 1.45;
+    }
+    .warn-strip.show { display: block; }
+    .warn-strip b { color: var(--watch); font-weight: 600; }
+    /* Prototype switcher */
+    .proto-bar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 300; display: flex; align-items: center; gap: 4px;
+      background: rgba(20,20,22,.95); border: 1px solid var(--bd-loud);
+      border-radius: 999px; padding: 6px 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      backdrop-filter: blur(12px);
+    }
+    .proto-bar button {
+      width: 32px; height: 32px; border: none; border-radius: 999px;
+      background: var(--bg-4); color: var(--t-1); font-size: 16px; cursor: pointer;
+    }
+    .proto-bar button:hover { background: #3a3a3c; }
+    .proto-bar .label {
+      padding: 0 14px; font-family: var(--mono); font-size: 11px;
+      color: var(--t-2); min-width: 200px; text-align: center;
+    }
+    .proto-bar .label strong { color: var(--watch); }
+  </style>
+</head>
+<body>
+  <div class="proto-tag">Prototype — delete me</div>
+
+  <div class="app" id="app">
+    <div class="pulse" id="pulse"></div>
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sb-label">Session</div>
+        <div class="nav-item active"><span class="ico">☀</span> Today</div>
+        <div class="nav-item"><span class="ico">📋</span> Pre-trade</div>
+        <div class="nav-item"><span class="ico">⚡</span> Live trade</div>
+        <div class="nav-item"><span class="ico">✓</span> Post-trade</div>
+        <div class="sb-label" style="margin-top:8px">Desk</div>
+        <div class="nav-item"><span class="ico">📖</span> Journal</div>
+        <div class="nav-item"><span class="ico">🔗</span> Brokers</div>
+        <div class="nav-item"><span class="ico">🛡</span> Escrow match</div>
+        <div class="nav-item"><span class="ico">◎</span> Patterns</div>
+        <div class="nav-item"><span class="ico">▤</span> Fidelity score</div>
+        <div class="nav-item"><span class="ico">⚙</span> Settings</div>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span>Binance.US</span><span class="ok" id="sb-sync">syncing</span></div>
+          <div><span>Agent</span><span class="ok" id="sb-agent">running</span></div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <h1>Today</h1>
+          <span class="sub" id="topbar-sub"></span>
+        </header>
+        <div class="scroll" id="scroll">
+          <div class="warn-strip" id="warn-strip"></div>
+          <div class="cb" id="cb">
+            <span class="cb-icon">⬡</span>
+            <div>
+              <div class="cb-h" id="cb-h">Circuit breaker — Loss chasing</div>
+              <div class="cb-sub" id="cb-sub"></div>
+            </div>
+            <button class="cb-btn" id="cb-btn" type="button">Review &amp; resume</button>
+          </div>
+          <div class="hero" id="hero"></div>
+          <div>
+            <div class="sec" style="margin-bottom:10px">
+              Behavior signals
+              <span class="meta" id="sig-meta"></span>
+            </div>
+            <div class="sig-grid" id="sigs"></div>
+          </div>
+          <div>
+            <div class="sec" style="margin-bottom:10px">
+              Trades today
+              <span class="meta" id="tbl-meta"></span>
+            </div>
+            <div class="tbl" id="tbl"></div>
+            <div class="empty-box" id="tbl-empty">
+              <div class="ico">—</div>
+              <div class="p">No closed trades yet today</div>
+              <div class="s">Round-trips appear here after a buy→sell cycle completes. Open positions stay off this table.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <nav class="proto-bar" aria-label="Prototype variant switcher">
+    <button type="button" id="prev" title="Previous variant (←)">‹</button>
+    <div class="label" id="variant-label"></div>
+    <button type="button" id="next" title="Next variant (→)">›</button>
+  </nav>
+
+  <script>
+    const VARIANTS = {
+      A: {
+        name: 'A — Active session',
+        desc: 'Mid-day crypto session, circuit breaker firing, trades + signals',
+        pulse: { pnl: '−$842.10', pnlClass: 'neg', unreal: '−$124.00', unrealClass: 'neg', pos: '1 open', dot: 'live' },
+        topbar: 'Tuesday · local day · 6h 14m elapsed',
+        warn: null,
+        cb: {
+          show: true,
+          h: 'Circuit breaker — Loss chasing',
+          sub: '3 round-trips within 18 min of a loss · each notional larger than your baseline',
+          btnEnabled: false,
+          btnLabel: 'Review & resume · 1:12',
+        },
+        hero: [
+          { lbl: 'P&L today', val: '−$842.10', cls: 'neg', sub: 'Net of fees · 4 closed round-trips', bar: true },
+          { lbl: 'Trades today', val: '4', cls: 'neutral', sub: 'Above your median (2/day)' },
+          { lbl: 'Win rate', val: '25%', cls: 'neg', sub: '1 win · 3 losses' },
+        ],
+        sigMeta: 'updated 12s ago',
+        sigs: [
+          { name: 'Loss chasing', tier: 'fire', desc: 'You opened 3 round-trips within 18 minutes of a loss. Each was larger than the last.' },
+          { name: 'Overtrading', tier: 'watch', desc: '4 trades today vs your median 2 on active days.' },
+        ],
+        tblMeta: '2 flagged',
+        trades: [
+          { time: '09:18', side: 'buy', sym: 'BTC/USDT', entry: '97,240', exit: '97,880', pnl: '+$312.40', flag: 'Clean', flagged: false },
+          { time: '10:42', side: 'buy', sym: 'ETH/USDT', entry: '3,412', exit: '3,298', pnl: '−$418.20', flag: 'FOMO', flagged: true },
+          { time: '10:51', side: 'buy', sym: 'ETH/USDT', entry: '3,318', exit: '3,244', pnl: '−$296.80', flag: 'Revenge', flagged: true },
+          { time: '11:14', side: 'sell', sym: 'SOL/USDT', entry: '142.10', exit: '138.40', pnl: '−$439.50', flag: 'Overtrade', flagged: true },
+        ],
+        sb: { sync: 'syncing', agent: 'running' },
+      },
+      B: {
+        name: 'B — Honest empty',
+        desc: 'No trades today, cold-start baselines, no circuit breaker',
+        pulse: { pnl: '—', pnlClass: 'muted', unreal: '—', unrealClass: 'muted', pos: '0 open', dot: 'live' },
+        topbar: 'Tuesday · local day · just opened',
+        warn: null,
+        cb: { show: false },
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'No trades yet today' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+        ],
+        sigMeta: 'learning baseline',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Still learning your baseline — signals activate after ~10 round-trips.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Still learning your baseline — no fire until enough history exists.' },
+        ],
+        tblMeta: '',
+        trades: [],
+        sb: { sync: 'syncing', agent: 'running' },
+      },
+      C: {
+        name: 'C — Degraded',
+        desc: 'Sync paused / agent unhealthy — honest dashes, no stale numbers',
+        pulse: { pnl: '—', pnlClass: 'muted', unreal: '—', unrealClass: 'muted', pos: '—', dot: 'warn' },
+        topbar: 'Tuesday · local day',
+        warn: '<b>Broker sync paused</b> — hero metrics and trades show placeholders until sync resumes. Kill switch state may still apply.',
+        cb: { show: false },
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+        ],
+        sigMeta: 'unavailable',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Signals unavailable while broker sync is paused.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Signals unavailable while broker sync is paused.' },
+        ],
+        tblMeta: '',
+        trades: [],
+        sb: { sync: 'paused', agent: 'running' },
+      },
+    };
+
+    const ORDER = ['A', 'B', 'C'];
+    const tierBadge = { fire: ['Firing', 'fire'], watch: ['Watch', 'watch'], ok: ['Normal', 'ok'], learn: ['Learning', 'learn'] };
+
+    function getVariant() {
+      const p = new URLSearchParams(location.search).get('variant')?.toUpperCase();
+      return ORDER.includes(p) ? p : 'A';
+    }
+
+    function setVariant(v) {
+      const url = new URL(location.href);
+      url.searchParams.set('variant', v);
+      history.replaceState(null, '', url);
+      render(v);
+      updateLabel(v);
+    }
+
+    function cycle(dir) {
+      const i = ORDER.indexOf(getVariant());
+      const next = ORDER[(i + dir + ORDER.length) % ORDER.length];
+      setVariant(next);
+    }
+
+    function updateLabel(v) {
+      const d = VARIANTS[v];
+      document.getElementById('variant-label').innerHTML =
+        `<strong>${v}</strong> — ${d.name.split('—')[1]?.trim() || d.name}`;
+    }
+
+    function render(v) {
+      const d = VARIANTS[v];
+
+      // Pulse
+      const dotCls = d.pulse.dot === 'live' ? 'dot-live' : 'dot-warn';
+      document.getElementById('pulse').innerHTML = `
+        <span class="lbl">Session P&amp;L</span><span class="val ${d.pulse.pnlClass}">${d.pulse.pnl}</span>
+        <span class="sep"></span>
+        <span class="lbl">Unrealized</span><span class="val ${d.pulse.unrealClass}">${d.pulse.unreal}</span>
+        <span class="sep"></span>
+        <span class="lbl">Positions</span><span class="val ${d.pulse.unrealClass}">${d.pulse.pos}</span>
+        <div class="right"><span class="${dotCls}"></span> Binance.US · loopback agent</div>`;
+
+      document.getElementById('topbar-sub').textContent = d.topbar;
+
+      const warn = document.getElementById('warn-strip');
+      if (d.warn) { warn.innerHTML = d.warn; warn.classList.add('show'); }
+      else { warn.classList.remove('show'); }
+
+      const cb = document.getElementById('cb');
+      if (d.cb?.show) {
+        cb.classList.add('show');
+        document.getElementById('cb-h').textContent = d.cb.h;
+        document.getElementById('cb-sub').textContent = d.cb.sub;
+        const btn = document.getElementById('cb-btn');
+        btn.textContent = d.cb.btnLabel || 'Review & resume';
+        btn.disabled = d.cb.btnEnabled === false;
+      } else cb.classList.remove('show');
+
+      document.getElementById('hero').innerHTML = d.hero.map(t => `
+        <div class="tile ${t.cls === 'neg' ? 'neg' : t.cls === 'pos' ? 'pos' : ''}">
+          <div class="lbl">${t.lbl}</div>
+          <div class="val ${t.cls}">${t.val}</div>
+          <div class="sub">${t.sub}</div>
+          ${t.bar ? '<div class="bar"></div>' : ''}
+        </div>`).join('');
+
+      document.getElementById('sig-meta').textContent = d.sigMeta;
+      document.getElementById('sigs').innerHTML = d.sigs.map(s => {
+        const [lbl, cls] = tierBadge[s.tier];
+        return `
+          <div class="sig ${s.tier === 'fire' ? 'fire' : s.tier === 'watch' ? 'watch' : 'ok'}">
+            <div class="sig-head">
+              <span class="sig-name">${s.name}</span>
+              <span class="badge ${cls}">${lbl}</span>
+            </div>
+            <div class="sig-bar"><i></i></div>
+            <div class="sig-desc">${s.desc}</div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('tbl-meta').textContent = d.tblMeta;
+      const tbl = document.getElementById('tbl');
+      const empty = document.getElementById('tbl-empty');
+      if (d.trades.length === 0) {
+        tbl.style.display = 'none';
+        empty.classList.add('show');
+      } else {
+        tbl.style.display = 'block';
+        empty.classList.remove('show');
+        tbl.innerHTML = `
+          <div class="tbl-row head">
+            <span class="c-time">Time</span>
+            <span class="c-side">Side</span>
+            <span class="c-sym">Symbol</span>
+            <span class="c-num">Avg entry</span>
+            <span class="c-num">Avg exit</span>
+            <span class="c-pnl">Net P&amp;L</span>
+            <span class="c-flag">Flag</span>
+          </div>
+          ${d.trades.map(r => `
+            <div class="tbl-row ${r.flagged ? 'flagged' : ''}">
+              <span class="c-time">${r.time}</span>
+              <span class="c-side"><span class="ty ${r.side}">${r.side.toUpperCase()}</span></span>
+              <span class="c-sym">${r.sym}</span>
+              <span class="c-num">${r.entry}</span>
+              <span class="c-num">${r.exit}</span>
+              <span class="c-pnl ${r.pnl.startsWith('+') ? 'pos' : r.pnl.startsWith('−') || r.pnl.startsWith('-') ? 'neg' : 'empty'}">${r.pnl}</span>
+              <span class="c-flag"><span class="badge ${r.flag === 'Clean' ? 'ok' : r.flag === 'FOMO' ? 'watch' : 'fire'}">${r.flag}</span></span>
+            </div>`).join('')}`;
+      }
+
+      document.getElementById('sb-sync').textContent = d.sb.sync;
+      document.getElementById('sb-sync').className = d.sb.sync === 'syncing' ? 'ok' : '';
+      document.getElementById('sb-agent').textContent = d.sb.agent;
+    }
+
+    document.getElementById('prev').onclick = () => cycle(-1);
+    document.getElementById('next').onclick = () => cycle(1);
+    document.addEventListener('keydown', e => {
+      if (e.target.matches('input,textarea,[contenteditable]')) return;
+      if (e.key === 'ArrowLeft') cycle(-1);
+      if (e.key === 'ArrowRight') cycle(1);
+    });
+
+    render(getVariant());
+    updateLabel(getVariant());
+  </script>
+</body>
+</html>

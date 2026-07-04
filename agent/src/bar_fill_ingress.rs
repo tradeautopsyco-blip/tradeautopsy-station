@@ -25,7 +25,11 @@ pub enum BarFillIngestSource {
 impl BarBrokerFillIngressConfig {
     /// Returns `Some` only when enabled **and** required UUID env vars are present and valid.
     pub fn from_env() -> Option<Self> {
-        if std::env::var("AGENT_BAR_BROKER_FILL_INGEST").ok().as_deref() != Some("1") {
+        if std::env::var("AGENT_BAR_BROKER_FILL_INGEST")
+            .ok()
+            .as_deref()
+            != Some("1")
+        {
             return None;
         }
         let user_id = std::env::var("AGENT_BAR_INGEST_USER_ID").ok()?;
@@ -87,6 +91,10 @@ struct BarFillBodyJson<'a> {
     product: &'a str,
     filled_at_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    fee_amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_asset: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     declaration_id: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     scalper_session_id: Option<&'a str>,
@@ -104,11 +112,7 @@ struct BarBrokerFillIngressBody<'a> {
 }
 
 pub(crate) fn bar_broker_fill_ingest_url(base_url: &str) -> String {
-    format!(
-        "{}{}",
-        base_url.trim_end_matches('/'),
-        INGEST_PATH
-    )
+    format!("{}{}", base_url.trim_end_matches('/'), INGEST_PATH)
 }
 
 fn normalize_side(side: &str) -> Option<&'static str> {
@@ -164,6 +168,8 @@ pub(crate) fn build_bar_broker_fill_ingress_json(
             fill_price: finite_fill_price(fill.price),
             product: cfg.default_product.as_str(),
             filled_at_ms,
+            fee_amount: fill.fee_amount,
+            fee_asset: fill.fee_asset.as_deref(),
             declaration_id: None,
             scalper_session_id: None,
         },
@@ -291,6 +297,8 @@ mod tests {
             price: 2500.5,
             filled_at: Utc::now(),
             broker: "kotak".to_string(),
+            fee_amount: None,
+            fee_asset: None,
         }
     }
 
@@ -310,8 +318,9 @@ mod tests {
     fn build_json_matches_route_contract() {
         let cfg = fixture_cfg();
         let fill = fixture_fill();
-        let v = build_bar_broker_fill_ingress_json(&fill, &cfg, BarFillIngestSource::Reconciliation)
-            .expect("ok");
+        let v =
+            build_bar_broker_fill_ingress_json(&fill, &cfg, BarFillIngestSource::Reconciliation)
+                .expect("ok");
 
         assert_eq!(v["userId"], cfg.user_id);
         assert_eq!(v["fill"]["userId"], cfg.user_id);
@@ -319,6 +328,8 @@ mod tests {
         assert_eq!(v["fill"]["side"], "BUY");
         assert_eq!(v["fill"]["quantity"], 1.0);
         assert_eq!(v["fill"]["product"], "MIS");
+        assert!(v["fill"].get("feeAmount").is_none());
+        assert!(v["fill"].get("feeAsset").is_none());
         assert_eq!(v["fingerprintParts"]["brokerOrderId"], "ord-123");
         assert_eq!(v["fingerprintParts"]["eventType"], "fill");
         assert_eq!(v["fingerprintParts"]["exchangeTradeId"], "ex-999");
@@ -349,6 +360,21 @@ mod tests {
             .into_iter()
             .collect()
         );
+    }
+
+    #[test]
+    fn build_json_includes_fee_fields_only_when_fill_supplies_them() {
+        let cfg = fixture_cfg();
+        let mut fill = fixture_fill();
+        fill.fee_amount = Some(0.42);
+        fill.fee_asset = Some("USDT".to_string());
+
+        let v =
+            build_bar_broker_fill_ingress_json(&fill, &cfg, BarFillIngestSource::Reconciliation)
+                .expect("ok");
+
+        assert_eq!(v["fill"]["feeAmount"], 0.42);
+        assert_eq!(v["fill"]["feeAsset"], "USDT");
     }
 
     #[tokio::test]
@@ -385,15 +411,24 @@ mod tests {
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(
-            requests[0].headers.get("x-daemon-secret").and_then(|h| h.to_str().ok()),
+            requests[0]
+                .headers
+                .get("x-daemon-secret")
+                .and_then(|h| h.to_str().ok()),
             Some("sec-for-test")
         );
         assert_eq!(
-            requests[0].headers.get("x-user-id").and_then(|h| h.to_str().ok()),
+            requests[0]
+                .headers
+                .get("x-user-id")
+                .and_then(|h| h.to_str().ok()),
             Some(TEST_USER)
         );
         assert_eq!(
-            requests[0].headers.get(CONTENT_TYPE).and_then(|h| h.to_str().ok()),
+            requests[0]
+                .headers
+                .get(CONTENT_TYPE)
+                .and_then(|h| h.to_str().ok()),
             Some("application/json")
         );
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();

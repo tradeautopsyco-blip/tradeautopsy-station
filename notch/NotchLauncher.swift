@@ -23,6 +23,7 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     private var fnLocalMonitor: Any?
     public let isHostedByStation: Bool
     public let viewModel: NotchViewModel
+    private var hostedExpandedContent: (() -> AnyView)?
 
     public init(isHostedByStation: Bool = false, injectedViewModel: NotchViewModel? = nil) {
         self.isHostedByStation = isHostedByStation
@@ -36,6 +37,10 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
 
     public func toggle() {
         panelController?.toggle()
+    }
+
+    public func setHostedExpandedContent(_ content: @escaping () -> AnyView) {
+        hostedExpandedContent = content
     }
 
     public func configure(secret: String, port: UInt16, webBase: String) {
@@ -53,7 +58,10 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     public func start() {
         viewModel.stopPolling()
         if panelController == nil {
-            panelController = NotchPanelController(viewModel: viewModel)
+            panelController = NotchPanelController(
+                viewModel: viewModel,
+                hostedExpandedContent: hostedExpandedContent
+            )
         }
         if killSwitchOverlayController == nil {
             killSwitchOverlayController = KillSwitchOverlayController(viewModel: viewModel)

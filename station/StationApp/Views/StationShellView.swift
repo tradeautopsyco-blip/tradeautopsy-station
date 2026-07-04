@@ -36,10 +36,36 @@ public struct StationShellView: View {
 
             HStack(spacing: 0) {
                 StationSidebar(coordinator: coordinator)
-                StationPlaceholderView(route: coordinator.activeRoute)
+                routeContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(BarDS.Fill.sidebar)
+        .onAppear {
+            syncDeclarationFormForActiveRoute()
+        }
+        .onChange(of: coordinator.activeRoute) { _, _ in
+            syncDeclarationFormForActiveRoute()
+        }
+    }
+
+    private func syncDeclarationFormForActiveRoute() {
+        coordinator.notchViewModel.showingDeclarationForm = (coordinator.activeRoute == .preTrade)
+    }
+
+    @ViewBuilder
+    private var routeContent: some View {
+        switch coordinator.activeRoute {
+        // Phase 0 exception: BrokersView and SettingsView are the only non-placeholder routes.
+        // Decision recorded in issue #5, #7, and #8.
+        case .brokers:
+            BrokersView(viewModel: coordinator.brokersViewModel)
+        case .today:
+            TodayView(viewModel: coordinator.todayViewModel)
+        case .settings:
+            SettingsView(coordinator: coordinator)
+        default:
+            StationPlaceholderView(route: coordinator.activeRoute)
+        }
     }
 }

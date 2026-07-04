@@ -1,5 +1,6 @@
 use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
+    broker_sync_control::BrokerSyncController,
     event_bus::EventBus,
     instruments::InstrumentStore,
     kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
@@ -17,6 +18,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 mod bar;
+mod broker_sync;
 mod broker_sync_state;
 mod capture;
 pub mod daemon_commands;
@@ -27,6 +29,7 @@ mod outbox_status;
 mod phase8;
 mod recent_trades;
 mod sse;
+mod today;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,12 +45,14 @@ pub struct AppState {
     pub recent_trades: RecentTradesStore,
     pub instruments: Arc<InstrumentStore>,
     pub broker_status: Arc<std::sync::Mutex<BrokerRuntimeState>>,
+    pub broker_sync_control: Arc<BrokerSyncController>,
     pub broker_limits: BrokerSyncConfig,
     /// L1 fog-of-war armed (#190).
     pub fog_active: Arc<AtomicBool>,
     pub kill_switch_audit: KillSwitchAuditStore,
     pub audit_signer: Arc<KillSwitchAuditSigner>,
     pub last_l3_broker: Arc<std::sync::Mutex<Option<String>>>,
+    pub today_service: Arc<crate::today::TodayService>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -64,6 +69,19 @@ pub fn router(state: AppState) -> Router {
             get(broker_sync_state::handler),
         )
         .route(
+            "/api/daemon/broker/sync/start",
+            post(broker_sync::start_handler),
+        )
+        .route(
+            "/api/daemon/broker/sync/stop",
+            post(broker_sync::stop_handler),
+        )
+        .route(
+            "/api/daemon/broker/sync/retry",
+            post(broker_sync::retry_handler),
+        )
+        .route("/api/daemon/today", get(today::handler))
+        .route(
             "/api/daemon/journal/toolbar-capture/accept",
             post(capture::accept_handler),
         )
@@ -79,10 +97,7 @@ pub fn router(state: AppState) -> Router {
             "/api/daemon/journal/toolbar-capture/pending/:id",
             patch(capture::pending_patch_handler),
         )
-        .route(
-            "/api/daemon/bar/live-state",
-            get(bar::live_state_handler),
-        )
+        .route("/api/daemon/bar/live-state", get(bar::live_state_handler))
         .route("/api/daemon/bar/declare", post(bar::declare_handler))
         .route("/api/daemon/bar/stop-me", post(bar::stop_me_handler))
         .route(
@@ -93,10 +108,7 @@ pub fn router(state: AppState) -> Router {
             "/api/daemon/bar/cancel-declaration",
             post(bar::cancel_declaration_handler),
         )
-        .route(
-            "/api/daemon/bar/protective",
-            post(bar::protective_handler),
-        )
+        .route("/api/daemon/bar/protective", post(bar::protective_handler))
         .route(
             "/api/daemon/bar/live-interference",
             post(bar::live_interference_handler),

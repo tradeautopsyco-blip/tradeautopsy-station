@@ -84,7 +84,7 @@ public final class StationWindowController: NSObject, StationWindowControlling, 
 
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: Self.defaultSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullScreen],
             backing: .buffered,
             defer: false
         )

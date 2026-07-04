@@ -8,6 +8,10 @@ description = "Headless TradeAutopsy agent — localhost API (extracted daemon)"
 name = "tradeautopsy-agent"
 path = "src/main.rs"
 
+[[bin]]
+name = "prototype-today-engine"
+path = "src/bin/prototype_today_engine.rs"
+
 [lib]
 name = "tradeautopsy_agent"
 path = "src/lib.rs"

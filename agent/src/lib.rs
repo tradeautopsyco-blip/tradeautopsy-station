@@ -1,48 +1,78 @@
 mod api;
 mod bar_fill_ingress;
 mod broker;
+mod broker_data_class;
 mod broker_sync;
+mod broker_sync_control;
+mod broker_validation;
+mod broker_behavioral;
+mod broker_redaction;
 mod dns_block;
-mod resolve_kill_switch_broker;
 mod event_bus;
 mod instruments;
 mod kill_switch_audit;
 mod metrics;
 mod outbox;
+mod exchange_info;
 mod recent_trades;
+mod round_trip_engine;
+mod resolve_kill_switch_broker;
 mod sse_signing;
+mod today;
 mod wire;
 
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
-pub use broker::{BrokerAdapter, BrokerError, BrokerFill, SeqMockBrokerAdapter};
-pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
-pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
-pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
-pub use event_bus::{AgentEvent, EventBus};
-pub use metrics::AgentMetrics;
-pub use outbox::{
-    queued_response_json, CaptureOutbox, DeadLetterStatusItem, OutboxConfig, OutboxCounts,
-    OutboxStatusSnapshot, ProcessNowResult,
+pub use broker::{
+    BrokerAdapter, BrokerError, BrokerFill, ConfigurableDataClassAdapter, CountingPollAdapter,
+    DataClassPollRound, SeqMockBrokerAdapter,
 };
+pub use broker_behavioral::{BrokerBehavioralRecorder, BrokerConnectionIdentityFields};
+pub use broker_data_class::{
+    BrokerBalancesSnapshot, BrokerDataClass, BrokerDataClassCompleteness, BrokerHolding,
+    BrokerOpenOrder, BrokerOpenOrdersSnapshot, DataClassFreshness,
+};
+pub use broker_redaction::RedactionBoundary;
+pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
+pub use broker_sync_control::{BrokerRuntimeCardStatus, BrokerSyncController, BrokerSyncStartRequest};
+pub use broker_validation::{
+    BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,
+    PermissionPosture, ValidationFailure, ValidationResult,
+};
+pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
+pub use event_bus::{AgentEvent, EventBus};
 pub use instruments::InstrumentStore;
 pub use kill_switch_audit::{
     canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
     KillSwitchAuditSigner, KillSwitchAuditStore,
 };
+pub use metrics::AgentMetrics;
+pub use outbox::{
+    queued_response_json, CaptureOutbox, DeadLetterStatusItem, OutboxConfig, OutboxCounts,
+    OutboxStatusSnapshot, ProcessNowResult,
+};
+pub use exchange_info::{
+    is_usd_pegged_stablecoin, is_usd_quoted_symbol, resolve_symbol_assets, ExchangeInfoSymbolCache,
+    SymbolAssets,
+};
 pub use recent_trades::RecentTradesStore;
+pub use round_trip_engine::{
+    aggregate_known_pnl, is_aggregate_eligible, FillTimeFeePriceLookup, PairAssetFeeLookup,
+    ReconstructResult, RoundTrip, RoundTripEngine, StablecoinAndBaseAssetFeeLookup, UnhandledFee,
+};
+pub use today::{
+    TodayDegradedReason, TodayHeroPayload, TodayPayload, TodayService, TodayStore,
+};
+pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
 
-pub use api::daemon_commands::{
-    parse_daemon_command_type, DaemonCommandKind,
-};
+pub use api::daemon_commands::{parse_daemon_command_type, DaemonCommandKind};
 
-use crate::broker_sync::spawn_broker_stack;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
 use tokio::sync::RwLock;
@@ -91,11 +121,15 @@ pub struct AgentConfig {
     pub upstream: UpstreamConfig,
     pub outbox: OutboxConfig,
     pub recent_trades_db_path: PathBuf,
+    pub today_db_path: PathBuf,
     pub instruments_db_path: PathBuf,
     pub kill_switch_audit_db_path: PathBuf,
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub broker_sync: BrokerSyncConfig,
     pub bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
+    /// Integration tests — inject runtime start adapter (#13/#14).
+    pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
+    pub test_start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
     /// User id for `GET /api/daemon/command` poll (#190). `None` disables poll loop.
     pub daemon_poll_user_id: Option<String>,
 }
@@ -121,6 +155,13 @@ impl AgentConfig {
             .unwrap_or_else(|_| {
                 let mut p = std::env::temp_dir();
                 p.push("tradeautopsy-agent-recent-trades.db");
+                p
+            });
+        let today_db_path = std::env::var("AGENT_TODAY_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = std::env::temp_dir();
+                p.push("tradeautopsy-agent-today.db");
                 p
             });
         let instruments_db_path = std::env::var("AGENT_INSTRUMENTS_DB_PATH")
@@ -152,11 +193,14 @@ impl AgentConfig {
             upstream,
             outbox,
             recent_trades_db_path,
+            today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress,
+            test_runtime_adapter: None,
+            test_start_key_log: None,
             daemon_poll_user_id,
         })
     }
@@ -166,6 +210,8 @@ impl AgentConfig {
         let daemon_secret = daemon_secret.into();
         let mut recent_trades_db_path = std::env::temp_dir();
         recent_trades_db_path.push(format!("rta-recent-{port}.db"));
+        let mut today_db_path = std::env::temp_dir();
+        today_db_path.push(format!("rta-today-{port}.db"));
         let mut instruments_db_path = std::env::temp_dir();
         instruments_db_path.push(format!("rta-instruments-{port}.db"));
         let mut kill_switch_audit_db_path = std::env::temp_dir();
@@ -181,11 +227,14 @@ impl AgentConfig {
             upstream: UpstreamConfig::from_env(&daemon_secret),
             outbox: OutboxConfig::from_env(),
             recent_trades_db_path,
+            today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress: None,
+            test_runtime_adapter: None,
+            test_start_key_log: None,
             daemon_poll_user_id: None,
         }
     }
@@ -244,6 +293,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let upstream = Arc::new(UpstreamClient::new(config.upstream)?);
     let outbox = Arc::new(CaptureOutbox::new(config.outbox, upstream.clone())?);
     let recent_trades = RecentTradesStore::open(&config.recent_trades_db_path)?;
+    let today_store = TodayStore::open(&config.today_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
     let audit_signer = Arc::new(KillSwitchAuditSigner::from_env_or_generate());
     let instruments = Arc::new(InstrumentStore::new(
@@ -266,19 +316,43 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
 
     let broker_status = Arc::new(std::sync::Mutex::new(BrokerRuntimeState::default()));
 
-    let since = Arc::new(RwLock::new(Option::<DateTime<Utc>>::None));
+    let initial_since = recent_trades
+        .newest_filled_at()
+        .unwrap_or(None)
+        .or_else(|| {
+            let days = config.broker_sync.initial_backfill_days.max(0);
+            Some(Utc::now() - chrono::Duration::days(days))
+        });
+    let since = Arc::new(RwLock::new(initial_since));
+
+    let today_service_slot = Arc::new(Mutex::new(None));
+    let broker_sync_control = Arc::new(BrokerSyncController::new(
+        broker_status.clone(),
+        recent_trades.clone(),
+        since.clone(),
+        config.broker_sync.clone(),
+        event_bus.clone(),
+        Some(upstream.clone()),
+        config.bar_fill_ingress.clone(),
+        config.test_runtime_adapter.clone(),
+        config.test_start_key_log.clone(),
+        today_service_slot.clone(),
+    ));
+
+    let today_service = Arc::new(TodayService::new(
+        recent_trades.clone(),
+        today_store,
+        broker_status.clone(),
+        broker_sync_control.clone(),
+        config.broker_sync.clone(),
+        ExchangeInfoSymbolCache::empty(),
+    ));
+    *today_service_slot.lock().expect("today service slot") = Some(today_service.clone());
 
     if let Some(adapter) = config.broker_adapter.clone() {
-        spawn_broker_stack(
-            adapter,
-            recent_trades.clone(),
-            since,
-            config.broker_sync.clone(),
-            event_bus.clone(),
-            broker_status.clone(),
-            Some(upstream.clone()),
-            config.bar_fill_ingress.clone(),
-        );
+        broker_sync_control
+            .start_with_adapter(adapter)
+            .expect("boot-time broker adapter should start");
     }
 
     let fog_active = Arc::new(AtomicBool::new(false));
@@ -295,11 +369,13 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         recent_trades,
         instruments,
         broker_status: broker_status.clone(),
+        broker_sync_control: broker_sync_control.clone(),
         broker_limits: config.broker_sync.clone(),
         fog_active: fog_active.clone(),
         kill_switch_audit,
         audit_signer,
         last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
+        today_service: today_service.clone(),
     };
     let router = api::router(state.clone());
 

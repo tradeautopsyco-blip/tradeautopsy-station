@@ -163,11 +163,7 @@ pub(crate) async fn forward_daemon_json_with_optional_429_retry(
             )
             .header("x-user-id", user_id)
             .header("x-request-id", request_id_owned.as_str());
-        let req = if let Some(b) = body {
-            req.json(b)
-        } else {
-            req
-        };
+        let req = if let Some(b) = body { req.json(b) } else { req };
         let resp = req.send().await.map_err(|e| e.to_string())?;
         let status = resp.status();
         if retry_on_429

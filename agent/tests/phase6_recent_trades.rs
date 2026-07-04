@@ -3,6 +3,7 @@
 mod common;
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use common::{
     apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
 };
@@ -11,7 +12,9 @@ use serde_json::Value;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tradeautopsy_agent::{BrokerAdapter, BrokerError, BrokerFill, SeqMockBrokerAdapter};
+use tradeautopsy_agent::{
+    BrokerAdapter, BrokerError, BrokerFill, RecentTradesStore, SeqMockBrokerAdapter,
+};
 
 async fn sse_raw_contains(port: u16, needle: &str, deadline: Duration) -> bool {
     let path = "/api/daemon/events/stream";
@@ -204,7 +207,88 @@ fn sample_fill(suffix: &str) -> BrokerFill {
         price: 100.25,
         filled_at: chrono::Utc::now(),
         broker: "mock".to_string(),
+        fee_amount: None,
+        fee_asset: None,
     }
+}
+
+#[derive(Clone)]
+struct RecordingSinceAdapter {
+    calls: Arc<Mutex<Vec<Option<DateTime<Utc>>>>>,
+}
+
+#[async_trait]
+impl BrokerAdapter for RecordingSinceAdapter {
+    fn name(&self) -> &'static str {
+        "recording_since"
+    }
+
+    async fn poll_fills(
+        &self,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<BrokerFill>, BrokerError> {
+        self.calls.lock().expect("calls mutex").push(since);
+        Ok(Vec::new())
+    }
+}
+
+#[tokio::test]
+async fn first_broker_poll_starts_with_ninety_day_backfill_floor() {
+    const PORT: u16 = 19_467;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let adapter = Arc::new(RecordingSinceAdapter {
+        calls: calls.clone(),
+    });
+    let before_start = Utc::now();
+    let opts = TestAgentOptions {
+        broker_adapter: Some(adapter),
+        broker_initial_delay_ms: 100,
+        broker_base_poll_ms: 5_000,
+        ..TestAgentOptions::default()
+    };
+    let handle = spawn_test_agent_with_options(PORT, opts);
+
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+
+    let first_since = calls
+        .lock()
+        .expect("calls mutex")
+        .first()
+        .cloned()
+        .flatten()
+        .expect("first poll should request a backfill floor");
+    let lower_bound = before_start - chrono::Duration::days(91);
+    let upper_bound = Utc::now() - chrono::Duration::days(89);
+    assert!(
+        first_since >= lower_bound && first_since <= upper_bound,
+        "expected first since near 90-day floor, got {first_since}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn existing_recent_fills_resume_from_newest_fill_timestamp() {
+    let mut db_path = std::env::temp_dir();
+    db_path.push(format!("rta-existing-recent-{}.db", uuid::Uuid::new_v4()));
+    let store = RecentTradesStore::open(&db_path).expect("open recent store");
+    let newest_at = DateTime::parse_from_rfc3339("2026-06-28T09:00:00.000Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let older_at = DateTime::parse_from_rfc3339("2026-06-26T09:00:00.000Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let mut newer = sample_fill("newer");
+    newer.filled_at = newest_at;
+    let mut older = sample_fill("older");
+    older.filled_at = older_at;
+    store
+        .merge_poll(&[newer, older])
+        .expect("insert unsorted fill batch");
+
+    assert_eq!(store.newest_filled_at().unwrap(), Some(newest_at));
+
+    let _ = std::fs::remove_file(db_path);
 }
 
 #[tokio::test]
@@ -318,6 +402,18 @@ impl BrokerAdapter for AlwaysFailAdapter {
     ) -> Result<Vec<BrokerFill>, BrokerError> {
         Err(BrokerError::Http("unit-fail".to_string()))
     }
+
+    async fn poll_balances_holdings(
+        &self,
+    ) -> Result<tradeautopsy_agent::BrokerBalancesSnapshot, BrokerError> {
+        Err(BrokerError::Http("unit-fail".to_string()))
+    }
+
+    async fn poll_open_orders(
+        &self,
+    ) -> Result<tradeautopsy_agent::BrokerOpenOrdersSnapshot, BrokerError> {
+        Err(BrokerError::Http("unit-fail".to_string()))
+    }
 }
 
 #[tokio::test]
@@ -367,56 +463,72 @@ async fn three_consecutive_failures_backoff_then_circuit_and_emits_sync_state() 
 async fn stale_sync_state_when_success_is_aged() {
     const PORT: u16 = 19_364;
     let fill = sample_fill("stale");
+    // Second poll must not refresh last_success_at_ms (empty Ok would keep "synced" fresh).
     let q = Arc::new(Mutex::new(VecDeque::from([
         Ok(vec![fill.clone()]),
-        Ok(vec![]),
-        Ok(vec![]),
+        Err(BrokerError::Http("test_hold".into())),
     ])));
     let adapter = Arc::new(SeqMockBrokerAdapter { calls: q });
+    let fresh_secs = 1_u64;
     let opts = TestAgentOptions {
         broker_adapter: Some(adapter),
-        broker_initial_delay_ms: 450,
-        broker_base_poll_ms: 10_000,
-        fresh_secs: 1,
+        broker_initial_delay_ms: 100,
+        broker_base_poll_ms: 60_000,
+        fresh_secs,
         stale_secs: 60,
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
 
-    tokio::time::sleep(Duration::from_millis(850)).await;
     let path = "/api/daemon/toolbar/recent-trades";
     let url = format!("http://127.0.0.1:{PORT}{path}");
-    let req = apply_wire_v1(
-        client().get(&url),
-        "GET",
-        path,
-        b"",
-        WireHeaderOverrides::default(),
-    );
-    let body: Value = req
-        .timeout(Duration::from_secs(2))
-        .send()
+
+    let synced = wait_for_recent_trades_sync_state(&url, "synced", 5_000).await;
+    assert_eq!(synced.as_str(), "synced");
+
+    // Whole-second age bucketing: need strictly more than fresh_secs elapsed since last success.
+    tokio::time::sleep(Duration::from_millis((fresh_secs + 1) * 1_000)).await;
+
+    let stale = fetch_recent_trades_sync_state(&url)
         .await
-        .expect("send")
-        .json()
-        .await
-        .unwrap();
-
-    assert_eq!(body["syncState"].as_str().unwrap(), "synced");
-
-    tokio::time::sleep(Duration::from_millis(1300)).await;
-    let req2 = apply_wire_v1(
-        client().get(&url),
-        "GET",
-        path,
-        b"",
-        WireHeaderOverrides::default(),
-    );
-    let stale_body: Value = req2.send().await.unwrap().json().await.unwrap();
-
-    assert_eq!(stale_body["syncState"].as_str().unwrap(), "stale");
+        .expect("recent-trades response");
+    assert_eq!(stale.as_str(), "stale");
 
     handle.abort();
+}
+
+async fn fetch_recent_trades_sync_state(url: &str) -> Option<String> {
+    let req = apply_wire_v1(
+        client().get(url),
+        "GET",
+        "/api/daemon/toolbar/recent-trades",
+        b"",
+        WireHeaderOverrides::default(),
+    );
+    let resp = req.timeout(Duration::from_secs(2)).send().await.ok()?;
+    let body: Value = resp.json().await.ok()?;
+    body["syncState"].as_str().map(str::to_string)
+}
+
+async fn wait_for_recent_trades_sync_state(url: &str, want: &str, timeout_ms: u64) -> String {
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        if let Some(state) = fetch_recent_trades_sync_state(url).await {
+            if state == want {
+                return state;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for syncState={want}, last={state}"
+            );
+        } else {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for agent at {url}"
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 #[tokio::test]
@@ -442,6 +554,7 @@ async fn get_broker_sync_state_returns_200_when_not_connected() {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["syncState"], "not_connected");
+    assert_eq!(body["runtimeStatus"], "ready_to_start");
     assert!(body["lastPollAtMs"].is_null());
     assert!(body["lastSuccessAtMs"].is_null());
 
@@ -483,8 +596,26 @@ async fn broker_sync_state_matches_recent_trades_sync_posture() {
         WireHeaderOverrides::default(),
     );
 
-    let rt: Value = rt_req.send().await.unwrap().json().await.unwrap();
-    let bs: Value = bs_req.send().await.unwrap().json().await.unwrap();
+    let (rt, bs) = tokio::join!(
+        async {
+            rt_req
+                .send()
+                .await
+                .expect("recent trades")
+                .json::<Value>()
+                .await
+                .expect("recent json")
+        },
+        async {
+            bs_req
+                .send()
+                .await
+                .expect("sync-state")
+                .json::<Value>()
+                .await
+                .expect("sync-state json")
+        }
+    );
 
     assert_eq!(rt["syncState"], bs["syncState"]);
     assert_eq!(rt["lastPollAtMs"], bs["lastPollAtMs"]);

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// PLAN expanded surface — sidebar, top bar, and routed main content (visual shell only).
-enum BarNotchScreen: String, CaseIterable {
+public enum BarNotchScreen: String, CaseIterable {
     case morning = "Morning brief"
     case pretrade = "Pre-trade"
     case live = "Live trade"
@@ -36,10 +36,19 @@ enum BarNotchScreen: String, CaseIterable {
 
 struct BarNotchShell: View {
     @ObservedObject var viewModel: NotchViewModel
-
-    @State private var activeScreen: BarNotchScreen = .morning
+    private let externalActiveScreen: Binding<BarNotchScreen>?
+    @State private var localActiveScreen: BarNotchScreen = .morning
     @AppStorage("notch.planMorningBriefConsumed") private var morningBriefConsumed: Bool = false
     @State private var hoveredSession: BarNotchScreen?
+
+    init(viewModel: NotchViewModel, activeScreen: Binding<BarNotchScreen>? = nil) {
+        self.viewModel = viewModel
+        self.externalActiveScreen = activeScreen
+    }
+
+    private var activeScreen: Binding<BarNotchScreen> {
+        externalActiveScreen ?? $localActiveScreen
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -59,18 +68,19 @@ struct BarNotchShell: View {
             Task { await viewModel.fetchBarLiveState() }
         }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
+            guard externalActiveScreen == nil else { return }
             syncActiveScreenFromPhase(animated: true)
         }
         .onChange(of: viewModel.morningBrief != nil) { _, has in
             if !has { morningBriefConsumed = false }
         }
-        .onChange(of: activeScreen) { _, new in
+        .onChange(of: activeScreen.wrappedValue) { _, new in
             syncDeclarationFormFlagToActiveScreen(screen: new)
         }
     }
 
     private func syncDeclarationFormFlagToActiveScreen(screen: BarNotchScreen? = nil) {
-        let s = screen ?? activeScreen
+        let s = screen ?? activeScreen.wrappedValue
         viewModel.showingDeclarationForm = (s == .pretrade)
     }
 
@@ -83,13 +93,13 @@ struct BarNotchShell: View {
         case .livePlan, .armed: next = .live
         case .debrief: next = .posttrade
         }
-        guard next != activeScreen else { return }
+        guard next != activeScreen.wrappedValue else { return }
         if animated {
             withAnimation(.easeInOut(duration: 0.15)) {
-                activeScreen = next
+                activeScreen.wrappedValue = next
             }
         } else {
-            activeScreen = next
+            activeScreen.wrappedValue = next
         }
     }
 
@@ -161,13 +171,13 @@ struct BarNotchShell: View {
     }
 
     private func navButton(_ screen: BarNotchScreen, badge: String?) -> some View {
-        let isActive = activeScreen == screen
+        let isActive = activeScreen.wrappedValue == screen
         let isHover = hoveredSession == screen
         return Button {
             if screen == .morning {
                 morningBriefConsumed = true
             }
-            activeScreen = screen
+            activeScreen.wrappedValue = screen
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: screen.sfSymbol)
@@ -211,13 +221,13 @@ struct BarNotchShell: View {
 
     /// SESSION group: SF Symbol + hex icon colors (matches spec); label uses same row styling as `navButton`.
     private func sessionNavButton(_ screen: BarNotchScreen, badge: String?) -> some View {
-        let isActive = activeScreen == screen
+        let isActive = activeScreen.wrappedValue == screen
         let isHover = hoveredSession == screen
         return Button {
             if screen == .morning {
                 morningBriefConsumed = true
             }
-            activeScreen = screen
+            activeScreen.wrappedValue = screen
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: screen.sfSymbol)
@@ -289,12 +299,12 @@ struct BarNotchShell: View {
             Image(systemName: "gearshape")
                 .font(.system(size: 14))
                 .foregroundColor(
-                    activeScreen == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
+                    activeScreen.wrappedValue == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
                 )
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    activeScreen = .settings
+                    activeScreen.wrappedValue = .settings
                 }
                 .accessibilityLabel("Settings")
         }
@@ -326,7 +336,7 @@ struct BarNotchShell: View {
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: 10) {
-            Text(activeScreen.rawValue)
+            Text(activeScreen.wrappedValue.rawValue)
                 .font(BarDS.bodyFont(BarDS.FontSize.topbarTitle, weight: .medium))
                 .foregroundColor(BarDS.Text.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,7 +357,7 @@ struct BarNotchShell: View {
 
             Button {
                 viewModel.showingDeclarationForm = true
-                activeScreen = .pretrade
+                activeScreen.wrappedValue = .pretrade
             } label: {
                 Text("+ New trade")
                     .font(BarDS.bodyFont(12, weight: .medium))
@@ -429,7 +439,7 @@ struct BarNotchShell: View {
     }
 
     private var screenBehavioralPillStyle: (dot: Color, title: String, titleColor: Color, bg: Color) {
-        switch activeScreen {
+        switch activeScreen.wrappedValue {
         case .live:
             let interventions = viewModel.barLiveState?.activeInterventions.count ?? 0
             if interventions > 0 {
@@ -525,11 +535,11 @@ struct BarNotchShell: View {
     private var mainScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if activeScreen == .settings {
+                if activeScreen.wrappedValue == .settings {
                     BarSettingsView(viewModel: viewModel)
                 } else if viewModel.barFeaturesActiveFromApi == false {
                     barGateRequired
-                } else if activeScreen == .pretrade {
+                } else if activeScreen.wrappedValue == .pretrade {
                     BarDeclarationFlowView(viewModel: viewModel)
                 } else if viewModel.barSurfacePhase == .debrief {
                     BarPostTradeView(viewModel: viewModel)
@@ -569,7 +579,7 @@ struct BarNotchShell: View {
 
     @ViewBuilder
     private var routedBySidebar: some View {
-        switch activeScreen {
+        switch activeScreen.wrappedValue {
         case .morning:
             BriefLeftView(viewModel: viewModel)
         case .pretrade:
@@ -599,14 +609,14 @@ struct BarNotchShell: View {
         switch viewModel.barSurfacePhase {
         case .livePlan:
             ScrollView {
-                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen != .escrow)
+                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
             }
             .scrollIndicators(.hidden)
         case .armed:
             if viewModel.barLiveState != nil {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen != .escrow)
+                        BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
                         planPanelDivider
                         barArmedWaiting
                     }
@@ -617,7 +627,7 @@ struct BarNotchShell: View {
             }
         default:
             ScrollView {
-                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen != .escrow)
+                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
             }
             .scrollIndicators(.hidden)
         }

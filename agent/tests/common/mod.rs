@@ -16,6 +16,7 @@ pub const TEST_USER_ID: &str = "ac35ef44-6366-40d6-89d4-95530e8e3dbf";
 pub struct TestAgentOptions {
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub recent_trades_db_path: Option<PathBuf>,
+    pub initial_backfill_days: i64,
     pub broker_initial_delay_ms: u64,
     pub broker_base_poll_ms: u64,
     pub toolbar_coalesce_ms: u64,
@@ -32,6 +33,9 @@ pub struct TestAgentOptions {
     /// Slice B — daemon command poll user (#190).
     pub daemon_poll_user_id: Option<String>,
     pub command_poll_ms: u64,
+    /// Issues #13/#14 — inject adapter for runtime start/stop integration tests.
+    pub runtime_poll_adapter: Option<Arc<dyn BrokerAdapter>>,
+    pub start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
 impl Default for TestAgentOptions {
@@ -39,6 +43,7 @@ impl Default for TestAgentOptions {
         Self {
             broker_adapter: None,
             recent_trades_db_path: None,
+            initial_backfill_days: 90,
             broker_initial_delay_ms: 0,
             broker_base_poll_ms: 250,
             toolbar_coalesce_ms: 50,
@@ -52,6 +57,8 @@ impl Default for TestAgentOptions {
             upstream_base_url_override: None,
             daemon_poll_user_id: None,
             command_poll_ms: 500,
+            runtime_poll_adapter: None,
+            start_key_log: None,
         }
     }
 }
@@ -62,6 +69,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
         cfg.recent_trades_db_path = p.clone();
     }
     cfg.broker_sync = BrokerSyncConfig {
+        initial_backfill_days: opts.initial_backfill_days,
         initial_startup_delay: Duration::from_millis(opts.broker_initial_delay_ms),
         base_poll_interval: Duration::from_millis(opts.broker_base_poll_ms),
         coalesce_window: Duration::from_millis(opts.toolbar_coalesce_ms),
@@ -71,12 +79,21 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
         failures_until_open: opts.failures_until_open,
         fresh_secs: opts.fresh_secs,
         stale_secs: opts.stale_secs,
+        rate_limit_default_backoff_ms: 60_000,
     };
     cfg.metrics_port = opts.metrics_port;
     if let Some(base) = &opts.upstream_base_url_override {
         cfg.upstream.base_url = base.trim_end_matches('/').to_string();
     }
     cfg.daemon_poll_user_id = opts.daemon_poll_user_id.clone();
+    cfg.test_runtime_adapter = opts.runtime_poll_adapter.clone();
+    cfg.test_start_key_log = opts.start_key_log.clone();
+}
+
+fn remove_sqlite_files(path: &std::path::Path) {
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(path.with_extension("db-wal"));
+    let _ = std::fs::remove_file(path.with_extension("db-shm"));
 }
 
 pub fn spawn_test_agent_with_options(
@@ -86,9 +103,9 @@ pub fn spawn_test_agent_with_options(
     let mut cfg = AgentConfig::test_on_port(port, TEST_SECRET.to_string());
     apply_broker_options(&mut cfg, &opts);
     if opts.recent_trades_db_path.is_none() {
-        let _ = std::fs::remove_file(&cfg.recent_trades_db_path);
+        remove_sqlite_files(&cfg.recent_trades_db_path);
     }
-    let _ = std::fs::remove_file(&cfg.kill_switch_audit_db_path);
+    remove_sqlite_files(&cfg.kill_switch_audit_db_path);
     tokio::spawn(async move {
         tradeautopsy_agent::run_agent(cfg)
             .await

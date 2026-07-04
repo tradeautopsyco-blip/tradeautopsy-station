@@ -12,6 +12,18 @@ pub struct RecentTradesStore {
     conn: Arc<Mutex<Connection>>,
 }
 
+fn ensure_optional_column(conn: &Connection, column: &str, ddl: &str) -> anyhow::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(recent_fills)")?;
+    let columns = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+    conn.execute(ddl, [])?;
+    Ok(())
+}
+
 impl RecentTradesStore {
     pub fn open(path: &std::path::Path) -> anyhow::Result<Self> {
         let conn = Connection::open(path)
@@ -28,10 +40,22 @@ CREATE TABLE IF NOT EXISTS recent_fills (
   price REAL NOT NULL,
   filled_at_rfc3339 TEXT NOT NULL,
   broker TEXT NOT NULL,
+  fee_amount REAL,
+  fee_asset TEXT,
   inserted_at_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at_ms DESC);
 "#,
+        )?;
+        ensure_optional_column(
+            &conn,
+            "fee_amount",
+            "ALTER TABLE recent_fills ADD COLUMN fee_amount REAL",
+        )?;
+        ensure_optional_column(
+            &conn,
+            "fee_asset",
+            "ALTER TABLE recent_fills ADD COLUMN fee_asset TEXT",
         )?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -43,8 +67,8 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
         let inserted_ms = Utc::now().timestamp_millis();
         guard.execute(
             r#"INSERT INTO recent_fills (
-                fill_id, trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, inserted_at_ms
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+                fill_id, trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, fee_amount, fee_asset, inserted_at_ms
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
             ON CONFLICT(fill_id) DO UPDATE SET
               trade_id=excluded.trade_id,
               symbol=excluded.symbol,
@@ -52,7 +76,9 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
               qty=excluded.qty,
               price=excluded.price,
               filled_at_rfc3339=excluded.filled_at_rfc3339,
-              broker=excluded.broker"#,
+              broker=excluded.broker,
+              fee_amount=excluded.fee_amount,
+              fee_asset=excluded.fee_asset"#,
             params![
                 fill.fill_id,
                 fill.trade_id,
@@ -63,6 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
                 fill.filled_at
                     .to_rfc3339_opts(SecondsFormat::Millis, true),
                 fill.broker,
+                fill.fee_amount,
+                fill.fee_asset.as_deref(),
                 inserted_ms
             ],
         )?;
@@ -72,7 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
     pub fn fetch_recent_json(&self, limit: usize) -> anyhow::Result<Vec<serde_json::Value>> {
         let guard = self.conn.lock().expect("sqlite mutex poisoned");
         let mut stmt = guard.prepare(
-            "SELECT trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, fill_id
+            "SELECT trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, fill_id, fee_amount, fee_asset
              FROM recent_fills ORDER BY inserted_at_ms DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
@@ -84,10 +112,12 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
             let filled_at: String = r.get(5)?;
             let broker: String = r.get(6)?;
             let fill_id: String = r.get(7)?;
+            let fee_amount: Option<f64> = r.get(8)?;
+            let fee_asset: Option<String> = r.get(9)?;
             let filled_at_ms: i64 = DateTime::parse_from_rfc3339(&filled_at)
                 .map(|dt| dt.timestamp_millis())
                 .unwrap_or(0);
-            Ok(json!({
+            let mut row = json!({
                 "tradeId": &trade_id,
                 "trade_id": trade_id,
                 "symbol": symbol,
@@ -98,7 +128,14 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
                 "filled_at_ms": filled_at_ms,
                 "broker": broker,
                 "fillId": fill_id,
-            }))
+            });
+            if let Some(amount) = fee_amount {
+                row["feeAmount"] = json!(amount);
+            }
+            if let Some(asset) = fee_asset {
+                row["feeAsset"] = json!(asset);
+            }
+            Ok(row)
         })?;
         let mut out = Vec::new();
         for row in rows {
@@ -123,8 +160,8 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
 
             guard.execute(
                 r#"INSERT INTO recent_fills (
-                    fill_id, trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, inserted_at_ms
-                ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"#,
+                    fill_id, trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, fee_amount, fee_asset, inserted_at_ms
+                ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)"#,
                 params![
                     fill.fill_id,
                     fill.trade_id,
@@ -135,6 +172,8 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
                     fill.filled_at
                         .to_rfc3339_opts(SecondsFormat::Millis, true),
                     fill.broker,
+                    fill.fee_amount,
+                    fill.fee_asset.as_deref(),
                     inserted_ms_base + i as i64
                 ],
             )?;
@@ -147,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
         let guard = self.conn.lock().expect("sqlite mutex poisoned");
         let v: Option<String> = guard
             .query_row(
-                "SELECT filled_at_rfc3339 FROM recent_fills ORDER BY inserted_at_ms DESC LIMIT 1",
+                "SELECT filled_at_rfc3339 FROM recent_fills ORDER BY filled_at_rfc3339 DESC LIMIT 1",
                 [],
                 |r| r.get(0),
             )
@@ -157,5 +196,46 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
             Some(ref s) => Some(DateTime::parse_from_rfc3339(s)?.with_timezone(&Utc)),
             None => None,
         })
+    }
+
+    /// All fills in chronological order (round-trip engine input).
+    pub fn fetch_all_fills(&self) -> anyhow::Result<Vec<BrokerFill>> {
+        let guard = self.conn.lock().expect("sqlite mutex poisoned");
+        let mut stmt = guard.prepare(
+            "SELECT fill_id, trade_id, symbol, side, qty, price, filled_at_rfc3339, broker, fee_amount, fee_asset
+             FROM recent_fills ORDER BY filled_at_rfc3339 ASC, fill_id ASC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let fill_id: String = r.get(0)?;
+            let trade_id: String = r.get(1)?;
+            let symbol: String = r.get(2)?;
+            let side: String = r.get(3)?;
+            let qty: f64 = r.get(4)?;
+            let price: f64 = r.get(5)?;
+            let filled_at: String = r.get(6)?;
+            let broker: String = r.get(7)?;
+            let fee_amount: Option<f64> = r.get(8)?;
+            let fee_asset: Option<String> = r.get(9)?;
+            let filled_at = DateTime::parse_from_rfc3339(&filled_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            Ok(BrokerFill {
+                fill_id,
+                trade_id,
+                symbol,
+                side,
+                qty,
+                price,
+                filled_at,
+                broker,
+                fee_amount,
+                fee_asset,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 }

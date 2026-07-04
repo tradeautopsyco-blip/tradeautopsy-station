@@ -131,9 +131,7 @@ mod macos {
                 .map_err(|e| format!("Failed to write entries: {e}"))?;
             drop(stdin);
 
-            let status = child
-                .wait()
-                .map_err(|e| format!("tee wait failed: {e}"))?;
+            let status = child.wait().map_err(|e| format!("tee wait failed: {e}"))?;
 
             if !status.success() {
                 return Err("sudo tee /etc/hosts failed".to_string());
@@ -155,8 +153,8 @@ mod macos {
         let path = hosts_file_path();
 
         if direct_write_enabled() {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| format!("read hosts file: {e}"))?;
+            let content =
+                std::fs::read_to_string(&path).map_err(|e| format!("read hosts file: {e}"))?;
             let filtered: String = content
                 .lines()
                 .filter(|line| !line.contains(HOSTS_LINE_MATCH))
@@ -350,7 +348,10 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::write(&path, "127.0.0.1 localhost\n").expect("seed hosts");
-        std::env::set_var("TRADEAUTOPSY_HOSTS_FILE", path.to_string_lossy().to_string());
+        std::env::set_var(
+            "TRADEAUTOPSY_HOSTS_FILE",
+            path.to_string_lossy().to_string(),
+        );
 
         apply_hosts_block("zerodha").expect("apply");
         assert!(is_block_active());

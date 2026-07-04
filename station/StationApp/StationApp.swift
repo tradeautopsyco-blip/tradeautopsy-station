@@ -40,6 +40,9 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
             inputMonitoringChecker: inputMonitoringChecker
         )
         windowController.install(coordinator: coordinator)
+        if let hostedNotch = notchHost as? HostedNotchLauncher {
+            hostedNotch.bindCoordinator(coordinator)
+        }
         self.coordinator = coordinator
 
         Task {
@@ -54,6 +57,3 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-enum AgentLoopback {
-    static let port: UInt16 = 9137
-}
