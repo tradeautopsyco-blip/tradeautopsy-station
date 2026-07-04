@@ -139,6 +139,35 @@ CREATE TABLE IF NOT EXISTS daily_snapshots (
         Ok(())
     }
 
+    pub fn fetch_daily_snapshot(
+        &self,
+        local_date: NaiveDate,
+    ) -> anyhow::Result<Option<DailySnapshot>> {
+        let guard = self.conn.lock().expect("today sqlite mutex poisoned");
+        let mut stmt = guard.prepare(
+            r#"SELECT round_trips_closed, net_pnl_usd, wins, losses, discipline_index,
+                      trades_count, learning_baseline, unknown_basis_count
+               FROM daily_snapshots WHERE local_date = ?1"#,
+        )?;
+        let day = local_date.format("%Y-%m-%d").to_string();
+        let row = stmt
+            .query_row(params![day], |r| {
+                Ok(DailySnapshot {
+                    local_date,
+                    round_trips_closed: r.get(0)?,
+                    net_pnl_usd: r.get(1)?,
+                    wins: r.get(2)?,
+                    losses: r.get(3)?,
+                    discipline_index: r.get(4)?,
+                    trades_count: r.get(5)?,
+                    learning_baseline: r.get::<_, i32>(6)? != 0,
+                    unknown_basis_count: r.get(7)?,
+                })
+            })
+            .optional()?;
+        Ok(row)
+    }
+
     pub fn fetch_round_trips_for_day(
         &self,
         local_date: NaiveDate,

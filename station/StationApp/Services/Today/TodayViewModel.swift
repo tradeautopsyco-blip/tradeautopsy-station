@@ -11,16 +11,23 @@ public final class TodayViewModel: ObservableObject {
 
     private let client: TodayAgentClient
     private let agentHealthy: () -> Bool
+    private let isBrokerSyncActive: () -> Bool
     private let notchViewModel: NotchViewModel
+    private let sessionMirrorPollIntervalSeconds: TimeInterval
+    private var sessionMirrorPollTask: Task<Void, Never>?
 
     public init(
         client: TodayAgentClient,
         notchViewModel: NotchViewModel,
-        agentHealthy: @escaping () -> Bool
+        agentHealthy: @escaping () -> Bool,
+        isBrokerSyncActive: @escaping () -> Bool = { false },
+        sessionMirrorPollIntervalSeconds: TimeInterval = 15
     ) {
         self.client = client
         self.notchViewModel = notchViewModel
         self.agentHealthy = agentHealthy
+        self.isBrokerSyncActive = isBrokerSyncActive
+        self.sessionMirrorPollIntervalSeconds = sessionMirrorPollIntervalSeconds
     }
 
     public var showCircuitBreakerBanner: Bool {
@@ -58,6 +65,24 @@ public final class TodayViewModel: ObservableObject {
             payload: payload,
             agentHealthy: agentHealthy()
         )
+    }
+
+    public func startSessionMirrorPolling() {
+        stopSessionMirrorPolling()
+        sessionMirrorPollTask = Task { [sessionMirrorPollIntervalSeconds] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(sessionMirrorPollIntervalSeconds * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                if isBrokerSyncActive() {
+                    await load()
+                }
+            }
+        }
+    }
+
+    public func stopSessionMirrorPolling() {
+        sessionMirrorPollTask?.cancel()
+        sessionMirrorPollTask = nil
     }
 
     public func resumeCircuitBreaker() {

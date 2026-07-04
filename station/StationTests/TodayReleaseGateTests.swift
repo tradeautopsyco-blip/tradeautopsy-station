@@ -33,6 +33,54 @@ struct TodayReleaseGateTests {
         #expect(presentation.sessionPnLText.contains("8.79"))
     }
 
+    @Test @MainActor func pulseTextUpdatesAfterTodayPayloadRefresh() async {
+        let client = FakeTodayAgentClient(
+            payload: TodayAgentPayload(
+                localDate: "2026-07-04",
+                performanceBasisNotTax: true,
+                degradedReason: nil,
+                learningBaseline: false,
+                hero: TodayHeroPayload(pnlTodayUsd: 5.0, tradesToday: 1, winRate: 1.0),
+                topSignals: [],
+                trades: [],
+                openPositionCount: 0
+            )
+        )
+        let viewModel = TodayViewModel(
+            client: client,
+            notchViewModel: NotchViewModel(),
+            agentHealthy: { true }
+        )
+        await viewModel.load()
+        let before = SessionPulseStripPresentation.build(
+            sessionPnLUsd: viewModel.sessionPnLUsd,
+            unrealizedTotal: 0,
+            positions: [],
+            isDegraded: false,
+            formatUSD: TodayScreenPresentation.formatSignedUSD
+        )
+        client.payload = TodayAgentPayload(
+            localDate: "2026-07-04",
+            performanceBasisNotTax: true,
+            degradedReason: nil,
+            learningBaseline: false,
+            hero: TodayHeroPayload(pnlTodayUsd: 42.0, tradesToday: 2, winRate: 0.5),
+            topSignals: [],
+            trades: [],
+            openPositionCount: 0
+        )
+        await viewModel.load()
+        let after = SessionPulseStripPresentation.build(
+            sessionPnLUsd: viewModel.sessionPnLUsd,
+            unrealizedTotal: 0,
+            positions: [],
+            isDegraded: false,
+            formatUSD: TodayScreenPresentation.formatSignedUSD
+        )
+        #expect(before.sessionPnLText.contains("5"))
+        #expect(after.sessionPnLText.contains("42"))
+    }
+
     @Test @MainActor func breakerHiddenWhenAgentDown() {
         let notchVM = NotchViewModel()
         notchVM.killSwitchActive = true

@@ -195,6 +195,15 @@ public final class NotchViewModel: ObservableObject {
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
     @Published public var brokerSessionActive: Bool = false
+    /// True while broker sync is running or has fresh/stale data — drives Today session mirror polling.
+    public var isBrokerSyncActiveForTodayMirror: Bool {
+        switch brokerSyncClass {
+        case "syncing", "synced", "stale":
+            return true
+        default:
+            return false
+        }
+    }
     /// User click + programmatic expansion (never hover-to-expand).
     @Published var isExpanded: Bool = false
     /// One-shot ring scale pulse after smart trigger (0.3s).

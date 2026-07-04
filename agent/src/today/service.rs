@@ -11,6 +11,7 @@ use crate::today::signals::{analyze_signals, BehaviorSignal, SignalAnalysis};
 use crate::today::store::{DailySnapshot, TodayStore};
 use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -110,6 +111,7 @@ impl TodayService {
             .map(|(rt, flag)| (rt.clone(), flag.clone()))
             .collect();
         self.store.replace_round_trips(&flagged)?;
+        self.ensure_past_day_snapshots(&result.round_trips)?;
         self.store
             .upsert_daily_snapshot(&build_snapshot(today, &today_trips, &analysis))?;
         Ok(())
@@ -131,6 +133,7 @@ impl TodayService {
             .cloned()
             .collect();
         let analysis = analyze_signals(&result.round_trips, &today_trips);
+        self.ensure_past_day_snapshots(&result.round_trips)?;
 
         let eligible: Vec<_> = today_trips
             .iter()
@@ -156,28 +159,7 @@ impl TodayService {
             Some(wins as f64 / eligible.len() as f64)
         };
 
-        let trades: Vec<TodayTradeRowPayload> = today_trips
-            .iter()
-            .take(50)
-            .filter_map(|rt| {
-                let flag = result
-                    .round_trips
-                    .iter()
-                    .position(|t| t.closed_at == rt.closed_at && t.symbol == rt.symbol)
-                    .and_then(|i| analysis.trip_flags.get(i))?;
-                Some(TodayTradeRowPayload {
-                    closed_at: rt.closed_at.to_rfc3339(),
-                    symbol: rt.symbol.clone(),
-                    avg_entry: rt.avg_entry_price,
-                    avg_exit: rt.avg_exit_price,
-                    qty: rt.qty,
-                    net_pnl_usd: rt.realized_pnl_usd,
-                    primary_flag: flag.label.clone(),
-                    flag_severity: flag.severity.as_str().to_string(),
-                    data_quality_flags: data_quality_flags(rt),
-                })
-            })
-            .collect();
+        let trades = build_trade_rows(&today_trips, &result.round_trips, &analysis, 50);
 
         Ok(TodayPayload {
             local_date: today.format("%Y-%m-%d").to_string(),
@@ -222,6 +204,28 @@ impl TodayService {
             _ => None,
         }
     }
+
+    fn ensure_past_day_snapshots(&self, all_trips: &[RoundTrip]) -> anyhow::Result<()> {
+        let today = local_today();
+        let mut past_dates: BTreeSet<NaiveDate> = BTreeSet::new();
+        for rt in all_trips {
+            let d = local_date(rt.closed_at);
+            if d < today {
+                past_dates.insert(d);
+            }
+        }
+        for date in past_dates {
+            let day_trips: Vec<_> = all_trips
+                .iter()
+                .filter(|rt| local_date(rt.closed_at) == date)
+                .cloned()
+                .collect();
+            let analysis = analyze_signals(all_trips, &day_trips);
+            self.store
+                .upsert_daily_snapshot(&build_snapshot(date, &day_trips, &analysis))?;
+        }
+        Ok(())
+    }
 }
 
 fn degraded_payload(local_date: NaiveDate, reason: TodayDegradedReason) -> TodayPayload {
@@ -239,6 +243,41 @@ fn degraded_payload(local_date: NaiveDate, reason: TodayDegradedReason) -> Today
         trades: vec![],
         open_position_count: 0,
     }
+}
+
+fn sort_round_trips_desc(trips: &mut [RoundTrip]) {
+    trips.sort_by(|a, b| b.closed_at.cmp(&a.closed_at));
+}
+
+fn build_trade_rows(
+    today_trips: &[RoundTrip],
+    all_trips: &[RoundTrip],
+    analysis: &SignalAnalysis,
+    limit: usize,
+) -> Vec<TodayTradeRowPayload> {
+    let mut sorted: Vec<_> = today_trips.to_vec();
+    sort_round_trips_desc(&mut sorted);
+    sorted
+        .into_iter()
+        .take(limit)
+        .filter_map(|rt| {
+            let flag = all_trips
+                .iter()
+                .position(|t| t.closed_at == rt.closed_at && t.symbol == rt.symbol)
+                .and_then(|i| analysis.trip_flags.get(i))?;
+            Some(TodayTradeRowPayload {
+                closed_at: rt.closed_at.to_rfc3339(),
+                symbol: rt.symbol.clone(),
+                avg_entry: rt.avg_entry_price,
+                avg_exit: rt.avg_exit_price,
+                qty: rt.qty,
+                net_pnl_usd: rt.realized_pnl_usd,
+                primary_flag: flag.label.clone(),
+                flag_severity: flag.severity.as_str().to_string(),
+                data_quality_flags: data_quality_flags(&rt),
+            })
+        })
+        .collect()
 }
 
 fn build_snapshot(
@@ -338,6 +377,129 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
+    fn local_noon(date: NaiveDate) -> chrono::DateTime<Utc> {
+        let local_dt = date.and_hms_opt(12, 0, 0).unwrap();
+        Local.from_local_datetime(&local_dt)
+            .single()
+            .expect("local noon")
+            .with_timezone(&Utc)
+    }
+
+    fn btc_trip(closed_at: chrono::DateTime<Utc>, pnl: f64) -> RoundTrip {
+        RoundTrip {
+            symbol: "BTCUSDT".into(),
+            opened_at: closed_at - chrono::Duration::hours(1),
+            closed_at,
+            avg_entry_price: 60_000.0,
+            avg_exit_price: 61_000.0,
+            qty: 0.01,
+            realized_pnl_usd: Some(pnl),
+            fees_usd: Some(0.5),
+            unknown_basis: false,
+            fee_unhandled: false,
+            quote_not_usd: false,
+        }
+    }
+
+    #[test]
+    fn build_trade_rows_sorted_most_recent_first() {
+        let day = local_today();
+        let t1 = btc_trip(local_noon(day) + chrono::Duration::hours(1), 1.0);
+        let t2 = btc_trip(local_noon(day) + chrono::Duration::hours(3), 2.0);
+        let t3 = btc_trip(local_noon(day) + chrono::Duration::hours(2), 3.0);
+        let today_trips = vec![t1.clone(), t2.clone(), t3.clone()];
+        let all = today_trips.clone();
+        let analysis = analyze_signals(&all, &today_trips);
+        let rows = build_trade_rows(&today_trips, &all, &analysis, 50);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].closed_at, t2.closed_at.to_rfc3339());
+        assert_eq!(rows[1].closed_at, t3.closed_at.to_rfc3339());
+        assert_eq!(rows[2].closed_at, t1.closed_at.to_rfc3339());
+    }
+
+    #[test]
+    fn ensure_past_day_snapshots_writes_yesterday_without_today_fill() {
+        let dir = std::env::temp_dir().join(format!(
+            "rta-day-boundary-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("today.db");
+        let _ = std::fs::remove_file(&db);
+        let store = TodayStore::open(&db).expect("open today store");
+        let today = local_today();
+        let yesterday = today.pred_opt().expect("yesterday");
+        let trip = btc_trip(local_noon(yesterday), 8.79);
+        let service = TodayServiceHarness { store: store.clone() };
+        service
+            .ensure_past_day_snapshots(&[trip])
+            .expect("finalize yesterday");
+        let snap = store
+            .fetch_daily_snapshot(yesterday)
+            .expect("fetch")
+            .expect("snapshot row");
+        assert_eq!(snap.round_trips_closed, 1);
+        assert!((snap.net_pnl_usd - 8.79).abs() < 0.01);
+        assert!(store.fetch_daily_snapshot(today).expect("fetch today").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hero_metrics_empty_when_only_prior_day_trips_exist() {
+        let today = local_today();
+        let yesterday = today.pred_opt().expect("yesterday");
+        let trip = btc_trip(local_noon(yesterday), 5.0);
+        let today_trips: Vec<_> = [trip]
+            .into_iter()
+            .filter(|rt| local_date(rt.closed_at) == today)
+            .collect();
+        assert!(today_trips.is_empty());
+        let eligible: Vec<_> = today_trips
+            .iter()
+            .filter(|rt| is_aggregate_eligible(rt))
+            .collect();
+        assert!(eligible.is_empty());
+    }
+
+    #[test]
+    fn ensure_past_day_snapshots_writes_two_prior_days() {
+        let dir = std::env::temp_dir().join(format!(
+            "rta-day-boundary-two-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let db = dir.join("today.db");
+        let _ = std::fs::remove_file(&db);
+        let store = TodayStore::open(&db).expect("open today store");
+        let today = local_today();
+        let yesterday = today.pred_opt().expect("yesterday");
+        let day_before = yesterday.pred_opt().expect("day before");
+        let service = TodayServiceHarness { store: store.clone() };
+        service
+            .ensure_past_day_snapshots(&[
+                btc_trip(local_noon(day_before), 1.0),
+                btc_trip(local_noon(yesterday), 2.0),
+            ])
+            .expect("finalize past days");
+        assert_eq!(
+            store
+                .fetch_daily_snapshot(day_before)
+                .expect("fetch")
+                .expect("row")
+                .round_trips_closed,
+            1
+        );
+        assert_eq!(
+            store
+                .fetch_daily_snapshot(yesterday)
+                .expect("fetch")
+                .expect("row")
+                .round_trips_closed,
+            1
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn fill_near_local_midnight_assigned_to_correct_local_date() {
         // 23:30 UTC on Jan 15 → Jan 15 UTC, but Jan 16 in any east-of-UTC timezone.
@@ -380,5 +542,33 @@ mod tests {
         let analysis = crate::today::signals::analyze_signals(&[rt.clone()], &[rt]);
         let primary = analysis.trip_flags.first().expect("flag");
         assert_eq!(primary.label, "Unknown basis");
+    }
+
+    struct TodayServiceHarness {
+        store: TodayStore,
+    }
+
+    impl TodayServiceHarness {
+        fn ensure_past_day_snapshots(&self, all_trips: &[RoundTrip]) -> anyhow::Result<()> {
+            let today = local_today();
+            let mut past_dates: BTreeSet<NaiveDate> = BTreeSet::new();
+            for rt in all_trips {
+                let d = local_date(rt.closed_at);
+                if d < today {
+                    past_dates.insert(d);
+                }
+            }
+            for date in past_dates {
+                let day_trips: Vec<_> = all_trips
+                    .iter()
+                    .filter(|rt| local_date(rt.closed_at) == date)
+                    .cloned()
+                    .collect();
+                let analysis = analyze_signals(all_trips, &day_trips);
+                self.store
+                    .upsert_daily_snapshot(&build_snapshot(date, &day_trips, &analysis))?;
+            }
+            Ok(())
+        }
     }
 }

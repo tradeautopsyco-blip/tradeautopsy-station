@@ -95,10 +95,12 @@ public final class StationAppCoordinator: ObservableObject {
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
             isAgentHealthy: { agentSupervisor.isHealthy }
         )
+        let notchVM = self.notchViewModel
         self.todayViewModel = TodayViewModel(
             client: resolvedTodayClient,
-            notchViewModel: self.notchViewModel,
-            agentHealthy: { agentSupervisor.isHealthy }
+            notchViewModel: notchVM,
+            agentHealthy: { agentSupervisor.isHealthy },
+            isBrokerSyncActive: { notchVM.isBrokerSyncActiveForTodayMirror }
         )
 
         self.activeRoute = NavigationPolicy.launchRoute(
@@ -216,6 +218,7 @@ public final class StationAppCoordinator: ObservableObject {
             windowController.hide()
         }
         hotkeyRegistrar.unregisterAll()
+        todayViewModel.stopSessionMirrorPolling()
         await agentSupervisor.shutdown()
         notchPolling.stopPolling()
         notchHost.dismiss()
@@ -241,6 +244,7 @@ public final class StationAppCoordinator: ObservableObject {
         notchAndPollingStarted = true
         pollingStoppedForUnhealthyAgent = false
         await todayViewModel.load()
+        todayViewModel.startSessionMirrorPolling()
     }
 
     private func syncAgentHealthFromSupervisor() {
@@ -259,11 +263,13 @@ public final class StationAppCoordinator: ObservableObject {
             } else if pollingStoppedForUnhealthyAgent {
                 notchPolling.startPolling()
                 notchViewModel.startPolling()
+                todayViewModel.startSessionMirrorPolling()
                 pollingStoppedForUnhealthyAgent = false
             }
         } else if notchAndPollingStarted {
             notchPolling.stopPolling()
             notchViewModel.stopPolling()
+            todayViewModel.stopSessionMirrorPolling()
             pollingStoppedForUnhealthyAgent = true
         }
 

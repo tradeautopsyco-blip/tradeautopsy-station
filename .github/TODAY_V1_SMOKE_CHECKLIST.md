@@ -32,6 +32,14 @@
 
 ## Release gates (CI)
 
-- [ ] `cargo test --test round_trip_engine_tests --test today_release_gates`
-- [ ] `swift test --filter TodayScreenPresentationTests`
-- [ ] `swift test --filter TodayReleaseGateTests`
+- [x] `cargo test --test round_trip_engine_tests --test today_release_gates`
+- [x] `swift test --filter TodayScreenPresentationTests`
+- [x] `swift test --filter TodayReleaseGateTests`
+- [x] Agent: trades table `closedAt` descending (most recent first)
+- [x] Agent: day-boundary `daily_snapshots` finalization for prior local dates
+- [x] Station: session mirror polling refreshes Today/pulse during broker sync
+
+## Manual only (requires Binance.US credentials)
+
+- [ ] Complete one spot round-trip → hero P&L within $0.01 of Binance Trade Analysis
+- [ ] Pulse strip updates to match Today hero after round-trip without navigating away
