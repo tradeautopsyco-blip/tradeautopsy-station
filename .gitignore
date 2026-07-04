@@ -8,6 +8,8 @@ notch/*.xcworkspace/
 notch/DerivedData/
 notch/.build/
 station/.build/
+*.app
+TradeAutopsy Station.app/
 *.ipa
 *.dSYM.zip
 *.dSYM
