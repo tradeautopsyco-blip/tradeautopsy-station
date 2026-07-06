@@ -28,7 +28,7 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
     ) {
         self.port = port
         self.session = session
-        let secret = daemonSecret ?? ProcessInfo.processInfo.environment["AGENT_SECRET"] ?? ""
+        let secret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
         self.signRequest = AgentWireSigner(secret: secret).signedRequest
     }
 

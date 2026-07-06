@@ -25,6 +25,7 @@ let package = Package(
             exclude: ["StationApp.swift", "Info.plist"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("IOKit"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("Security"),
             ]

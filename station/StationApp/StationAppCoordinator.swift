@@ -9,6 +9,7 @@ public final class StationAppCoordinator: ObservableObject {
     public let brokersViewModel: BrokersViewModel
     public let todayViewModel: TodayViewModel
     @Published public private(set) var inputMonitoringWarning: InputMonitoringWarning?
+    @Published public private(set) var inputMonitoringRestartReminder: String?
     @Published public private(set) var launchAtLoginEnabled = false
     @Published public private(set) var showLoginItemPrompt = false
 
@@ -34,6 +35,9 @@ public final class StationAppCoordinator: ObservableObject {
     private var manualSessionPickAt: Date?
     private var notchAndPollingStarted = false
     private var pollingStoppedForUnhealthyAgent = false
+    private var inputMonitoringWarningShownAt: Date?
+    private var inputMonitoringPollTask: Task<Void, Never>?
+    private var didShowInputMonitoringRestartReminder = false
 
     public init(
         agentSupervisor: AgentSupervising,
@@ -50,8 +54,10 @@ public final class StationAppCoordinator: ObservableObject {
         dateProvider: @escaping () -> Date = Date.init,
         inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker(),
         brokerControl: BrokerControlling? = nil,
-        todayClient: TodayAgentClient? = nil
+        todayClient: TodayAgentClient? = nil,
+        daemonSecret: String? = nil
     ) {
+        let resolvedDaemonSecret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
         self.agentSupervisor = agentSupervisor
         self.statusItemController = statusItemController
         self.hotkeyRegistrar = hotkeyRegistrar
@@ -68,7 +74,7 @@ public final class StationAppCoordinator: ObservableObject {
 
         let resolvedCredentialStore = KeychainBrokerCredentialStore()
         let resolvedMetadataStore = UserDefaultsBrokerMetadataStore()
-        let resolvedRuntimeClient = LocalAgentBrokerRuntimeClient()
+        let resolvedRuntimeClient = LocalAgentBrokerRuntimeClient(daemonSecret: resolvedDaemonSecret)
         let resolvedSyncControl = AgentBrokerSyncControl(
             credentialStore: resolvedCredentialStore,
             runtimeClient: resolvedRuntimeClient
@@ -93,6 +99,7 @@ public final class StationAppCoordinator: ObservableObject {
         )
 
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
+            daemonSecret: resolvedDaemonSecret,
             isAgentHealthy: { agentSupervisor.isHealthy }
         )
         let notchVM = self.notchViewModel
@@ -154,6 +161,30 @@ public final class StationAppCoordinator: ObservableObject {
 
     public func dismissInputMonitoringWarning() {
         inputMonitoringWarning = nil
+        stopInputMonitoringPollingIfNeeded()
+    }
+
+    public func dismissInputMonitoringRestartReminder() {
+        inputMonitoringRestartReminder = nil
+    }
+
+    public func recheckInputMonitoringAccess() {
+        if inputMonitoringChecker.isInputMonitoringGranted() {
+            inputMonitoringWarning = nil
+            showInputMonitoringRestartReminderIfNeeded()
+            stopInputMonitoringPollingIfNeeded()
+            return
+        }
+
+        guard inputMonitoringWarning != nil,
+              !didShowInputMonitoringRestartReminder,
+              let shownAt = inputMonitoringWarningShownAt,
+              dateProvider().timeIntervalSince(shownAt) >= 3
+        else {
+            return
+        }
+
+        showInputMonitoringRestartReminderIfNeeded()
     }
 
     public func toggleLaunchAtLogin() {
@@ -288,9 +319,39 @@ public final class StationAppCoordinator: ObservableObject {
     private func syncInputMonitoringWarning() {
         if !inputMonitoringChecker.isInputMonitoringGranted() {
             inputMonitoringWarning = InputMonitoringWarning()
+            if inputMonitoringWarningShownAt == nil {
+                inputMonitoringWarningShownAt = dateProvider()
+            }
+            startInputMonitoringPollingIfNeeded()
         } else {
             inputMonitoringWarning = nil
+            inputMonitoringWarningShownAt = nil
+            stopInputMonitoringPollingIfNeeded()
         }
+    }
+
+    private func showInputMonitoringRestartReminderIfNeeded() {
+        guard !didShowInputMonitoringRestartReminder else { return }
+        didShowInputMonitoringRestartReminder = true
+        inputMonitoringRestartReminder = InputMonitoringWarning.restartReminderMessage
+    }
+
+    private func startInputMonitoringPollingIfNeeded() {
+        guard inputMonitoringPollTask == nil else { return }
+        inputMonitoringPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self?.recheckInputMonitoringAccess()
+                }
+            }
+        }
+    }
+
+    private func stopInputMonitoringPollingIfNeeded() {
+        inputMonitoringPollTask?.cancel()
+        inputMonitoringPollTask = nil
     }
 
     private func presentWindowOnLaunchIfNeeded() {

@@ -374,7 +374,7 @@ Do **not** persist Session routes.
 |-----------|--------|
 | Binary path | `Bundle.main.url(forAuxiliaryExecutable: "tradeautopsy-agent")` or `Contents/MacOS/tradeautopsy-agent` |
 | Port | `9137` (env `AGENT_PORT` forwarded if set) |
-| Secret | Existing Station daemon secret convention (match agent `AGENT_SECRET` / UDS token flow) |
+| Secret | `AgentDaemonSecret.resolveForSession()` — ephemeral per launch, injected as `AGENT_DAEMON_SECRET` on spawn; wire-v1 health/API probes use the same in-memory value |
 | Dev attach | `STATION_DEV_ATTACH=1` → no spawn; probe loopback only |
 
 ### 8.2 Launch Health Poll

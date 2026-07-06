@@ -23,12 +23,12 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
         let phaseProvider = DefaultBarSurfacePhaseProvider()
         let notchViewModel = NotchViewModel()
         let notchHost = HostedNotchLauncher(viewModel: notchViewModel)
-        let secret = ProcessInfo.processInfo.environment["AGENT_SECRET"] ?? ""
+        let daemonSecret = AgentDaemonSecret.resolveForSession()
         let port = AgentLoopback.port
         let base = "http://127.0.0.1:\(port)"
-        notchHost.configure(secret: secret, port: port, webBase: base)
+        notchHost.configure(secret: daemonSecret, port: port, webBase: base)
         let coordinator = StationAppCoordinator(
-            agentSupervisor: AgentSupervisor(),
+            agentSupervisor: AgentSupervisor(daemonSecret: daemonSecret),
             statusItemController: StatusItemController(),
             hotkeyRegistrar: HotkeyRegistrar(inputMonitoringChecker: inputMonitoringChecker),
             notchHost: notchHost,
@@ -37,7 +37,8 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
             launchStore: launchStore,
             phaseProvider: phaseProvider,
             notchViewModel: notchViewModel,
-            inputMonitoringChecker: inputMonitoringChecker
+            inputMonitoringChecker: inputMonitoringChecker,
+            daemonSecret: daemonSecret
         )
         windowController.install(coordinator: coordinator)
         if let hostedNotch = notchHost as? HostedNotchLauncher {

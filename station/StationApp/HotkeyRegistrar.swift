@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
+import IOKit.hid
 
 public protocol InputMonitoringChecking: Sendable {
     func isInputMonitoringGranted() -> Bool
+    func requestInputMonitoringAccess()
 }
 
 public struct DefaultInputMonitoringChecker: InputMonitoringChecking {
@@ -13,6 +15,12 @@ public struct DefaultInputMonitoringChecker: InputMonitoringChecking {
             return CGPreflightListenEventAccess()
         }
         return true
+    }
+
+    public func requestInputMonitoringAccess() {
+        if #available(macOS 10.15, *) {
+            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+        }
     }
 }
 
@@ -63,6 +71,8 @@ public final class HotkeyRegistrar: HotkeyRegistering {
     private func installMonitorsIfNeeded() {
         guard globalMonitor == nil, localMonitor == nil else { return }
         guard toggleNotchHandler != nil || openStationHandler != nil else { return }
+
+        inputMonitoringChecker.requestInputMonitoringAccess()
 
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             DispatchQueue.main.async {

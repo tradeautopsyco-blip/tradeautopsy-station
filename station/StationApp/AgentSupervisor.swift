@@ -19,10 +19,16 @@ public final class AgentSupervisor: AgentSupervising {
     private var supervisionTask: Task<Void, Never>?
     private let port: UInt16
     private let session: URLSession
+    private let daemonSecret: String
 
-    public init(port: UInt16 = AgentSupervisor.defaultPort, session: URLSession = .shared) {
+    public init(
+        port: UInt16 = AgentSupervisor.defaultPort,
+        session: URLSession = .shared,
+        daemonSecret: String
+    ) {
         self.port = port
         self.session = session
+        self.daemonSecret = daemonSecret
     }
 
     public func start() async {
@@ -137,7 +143,9 @@ public final class AgentSupervisor: AgentSupervising {
 
         let process = Process()
         process.executableURL = binaryURL
-        process.environment = ProcessInfo.processInfo.environment
+        var environment = ProcessInfo.processInfo.environment
+        environment[AgentDaemonSecret.envKey] = daemonSecret
+        process.environment = environment
 
         try process.run()
         spawnedPID = process.processIdentifier
@@ -237,12 +245,10 @@ public final class AgentSupervisor: AgentSupervising {
     }
 
     private func portHasListener() async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(Self.healthPath)") else {
-            return false
-        }
+        guard let request = signedHealthRequest() else { return false }
 
         do {
-            let (_, response) = try await session.data(from: url)
+            let (_, response) = try await session.data(for: request)
             return response is HTTPURLResponse
         } catch {
             return false
@@ -250,12 +256,10 @@ public final class AgentSupervisor: AgentSupervising {
     }
 
     private func isTradeAutopsyAgentListening() async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(Self.healthPath)") else {
-            return false
-        }
+        guard let request = signedHealthRequest() else { return false }
 
         do {
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                 return false
             }
@@ -264,6 +268,17 @@ public final class AgentSupervisor: AgentSupervising {
         } catch {
             return false
         }
+    }
+
+    private func signedHealthRequest() -> URLRequest? {
+        let path = Self.healthPath
+        var request = AgentWireSigner(secret: daemonSecret).signedRequest(
+            method: "GET",
+            path: path,
+            body: Data()
+        )
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        return request
     }
 
     private func setWarning(_ warning: AgentHealthWarning) {

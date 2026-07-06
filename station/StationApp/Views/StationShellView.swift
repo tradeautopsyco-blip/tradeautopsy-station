@@ -27,6 +27,12 @@ public struct StationShellView: View {
                 }
             }
 
+            if let reminder = coordinator.inputMonitoringRestartReminder {
+                InputMonitoringRestartReminderView(message: reminder) {
+                    coordinator.dismissInputMonitoringRestartReminder()
+                }
+            }
+
             if coordinator.showLoginItemPrompt {
                 LoginItemPromptView(
                     onEnable: { coordinator.enableLaunchAtLoginFromPrompt() },

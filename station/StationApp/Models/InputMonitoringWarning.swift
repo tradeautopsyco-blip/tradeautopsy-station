@@ -5,6 +5,9 @@ public struct InputMonitoringWarning: Equatable {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
     )!
 
+    public static let restartReminderMessage =
+        "Permission granted — please quit and reopen TradeAutopsy Station for it to take effect."
+
     public var message: String
     public var systemSettingsURL: URL
 

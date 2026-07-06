@@ -16,7 +16,7 @@ public struct LocalTodayAgentClient: TodayAgentClient {
     ) {
         self.port = port
         self.session = session
-        let secret = daemonSecret ?? ProcessInfo.processInfo.environment["AGENT_SECRET"] ?? ""
+        let secret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
         self.signRequest = AgentWireSigner(secret: secret).signedRequest
         self.isAgentHealthy = isAgentHealthy
     }

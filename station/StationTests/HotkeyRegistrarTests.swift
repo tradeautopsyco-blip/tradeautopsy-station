@@ -4,10 +4,19 @@ import Testing
 @testable import Notch
 @testable import Station
 
-private struct FakeInputMonitoringChecker: InputMonitoringChecking {
-    let granted: Bool
+private final class FakeInputMonitoringChecker: InputMonitoringChecking, @unchecked Sendable {
+    var granted: Bool
+    private(set) var requestAccessCallCount = 0
+
+    init(granted: Bool) {
+        self.granted = granted
+    }
 
     func isInputMonitoringGranted() -> Bool { granted }
+
+    func requestInputMonitoringAccess() {
+        requestAccessCallCount += 1
+    }
 }
 
 @MainActor
@@ -25,6 +34,14 @@ struct HotkeyRegistrarTests {
             isARepeat: false,
             keyCode: 49
         )!
+    }
+
+    @Test func registrarRequestsInputMonitoringAccessBeforeMonitors() {
+        let checker = FakeInputMonitoringChecker(granted: true)
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: checker)
+        registrar.registerToggleNotch {}
+
+        #expect(checker.requestAccessCallCount == 1)
     }
 
     @Test func altSpaceTogglesNotch() {
@@ -98,7 +115,47 @@ struct HotkeyRegistrarTests {
         #expect(coordinator.inputMonitoringWarning == nil)
     }
 
+    @Test func systemSettingsDeepLinkUsesInputMonitoringPane() {
+        #expect(
+            InputMonitoringWarning.systemSettingsURL.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        )
+    }
+
+    @Test func recheckShowsRestartReminderWhenPermissionGranted() async {
+        let checker = FakeInputMonitoringChecker(granted: false)
+        let coordinator = makeCoordinator(inputMonitoringChecker: checker)
+
+        await coordinator.launch()
+        #expect(coordinator.inputMonitoringWarning != nil)
+        #expect(coordinator.inputMonitoringRestartReminder == nil)
+
+        checker.granted = true
+        coordinator.recheckInputMonitoringAccess()
+
+        #expect(coordinator.inputMonitoringWarning == nil)
+        #expect(coordinator.inputMonitoringRestartReminder?.contains("quit and reopen") == true)
+    }
+
+    @Test func recheckShowsRestartReminderAfterDelayWhenStillDenied() async {
+        var now = Date(timeIntervalSince1970: 0)
+        let checker = FakeInputMonitoringChecker(granted: false)
+        let coordinator = makeCoordinator(
+            dateProvider: { now },
+            inputMonitoringChecker: checker
+        )
+
+        await coordinator.launch()
+        #expect(coordinator.inputMonitoringRestartReminder == nil)
+
+        now = now.addingTimeInterval(4)
+        coordinator.recheckInputMonitoringAccess()
+
+        #expect(coordinator.inputMonitoringRestartReminder?.contains("quit and reopen") == true)
+    }
+
     private func makeCoordinator(
+        dateProvider: @escaping () -> Date = Date.init,
         inputMonitoringChecker: InputMonitoringChecking
     ) -> StationAppCoordinator {
         let launchStore = FakeLaunchStore()
@@ -112,6 +169,7 @@ struct HotkeyRegistrarTests {
             windowController: FakeStationWindowController(),
             launchStore: launchStore,
             phaseProvider: FakeBarSurfacePhaseProvider(),
+            dateProvider: dateProvider,
             inputMonitoringChecker: inputMonitoringChecker
         )
     }

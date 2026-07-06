@@ -19,7 +19,7 @@
     },
     "auth": {
       "agent_to_brain": "x-daemon-secret header + HMAC-SHA256 per wire v1 spec",
-      "notch_to_agent": "UDS token or x-daemon-secret on loopback"
+      "notch_to_agent": "x-daemon-secret on loopback + wire v1 HMAC (UDS token file: not implemented)"
     },
     "sse": {
       "kill_switch_state": "SSE event from agent — payload: { state, level, broker, fired_at_ms }",
