@@ -28,3 +28,8 @@ TradeAutopsy Station.app/
 # Editor
 .cursor/
 .vscode/
+
+# Xcode / SwiftPM user state
+**/xcuserdata/
+**/.swiftpm/
+.DS_Store

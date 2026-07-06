@@ -5,23 +5,19 @@ import Testing
 @MainActor
 struct BrokersViewModelTests {
     private func makeViewModel(
-        client: FakeBrokerControlClient = FakeBrokerControlClient(),
-        connectController: BrokerConnectController? = nil
+        client: FakeBrokerControlClient = FakeBrokerControlClient()
     ) -> (BrokersViewModel, FakeBrokerControlClient, FakeBrokerCredentialStore, FakeBrokerSyncControl) {
         let store = FakeBrokerCredentialStore()
         let sync = FakeBrokerSyncControl()
-        let validator = FakeBrokerCredentialValidator()
         let metadataStore = UserDefaultsBrokerMetadataStore(
             defaults: UserDefaults(suiteName: "StationTests.BrokersVM.\(UUID().uuidString)")!
         )
-        let controller = connectController ?? BrokerConnectController(
-            identity: .binanceUSProd,
+        let viewModel = BrokersViewModel(
+            brokerControl: client,
             credentialStore: store,
-            validator: validator,
-            syncControl: sync,
-            metadataStore: metadataStore
+            metadataStore: metadataStore,
+            syncControl: sync
         )
-        let viewModel = BrokersViewModel(brokerControl: client, connectController: controller)
         return (viewModel, client, store, sync)
     }
 
@@ -62,12 +58,14 @@ struct BrokersViewModelTests {
 
     @Test func connectDisclosureMentionsSyncAndUpload() {
         let (viewModel, _, _, _) = makeViewModel()
+        viewModel.presentConnectSheet(for: "binance_us")
         #expect(viewModel.connectDisclosure.localizedCaseInsensitiveContains("broker sync"))
         #expect(viewModel.connectDisclosure.localizedCaseInsensitiveContains("behavioral"))
     }
 
     @Test func submitConnectWithEmptyFieldsSurfacesLocalValidation() async {
         let (viewModel, _, store, sync) = makeViewModel()
+        viewModel.presentConnectSheet(for: "binance_us")
 
         await viewModel.submitConnect()
 
@@ -79,23 +77,20 @@ struct BrokersViewModelTests {
     @Test func submitConnectSetsValidatingStatusOnBinanceCard() async {
         let store = FakeBrokerCredentialStore()
         let sync = FakeBrokerSyncControl()
-        let validator = SlowFakeBrokerCredentialValidator()
         let metadataStore = UserDefaultsBrokerMetadataStore(
             defaults: UserDefaults(suiteName: "StationTests.BrokersVM.Validating.\(UUID().uuidString)")!
         )
-        let controller = BrokerConnectController(
-            identity: .binanceUSProd,
-            credentialStore: store,
-            validator: validator,
-            syncControl: sync,
-            metadataStore: metadataStore
-        )
         let client = FakeBrokerControlClient()
         client.scenario = .notConfigured
-        let viewModel = BrokersViewModel(brokerControl: client, connectController: controller)
+        let viewModel = BrokersViewModel(
+            brokerControl: client,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync
+        )
         await viewModel.load()
 
-        controller.updateFields(apiKey: "key", apiSecret: "secret")
+        viewModel.presentConnectSheet(for: "binance_us")
         viewModel.updateConnectFields(apiKey: "key", apiSecret: "secret")
 
         let connectTask = Task { await viewModel.submitConnect() }
@@ -103,9 +98,18 @@ struct BrokersViewModelTests {
 
         let binance = viewModel.cards.first { $0.id == "binance_us" }
         #expect(binance?.status == .validating)
-        #expect(controller.isValidating == true)
 
         await connectTask.value
-        #expect(controller.isValidating == false)
+    }
+
+    @Test func binanceComAppearsInCatalog() async {
+        let (viewModel, client, _, _) = makeViewModel()
+        client.scenario = .notConfigured
+        await viewModel.load()
+
+        let binanceCom = viewModel.cards.first { $0.id == "binance_com" }
+        #expect(binanceCom?.displayName == "Binance.com")
+        #expect(binanceCom?.status == .notConfigured)
+        #expect(binanceCom?.isConnectable == true)
     }
 }

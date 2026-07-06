@@ -64,6 +64,16 @@ struct HotkeyRegistrarTests {
         #expect(windowController.showAndActivateCallCount == 1)
     }
 
+    @Test func openStationShortcutWorksLocallyWithoutInputMonitoring() {
+        let windowController = FakeStationWindowController()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        registrar.registerOpenStation { windowController.showAndActivate() }
+
+        registrar.dispatchKeyDownForTesting(makeKeyEvent(modifierFlags: [.option, .shift]))
+
+        #expect(windowController.showAndActivateCallCount == 1)
+    }
+
     @Test func noDuplicateHotkeysWhenNotchLauncherHosted() {
         let launcher = NotchLauncher(isHostedByStation: true)
         launcher.start()

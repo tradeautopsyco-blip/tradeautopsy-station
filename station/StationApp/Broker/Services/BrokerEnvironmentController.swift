@@ -91,4 +91,17 @@ public extension BrokerConnectionIdentity {
     static var binanceUSProd: BrokerConnectionIdentity {
         binanceUS(.prod)
     }
+
+    static func binanceCom(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: UUID(uuidString: "00000000-0000-4000-8000-000000000002")!,
+            brokerSlug: "binance_com",
+            assetClass: "crypto",
+            environment: environment.rawValue
+        )
+    }
+
+    static var binanceComProd: BrokerConnectionIdentity {
+        binanceCom(.prod)
+    }
 }

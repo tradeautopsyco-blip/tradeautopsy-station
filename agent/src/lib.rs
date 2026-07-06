@@ -1,5 +1,8 @@
 mod api;
 mod bar_fill_ingress;
+mod binance_com_spot_adapter;
+mod binance_com_spot_client;
+mod binance_com_validation;
 mod broker;
 mod broker_data_class;
 mod broker_sync;
@@ -22,6 +25,15 @@ mod today;
 mod wire;
 
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
+pub use binance_com_spot_adapter::BinanceComSpotBrokerAdapter;
+pub use binance_com_spot_client::{
+    BinanceComAccountInfo, BinanceComBalance, BinanceComMyTrade, BinanceComSpotClient,
+    BinanceComSpotError, DEFAULT_BASE_URL as BINANCE_COM_SPOT_BASE_URL,
+};
+pub use binance_com_validation::{
+    FakeBinanceComValidationAdapter, LiveBinanceComValidationAdapter,
+    DEFAULT_BASE_URL as BINANCE_COM_VALIDATION_BASE_URL,
+};
 pub use broker::{
     BrokerAdapter, BrokerError, BrokerFill, ConfigurableDataClassAdapter, CountingPollAdapter,
     DataClassPollRound, SeqMockBrokerAdapter,

@@ -93,7 +93,7 @@ public final class AgentSupervisor: AgentSupervising {
     }
 
     private func attachIfVerified() async {
-        if await isTradeAutopsyAgentListening() {
+        if await probeHealthUntilReady() {
             markHealthyAttached()
         } else {
             setWarning(
@@ -104,25 +104,45 @@ public final class AgentSupervisor: AgentSupervising {
                     canRetry: true
                 )
             )
+            beginRuntimeSupervision()
         }
     }
 
     private func tryAttachToExistingListener() async -> Bool {
         guard await portHasListener() else { return false }
 
-        if await isTradeAutopsyAgentListening() {
+        if await probeHealthUntilReady() {
             markHealthyAttached()
             return true
         }
 
-        setWarning(
-            AgentHealthWarning(
-                reason: .portCollisionNonAgent,
-                message: "Port \(port) is in use by a non-agent process. Check DAEMON_PORT and other listeners.",
-                logPath: nil,
-                canRetry: true
+        switch await classifyListener() {
+        case .tradeAutopsyAgent:
+            markHealthyAttached()
+            return true
+        case .noListener:
+            return false
+        case .agentWireRejected:
+            setWarning(
+                AgentHealthWarning(
+                    reason: .launchTimeout,
+                    message: "Port \(port) has a TradeAutopsy agent that rejected this session. Quit the orphaned tradeautopsy-agent process and click Retry.",
+                    logPath: agentLogPath(),
+                    canRetry: true
+                )
             )
-        )
+        case .foreignProcess:
+            setWarning(
+                AgentHealthWarning(
+                    reason: .portCollisionNonAgent,
+                    message: "Port \(port) is in use by a non-agent process. Check DAEMON_PORT and other listeners.",
+                    logPath: nil,
+                    canRetry: true
+                )
+            )
+        }
+
+        beginRuntimeSupervision()
         return true
     }
 
@@ -193,7 +213,7 @@ public final class AgentSupervisor: AgentSupervising {
         }
 
         if await isTradeAutopsyAgentListening() {
-            if !isHealthy {
+            if !isHealthy || currentWarning != nil {
                 recoverFromRuntimeDisconnect()
             }
             return
@@ -244,15 +264,53 @@ public final class AgentSupervisor: AgentSupervising {
         )
     }
 
+    private enum ListenerClassification {
+        case tradeAutopsyAgent
+        case agentWireRejected
+        case foreignProcess
+        case noListener
+    }
+
     private func portHasListener() async -> Bool {
-        guard let request = signedHealthRequest() else { return false }
+        switch await classifyListener() {
+        case .noListener:
+            return false
+        case .tradeAutopsyAgent, .agentWireRejected, .foreignProcess:
+            return true
+        }
+    }
+
+    private func classifyListener() async -> ListenerClassification {
+        guard let request = signedHealthRequest() else { return .noListener }
 
         do {
-            let (_, response) = try await session.data(for: request)
-            return response is HTTPURLResponse
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return .foreignProcess }
+
+            if http.statusCode == 200,
+               let decoded = try? JSONDecoder().decode(AgentHealthResponse.self, from: data),
+               decoded.status == "ok",
+               decoded.daemon == "agent" {
+                return .tradeAutopsyAgent
+            }
+
+            if looksLikeAgentWireError(data: data, statusCode: http.statusCode) {
+                return .agentWireRejected
+            }
+
+            return .foreignProcess
         } catch {
+            return .noListener
+        }
+    }
+
+    private func looksLikeAgentWireError(data: Data, statusCode: Int) -> Bool {
+        guard statusCode == 401 || statusCode == 412 || statusCode == 428 else { return false }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["error_class"] is String else {
             return false
         }
+        return true
     }
 
     private func isTradeAutopsyAgentListening() async -> Bool {

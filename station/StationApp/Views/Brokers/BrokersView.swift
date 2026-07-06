@@ -22,7 +22,7 @@ public struct BrokersView: View {
                 ForEach(viewModel.cards) { card in
                     BrokerCardView(
                         card: card,
-                        onConnect: { viewModel.presentConnectSheet() },
+                        onConnect: { viewModel.presentConnectSheet(for: card.id) },
                         onStart: {
                         guard let identity = card.identity else { return }
                         Task { await viewModel.startSync(for: identity) }

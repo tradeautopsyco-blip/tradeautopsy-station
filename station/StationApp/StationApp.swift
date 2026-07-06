@@ -17,6 +17,7 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: StationAppCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ApplicationMainMenu.install()
         let inputMonitoringChecker = DefaultInputMonitoringChecker()
         let launchStore = UserDefaultsLaunchStore()
         let windowController = StationWindowController()

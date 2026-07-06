@@ -103,6 +103,21 @@ struct StationWindowControllerTests {
         #expect(harness.windowController.isVisible == false)
     }
 
+#if DEBUG
+    @Test func debugBuildShowsWindowWhenPreviouslyHidden() async {
+        let launchStore = FakeLaunchStore()
+        launchStore.isFirstLaunchCompleted = true
+        launchStore.wasWindowVisibleBeforeQuit = false
+        launchStore.loginAtBoot = false
+        let harness = makeHarness(launchStore: launchStore)
+
+        await harness.coordinator.launch()
+
+        #expect(harness.windowController.showCallCount == 1)
+        #expect(harness.windowController.lastShowOrderFrontOnly == true)
+    }
+#endif
+
     // T9: status menu "Open Station" → showAndActivate()
     @Test func menuOpenStationActivatesWindow() async {
         let harness = makeHarness()

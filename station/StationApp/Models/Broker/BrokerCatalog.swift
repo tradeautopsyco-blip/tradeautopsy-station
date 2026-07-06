@@ -34,6 +34,12 @@ public enum BrokerCatalog {
             availability: .enabled
         ),
         PlannedBrokerDescriptor(
+            slug: "binance_com",
+            displayName: "Binance.com",
+            assetClass: "crypto",
+            availability: .enabled
+        ),
+        PlannedBrokerDescriptor(
             slug: "interactive_brokers",
             displayName: "Interactive Brokers",
             assetClass: "equities",

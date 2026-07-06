@@ -23,6 +23,9 @@ let package = Package(
             ],
             path: "StationApp",
             exclude: ["StationApp.swift", "Info.plist"],
+            resources: [
+                .process("Resources"),
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("IOKit"),

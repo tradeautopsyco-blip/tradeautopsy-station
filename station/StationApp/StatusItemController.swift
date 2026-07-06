@@ -14,7 +14,12 @@ public final class StatusItemController: StatusItemControlling {
         statusItem = item
 
         if let button = item.button {
-            button.title = "●"
+            if let image = Bundle.module.image(forResource: NSImage.Name("AppLogo")) {
+                image.isTemplate = false
+                image.size = NSSize(width: 18, height: 18)
+                button.image = image
+            }
+            button.title = ""
             button.toolTip = "TradeAutopsy Station"
         }
 
@@ -22,8 +27,7 @@ public final class StatusItemController: StatusItemControlling {
     }
 
     public func updateAgentStatus(isHealthy: Bool) {
-        statusItem?.button?.title = isHealthy ? "●" : "●"
-        statusItem?.button?.contentTintColor = isHealthy ? .systemGreen : .systemRed
+        statusItem?.button?.contentTintColor = isHealthy ? nil : .systemRed
     }
 
     public func updateLaunchAtLoginEnabled(_ enabled: Bool) {

@@ -1,12 +1,13 @@
 import Notch
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BrokerConnectSheetView: View {
     @ObservedObject var viewModel: BrokersViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Connect Binance.US")
+            Text("Connect \(viewModel.connectBrokerDisplayName)")
                 .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
                 .foregroundStyle(BarDS.Text.primary)
 
@@ -87,6 +88,19 @@ struct BrokerConnectSheetView: View {
                     .stroke(invalid ? BarDS.Accent.red : BarDS.Border.outlineBtn, lineWidth: BarDS.borderThin)
             )
             .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small))
+            .onPasteCommand(of: [.plainText]) { providers in
+                applyPastedText(from: providers, to: text)
+            }
+        }
+    }
+
+    private func applyPastedText(from providers: [NSItemProvider], to text: Binding<String>) {
+        guard let provider = providers.first else { return }
+        provider.loadObject(ofClass: String.self) { value, _ in
+            guard let value else { return }
+            DispatchQueue.main.async {
+                text.wrappedValue = value
+            }
         }
     }
 }

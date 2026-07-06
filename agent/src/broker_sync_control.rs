@@ -225,13 +225,21 @@ impl BrokerSyncController {
 fn build_runtime_adapter(
     broker_slug: &str,
     api_key: &str,
-    _api_secret: &str,
+    api_secret: &str,
 ) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
     match broker_slug {
         "binance_us" if api_key.starts_with("TA_TEST_SYNC") || api_key.starts_with("TA_FAKE_") => {
             Ok(Arc::new(CountingPollAdapter::new()))
         }
         "binance_us" => Ok(Arc::new(CountingPollAdapter::new())),
+        "binance_com"
+            if api_key.starts_with("TA_TEST_SYNC") || api_key.starts_with("TA_FAKE_COM_") =>
+        {
+            Ok(Arc::new(CountingPollAdapter::new()))
+        }
+        "binance_com" => Ok(Arc::new(crate::binance_com_spot_adapter::BinanceComSpotBrokerAdapter::new(
+            api_key, api_secret,
+        ))),
         other => anyhow::bail!("unsupported broker slug: {other}"),
     }
 }

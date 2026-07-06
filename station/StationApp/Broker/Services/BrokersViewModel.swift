@@ -4,6 +4,7 @@ import Foundation
 public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var cards: [BrokerCardPresentation] = []
     @Published public var isConnectSheetPresented = false
+    @Published public private(set) var connectBrokerSlug: String?
     @Published public private(set) var connectApiKey = ""
     @Published public private(set) var connectApiSecret = ""
     @Published public private(set) var connectMessage: String?
@@ -11,37 +12,49 @@ public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var isConnecting = false
 
     private let brokerControl: BrokerControlling
-    private let connectController: BrokerConnectController
+    private let credentialStore: BrokerCredentialStoring
+    private let metadataStore: BrokerConnectionMetadataStoring
+    private let syncControl: BrokerSyncControlling
+    private var connectController: BrokerConnectController?
+
+    public var connectBrokerDisplayName: String {
+        guard let slug = connectBrokerSlug else { return "Broker" }
+        return BrokerConnectServices.displayName(for: slug)
+    }
 
     public var connectDisclosure: String {
         BrokerConnectDisclosure.message(
-            behavioralAnalysisOptedOut: connectController.behavioralAnalysisOptedOut
+            behavioralAnalysisOptedOut: connectController?.behavioralAnalysisOptedOut ?? false
         )
     }
 
     public init(
         brokerControl: BrokerControlling,
-        connectController: BrokerConnectController
+        credentialStore: BrokerCredentialStoring,
+        metadataStore: BrokerConnectionMetadataStoring,
+        syncControl: BrokerSyncControlling
     ) {
         self.brokerControl = brokerControl
-        self.connectController = connectController
+        self.credentialStore = credentialStore
+        self.metadataStore = metadataStore
+        self.syncControl = syncControl
     }
 
     public func load() async {
         let snapshot = await brokerControl.loadSnapshot()
         cards = Self.applyValidatingOverlay(
             cards: BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1),
-            isValidating: isConnecting
+            validatingSlug: isConnecting ? connectBrokerSlug : nil
         )
     }
 
     private static func applyValidatingOverlay(
         cards: [BrokerCardPresentation],
-        isValidating: Bool
+        validatingSlug: String?
     ) -> [BrokerCardPresentation] {
-        guard isValidating else { return cards }
+        guard let validatingSlug else { return cards }
         return cards.map { card in
-            guard card.id == "binance_us", card.status == .notConfigured else { return card }
+            guard card.id == validatingSlug, card.status == .notConfigured else { return card }
             return BrokerCardPresentation(
                 id: card.id,
                 displayName: card.displayName,
@@ -61,24 +74,28 @@ public final class BrokersViewModel: ObservableObject {
         }
     }
 
-    public func presentConnectSheet() {
+    public func presentConnectSheet(for slug: String) {
+        connectBrokerSlug = slug
         connectApiKey = ""
         connectApiSecret = ""
         connectMessage = nil
         connectInvalidFields = []
-        connectController.updateFields(apiKey: "", apiSecret: "")
+        connectController = makeConnectController(for: slug)
+        connectController?.updateFields(apiKey: "", apiSecret: "")
         isConnectSheetPresented = true
     }
 
     public func updateConnectFields(apiKey: String, apiSecret: String) {
         connectApiKey = apiKey
         connectApiSecret = apiSecret
-        connectController.updateFields(apiKey: apiKey, apiSecret: apiSecret)
+        connectController?.updateFields(apiKey: apiKey, apiSecret: apiSecret)
     }
 
     public func submitConnect() async {
+        guard let connectController, let slug = connectBrokerSlug else { return }
+
         isConnecting = true
-        cards = Self.applyValidatingOverlay(cards: cards, isValidating: true)
+        cards = Self.applyValidatingOverlay(cards: cards, validatingSlug: slug)
         defer { isConnecting = false }
 
         let outcome = await connectController.connect()
@@ -89,9 +106,9 @@ public final class BrokersViewModel: ObservableObject {
         case .blockedWithdrawPermission:
             connectMessage = "Withdraw permission detected. Use a key without withdraw access."
         case .validationTransientFailure(let failure):
-            connectMessage = transientFailureMessage(failure)
+            connectMessage = transientFailureMessage(failure, slug: slug)
         case .validationPermanentFailure(let failure):
-            connectMessage = permanentFailureMessage(failure)
+            connectMessage = permanentFailureMessage(failure, slug: slug)
         case .connected:
             connectMessage = nil
             isConnectSheetPresented = false
@@ -124,9 +141,10 @@ public final class BrokersViewModel: ObservableObject {
             pendingDeleteIdentity = nil
             isDeleteConfirmationPresented = false
         }
+        let controller = makeConnectController(for: identity.brokerSlug)
         try? await brokerControl.deleteConnection(
             for: identity,
-            connectController: connectController
+            connectController: controller
         )
         await load()
     }
@@ -136,25 +154,43 @@ public final class BrokersViewModel: ObservableObject {
         isDeleteConfirmationPresented = false
     }
 
-    private func transientFailureMessage(_ failure: BrokerCredentialValidationFailure) -> String {
+    private func makeConnectController(for slug: String) -> BrokerConnectController {
+        BrokerConnectController(
+            identity: BrokerConnectServices.identity(for: slug),
+            credentialStore: credentialStore,
+            validator: BrokerConnectServices.validator(for: slug),
+            syncControl: syncControl,
+            metadataStore: metadataStore
+        )
+    }
+
+    private func transientFailureMessage(
+        _ failure: BrokerCredentialValidationFailure,
+        slug: String
+    ) -> String {
+        let brokerName = BrokerConnectServices.displayName(for: slug)
         switch failure {
         case .networkUnavailable:
             return "Network unavailable. Your typed values stay in this session; try again when online."
         case .rateLimited:
-            return "Binance.US rate limited validation. Try again shortly."
+            return "\(brokerName) rate limited validation. Try again shortly."
         case .brokerUnavailable:
-            return "Binance.US validation is unavailable right now. Your typed values stay in this session."
+            return "\(brokerName) validation is unavailable right now. Your typed values stay in this session."
         case .invalidCredentials:
             return "Could not validate credentials."
         }
     }
 
-    private func permanentFailureMessage(_ failure: BrokerCredentialValidationFailure) -> String {
+    private func permanentFailureMessage(
+        _ failure: BrokerCredentialValidationFailure,
+        slug: String
+    ) -> String {
+        let brokerName = BrokerConnectServices.displayName(for: slug)
         switch failure {
         case .invalidCredentials:
-            return "Credentials were rejected by Binance.US."
+            return "Credentials were rejected by \(brokerName)."
         case .networkUnavailable, .rateLimited, .brokerUnavailable:
-            return transientFailureMessage(failure)
+            return transientFailureMessage(failure, slug: slug)
         }
     }
 }

@@ -86,16 +86,11 @@ public final class StationAppCoordinator: ObservableObject {
             syncControl: resolvedSyncControl,
             runtimeClient: resolvedRuntimeClient
         )
-        let connectController = BrokerConnectController(
-            identity: .binanceUSProd,
-            credentialStore: resolvedCredentialStore,
-            validator: BinanceUSCredentialValidator(),
-            syncControl: resolvedSyncControl,
-            metadataStore: resolvedMetadataStore
-        )
         self.brokersViewModel = BrokersViewModel(
             brokerControl: resolvedBrokerControl,
-            connectController: connectController
+            credentialStore: resolvedCredentialStore,
+            metadataStore: resolvedMetadataStore,
+            syncControl: resolvedSyncControl
         )
 
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
@@ -365,6 +360,11 @@ public final class StationAppCoordinator: ObservableObject {
             return
         }
 
+#if DEBUG
+        if !launchStore.loginAtBoot {
+            windowController.show(orderFrontOnly: true)
+        }
+#else
         if launchStore.wasWindowVisibleBeforeQuit {
             windowController.show(orderFrontOnly: true)
             return
@@ -373,5 +373,6 @@ public final class StationAppCoordinator: ObservableObject {
         if launchStore.loginAtBoot {
             return
         }
+#endif
     }
 }
