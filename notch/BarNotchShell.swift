@@ -12,7 +12,7 @@ public enum BarNotchScreen: String, CaseIterable {
     case triage = "Triage"
     case settings = "Settings"
 
-    var isSessionGroup: Bool {
+    public var isSessionGroup: Bool {
         switch self {
         case .morning, .pretrade, .live, .posttrade: return true
         default: return false
@@ -87,12 +87,7 @@ struct BarNotchShell: View {
     // MARK: - Phase → sidebar (does not fight user while on auxiliary tabs)
 
     private func syncActiveScreenFromPhase(animated: Bool) {
-        let next: BarNotchScreen
-        switch viewModel.barSurfacePhase {
-        case .declaration: next = .pretrade
-        case .livePlan, .armed: next = .live
-        case .debrief: next = .posttrade
-        }
+        let next = BarNotchPhaseRouting.screen(for: viewModel.barSurfacePhase)
         guard next != activeScreen.wrappedValue else { return }
         if animated {
             withAnimation(.easeInOut(duration: 0.15)) {
