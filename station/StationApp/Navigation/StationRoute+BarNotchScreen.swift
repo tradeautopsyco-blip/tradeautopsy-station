@@ -31,7 +31,7 @@ extension BarNotchScreen {
         case .fidelityScore: self = .fidelity
         case .journal: self = .triage
         case .settings: self = .settings
-        case .brokers: return nil
+        case .brokers, .marketData, .aiWorkflow: return nil
         }
     }
 }

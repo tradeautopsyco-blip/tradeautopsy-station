@@ -16,6 +16,12 @@ public struct StationSidebar: View {
                 sidebarItem(route)
             }
 
+            sectionHeader("BACKEND BOX")
+                .padding(.top, 8)
+            ForEach(StationRoute.backendBoxRoutes, id: \.self) { route in
+                sidebarItem(route)
+            }
+
             sectionHeader("DESK")
                 .padding(.top, 8)
             ForEach(StationRoute.deskRoutes, id: \.self) { route in

@@ -31,6 +31,12 @@ struct StationRouteBarNotchScreenTests {
         }
     }
 
+    @Test func backendBoxRoutesHaveNoBarNotchScreenEquivalent() {
+        for route in StationRoute.backendBoxRoutes {
+            #expect(BarNotchScreen(stationRoute: route) == nil)
+        }
+    }
+
     @Test func brokersRouteHasNoBarNotchScreenEquivalent() {
         #expect(BarNotchScreen(stationRoute: .brokers) == nil)
     }

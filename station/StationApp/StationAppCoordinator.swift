@@ -7,6 +7,8 @@ public final class StationAppCoordinator: ObservableObject {
     @Published public private(set) var agentHealthWarning: AgentHealthWarning?
     public let notchViewModel: NotchViewModel
     public let brokersViewModel: BrokersViewModel
+    public let marketDataKeysViewModel: MarketDataKeysViewModel
+    public let aiWorkflowKeysViewModel: AIWorkflowKeysViewModel
     public let todayViewModel: TodayViewModel
     @Published public private(set) var inputMonitoringWarning: InputMonitoringWarning?
     @Published public private(set) var inputMonitoringRestartReminder: String?
@@ -92,6 +94,8 @@ public final class StationAppCoordinator: ObservableObject {
             metadataStore: resolvedMetadataStore,
             syncControl: resolvedSyncControl
         )
+        self.marketDataKeysViewModel = MarketDataKeysViewModel()
+        self.aiWorkflowKeysViewModel = AIWorkflowKeysViewModel()
 
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
             daemonSecret: resolvedDaemonSecret,
