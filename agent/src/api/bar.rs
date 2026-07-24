@@ -1,4 +1,4 @@
-//! Bar v1 — forward Notch calls to hosted `/api/bar/v1/*` (daemon-auth).
+//! Bar v1 — forward Notch calls to hosted `/api/bar/v1/*` (Station Bearer identity).
 
 use crate::api::capture::{forward_daemon_json_with_optional_429_retry, upstream_json_response};
 use crate::api::AppState;
@@ -10,23 +10,11 @@ use serde_json::{json, Value};
 
 pub async fn live_state_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::GET,
         "/api/bar/v1/live-state",
-        user_id,
         request_id,
         None,
         false,
@@ -53,23 +41,11 @@ pub async fn declare_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/declarations",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -96,17 +72,6 @@ pub async fn cancel_declaration_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     let declaration_id = body
         .get("declaration_id")
@@ -160,7 +125,6 @@ pub async fn cancel_declaration_handler(
         &state.upstream,
         reqwest::Method::POST,
         &upstream_path,
-        user_id,
         request_id,
         Some(&upstream_body),
         false,
@@ -187,23 +151,11 @@ pub async fn stop_me_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/declarations/stop-me",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -230,23 +182,11 @@ pub async fn stop_me_clear_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/declarations/stop-me/clear",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -273,23 +213,11 @@ pub async fn live_interference_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/notch/live-interference",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -316,23 +244,11 @@ pub async fn protective_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/protective",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -359,23 +275,11 @@ pub async fn swing_check_in_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/bar/v1/notch/swing-check-in",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -402,23 +306,11 @@ pub async fn post_trade_debrief_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::PATCH,
         "/api/bar/v1/post-trade-debrief",
-        user_id,
         request_id,
         Some(&body),
         false,

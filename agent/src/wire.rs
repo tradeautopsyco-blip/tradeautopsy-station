@@ -4,6 +4,10 @@
 //! `{METHOD}\n{path}\n{timestamp_rfc3339}\n{request_id}\n{lowercase_hex_sha256(body)}`
 //!
 //! `x-signature` = standard base64(HMAC-SHA256(secret, canonical)).
+//!
+//! A8 Phase IV — Wire HMAC + `x-daemon-secret` are **machine integrity only**.
+//! Loopback `x-user-id` is a UUID **wire hint** (not Console / brain identity).
+//! Console who-am-I is Station Caller `Authorization: Bearer` only.
 
 use crate::api::AppState;
 use axum::body::Body;
@@ -197,12 +201,13 @@ pub async fn verify_middleware(
         );
     }
 
-    let user_id = header(&parts.headers, "x-user-id");
-    if user_id.is_none_or(|u| Uuid::parse_str(u).is_err()) {
+    // Wire machine hint only — never treat as profile / WorkOS / brain identity (A8 IV).
+    let wire_user_id = header(&parts.headers, "x-user-id");
+    if wire_user_id.is_none_or(|u| Uuid::parse_str(u).is_err()) {
         return wire_error(
             StatusCode::BAD_REQUEST,
             "VALIDATION",
-            "x-user-id must be a UUID",
+            "x-user-id must be a UUID (wire machine hint, not Console identity)",
             header(&parts.headers, "x-request-id"),
         );
     }

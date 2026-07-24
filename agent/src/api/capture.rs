@@ -47,8 +47,9 @@ pub async fn accept_handler(
         Ok(v) => v,
         Err(_) => return validation_error("request body failed validation", request_id),
     };
+    // Local outbox partition key from wire hint — not Console identity (A8 IV).
     let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return validation_error("x-user-id missing after wire verification", request_id);
+        return validation_error("x-user-id (wire hint) missing after wire verification", request_id);
     };
 
     if body
@@ -138,11 +139,12 @@ pub(crate) fn upstream_json_response(status: reqwest::StatusCode, text: String) 
         .into_response()
 }
 
+/// Forward JSON to Console brain. Identity = Station Caller Bearer only (A8 IV).
+/// Never sends `x-daemon-secret` / `x-user-id` upstream (wire hint stays on loopback).
 pub(crate) async fn forward_daemon_json_with_optional_429_retry(
     upstream: &UpstreamClient,
     method: reqwest::Method,
     path: &str,
-    user_id: &str,
     bar_request_id: Option<&str>,
     body: Option<&Value>,
     retry_on_429: bool,
@@ -157,13 +159,11 @@ pub(crate) async fn forward_daemon_json_with_optional_429_retry(
         let req = upstream
             .http
             .request(method.clone(), &url)
-            .header(
-                reqwest::header::HeaderName::from_static("x-daemon-secret"),
-                upstream.config.daemon_secret.as_str(),
-            )
-            .header("x-user-id", user_id)
             .header("x-request-id", request_id_owned.as_str());
         let req = if let Some(b) = body { req.json(b) } else { req };
+        let req = upstream
+            .authorize_brain(req)
+            .map_err(|e| e.to_string())?;
         let resp = req.send().await.map_err(|e| e.to_string())?;
         let status = resp.status();
         if retry_on_429
@@ -188,9 +188,7 @@ pub async fn screenshot_presign_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return validation_error("x-user-id missing after wire verification", request_id);
-    };
+    // Wire middleware already validated loopback x-user-id hint; brain auth is Bearer.
 
     let Some(pc) = body.get("pending_capture_id").and_then(|v| v.as_str()) else {
         return validation_error("pending_capture_id required", request_id);
@@ -209,7 +207,6 @@ pub async fn screenshot_presign_handler(
         &state.upstream,
         reqwest::Method::POST,
         "/api/daemon/screenshot/presign",
-        user_id,
         request_id,
         Some(&body),
         true,
@@ -238,9 +235,6 @@ pub async fn pending_patch_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return validation_error("x-user-id missing after wire verification", request_id);
-    };
     if uuid::Uuid::parse_str(&pending_id).is_err() {
         return validation_error("pending id must be UUID", request_id);
     }
@@ -250,7 +244,6 @@ pub async fn pending_patch_handler(
         &state.upstream,
         reqwest::Method::PATCH,
         &path,
-        user_id,
         request_id,
         Some(&body),
         true,

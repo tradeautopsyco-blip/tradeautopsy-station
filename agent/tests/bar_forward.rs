@@ -121,25 +121,15 @@ async fn bar_declare_proxies_post_body_to_upstream() {
 }
 
 #[tokio::test]
-async fn bar_declare_forwards_daemon_auth_headers_to_upstream() {
+async fn bar_declare_forwards_station_bearer_not_daemon_identity() {
     const AGENT_PORT: u16 = 39_606;
-    let captured = Arc::new(Mutex::new(None::<(String, String)>));
+    let captured = Arc::new(Mutex::new(None::<HeaderMap>));
     let captured_clone = Arc::clone(&captured);
     let upstream = Router::new().route(
         "/api/bar/v1/declarations",
         post(
             move |headers: HeaderMap, axum::Json(b): axum::Json<Value>| async move {
-                let secret = headers
-                    .get("x-daemon-secret")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-                let user = headers
-                    .get("x-user-id")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-                *captured_clone.lock().expect("lock") = Some((secret, user));
+                *captured_clone.lock().expect("lock") = Some(headers);
                 if b.get("symbol").and_then(|v| v.as_str()) == Some("RELIANCE") {
                     (
                         StatusCode::OK,
@@ -196,9 +186,14 @@ async fn bar_declare_forwards_daemon_auth_headers_to_upstream() {
     let out: Value = resp.json().await.expect("json");
     assert_eq!(out["declarationId"], "d-auth-test");
 
-    let (secret, user) = captured.lock().expect("lock").take().expect("headers captured");
-    assert!(!secret.is_empty(), "x-daemon-secret must be forwarded");
-    assert_eq!(user, common::TEST_USER_ID);
+    let headers = captured.lock().expect("lock").take().expect("headers captured");
+    let auth = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(auth.starts_with("Bearer "), "Station Bearer must be forwarded");
+    assert!(headers.get("x-daemon-secret").is_none(), "must not forward wire secret");
+    assert!(headers.get("x-user-id").is_none(), "must not forward wire user hint as identity");
 
     handle.abort();
 }

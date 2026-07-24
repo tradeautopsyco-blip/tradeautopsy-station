@@ -15,23 +15,11 @@ pub async fn kill_switch_ack_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/daemon/kill-switch/ack",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -68,23 +56,11 @@ pub async fn auth_begin_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/daemon/auth/begin",
-        user_id,
         request_id,
         Some(&body),
         false,
@@ -111,23 +87,11 @@ pub async fn auth_finish_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({
-                "error_class": "VALIDATION",
-                "message": "x-user-id missing after wire verification",
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response();
-    };
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::POST,
         "/api/daemon/auth/finish",
-        user_id,
         request_id,
         Some(&body),
         false,

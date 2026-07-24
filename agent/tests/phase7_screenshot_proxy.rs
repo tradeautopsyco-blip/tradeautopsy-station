@@ -54,7 +54,9 @@ async fn upstream_presign(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> axum::response::Response {
-    assert!(headers.get("x-daemon-secret").is_some());
+    assert!(headers.get(axum::http::header::AUTHORIZATION).is_some());
+    assert!(headers.get("x-daemon-secret").is_none());
+    assert!(headers.get("x-user-id").is_none());
     assert!(headers.get("x-request-id").is_some());
     let rid = headers
         .get("x-request-id")
@@ -99,7 +101,9 @@ async fn upstream_patch(
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(body): Json<Value>,
 ) -> axum::response::Response {
-    assert!(headers.get("x-daemon-secret").is_some());
+    assert!(headers.get(axum::http::header::AUTHORIZATION).is_some());
+    assert!(headers.get("x-daemon-secret").is_none());
+    assert!(headers.get("x-user-id").is_none());
     let rid = headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())

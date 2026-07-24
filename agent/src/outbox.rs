@@ -300,16 +300,21 @@ impl CaptureOutbox {
             "{}/api/daemon/journal/toolbar-capture/accept",
             self.upstream.config.base_url
         );
-        let response = self
-            .upstream
-            .http
-            .post(url)
-            .header("x-daemon-secret", &self.upstream.config.daemon_secret)
-            .header("x-user-id", &row.user_id)
-            .header("x-request-id", request_id)
-            .json(&payload)
-            .send()
-            .await;
+        // A8 IV — Console identity is Station Bearer only; wire user_id stays local.
+        let response = match self.upstream.authorize_brain(
+            self.upstream
+                .http
+                .post(url)
+                .header("x-request-id", request_id)
+                .json(&payload),
+        ) {
+            Ok(req) => req.send().await,
+            Err(err) => {
+                return AttemptOutcome::Retry {
+                    reason: format!("station bearer missing: {err}"),
+                }
+            }
+        };
         let resp = match response {
             Ok(v) => v,
             Err(err) => {

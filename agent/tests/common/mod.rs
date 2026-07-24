@@ -103,6 +103,10 @@ pub fn spawn_test_agent_with_options(
     port: u16,
     opts: TestAgentOptions,
 ) -> tokio::task::JoinHandle<()> {
+    // A8 IV — agent→Console identity is Bearer; tests use env bootstrap token.
+    if std::env::var("STATION_ACCESS_TOKEN").is_err() {
+        std::env::set_var("STATION_ACCESS_TOKEN", "station.test.jwt");
+    }
     let mut cfg = AgentConfig::test_on_port(port, TEST_SECRET.to_string());
     apply_broker_options(&mut cfg, &opts);
     if opts.recent_trades_db_path.is_none() {
@@ -149,6 +153,7 @@ pub fn apply_wire_v1(
 
     let proto = overrides.proto_version.unwrap_or(WIRE_PROTO_VERSION);
 
+    // Loopback wire: secret + HMAC = machine integrity; x-user-id = wire hint only (A8 IV).
     builder
         .header("x-proto-version", proto)
         .header("x-daemon-secret", TEST_SECRET)
