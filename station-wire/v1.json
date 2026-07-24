@@ -1,39 +1,103 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "version": "1.0.0",
-  "description": "TradeAutopsy Station wire protocol v1 — contract between tradeautopsy-station and tradeautopsy brain",
+  "version": "1.1.0",
+  "description": "TradeAutopsy Station wire protocol — dual hop tables (Notch↔agent loopback + agent↔Console brain). A8: wire ≠ identity.",
   "endpoints": {
     "agent_base": "http://127.0.0.1:9137",
     "brain_base": "https://tradeautopsy.in",
-    "routes": {
-      "kill_switch_fire":    { "method": "POST", "path": "/api/daemon/kill-switch" },
-      "kill_switch_dismiss": { "method": "POST", "path": "/api/daemon/dismiss-kill-switch" },
-      "kill_switch_ack":     { "method": "POST", "path": "/api/daemon/kill-switch/ack" },
-      "kill_switch_audit":   { "method": "GET",  "path": "/api/daemon/kill-switch/audit" },
-      "bar_declare":         { "method": "POST", "path": "/api/bar/v1/declare" },
-      "bar_live_state":      { "method": "GET",  "path": "/api/bar/v1/live-state" },
-      "bar_stop_me":         { "method": "POST", "path": "/api/bar/v1/stop-me" },
-      "bar_stop_me_clear":   { "method": "POST", "path": "/api/bar/v1/stop-me/clear" },
-      "daemon_command_poll": { "method": "GET",  "path": "/api/daemon/command" },
-      "ingest_signal":       { "method": "POST", "path": "/api/signals/ingest" }
-    },
     "auth": {
-      "agent_to_brain": "x-daemon-secret header + HMAC-SHA256 per wire v1 spec",
-      "notch_to_agent": "x-daemon-secret on loopback + wire v1 HMAC (UDS token file: not implemented)"
+      "notch_to_agent": {
+        "kind": "wire_v1_machine_integrity",
+        "headers": [
+          "x-proto-version",
+          "x-daemon-secret",
+          "x-user-id",
+          "x-request-id",
+          "x-timestamp",
+          "x-nonce",
+          "x-signature"
+        ],
+        "notes": "HMAC-SHA256 wire v1 on loopback only. x-user-id is a fixed machine UUID hint (loopbackWireUserId), never Console profile / WorkOS identity. UDS token file: not implemented."
+      },
+      "agent_to_brain": {
+        "kind": "station_caller_bearer",
+        "headers": ["Authorization"],
+        "notes": "Authorization: Bearer <aud=station JWT> from Keychain (TradeAutopsy / station_caller_tokens). Never send x-daemon-secret or x-user-id as Console who-am-I (A8 Phase IV)."
+      }
+    },
+    "hops": {
+      "notch_to_agent_bar": {
+        "live_state": { "method": "GET", "path": "/api/daemon/bar/live-state" },
+        "declare": { "method": "POST", "path": "/api/daemon/bar/declare" },
+        "cancel_declaration": { "method": "POST", "path": "/api/daemon/bar/cancel-declaration" },
+        "stop_me": { "method": "POST", "path": "/api/daemon/bar/stop-me" },
+        "stop_me_clear": { "method": "POST", "path": "/api/daemon/bar/stop-me/clear" },
+        "protective": { "method": "POST", "path": "/api/daemon/bar/protective" },
+        "live_interference": { "method": "POST", "path": "/api/daemon/bar/live-interference" },
+        "swing_check_in": { "method": "POST", "path": "/api/daemon/bar/swing-check-in" },
+        "post_trade_debrief": { "method": "PATCH", "path": "/api/daemon/bar/post-trade-debrief" }
+      },
+      "agent_to_brain_bar": {
+        "live_state": { "method": "GET", "path": "/api/bar/v1/live-state" },
+        "declarations": { "method": "POST", "path": "/api/bar/v1/declarations" },
+        "cancel_declaration": { "method": "POST", "path": "/api/bar/v1/declarations/{id}/cancel" },
+        "stop_me": { "method": "POST", "path": "/api/bar/v1/declarations/stop-me" },
+        "stop_me_clear": { "method": "POST", "path": "/api/bar/v1/declarations/stop-me/clear" },
+        "protective": { "method": "POST", "path": "/api/bar/v1/protective" },
+        "live_interference": { "method": "POST", "path": "/api/bar/v1/notch/live-interference" },
+        "swing_check_in": { "method": "POST", "path": "/api/bar/v1/notch/swing-check-in" },
+        "post_trade_debrief": { "method": "PATCH", "path": "/api/bar/v1/post-trade-debrief" },
+        "loss_limits": { "method": "GET", "path": "/api/bar/v1/profile/loss-limits" }
+      },
+      "agent_to_brain_fill_ingress": {
+        "path": "/api/internal/bar/v1/broker-ingest/fill",
+        "method": "POST",
+        "enabled_env": "AGENT_BAR_BROKER_FILL_INGEST=1",
+        "required_fields": [
+          "userId",
+          "brokerConnectionId",
+          "source",
+          "fingerprintParts",
+          "agentFillId",
+          "symbol",
+          "side",
+          "quantity",
+          "price",
+          "product"
+        ],
+        "identity": "Station Caller Bearer only (no daemon secret)"
+      },
+      "kill": {
+        "agent_fire": { "method": "POST", "path": "/api/daemon/kill-switch" },
+        "agent_dismiss": { "method": "POST", "path": "/api/daemon/dismiss-kill-switch" },
+        "agent_ack_proxy": { "method": "POST", "path": "/api/daemon/kill-switch/ack" },
+        "agent_audit": { "method": "GET", "path": "/api/daemon/kill-switch/audit" },
+        "brain_command_poll": { "method": "GET", "path": "/api/daemon/command" },
+        "brain_ack": { "method": "POST", "path": "/api/daemon/kill-switch/ack" },
+        "command_types": ["fog_of_war", "clear_fog"]
+      },
+      "station_auth": {
+        "begin": { "method": "POST", "path": "/api/daemon/auth/station/begin" },
+        "complete": { "method": "POST", "path": "/api/daemon/auth/station/complete" },
+        "session": { "method": "GET", "path": "/api/daemon/auth/station/session" },
+        "sign_out": { "method": "POST", "path": "/api/daemon/auth/station/sign-out" },
+        "brain_token": { "method": "POST", "path": "/api/auth/station/token" },
+        "brain_session": { "method": "GET", "path": "/api/auth/station/session" }
+      }
     },
     "sse": {
       "kill_switch_state": "SSE event from agent — payload: { state, level, broker, fired_at_ms }",
-      "live_state":        "SSE event from agent — payload: Bar live-state projection"
+      "live_state": "SSE event from agent — payload: Bar live-state projection"
     },
     "thresholds": {
-      "score_warning":   0.25,
+      "score_warning": 0.25,
       "score_soft_block": 0.35,
       "score_hard_block": 0.45
     },
     "compatibility": {
-      "brain_min_version": "slice-b",
-      "station_version":   "0.2.0",
-      "phase": "phase-0-shell"
+      "brain_min_version": "a8-phase-iv",
+      "station_version": "0.3.0",
+      "phase": "architecture-deepening-v1"
     }
   }
 }
