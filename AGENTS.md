@@ -18,20 +18,21 @@ signal weights, ship-it pipeline)
 ## Architectural Invariants — Station
 
 1. **Agent port is 9137** — never change; web daemon relies on this.
-2. **All agent auth uses `x-daemon-secret` header** — no other auth mechanism.
-   **Shipped model (Phase 0):** Station generates an ephemeral `AGENT_DAEMON_SECRET`
-   per launch (`SecRandomCopyBytes`), passes it to the spawned agent via env, and sends
-   the same value on loopback requests as `x-daemon-secret` with wire-v1 HMAC signing.
-   **Not implemented:** UDS / 0600 token-file auth described in `station-wire/v1.json` and
-   early TRDs — do not assume that pattern exists when debugging auth failures.
-3. **No secrets in logs, SSE, or UI models** — API keys, HMAC signatures, and auth
+2. **Loopback Station↔agent auth** uses ephemeral `AGENT_DAEMON_SECRET` + wire-v1 HMAC —
+   **machine integrity only**, not Console user identity (A8).
+3. **Console / brain identity** uses Signed Caller JWT (`aud=station`) from Keychain
+   (`Authorization: Bearer`). Agent must not send `x-daemon-secret` + `x-user-id` as
+   who-am-I to `TRADEAUTOPSY_SERVER_BASE_URL`.
+4. **No secrets in logs, SSE, or UI models** — API keys, HMAC signatures, and auth
    headers are structurally forbidden from reaching any log or observable surface.
-4. **Kill switch is always on** — Stop pauses broker sync only; it does not stop the
+5. **Kill switch is always on** — Stop pauses broker sync only; it does not stop the
    kill switch, audit log, or SSE.
-5. **Keychain is the only credential store** — no plaintext secrets in app preferences,
-   files, or memory beyond the lifetime of a single request.
-6. **Withdraw permission = hard block** — never save or use a Binance.US key that has
+6. **Keychain is the only credential store** — broker keys and Station Caller tokens;
+   no plaintext secrets in app preferences or files.
+7. **Withdraw permission = hard block** — never save or use a Binance.US key that has
    withdrawal permission enabled.
+8. **Station product code lives in this repo** (`agent/`, `notch/`, `station/`) — not in
+   `FExEVIL/tradeautopsy` `src-tauri`.
 
 ---
 

@@ -10,6 +10,7 @@ mod broker_sync_control;
 mod broker_validation;
 mod broker_behavioral;
 mod broker_redaction;
+mod device_login;
 mod dns_block;
 mod event_bus;
 mod instruments;
@@ -21,9 +22,17 @@ mod recent_trades;
 mod round_trip_engine;
 mod resolve_kill_switch_broker;
 mod sse_signing;
+mod station_tokens;
 mod today;
 mod wire;
 
+pub use station_tokens::{
+    bearer_authorization, KeyringStationTokenStore, MemoryStationTokenStore, StationTokenStore,
+    StationTokens,
+};
+pub use device_login::{
+    begin_device_login, complete_device_login, DeviceLoginPending, DeviceLoginPublic,
+};
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
 pub use binance_com_spot_adapter::BinanceComSpotBrokerAdapter;
 pub use binance_com_spot_client::{
@@ -92,17 +101,37 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct UpstreamConfig {
     pub base_url: String,
+    /// Loopback / legacy machine secret — NOT Console user identity (A8).
     pub daemon_secret: String,
 }
 
 impl UpstreamConfig {
     pub fn from_env(daemon_secret: &str) -> Self {
         let base_url = std::env::var("TRADEAUTOPSY_SERVER_BASE_URL")
-            .unwrap_or_else(|_| "https://tradeautopsy.in".to_string());
+            .or_else(|_| std::env::var("TRADEAUTOPSY_API_URL"))
+            .unwrap_or_else(|_| "https://localhost:3000".to_string());
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             daemon_secret: daemon_secret.to_string(),
         }
+    }
+
+    /// Console brain URL must be HTTPS (A8). Local wiremock may use http when STATION_ACCESS_TOKEN is set.
+    pub fn require_https_base(&self) -> anyhow::Result<()> {
+        if self.base_url.starts_with("https://") {
+            return Ok(());
+        }
+        let testing = std::env::var("STATION_ACCESS_TOKEN").is_ok();
+        let loopback_http = self.base_url.starts_with("http://127.0.0.1")
+            || self.base_url.starts_with("http://localhost")
+            || self.base_url.starts_with("http://[::1]");
+        if testing && loopback_http {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "TRADEAUTOPSY_SERVER_BASE_URL must be https:// (got {})",
+            self.base_url
+        )
     }
 }
 
@@ -119,6 +148,30 @@ impl UpstreamClient {
             .danger_accept_invalid_certs(true)
             .build()?;
         Ok(Self { config, http })
+    }
+
+    /// Brain identity: Station Caller Bearer from Keychain (A8). Never x-user-id.
+    pub fn brain_authorization_header(&self) -> anyhow::Result<String> {
+        self.config.require_https_base()?;
+        if let Some(tokens) = KeyringStationTokenStore.load()? {
+            return Ok(bearer_authorization(&tokens));
+        }
+        // Test / bootstrap only — not a second identity rail in production.
+        if let Ok(token) = std::env::var("STATION_ACCESS_TOKEN") {
+            if !token.trim().is_empty() {
+                return Ok(format!("Bearer {}", token.trim()));
+            }
+        }
+        anyhow::bail!("No Station Caller tokens in Keychain — complete device login")
+    }
+
+    /// Attach Authorization Bearer for Console APIs. Does not send daemon identity headers.
+    pub fn authorize_brain(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> anyhow::Result<reqwest::RequestBuilder> {
+        let auth = self.brain_authorization_header()?;
+        Ok(builder.header(reqwest::header::AUTHORIZATION, auth))
     }
 }
 

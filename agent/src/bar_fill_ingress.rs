@@ -197,15 +197,24 @@ pub async fn post_bar_broker_fill_ingress(
     };
 
     let url = bar_broker_fill_ingest_url(&client.config.base_url);
-    let resp = match client
-        .http
-        .post(&url)
-        .header("x-daemon-secret", &client.config.daemon_secret)
-        .header("x-user-id", &cfg.user_id)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .json(&body)
-        .send()
-        .await
+    let req = match client.authorize_brain(
+        client
+            .http
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(&body),
+    ) {
+        Ok(r) => r,
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                fill_id = %fill.fill_id,
+                "bar broker fill ingest skipped — Station Bearer missing"
+            );
+            return;
+        }
+    };
+    let resp = match req.send().await
     {
         Ok(r) => r,
         Err(err) => {
@@ -378,7 +387,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_sends_secret_and_user_headers_and_json_body() {
+    async fn post_sends_bearer_authorization_and_json_body_not_daemon_identity() {
+        std::env::set_var("STATION_ACCESS_TOKEN", "station.test.jwt");
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path(INGEST_PATH))
@@ -413,17 +423,12 @@ mod tests {
         assert_eq!(
             requests[0]
                 .headers
-                .get("x-daemon-secret")
+                .get("authorization")
                 .and_then(|h| h.to_str().ok()),
-            Some("sec-for-test")
+            Some("Bearer station.test.jwt")
         );
-        assert_eq!(
-            requests[0]
-                .headers
-                .get("x-user-id")
-                .and_then(|h| h.to_str().ok()),
-            Some(TEST_USER)
-        );
+        assert!(requests[0].headers.get("x-daemon-secret").is_none());
+        assert!(requests[0].headers.get("x-user-id").is_none());
         assert_eq!(
             requests[0]
                 .headers
@@ -435,5 +440,6 @@ mod tests {
         assert_eq!(body["userId"], TEST_USER);
         assert_eq!(body["fill"]["side"], "BUY");
         assert_eq!(body["fingerprintParts"]["eventType"], "fill");
+        std::env::remove_var("STATION_ACCESS_TOKEN");
     }
 }

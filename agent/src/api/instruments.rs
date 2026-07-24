@@ -69,18 +69,20 @@ pub async fn get_ltp(
         "segment": segment,
     });
 
-    match state
-        .upstream
-        .http
-        .post(&url)
-        .header(
-            reqwest::header::HeaderName::from_static("x-daemon-secret"),
-            state.upstream.config.daemon_secret.as_str(),
-        )
-        .header("x-user-id", user_id)
-        .json(&body)
-        .send()
-        .await
+    let req = match state.upstream.authorize_brain(
+        state.upstream.http.post(&url).json(&body),
+    ) {
+        Ok(r) => r,
+        Err(err) => {
+            return Json(json!({
+                "ltp": null,
+                "source": "none",
+                "error": err.to_string(),
+            }));
+        }
+    };
+
+    match req.send().await
     {
         Ok(resp) => {
             if let Ok(data) = resp.json::<serde_json::Value>().await {
