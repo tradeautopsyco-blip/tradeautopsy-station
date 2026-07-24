@@ -36,6 +36,7 @@ pub struct TestAgentOptions {
     /// Issues #13/#14 — inject adapter for runtime start/stop integration tests.
     pub runtime_poll_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
+    pub station_token_store: Option<Arc<dyn tradeautopsy_agent::StationTokenStore>>,
 }
 
 impl Default for TestAgentOptions {
@@ -59,6 +60,7 @@ impl Default for TestAgentOptions {
             command_poll_ms: 500,
             runtime_poll_adapter: None,
             start_key_log: None,
+            station_token_store: None,
         }
     }
 }
@@ -88,6 +90,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.daemon_poll_user_id = opts.daemon_poll_user_id.clone();
     cfg.test_runtime_adapter = opts.runtime_poll_adapter.clone();
     cfg.test_start_key_log = opts.start_key_log.clone();
+    cfg.station_token_store = opts.station_token_store.clone();
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

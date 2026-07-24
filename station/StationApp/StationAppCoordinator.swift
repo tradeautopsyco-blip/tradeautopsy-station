@@ -10,6 +10,7 @@ public final class StationAppCoordinator: ObservableObject {
     public let marketDataKeysViewModel: MarketDataKeysViewModel
     public let aiWorkflowKeysViewModel: AIWorkflowKeysViewModel
     public let todayViewModel: TodayViewModel
+    public let deviceLoginViewModel: DeviceLoginViewModel
     @Published public private(set) var inputMonitoringWarning: InputMonitoringWarning?
     @Published public private(set) var inputMonitoringRestartReminder: String?
     @Published public private(set) var launchAtLoginEnabled = false
@@ -57,7 +58,8 @@ public final class StationAppCoordinator: ObservableObject {
         inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker(),
         brokerControl: BrokerControlling? = nil,
         todayClient: TodayAgentClient? = nil,
-        daemonSecret: String? = nil
+        daemonSecret: String? = nil,
+        deviceLoginClient: (any DeviceLoginClient)? = nil
     ) {
         let resolvedDaemonSecret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
         self.agentSupervisor = agentSupervisor
@@ -108,6 +110,11 @@ public final class StationAppCoordinator: ObservableObject {
             agentHealthy: { agentSupervisor.isHealthy },
             isBrokerSyncActive: { notchVM.isBrokerSyncActiveForTodayMirror }
         )
+        let resolvedDeviceLoginClient = deviceLoginClient ?? LocalDeviceLoginAgentClient(
+            daemonSecret: resolvedDaemonSecret,
+            isAgentHealthy: { agentSupervisor.isHealthy }
+        )
+        self.deviceLoginViewModel = DeviceLoginViewModel(client: resolvedDeviceLoginClient)
 
         self.activeRoute = NavigationPolicy.launchRoute(
             saved: deskRouteStore.savedDeskRoute,

@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -708,26 +707,15 @@ struct BarSettingsView: View {
         var r = URLRequest(url: url)
         r.httpMethod = method
         let payload = body ?? Data()
-        r.setValue("1", forHTTPHeaderField: "x-proto-version")
-        r.setValue(viewModel.daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-        r.setValue(viewModel.daemonUserId, forHTTPHeaderField: "x-user-id")
+        // Console brain identity = Station Caller Bearer (A8). Never secret + x-user-id.
+        if let bearer = StationCallerKeychain.bearerAuthorization() {
+            r.setValue(bearer, forHTTPHeaderField: "Authorization")
+        }
         r.setValue("notch-settings", forHTTPHeaderField: "x-daemon-source")
         if body != nil {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
             r.httpBody = body
         }
-        let path = url.path.isEmpty ? "/" : url.path
-        let timestamp = BarSettingsWireFormat.timestamp.string(from: Date())
-        let requestId = BarSettingsWireFormat.makeULID()
-        let nonce = BarSettingsWireFormat.makeNonceBase64()
-        let bodyHash = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
-        let canonical = "\(method.uppercased())\n\(path)\n\(timestamp)\n\(requestId)\n\(bodyHash)"
-        let key = SymmetricKey(data: Data(viewModel.daemonSecret.utf8))
-        let sig = HMAC<SHA256>.authenticationCode(for: Data(canonical.utf8), using: key)
-        r.setValue(Data(sig).base64EncodedString(), forHTTPHeaderField: "x-signature")
-        r.setValue(requestId, forHTTPHeaderField: "x-request-id")
-        r.setValue(timestamp, forHTTPHeaderField: "x-timestamp")
-        r.setValue(nonce, forHTTPHeaderField: "x-nonce")
         return r
     }
 
@@ -767,63 +755,6 @@ struct BarSettingsView: View {
         let coarse = ISO8601DateFormatter()
         coarse.formatOptions = [.withInternetDateTime]
         return coarse.date(from: raw)
-    }
-}
-
-// MARK: - Local wire helpers (mirrors NotchViewModel authorizedRequest)
-
-private enum BarSettingsWireFormat {
-    static let timestamp: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        return formatter
-    }()
-
-    static func makeNonceBase64() -> String {
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64EncodedString()
-    }
-
-    static func makeULID() -> String {
-        let ms = UInt64(Date().timeIntervalSince1970 * 1000.0)
-        var randomness = [UInt8](repeating: 0, count: 10)
-        _ = SecRandomCopyBytes(kSecRandomDefault, randomness.count, &randomness)
-        var bytes = [UInt8](repeating: 0, count: 16)
-        bytes[0] = UInt8((ms >> 40) & 0xFF)
-        bytes[1] = UInt8((ms >> 32) & 0xFF)
-        bytes[2] = UInt8((ms >> 24) & 0xFF)
-        bytes[3] = UInt8((ms >> 16) & 0xFF)
-        bytes[4] = UInt8((ms >> 8) & 0xFF)
-        bytes[5] = UInt8(ms & 0xFF)
-        for i in 0 ..< 10 { bytes[6 + i] = randomness[i] }
-        return encodeULID(bytes)
-    }
-
-    private static func encodeULID(_ bytes: [UInt8]) -> String {
-        let chars = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-        var id = ""
-        id.reserveCapacity(26)
-        var value: UInt64 = 0
-        var bits: Int = 0
-        for b in bytes {
-            value = (value << 8) | UInt64(b)
-            bits += 8
-            while bits >= 5 {
-                bits -= 5
-                let index = Int((value >> UInt64(bits)) & 0x1F)
-                id.append(chars[index])
-            }
-        }
-        if bits > 0 {
-            let index = Int((value << UInt64(5 - bits)) & 0x1F)
-            id.append(chars[index])
-        }
-        while id.count < 26 { id.insert("0", at: id.startIndex) }
-        return String(id.prefix(26))
     }
 }
 

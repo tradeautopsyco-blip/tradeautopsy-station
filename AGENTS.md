@@ -19,20 +19,32 @@ signal weights, ship-it pipeline)
 
 1. **Agent port is 9137** — never change; web daemon relies on this.
 2. **Loopback Station↔agent auth** uses ephemeral `AGENT_DAEMON_SECRET` + wire-v1 HMAC —
-   **machine integrity only**, not Console user identity (A8).
+   **machine integrity only**, not Console user identity (A8). Loopback `x-user-id` is a
+   wire UUID hint only — never a profile / WorkOS / brain identity.
 3. **Console / brain identity** uses Signed Caller JWT (`aud=station`) from Keychain
    (`Authorization: Bearer`). Agent must not send `x-daemon-secret` + `x-user-id` as
    who-am-I to `TRADEAUTOPSY_SERVER_BASE_URL`.
-4. **No secrets in logs, SSE, or UI models** — API keys, HMAC signatures, and auth
+4. **Station device login** uses WorkOS AuthKit CLI Auth (`WORKOS_STATION_CLIENT_ID`) →
+   agent `POST /api/daemon/auth/station/begin|complete` → Keychain → prove
+   `GET /api/auth/station/session`. UI shows **`user_code` only** (never `device_code`).
+5. **No secrets in logs, SSE, or UI models** — API keys, HMAC signatures, and auth
    headers are structurally forbidden from reaching any log or observable surface.
-5. **Kill switch is always on** — Stop pauses broker sync only; it does not stop the
+6. **Kill switch is always on** — Stop pauses broker sync only; it does not stop the
    kill switch, audit log, or SSE.
-6. **Keychain is the only credential store** — broker keys and Station Caller tokens;
+7. **Keychain is the only credential store** — broker keys and Station Caller tokens;
    no plaintext secrets in app preferences or files.
-7. **Withdraw permission = hard block** — never save or use a Binance.US key that has
+8. **Withdraw permission = hard block** — never save or use a Binance.US key that has
    withdrawal permission enabled.
-8. **Station product code lives in this repo** (`agent/`, `notch/`, `station/`) — not in
+9. **Station product code lives in this repo** (`agent/`, `notch/`, `station/`) — not in
    `FExEVIL/tradeautopsy` `src-tauri`.
+
+### Required env (device login)
+
+| Var | Role |
+|-----|------|
+| `WORKOS_STATION_CLIENT_ID` | WorkOS public Station client (AuthKit **CLI Auth** enabled) |
+| `TRADEAUTOPSY_SERVER_BASE_URL` | Console HTTPS base (`https://…`) |
+| `AGENT_DAEMON_SECRET` | Loopback wire secret (machine only) |
 
 ---
 

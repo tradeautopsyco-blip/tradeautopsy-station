@@ -31,7 +31,8 @@ pub use station_tokens::{
     StationTokens,
 };
 pub use device_login::{
-    begin_device_login, complete_device_login, DeviceLoginPending, DeviceLoginPublic,
+    begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
+    DeviceLoginPublic, StationSessionIdentity,
 };
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
 pub use binance_com_spot_adapter::BinanceComSpotBrokerAdapter;
@@ -197,6 +198,8 @@ pub struct AgentConfig {
     pub test_start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
     /// User id for `GET /api/daemon/command` poll (#190). `None` disables poll loop.
     pub daemon_poll_user_id: Option<String>,
+    /// Override Station token store (tests use memory; prod uses Keychain).
+    pub station_token_store: Option<Arc<dyn StationTokenStore>>,
 }
 
 impl AgentConfig {
@@ -267,6 +270,7 @@ impl AgentConfig {
             test_runtime_adapter: None,
             test_start_key_log: None,
             daemon_poll_user_id,
+            station_token_store: None,
         })
     }
 
@@ -301,6 +305,7 @@ impl AgentConfig {
             test_runtime_adapter: None,
             test_start_key_log: None,
             daemon_poll_user_id: None,
+            station_token_store: None,
         }
     }
 }
@@ -441,6 +446,10 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         audit_signer,
         last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
         today_service: today_service.clone(),
+        device_login_pending: Arc::new(std::sync::Mutex::new(None)),
+        station_token_store: config
+            .station_token_store
+            .unwrap_or_else(|| Arc::new(KeyringStationTokenStore)),
     };
     let router = api::router(state.clone());
 

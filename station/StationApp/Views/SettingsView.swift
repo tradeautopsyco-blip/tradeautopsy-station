@@ -15,6 +15,8 @@ public struct SettingsView: View {
                     .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
                     .foregroundStyle(BarDS.Text.primary)
 
+                DeviceLoginView(viewModel: coordinator.deviceLoginViewModel)
+
                 Toggle("Launch at Login", isOn: Binding(
                     get: { coordinator.launchAtLoginEnabled },
                     set: { _ in coordinator.toggleLaunchAtLogin() }

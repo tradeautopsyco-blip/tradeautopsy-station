@@ -425,7 +425,8 @@ public final class NotchViewModel: ObservableObject {
 
     var daemonSecret: String = ""
     var daemonPort: UInt16 = 9137
-    var daemonUserId: String = "ac35ef44-6366-40d6-89d4-95530e8e3dbf"
+    /// Loopback wire UUID only (machine integrity). Never Console / brain identity (A8).
+    var loopbackWireUserId: String = "00000000-0000-4000-8000-000000000002"
     var webBaseURL: String = "https://localhost:3000"
 
     private var pollFast: Timer?
@@ -843,7 +844,7 @@ public final class NotchViewModel: ObservableObject {
             else { return }
             var req = URLRequest(url: url)
             req.setValue(self.daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-            req.setValue(self.daemonUserId, forHTTPHeaderField: "x-user-id")
+            req.setValue(self.loopbackWireUserId, forHTTPHeaderField: "x-user-id")
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
                 let resp = try JSONDecoder().decode(InstrumentSearchResponse.self, from: data)
@@ -886,7 +887,7 @@ public final class NotchViewModel: ObservableObject {
         Task {
             var req = URLRequest(url: url)
             req.setValue(daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-            req.setValue(daemonUserId, forHTTPHeaderField: "x-user-id")
+            req.setValue(loopbackWireUserId, forHTTPHeaderField: "x-user-id")
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
                 let resp = try JSONDecoder().decode(LTPResponse.self, from: data)
@@ -2175,7 +2176,7 @@ public final class NotchViewModel: ObservableObject {
 
         r.setValue("1", forHTTPHeaderField: "x-proto-version")
         r.setValue(daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-        r.setValue(daemonUserId, forHTTPHeaderField: "x-user-id")
+        r.setValue(loopbackWireUserId, forHTTPHeaderField: "x-user-id")
         r.setValue(requestId, forHTTPHeaderField: "x-request-id")
         r.setValue(timestamp, forHTTPHeaderField: "x-timestamp")
         r.setValue(nonce, forHTTPHeaderField: "x-nonce")

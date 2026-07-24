@@ -8,16 +8,31 @@ use std::time::Duration;
 
 use super::station_tokens::{StationTokenStore, StationTokens};
 
-const WORKOS_API: &str = "https://api.workos.com";
+const WORKOS_API_DEFAULT: &str = "https://api.workos.com";
+
+fn workos_api_base() -> String {
+    std::env::var("WORKOS_API_BASE_URL")
+        .unwrap_or_else(|_| WORKOS_API_DEFAULT.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
 
 /// What Station may show the human (A8: user_code only; never device_code).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceLoginPublic {
     pub user_code: String,
     pub verification_uri: String,
     pub verification_uri_complete: String,
     pub expires_in: u64,
     pub interval: u64,
+}
+
+/// Session identity from Console `GET /api/auth/station/session` (no tokens).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct StationSessionIdentity {
+    pub profile_id: String,
+    pub email: String,
+    pub aud: String,
 }
 
 /// Pending device grant. `device_code` is private to this module.
@@ -66,8 +81,9 @@ pub async fn begin_device_login(
     http: &reqwest::Client,
     client_id: &str,
 ) -> Result<DeviceLoginPending> {
+    let workos = workos_api_base();
     let resp = http
-        .post(format!("{WORKOS_API}/user_management/authorize/device"))
+        .post(format!("{workos}/user_management/authorize/device"))
         .header("content-type", "application/x-www-form-urlencoded")
         .body(format!("client_id={}", urlencoding_loose(client_id)))
         .send()
@@ -128,8 +144,9 @@ async fn poll_workos_device_code(
             urlencoding_loose(&pending.client_id),
         );
 
+        let workos = workos_api_base();
         let resp = http
-            .post(format!("{WORKOS_API}/user_management/authenticate"))
+            .post(format!("{workos}/user_management/authenticate"))
             .header("content-type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
@@ -173,9 +190,7 @@ async fn mint_station_tokens(
     authorization_code: &str,
 ) -> Result<StationTokens> {
     let base = console_base_url.trim_end_matches('/');
-    if !base.starts_with("https://") {
-        return Err(anyhow!("CONSOLE base URL must be https:// (got {base})"));
-    }
+    require_console_base_url(base)?;
 
     let resp = http
         .post(format!("{base}/api/auth/station/token"))
@@ -203,6 +218,46 @@ async fn mint_station_tokens(
         expires_in: parsed.expires_in,
         refresh_expires_in: parsed.refresh_expires_in,
     })
+}
+
+/// Prove Keychain Caller against Console who-am-I (A8 Exit II).
+pub async fn prove_station_session(
+    http: &reqwest::Client,
+    console_base_url: &str,
+    access_token: &str,
+) -> Result<StationSessionIdentity> {
+    let base = console_base_url.trim_end_matches('/');
+    require_console_base_url(base)?;
+
+    let resp = http
+        .get(format!("{base}/api/auth/station/session"))
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_token}"))
+        .send()
+        .await
+        .context("Console station/session network")?;
+
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(anyhow!("Console station/session HTTP {status}: {text}"));
+    }
+
+    serde_json::from_str(&text).context("parse Console station/session")
+}
+
+fn require_console_base_url(base: &str) -> Result<()> {
+    if base.starts_with("https://") {
+        return Ok(());
+    }
+    // Mirror UpstreamConfig::require_https_base — wiremock / STATION_ACCESS_TOKEN only.
+    let testing = std::env::var("STATION_ACCESS_TOKEN").is_ok();
+    let loopback_http = base.starts_with("http://127.0.0.1")
+        || base.starts_with("http://localhost")
+        || base.starts_with("http://[::1]");
+    if testing && loopback_http {
+        return Ok(());
+    }
+    Err(anyhow!("CONSOLE base URL must be https:// (got {base})"))
 }
 
 fn urlencoding_loose(s: &str) -> String {

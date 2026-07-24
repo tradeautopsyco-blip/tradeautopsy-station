@@ -29,6 +29,7 @@ mod outbox_status;
 mod phase8;
 mod recent_trades;
 mod sse;
+mod station_auth;
 mod today;
 
 #[derive(Clone)]
@@ -53,6 +54,10 @@ pub struct AppState {
     pub audit_signer: Arc<KillSwitchAuditSigner>,
     pub last_l3_broker: Arc<std::sync::Mutex<Option<String>>>,
     pub today_service: Arc<crate::today::TodayService>,
+    /// In-flight WorkOS device grant (`device_code` never leaves this process).
+    pub device_login_pending: Arc<std::sync::Mutex<Option<crate::DeviceLoginPending>>>,
+    /// Station Caller tokens (Keychain in prod; memory in tests when injected).
+    pub station_token_store: Arc<dyn crate::StationTokenStore>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -139,6 +144,22 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/daemon/auth/begin", post(phase8::auth_begin_handler))
         .route("/api/daemon/auth/finish", post(phase8::auth_finish_handler))
+        .route(
+            "/api/daemon/auth/station/begin",
+            post(station_auth::station_auth_begin_handler),
+        )
+        .route(
+            "/api/daemon/auth/station/complete",
+            post(station_auth::station_auth_complete_handler),
+        )
+        .route(
+            "/api/daemon/auth/station/session",
+            get(station_auth::station_auth_session_handler),
+        )
+        .route(
+            "/api/daemon/auth/station/sign-out",
+            post(station_auth::station_auth_sign_out_handler),
+        )
         .route_layer(middleware::from_fn_with_state(
             state_for_layer,
             wire::verify_middleware,
