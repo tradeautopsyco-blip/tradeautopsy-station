@@ -64,6 +64,9 @@ pub struct BrokerRuntimeState {
     pub last_success_at_ms: Option<i64>,
     pub last_poll_at_ms: Option<i64>,
     pub backend_broker_label: Option<String>,
+    /// Catalog slug of the active sync (`binance_com` / `kotak_neo`) — desk honesty (R7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_broker_slug: Option<String>,
     pub data_classes: BrokerDataClassCompleteness,
     #[serde(skip)]
     pub last_sync_sse_class: String,
@@ -79,6 +82,7 @@ impl Default for BrokerRuntimeState {
             last_success_at_ms: None,
             last_poll_at_ms: None,
             backend_broker_label: None,
+            active_broker_slug: None,
             data_classes: BrokerDataClassCompleteness::default(),
             last_sync_sse_class: String::new(),
         }

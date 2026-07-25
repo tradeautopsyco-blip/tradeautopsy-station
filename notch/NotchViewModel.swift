@@ -195,6 +195,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
     @Published public var brokerSessionActive: Bool = false
+    /// Catalog slug of the active UBI sync (`binance_com` / `kotak_neo`) — desk honesty (R7).
+    @Published public var activeBrokerSlug: String?
+    /// Quote currency for Notch/Today formatting; follows active connection (never FX-blend).
+    @Published public var deskQuoteCurrency: String?
+    /// Calc profile id for the active connection (`crypto_spot_usd` / `equities_inr_cash`).
+    @Published public var deskCalcProfileId: String?
     /// True while broker sync is running or has fresh/stale data — drives Today session mirror polling.
     public var isBrokerSyncActiveForTodayMirror: Bool {
         switch brokerSyncClass {
@@ -329,9 +335,7 @@ public final class NotchViewModel: ObservableObject {
     var shouldPulse: Bool { compositeScore > 0.25 }
 
     var formattedSessionPnL: String {
-        let raw = formatINR(sessionPnL)
-        if sessionPnL >= 0 { return "+\(raw)" }
-        return raw
+        formatDeskMoney(sessionPnL)
     }
 
     /// Collapsed macOS strip (#126) — derived from published `barLiveState` + archetype only.
@@ -342,6 +346,7 @@ public final class NotchViewModel: ObservableObject {
             compositeScore: compositeScore,
             behavioralStateLabel: behavioralState,
             referenceNow: Date(),
+            quoteCurrency: deskQuoteCurrency ?? "INR",
         )
     }
 
@@ -1925,6 +1930,7 @@ public final class NotchViewModel: ObservableObject {
             let c = (payload["class"] as? String)?.lowercased() ?? "not_connected"
             brokerSyncClass = c
             brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
+            applyDeskHonesty(from: payload)
             return true
 
         case "toolbar_show":
@@ -1987,6 +1993,7 @@ public final class NotchViewModel: ObservableObject {
                 brokerSyncClass = sc.lowercased()
                 brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             }
+            applyDeskHonesty(from: j)
             if let arr = j["trades"] as? [[String: Any]] {
                 recentTrades = arr.compactMap { row in
                     let id = (row["trade_id"] as? String) ?? (row["id"] as? String)
@@ -2623,7 +2630,7 @@ public final class NotchViewModel: ObservableObject {
 
     func sessionSummaryForClose() -> String {
         let wr = String(format: "%.0f%%", winRate * 100)
-        return "Session · P&L \(formatINR(sessionPnL)) · \(tradesToday) trades · WR \(wr)"
+        return "Session · P&L \(formatDeskMoney(sessionPnL)) · \(tradesToday) trades · WR \(wr)"
     }
 
     /// Collapsed / center strip label — aligns with validated ladder: warning 0.25 · soft 0.35 · hard 0.45 (`AGENTS.md`).
@@ -2814,12 +2821,43 @@ enum NotchVoiceOver {
 }
 
 extension NotchViewModel {
+    /// Desk-honest money format: follows `deskQuoteCurrency` from active connection (R7).
+    /// Falls back to INR only when no active desk currency is known (legacy Bar equities default).
+    public func formatDeskMoney(_ v: Double) -> String {
+        let ccy = deskQuoteCurrency ?? "INR"
+        return DeskMoneyFormatting.formatSigned(v, quoteCurrency: ccy)
+    }
+
+    /// Legacy name — routes through desk currency (no longer hardcodes INR when COM is active).
     public func formatINR(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "INR"
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: v)) ?? "₹\(Int(v))"
+        formatDeskMoney(v)
+    }
+
+    func applyDeskHonesty(from payload: [String: Any]) {
+        let slug = (payload["brokerSlug"] as? String)
+            ?? (payload["active_broker_slug"] as? String)
+            ?? (payload["broker_slug"] as? String)
+        if let slug, !slug.isEmpty {
+            activeBrokerSlug = slug
+        }
+        if let ccy = payload["quoteCurrency"] as? String, !ccy.isEmpty {
+            deskQuoteCurrency = ccy.uppercased()
+        } else if let ccy = payload["quote_currency"] as? String, !ccy.isEmpty {
+            deskQuoteCurrency = ccy.uppercased()
+        } else if let mapped = DeskMoneyFormatting.quoteCurrency(forBrokerSlug: activeBrokerSlug) {
+            deskQuoteCurrency = mapped
+        }
+        if let calc = payload["calcProfileId"] as? String, !calc.isEmpty {
+            deskCalcProfileId = calc
+        } else if let calc = payload["calc_profile_id"] as? String, !calc.isEmpty {
+            deskCalcProfileId = calc
+        } else if let mapped = DeskMoneyFormatting.calcProfileId(forBrokerSlug: activeBrokerSlug) {
+            deskCalcProfileId = mapped
+        }
+        if brokerSyncClass == "not_connected" || brokerSyncClass == "disconnected" {
+            // Keep last known currency for display honesty; clear slug so dual logic stays accurate.
+            activeBrokerSlug = nil
+        }
     }
 }
 

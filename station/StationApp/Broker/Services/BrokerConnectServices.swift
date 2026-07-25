@@ -69,7 +69,7 @@ private struct KotakNeoSessionCredentialValidator: BrokerCredentialValidating, S
         else {
             return .permanentFailure(.invalidCredentials)
         }
-        return .success(.readOnlyConfirmed)
+        return .success(permissionPosture: .readOnlyConfirmed)
     }
 }
 

@@ -63,6 +63,13 @@ pub struct TodayPayload {
     pub top_signals: Vec<TodaySignalPayload>,
     pub trades: Vec<TodayTradeRowPayload>,
     pub open_position_count: u32,
+    /// Active connection desk honesty (R7). Absent when no sync / unknown slug.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broker_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_currency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calc_profile_id: Option<String>,
 }
 
 pub struct TodayService {
@@ -118,8 +125,9 @@ impl TodayService {
     }
 
     pub fn build_payload(&self) -> anyhow::Result<TodayPayload> {
+        let desk = self.active_desk_fields();
         if let Some(reason) = self.degraded_reason() {
-            return Ok(degraded_payload(local_today(), reason));
+            return Ok(degraded_payload(local_today(), reason, desk));
         }
 
         let fills = self.recent_trades.fetch_all_fills()?;
@@ -178,7 +186,27 @@ impl TodayService {
                 .collect(),
             trades,
             open_position_count: open_positions,
+            broker_slug: desk.0,
+            quote_currency: desk.1,
+            calc_profile_id: desk.2,
         })
+    }
+
+    fn active_desk_fields(&self) -> (Option<String>, Option<String>, Option<String>) {
+        let slug = self
+            .broker_status
+            .lock()
+            .expect("broker status")
+            .active_broker_slug
+            .clone();
+        match crate::ubi::desk_profile_for_slug(slug.as_deref()) {
+            Some(p) => (
+                Some(p.broker_slug),
+                Some(p.quote_currency),
+                Some(p.calc_profile_id),
+            ),
+            None => (slug, None, None),
+        }
     }
 
     fn degraded_reason(&self) -> Option<TodayDegradedReason> {
@@ -228,7 +256,11 @@ impl TodayService {
     }
 }
 
-fn degraded_payload(local_date: NaiveDate, reason: TodayDegradedReason) -> TodayPayload {
+fn degraded_payload(
+    local_date: NaiveDate,
+    reason: TodayDegradedReason,
+    desk: (Option<String>, Option<String>, Option<String>),
+) -> TodayPayload {
     TodayPayload {
         local_date: local_date.format("%Y-%m-%d").to_string(),
         performance_basis_not_tax: true,
@@ -242,6 +274,9 @@ fn degraded_payload(local_date: NaiveDate, reason: TodayDegradedReason) -> Today
         top_signals: vec![],
         trades: vec![],
         open_position_count: 0,
+        broker_slug: desk.0,
+        quote_currency: desk.1,
+        calc_profile_id: desk.2,
     }
 }
 

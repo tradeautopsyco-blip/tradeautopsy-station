@@ -27,6 +27,7 @@ struct CollapsedNotchPresentation: Equatable {
         compositeScore: Double,
         behavioralStateLabel: String,
         referenceNow: Date,
+        quoteCurrency: String = "INR",
     ) -> CollapsedNotchPresentation {
         if let notch, let primary = BarInterventionCardSpec.sortedInterventions(notch.activeInterventions).first {
             let kw = collapsedInterventionKeyword(interventionType: primary.interventionType)
@@ -47,7 +48,7 @@ struct CollapsedNotchPresentation: Equatable {
             return CollapsedNotchPresentation(
                 layout: .scalper(
                     tradesProgressLabel: scalperTradesLabel(notch: notch),
-                    sessionLossLabel: scalperSessionLossLabel(notch: notch),
+                    sessionLossLabel: scalperSessionLossLabel(notch: notch, quoteCurrency: quoteCurrency),
                     timeRemainingLabel: scalperTimeRemainingLabel(
                         windowEndsISO: notch?.sessionWindowEndsISO,
                         referenceNow: referenceNow,
@@ -69,7 +70,7 @@ struct CollapsedNotchPresentation: Equatable {
                 layout: .swing(
                     daysLabel: daysLabel,
                     statusTitle: status,
-                    weeklyPnLLabel: weeklyPnLStripeLabel(notch?.weeklyPnL),
+                    weeklyPnLLabel: weeklyPnLStripeLabel(notch?.weeklyPnL, quoteCurrency: quoteCurrency),
                 ),
                 pillPulseAmber: false,
             )
@@ -119,11 +120,11 @@ struct CollapsedNotchPresentation: Equatable {
         return "—"
     }
 
-    private static func scalperSessionLossLabel(notch: BarLiveStateResponse?) -> String? {
+    private static func scalperSessionLossLabel(notch: BarLiveStateResponse?, quoteCurrency: String) -> String? {
         guard let amt = notch?.sessionLossAmount else { return nil }
-        let loss = formatINRWhole(-abs(amt))
+        let loss = formatMoneyWhole(-abs(amt), quoteCurrency: quoteCurrency)
         if let lim = notch?.sessionLossLimit, lim > 0 {
-            let cap = formatINRWhole(lim)
+            let cap = formatMoneyWhole(lim, quoteCurrency: quoteCurrency)
             return "\(loss) / \(cap)"
         }
         return loss
@@ -152,9 +153,9 @@ struct CollapsedNotchPresentation: Equatable {
 
     // MARK: - Swing
 
-    private static func weeklyPnLStripeLabel(_ v: Double?) -> String? {
+    private static func weeklyPnLStripeLabel(_ v: Double?, quoteCurrency: String) -> String? {
         guard let v else { return nil }
-        let body = formatINRWhole(abs(v))
+        let body = formatMoneyWhole(abs(v), quoteCurrency: quoteCurrency)
         if v > 0 { return "+\(body)" }
         if v < 0 { return "−\(body)" }
         return body
@@ -171,12 +172,8 @@ struct CollapsedNotchPresentation: Equatable {
 
     // MARK: - Formatting
 
-    private static func formatINRWhole(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "INR"
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: v)) ?? "₹\(Int(v.rounded()))"
+    private static func formatMoneyWhole(_ v: Double, quoteCurrency: String) -> String {
+        DeskMoneyFormatting.formatWhole(v, quoteCurrency: quoteCurrency)
     }
 
     private static let iso8601Full: ISO8601DateFormatter = {

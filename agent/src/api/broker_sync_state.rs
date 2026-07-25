@@ -18,11 +18,15 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         state.broker_limits.stale_secs,
     );
     let now_ms = Utc::now().timestamp_millis();
+    let desk = crate::ubi::desk_profile_for_slug(snap.active_broker_slug.as_deref());
 
     Json(json!({
         "syncState": sync_state,
         "runtimeStatus": state.broker_sync_control.card_status().as_str(),
         "broker": snap.backend_broker_label,
+        "brokerSlug": snap.active_broker_slug,
+        "quoteCurrency": desk.as_ref().map(|d| d.quote_currency.clone()),
+        "calcProfileId": desk.as_ref().map(|d| d.calc_profile_id.clone()),
         "lastPollAtMs": snap.last_poll_at_ms,
         "lastSuccessAtMs": snap.last_success_at_ms,
         "circuitOpen": snap.circuit_open,

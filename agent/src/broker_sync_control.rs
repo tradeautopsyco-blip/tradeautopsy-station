@@ -145,6 +145,15 @@ impl BrokerSyncController {
     }
 
     pub fn start_with_adapter(&self, adapter: Arc<dyn BrokerAdapter>) -> anyhow::Result<()> {
+        self.start_with_adapter_for_slug(adapter, None)
+    }
+
+    /// Start poll loop; `broker_slug` drives desk quote currency / Kill DNS (R7/R8).
+    pub fn start_with_adapter_for_slug(
+        &self,
+        adapter: Arc<dyn BrokerAdapter>,
+        broker_slug: Option<&str>,
+    ) -> anyhow::Result<()> {
         self.stop_active_sync()?;
         self.user_paused.store(false, Ordering::Relaxed);
         {
@@ -155,6 +164,7 @@ impl BrokerSyncController {
             st.last_error = None;
             st.last_sync_sse_class.clear();
             st.data_classes = crate::broker_data_class::BrokerDataClassCompleteness::default();
+            st.active_broker_slug = broker_slug.map(|s| s.to_ascii_lowercase());
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
@@ -206,7 +216,7 @@ impl BrokerSyncController {
                 &blob,
             )?
         };
-        self.start_with_adapter(adapter)
+        self.start_with_adapter_for_slug(adapter, Some(&request.broker_slug))
     }
 
     fn resolve_credentials(
@@ -247,6 +257,7 @@ impl BrokerSyncController {
         {
             let mut st = self.status_arc.lock().expect("broker status");
             st.broker_connected = false;
+            st.active_broker_slug = None;
             st.last_sync_sse_class.clear();
             self.bus.publish(crate::event_bus::AgentEvent::BrokerSyncState {
                 payload: serde_json::to_value(&*st).unwrap_or_else(|_| json!({})),
@@ -266,6 +277,7 @@ impl BrokerSyncController {
         {
             let mut st = self.status_arc.lock().expect("broker status");
             st.broker_connected = false;
+            st.active_broker_slug = None;
         }
         Ok(())
     }

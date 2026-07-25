@@ -18,6 +18,11 @@ fn broker_slug_maps_to_expected_hosts() {
     let kotak_neo = hosts_for_broker("kotak_neo");
     assert!(kotak_neo.contains(&"neo.kotaksecurities.com"));
     assert!(!kotak_neo.contains(&"kite.zerodha.com"));
+
+    let com = hosts_for_broker("binance_com");
+    assert!(com.contains(&"api.binance.com"));
+    assert!(!com.iter().any(|h| h.contains("kotak")));
+    assert!(hosts_for_broker("unknown_slug").is_empty());
 }
 
 #[cfg(target_os = "macos")]

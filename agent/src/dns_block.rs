@@ -27,6 +27,9 @@ const ZERODHA_HOSTS: &[&str] = &["kite.zerodha.com", "api.kite.trade"];
 const UPSTOX_HOSTS: &[&str] = &["api.upstox.com", "api-v2.upstox.com"];
 
 /// Broker slug → sinkhole hostnames (pure, testable).
+///
+/// Unknown slugs return **empty** — never default to Kotak (R8). An empty set
+/// must not be treated as a successful L3 block.
 pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
     let slug = broker.trim().to_ascii_lowercase();
     match slug.as_str() {
@@ -35,7 +38,7 @@ pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
         "kotak" | "kotak_neo" => KOTAK_HOSTS,
         "binance" | "binance_com" => BINANCE_COM_HOSTS,
         "binance_us" => BINANCE_US_HOSTS,
-        _ => KOTAK_HOSTS,
+        _ => &[],
     }
 }
 
@@ -115,6 +118,11 @@ mod macos {
         }
 
         let hosts = hosts_for_broker(broker);
+        if hosts.is_empty() {
+            return Err(format!(
+                "no Kill DNS hosts for broker={broker} — refusing empty L3 block (R8)"
+            ));
+        }
         let entries = build_block_entries(broker);
         let path = hosts_file_path();
 
@@ -352,6 +360,17 @@ mod tests {
     }
 
     #[test]
+    fn binance_com_kill_hosts_never_include_kotak() {
+        let hosts = hosts_for_broker("binance_com");
+        for kotak in KOTAK_HOSTS {
+            assert!(
+                !hosts.contains(kotak),
+                "binance_com Kill must not sinkhole Kotak host {kotak}"
+            );
+        }
+    }
+
+    #[test]
     fn kill_dns_covers_every_ubi_allowlisted_host() {
         for host in crate::ubi::ALLOWED_BROKER_HOSTS {
             let covered = ["binance_com", "kotak_neo"]
@@ -362,9 +381,25 @@ mod tests {
     }
 
     #[test]
-    fn unknown_broker_falls_back_to_kotak_hosts() {
+    fn unknown_broker_does_not_silently_use_kotak_hosts() {
         let hosts = hosts_for_broker("unknown");
-        assert!(hosts.contains(&"neo.kotaksecurities.com"));
+        assert!(hosts.is_empty(), "unknown slug must not default to Kotak (R8)");
+        for kotak in KOTAK_HOSTS {
+            assert!(!hosts.contains(kotak));
+        }
+    }
+
+    #[test]
+    fn first_pair_kill_dogfood_hosts_are_disjoint_and_non_empty() {
+        let com = hosts_for_broker("binance_com");
+        let kotak = hosts_for_broker("kotak_neo");
+        assert!(!com.is_empty(), "COM Kill dogfood requires Binance hosts");
+        assert!(!kotak.is_empty(), "Kotak Kill dogfood requires Kotak hosts");
+        assert!(com.contains(&"api.binance.com"));
+        assert!(kotak.contains(&"mis.kotaksecurities.com"));
+        for h in com {
+            assert!(!kotak.contains(h), "host {h} must not be shared across desks");
+        }
     }
 
     #[cfg(target_os = "macos")]

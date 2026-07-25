@@ -18,12 +18,15 @@ public struct SessionPulseStrip: View {
             brokerSessionActive: viewModel.brokerSessionActive,
             todayDegraded: todayDegraded
         )
+        let quote = viewModel.deskQuoteCurrency
+            ?? coordinator.todayViewModel.lastDeskQuoteCurrency
+            ?? "USD"
         return SessionPulseStripPresentation.build(
             sessionPnLUsd: coordinator.todayViewModel.sessionPnLUsd,
             unrealizedTotal: viewModel.totalUnrealizedPnL,
             positions: viewModel.positions,
             isDegraded: isDegraded,
-            formatUSD: TodayScreenPresentation.formatSignedUSD
+            formatUSD: { DeskMoneyFormatting.formatSigned($0, quoteCurrency: quote) }
         )
     }
 

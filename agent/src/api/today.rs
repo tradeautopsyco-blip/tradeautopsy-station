@@ -21,6 +21,9 @@ pub async fn handler(State(state): State<AppState>) -> Json<crate::today::TodayP
             top_signals: vec![],
             trades: vec![],
             open_position_count: 0,
+            broker_slug: None,
+            quote_currency: None,
+            calc_profile_id: None,
         });
     Json(payload)
 }

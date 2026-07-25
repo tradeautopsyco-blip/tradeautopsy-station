@@ -1,4 +1,5 @@
 import Foundation
+import Notch
 
 public enum TodayPalette {
     public static let profit = "#0ECB81"
@@ -142,6 +143,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
 
     private static func healthyActive(payload: TodayAgentPayload, now: Date) -> TodayScreenPresentation {
         let flagged = payload.trades.filter { $0.flagSeverity == "firing" || $0.flagSeverity == "watch" }.count
+        let quote = payload.deskQuoteCurrency ?? "USD"
         return TodayScreenPresentation(
             state: .healthyActive,
             subtitle: subtitleForDate(now),
@@ -151,7 +153,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
                 heroTile(
                     id: "pnl",
                     label: "P&L today",
-                    value: formatUSD(payload.hero.pnlTodayUsd),
+                    value: formatMoney(payload.hero.pnlTodayUsd, quoteCurrency: quote),
                     caption: "Net of fees · performance basis, not tax",
                     tone: toneForPnL(payload.hero.pnlTodayUsd)
                 ),
@@ -173,7 +175,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             signalsMeta: payload.learningBaseline ? "learning baseline" : "updated just now",
             signals: signalCards(from: payload.topSignals, learning: payload.learningBaseline),
             tradesMeta: flagged > 0 ? "\(flagged) flagged" : "",
-            trades: payload.trades.map(tradeRow),
+            trades: payload.trades.map { tradeRow($0, quoteCurrency: quote) },
             showEmptyTable: false,
             learningBaseline: payload.learningBaseline,
             showSignalsUnavailableMessage: false
@@ -223,7 +225,10 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         ]
     }
 
-    private static func tradeRow(_ row: TodayTradeRowPayload) -> TodayTradeRowPresentation {
+    private static func tradeRow(
+        _ row: TodayTradeRowPayload,
+        quoteCurrency: String
+    ) -> TodayTradeRowPresentation {
         let tone = toneForPnL(row.netPnlUsd)
         let flagTone: TodaySignalTone = switch row.flagSeverity {
         case "firing": .firing
@@ -236,7 +241,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             symbol: formatSymbol(row.symbol),
             avgEntryText: formatPrice(row.avgEntry),
             avgExitText: formatPrice(row.avgExit),
-            pnlText: row.netPnlUsd.map { formatSignedUSD($0) } ?? emDash,
+            pnlText: row.netPnlUsd.map { formatSignedMoney($0, quoteCurrency: quoteCurrency) } ?? emDash,
             pnlTone: tone,
             flagText: row.primaryFlag,
             flagTone: flagTone,
@@ -245,20 +250,20 @@ public struct TodayScreenPresentation: Equatable, Sendable {
     }
 
     public static func formatUSD(_ value: Double?) -> String {
+        formatMoney(value, quoteCurrency: "USD")
+    }
+
+    public static func formatMoney(_ value: Double?, quoteCurrency: String) -> String {
         guard let value else { return emDash }
-        return formatSignedUSD(value)
+        return formatSignedMoney(value, quoteCurrency: quoteCurrency)
     }
 
     public static func formatSignedUSD(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 2
-        let text = formatter.string(from: NSNumber(value: abs(value))) ?? "$0.00"
-        if value > 0 { return "+\(text)" }
-        if value < 0 { return "-\(text)" }
-        return text
+        formatSignedMoney(value, quoteCurrency: "USD")
+    }
+
+    public static func formatSignedMoney(_ value: Double, quoteCurrency: String) -> String {
+        DeskMoneyFormatting.formatSigned(value, quoteCurrency: quoteCurrency)
     }
 
     private static func formatWinRate(_ value: Double?) -> String {

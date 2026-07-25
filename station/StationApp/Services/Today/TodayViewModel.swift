@@ -54,6 +54,11 @@ public final class TodayViewModel: ObservableObject {
         return lastPayload?.hero.pnlTodayUsd
     }
 
+    /// Last known desk quote currency from Today payload (R7).
+    public var lastDeskQuoteCurrency: String? {
+        lastPayload?.deskQuoteCurrency
+    }
+
     private var lastPayload: TodayAgentPayload?
 
     public func load() async {

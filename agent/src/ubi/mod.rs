@@ -9,6 +9,7 @@ mod catalog;
 mod components;
 mod credential_vault;
 mod credentials;
+mod desk;
 mod host;
 mod http;
 mod wasm_adapter;
@@ -18,6 +19,7 @@ pub use catalog::{
     calc_profile, catalog_v1, compliance_profile, descriptor_for_slug, AdapterOrigin, AuthScheme,
     BrokerAvailability, BrokerDescriptor, CalcProfile, ComplianceProfile,
 };
+pub use desk::{desk_honesty_for_active_slugs, desk_profile_for_slug, DeskHonesty, DeskProfile};
 pub use components::{
     component_candidate_paths, component_crate_dir, component_file_name, component_path_for_slug,
     COMPONENT_DIR_ENV,
