@@ -7,9 +7,18 @@ public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var connectBrokerSlug: String?
     @Published public private(set) var connectApiKey = ""
     @Published public private(set) var connectApiSecret = ""
+    @Published public private(set) var connectConsumerKey = ""
+    @Published public private(set) var connectTradeToken = ""
+    @Published public private(set) var connectSid = ""
+    @Published public private(set) var connectBaseUrl = ""
     @Published public private(set) var connectMessage: String?
     @Published public private(set) var connectInvalidFields: Set<BrokerCredentialField> = []
     @Published public private(set) var isConnecting = false
+
+    public var connectAuthScheme: BrokerAuthScheme {
+        guard let slug = connectBrokerSlug else { return .hmacApiKeySecret }
+        return BrokerConnectServices.authScheme(for: slug)
+    }
 
     private let brokerControl: BrokerControlling
     private let credentialStore: BrokerCredentialStoring
@@ -78,10 +87,22 @@ public final class BrokersViewModel: ObservableObject {
         connectBrokerSlug = slug
         connectApiKey = ""
         connectApiSecret = ""
+        connectConsumerKey = ""
+        connectTradeToken = ""
+        connectSid = ""
+        connectBaseUrl = BrokerCatalog.descriptor(for: slug)?.authScheme == .kotakNeoTotpSession
+            ? "https://cis.kotaksecurities.com"
+            : ""
         connectMessage = nil
         connectInvalidFields = []
         connectController = makeConnectController(for: slug)
         connectController?.updateFields(apiKey: "", apiSecret: "")
+        connectController?.updateKotakFields(
+            consumerKey: "",
+            tradeToken: "",
+            sid: "",
+            baseUrl: connectBaseUrl
+        )
         isConnectSheetPresented = true
     }
 
@@ -89,6 +110,24 @@ public final class BrokersViewModel: ObservableObject {
         connectApiKey = apiKey
         connectApiSecret = apiSecret
         connectController?.updateFields(apiKey: apiKey, apiSecret: apiSecret)
+    }
+
+    public func updateKotakConnectFields(
+        consumerKey: String,
+        tradeToken: String,
+        sid: String,
+        baseUrl: String
+    ) {
+        connectConsumerKey = consumerKey
+        connectTradeToken = tradeToken
+        connectSid = sid
+        connectBaseUrl = baseUrl
+        connectController?.updateKotakFields(
+            consumerKey: consumerKey,
+            tradeToken: tradeToken,
+            sid: sid,
+            baseUrl: baseUrl
+        )
     }
 
     public func submitConnect() async {
@@ -102,7 +141,9 @@ public final class BrokersViewModel: ObservableObject {
         switch outcome {
         case .localValidationFailed(let invalidFields):
             connectInvalidFields = invalidFields
-            connectMessage = "Enter both API key and secret."
+            connectMessage = connectAuthScheme == .kotakNeoTotpSession
+                ? "Enter consumer key, trade token, Sid, and base URL."
+                : "Enter both API key and secret."
         case .blockedWithdrawPermission:
             connectMessage = "Withdraw permission detected. Use a key without withdraw access."
         case .validationTransientFailure(let failure):

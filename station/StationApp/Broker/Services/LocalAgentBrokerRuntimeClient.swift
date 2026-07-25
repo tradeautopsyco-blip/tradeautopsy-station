@@ -3,7 +3,8 @@ import Foundation
 
 @MainActor
 public protocol BrokerAgentRuntimeClient {
-    func startSync(for identity: BrokerConnectionIdentity, credentials: BrokerCredentials) async throws
+    /// Identity-only start — agent loads credentials from host Keychain vault (R6 / Phase 2).
+    func startSync(for identity: BrokerConnectionIdentity) async throws
     func stopSync(for identity: BrokerConnectionIdentity) async throws
     func fetchRuntimeStatus(for identity: BrokerConnectionIdentity) async -> BrokerCardStatus?
 }
@@ -38,9 +39,9 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         self.signRequest = signRequest
     }
 
-    public func startSync(for identity: BrokerConnectionIdentity, credentials: BrokerCredentials) async throws {
+    public func startSync(for identity: BrokerConnectionIdentity) async throws {
         let path = "/api/daemon/broker/sync/start"
-        let payload = BrokerSyncStartPayload(identity: identity, credentials: credentials)
+        let payload = BrokerSyncStartPayload(identity: identity)
         let body = try JSONEncoder().encode(payload)
         var request = signRequest("POST", path, body)
         request.httpBody = body
@@ -88,16 +89,12 @@ private struct BrokerSyncStartPayload: Encodable {
     let brokerConnectionId: String
     let environment: String
     let assetClass: String
-    let apiKey: String
-    let apiSecret: String
 
-    init(identity: BrokerConnectionIdentity, credentials: BrokerCredentials) {
+    init(identity: BrokerConnectionIdentity) {
         brokerSlug = identity.brokerSlug
         brokerConnectionId = identity.brokerConnectionID.uuidString
         environment = identity.environment
         assetClass = identity.assetClass
-        apiKey = credentials.apiKey
-        apiSecret = credentials.apiSecret
     }
 }
 

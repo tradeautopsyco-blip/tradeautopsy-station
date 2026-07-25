@@ -220,3 +220,41 @@ async fn start_after_stop_resumes_polling_with_fresh_credentials() {
 
     handle.abort();
 }
+
+#[tokio::test]
+#[serial]
+async fn start_without_wire_secrets_loads_host_vault() {
+    const PORT: u16 = 19_473;
+    let counter = Arc::new(CountingPollAdapter::new());
+    let opts = TestAgentOptions {
+        runtime_poll_adapter: Some(counter.clone() as Arc<dyn BrokerAdapter>),
+        broker_base_poll_ms: 80,
+        ..TestAgentOptions::default()
+    };
+    let handle = spawn_test_agent_with_options(PORT, opts);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Seed vault via transitional wire fields once…
+    assert_eq!(
+        post_broker_sync_start(PORT, start_body("TA_TEST_SYNC_VAULT")).await.status(),
+        200
+    );
+    assert_eq!(post_broker_sync_stop(PORT).await.status(), 200);
+
+    // …then Start with identity only (no apiKey/apiSecret on wire).
+    let resp = post_broker_sync_start(
+        PORT,
+        json!({
+            "brokerSlug": "binance_us",
+            "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
+            "environment": "prod",
+            "assetClass": "crypto"
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "identity-only start");
+
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    assert!(counter.poll_count() >= 1);
+    handle.abort();
+}

@@ -9,6 +9,13 @@ execution layer of TradeAutopsy. It pairs with the web product at
 - `agent/` — Rust HTTP API (Axum, port 9137)
 - `notch/` — Notch UI components
 
+**Universal Broker Interface (UBI):** all broker adapters are Wasm components behind a
+WIT contract hosted by the Enforcer — see
+[`docs/adr/0001-uniform-wasm-sandboxed-broker-adapters.md`](./docs/adr/0001-uniform-wasm-sandboxed-broker-adapters.md)
+and [`CONTEXT.md`](./CONTEXT.md). Phase 1: `agent/wit/`, `agent/src/ubi/`, fixture adapter.
+Phase 2: catalog (`BrokerDescriptor`), tagged Keychain blobs, identity-only Start (agent
+loads secrets from host vault — never posts apiKey/apiSecret into Wasm).
+
 **Pairing repo:** `FExEVIL/tradeautopsy` (web + behavioral engine)
 **Product AGENTS.md:** `Tradeautopsy1/AGENTS.md` (authoritative product invariants,
 signal weights, ship-it pipeline)

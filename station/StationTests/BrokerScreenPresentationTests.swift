@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct BrokerScreenPresentationTests {
-    private let binanceIdentity = BrokerConnectionIdentity.binanceUSProd
+    private let binanceIdentity = BrokerConnectionIdentity.binanceComProd
 
     private func binanceConnection(
         lastValidatedAt: Date? = Date(timeIntervalSince1970: 1_700_000_000),
@@ -12,7 +12,7 @@ struct BrokerScreenPresentationTests {
     ) -> BrokerConfiguredConnection {
         BrokerConfiguredConnection(
             identity: binanceIdentity,
-            displayName: "Binance.US",
+            displayName: "Binance.com",
             lastValidatedAt: lastValidatedAt,
             lastSyncSummary: lastSyncSummary
         )
@@ -26,7 +26,7 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance != nil)
         #expect(binance?.status == .notConfigured)
@@ -44,7 +44,7 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance?.status == .unavailableAgentOffline)
         #expect(binance?.statusLabel == "Unavailable: Agent Offline")
@@ -71,6 +71,10 @@ struct BrokerScreenPresentationTests {
             #expect(card.isStartEnabled == false)
             #expect(card.isStopEnabled == false)
         }
+
+        let parked = cards.filter { $0.plannedLabel == "Parked" }
+        #expect(parked.map(\.id).contains("binance_us"))
+        #expect(cards.first { $0.id == "kotak_neo" }?.isConnectable == true)
     }
 
     @Test func connectionMetadataCarriesIdentityFields() {
@@ -82,11 +86,11 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance?.identity?.brokerConnectionID == binanceIdentity.brokerConnectionID)
-        #expect(binance?.identity?.brokerSlug == "binance_us")
-        #expect(binance?.identity?.assetClass == "crypto")
+        #expect(binance?.identity?.brokerSlug == "binance_com")
+        #expect(binance?.identity?.assetClass == "crypto_spot")
         #expect(binance?.identity?.environment == "prod")
     }
 
@@ -98,7 +102,7 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance?.status == .readyToStart)
         #expect(binance?.status.impliesAgentConnectedSync == false)
@@ -113,7 +117,7 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance?.status == .syncing)
         #expect(binance?.isStopEnabled == true)
@@ -124,8 +128,8 @@ struct BrokerScreenPresentationTests {
         let snapshot = BrokerControlSnapshot(
             configuredConnections: [
                 BrokerConfiguredConnection(
-                    identity: .binanceUSProd,
-                    displayName: "Binance.US",
+                    identity: .binanceComProd,
+                    displayName: "Binance.com",
                     permissionWarning: .tradeEnabled,
                     lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000),
                     lastSyncSummary: "Last sync: 2 fills imported"
@@ -158,8 +162,8 @@ struct BrokerScreenPresentationTests {
         let snapshot = BrokerControlSnapshot(
             configuredConnections: [
                 BrokerConfiguredConnection(
-                    identity: .binanceUSProd,
-                    displayName: "Binance.US",
+                    identity: .binanceComProd,
+                    displayName: "Binance.com",
                     permissionWarning: .tradeEnabled,
                     lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000)
                 )
@@ -169,7 +173,7 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
 
         #expect(binance?.permissionWarning == .tradeEnabled)
     }

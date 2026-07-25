@@ -24,6 +24,7 @@ mod resolve_kill_switch_broker;
 mod sse_signing;
 mod station_tokens;
 mod today;
+mod ubi;
 mod wire;
 
 pub use station_tokens::{
@@ -48,6 +49,15 @@ pub use broker::{
     BrokerAdapter, BrokerError, BrokerFill, ConfigurableDataClassAdapter, CountingPollAdapter,
     DataClassPollRound, SeqMockBrokerAdapter,
 };
+pub use ubi::{
+    calc_profile, catalog_v1, compliance_profile, decode_credential_blob, descriptor_for_slug,
+    host_allowed, run_fetch_fills, AdapterOrigin, AuthScheme, BrokerAvailability,
+    BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, CalcProfile, ComplianceProfile,
+    CredentialBlob, FillCursor, FillEvent as UbiFillEvent, HostCredentialBlob,
+    KeyringBrokerCredentialVault, MemoryBrokerCredentialVault, UbiHostConfig, UbiHostError,
+    UbiHostState, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
+    FORBIDDEN_COMPONENT_HEADERS,
+};
 pub use broker_behavioral::{BrokerBehavioralRecorder, BrokerConnectionIdentityFields};
 pub use broker_data_class::{
     BrokerBalancesSnapshot, BrokerDataClass, BrokerDataClassCompleteness, BrokerHolding,
@@ -55,7 +65,10 @@ pub use broker_data_class::{
 };
 pub use broker_redaction::RedactionBoundary;
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
-pub use broker_sync_control::{BrokerRuntimeCardStatus, BrokerSyncController, BrokerSyncStartRequest};
+pub use broker_sync_control::{
+    default_credential_vault, memory_credential_vault, BrokerRuntimeCardStatus,
+    BrokerSyncController, BrokerSyncStartRequest,
+};
 pub use broker_validation::{
     BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,
     PermissionPosture, ValidationFailure, ValidationResult,
@@ -196,6 +209,8 @@ pub struct AgentConfig {
     /// Integration tests — inject runtime start adapter (#13/#14).
     pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub test_start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
+    /// Host credential vault (Keychain in prod; memory in tests).
+    pub broker_credential_vault: Option<Arc<dyn crate::ubi::BrokerCredentialVault>>,
     /// User id for `GET /api/daemon/command` poll (#190). `None` disables poll loop.
     pub daemon_poll_user_id: Option<String>,
     /// Override Station token store (tests use memory; prod uses Keychain).
@@ -269,6 +284,7 @@ impl AgentConfig {
             bar_fill_ingress,
             test_runtime_adapter: None,
             test_start_key_log: None,
+            broker_credential_vault: None,
             daemon_poll_user_id,
             station_token_store: None,
         })
@@ -304,6 +320,7 @@ impl AgentConfig {
             bar_fill_ingress: None,
             test_runtime_adapter: None,
             test_start_key_log: None,
+            broker_credential_vault: Some(memory_credential_vault()),
             daemon_poll_user_id: None,
             station_token_store: None,
         }
@@ -396,6 +413,10 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let since = Arc::new(RwLock::new(initial_since));
 
     let today_service_slot = Arc::new(Mutex::new(None));
+    let credential_vault = config
+        .broker_credential_vault
+        .clone()
+        .unwrap_or_else(default_credential_vault);
     let broker_sync_control = Arc::new(BrokerSyncController::new(
         broker_status.clone(),
         recent_trades.clone(),
@@ -407,6 +428,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         config.test_runtime_adapter.clone(),
         config.test_start_key_log.clone(),
         today_service_slot.clone(),
+        credential_vault,
     ));
 
     let today_service = Arc::new(TodayService::new(

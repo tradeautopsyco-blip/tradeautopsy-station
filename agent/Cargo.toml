@@ -44,6 +44,8 @@ async-trait = "0.1"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 notify = { version = "6", default-features = false, features = ["macos_kqueue"] }
+wasmtime = { version = "36", features = ["component-model"] }
+wasmtime-wasi = "36"
 
 [dev-dependencies]
 base64 = "0.22"

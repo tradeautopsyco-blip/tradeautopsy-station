@@ -4,7 +4,8 @@ public enum BrokerSyncStartError: Error, Equatable {
     case missingCredentials
 }
 
-/// Reads credentials fresh from Keychain and forwards start to the local agent (#13).
+/// Confirms Keychain has credentials, then starts sync by connection identity only (R6).
+/// Secrets stay in Keychain; agent loads them via host vault — never posted on the wire.
 @MainActor
 public final class AgentBrokerSyncControl: BrokerSyncControlling {
     private let credentialStore: BrokerCredentialStoring
@@ -19,9 +20,9 @@ public final class AgentBrokerSyncControl: BrokerSyncControlling {
     }
 
     public func startSync(for identity: BrokerConnectionIdentity) async throws {
-        guard let credentials = try credentialStore.read(for: identity) else {
+        guard try credentialStore.read(for: identity) != nil else {
             throw BrokerSyncStartError.missingCredentials
         }
-        try await runtimeClient.startSync(for: identity, credentials: credentials)
+        try await runtimeClient.startSync(for: identity)
     }
 }

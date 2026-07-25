@@ -9,13 +9,11 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     private(set) var stopSyncCallCount = 0
     private(set) var fetchRuntimeStatusCallCount = 0
     private(set) var lastStartedIdentity: BrokerConnectionIdentity?
-    private(set) var lastStartedCredentials: BrokerCredentials?
     private(set) var lastStoppedIdentity: BrokerConnectionIdentity?
 
-    func startSync(for identity: BrokerConnectionIdentity, credentials: BrokerCredentials) async throws {
+    func startSync(for identity: BrokerConnectionIdentity) async throws {
         startSyncCallCount += 1
         lastStartedIdentity = identity
-        lastStartedCredentials = credentials
         runtimeStatus = .syncing
     }
 

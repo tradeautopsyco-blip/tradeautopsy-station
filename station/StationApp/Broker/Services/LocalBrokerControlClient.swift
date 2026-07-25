@@ -10,14 +10,14 @@ public final class LocalBrokerControlClient: BrokerControlling {
 
     private static let v1Brokers: [V1BrokerEntry] = [
         V1BrokerEntry(
-            slug: "binance_us",
-            displayName: "Binance.US",
-            identity: BrokerConnectionIdentity.binanceUS
-        ),
-        V1BrokerEntry(
             slug: "binance_com",
             displayName: "Binance.com",
             identity: BrokerConnectionIdentity.binanceCom
+        ),
+        V1BrokerEntry(
+            slug: "kotak_neo",
+            displayName: "Kotak Neo",
+            identity: BrokerConnectionIdentity.kotakNeo
         ),
     ]
 

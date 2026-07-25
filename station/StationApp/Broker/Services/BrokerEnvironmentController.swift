@@ -96,12 +96,27 @@ public extension BrokerConnectionIdentity {
         BrokerConnectionIdentity(
             brokerConnectionID: UUID(uuidString: "00000000-0000-4000-8000-000000000002")!,
             brokerSlug: "binance_com",
-            assetClass: "crypto",
+            assetClass: "crypto_spot",
             environment: environment.rawValue
         )
     }
 
     static var binanceComProd: BrokerConnectionIdentity {
         binanceCom(.prod)
+    }
+
+    static let kotakNeoConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000003")!
+
+    static func kotakNeo(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: kotakNeoConnectionID,
+            brokerSlug: "kotak_neo",
+            assetClass: "equities",
+            environment: environment.rawValue
+        )
+    }
+
+    static var kotakNeoProd: BrokerConnectionIdentity {
+        kotakNeo(.prod)
     }
 }

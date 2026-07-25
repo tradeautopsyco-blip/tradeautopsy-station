@@ -16,24 +16,11 @@ struct BrokerConnectSheetView: View {
                 .foregroundStyle(BarDS.Text.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
-            credentialField(
-                title: "API Key",
-                text: Binding(
-                    get: { viewModel.connectApiKey },
-                    set: { viewModel.updateConnectFields(apiKey: $0, apiSecret: viewModel.connectApiSecret) }
-                ),
-                invalid: viewModel.connectInvalidFields.contains(.apiKey)
-            )
-
-            credentialField(
-                title: "API Secret",
-                text: Binding(
-                    get: { viewModel.connectApiSecret },
-                    set: { viewModel.updateConnectFields(apiKey: viewModel.connectApiKey, apiSecret: $0) }
-                ),
-                invalid: viewModel.connectInvalidFields.contains(.apiSecret),
-                secure: true
-            )
+            if viewModel.connectAuthScheme == .kotakNeoTotpSession {
+                kotakFields
+            } else {
+                hmacFields
+            }
 
             if let message = viewModel.connectMessage {
                 Text(message)
@@ -58,6 +45,93 @@ struct BrokerConnectSheetView: View {
         }
         .padding(24)
         .frame(width: 420)
+    }
+
+    @ViewBuilder
+    private var hmacFields: some View {
+        credentialField(
+            title: "API Key",
+            text: Binding(
+                get: { viewModel.connectApiKey },
+                set: { viewModel.updateConnectFields(apiKey: $0, apiSecret: viewModel.connectApiSecret) }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiKey)
+        )
+
+        credentialField(
+            title: "API Secret",
+            text: Binding(
+                get: { viewModel.connectApiSecret },
+                set: { viewModel.updateConnectFields(apiKey: viewModel.connectApiKey, apiSecret: $0) }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiSecret),
+            secure: true
+        )
+    }
+
+    @ViewBuilder
+    private var kotakFields: some View {
+        credentialField(
+            title: "Consumer Key",
+            text: Binding(
+                get: { viewModel.connectConsumerKey },
+                set: {
+                    viewModel.updateKotakConnectFields(
+                        consumerKey: $0,
+                        tradeToken: viewModel.connectTradeToken,
+                        sid: viewModel.connectSid,
+                        baseUrl: viewModel.connectBaseUrl
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.consumerKey)
+        )
+        credentialField(
+            title: "Trade Token",
+            text: Binding(
+                get: { viewModel.connectTradeToken },
+                set: {
+                    viewModel.updateKotakConnectFields(
+                        consumerKey: viewModel.connectConsumerKey,
+                        tradeToken: $0,
+                        sid: viewModel.connectSid,
+                        baseUrl: viewModel.connectBaseUrl
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.tradeToken),
+            secure: true
+        )
+        credentialField(
+            title: "Sid",
+            text: Binding(
+                get: { viewModel.connectSid },
+                set: {
+                    viewModel.updateKotakConnectFields(
+                        consumerKey: viewModel.connectConsumerKey,
+                        tradeToken: viewModel.connectTradeToken,
+                        sid: $0,
+                        baseUrl: viewModel.connectBaseUrl
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.sid)
+        )
+        credentialField(
+            title: "Base URL",
+            text: Binding(
+                get: { viewModel.connectBaseUrl },
+                set: {
+                    viewModel.updateKotakConnectFields(
+                        consumerKey: viewModel.connectConsumerKey,
+                        tradeToken: viewModel.connectTradeToken,
+                        sid: viewModel.connectSid,
+                        baseUrl: $0
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.baseUrl)
+        )
     }
 
     private func credentialField(

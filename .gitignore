@@ -1,5 +1,6 @@
 # Rust
 agent/target/
+agent/ubi-fixture-adapter/target/
 agent/Cargo.lock.bak
 
 # Swift / Xcode

@@ -1,10 +1,12 @@
 //! Runtime broker sync start/stop without agent process restart (issues #13/#14).
+//! Phase 2: Start is identity-first; credentials load from host vault (R6).
 
+use crate::bar_fill_ingress::BarBrokerFillIngressConfig;
 use crate::broker::{BrokerAdapter, CountingPollAdapter};
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
-use crate::bar_fill_ingress::BarBrokerFillIngressConfig;
 use crate::event_bus::EventBus;
 use crate::recent_trades::RecentTradesStore;
+use crate::ubi::{BrokerCredentialVault, CredentialBlob, MemoryBrokerCredentialVault};
 use crate::UpstreamClient;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -14,6 +16,8 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 
+/// Identity-first start. Optional legacy apiKey/apiSecret seed the host vault for tests
+/// and transitional clients — never forwarded into Wasm (ADR 0001 / R6).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BrokerSyncStartRequest {
     #[serde(rename = "brokerSlug")]
@@ -23,10 +27,11 @@ pub struct BrokerSyncStartRequest {
     pub environment: String,
     #[serde(rename = "assetClass")]
     pub asset_class: String,
-    #[serde(rename = "apiKey")]
-    pub api_key: String,
-    #[serde(rename = "apiSecret")]
-    pub api_secret: String,
+    /// Deprecated wire fields — if present, written into the host vault then used.
+    #[serde(default, rename = "apiKey")]
+    pub api_key: Option<String>,
+    #[serde(default, rename = "apiSecret")]
+    pub api_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,9 +74,10 @@ pub struct BrokerSyncController {
     active: Arc<Mutex<Option<ActiveSync>>>,
     /// Integration-test hook: fixed adapter for all runtime starts.
     pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
-    /// Integration-test hook: records api keys supplied on each start.
+    /// Integration-test hook: records api keys resolved on each start (host-side only).
     pub test_start_key_log: Option<Arc<Mutex<Vec<String>>>>,
     today_service: Arc<Mutex<Option<Arc<crate::today::TodayService>>>>,
+    credential_vault: Arc<dyn BrokerCredentialVault>,
 }
 
 impl BrokerSyncController {
@@ -86,6 +92,7 @@ impl BrokerSyncController {
         test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
         test_start_key_log: Option<Arc<Mutex<Vec<String>>>>,
         today_service: Arc<Mutex<Option<Arc<crate::today::TodayService>>>>,
+        credential_vault: Arc<dyn BrokerCredentialVault>,
     ) -> Self {
         Self {
             status_arc,
@@ -100,6 +107,7 @@ impl BrokerSyncController {
             test_runtime_adapter,
             test_start_key_log,
             today_service,
+            credential_vault,
         }
     }
 
@@ -178,18 +186,53 @@ impl BrokerSyncController {
     }
 
     pub fn start(&self, request: &BrokerSyncStartRequest) -> anyhow::Result<()> {
+        let blob = self.resolve_credentials(request)?;
         if let Some(log) = &self.test_start_key_log {
-            log.lock()
-                .expect("start key log")
-                .push(request.api_key.clone());
+            if let Some(key) = blob.api_key_for_tests() {
+                log.lock()
+                    .expect("start key log")
+                    .push(key.to_string());
+            }
         }
 
         let adapter = if let Some(fixed) = &self.test_runtime_adapter {
             fixed.clone()
         } else {
-            build_runtime_adapter(&request.broker_slug, &request.api_key, &request.api_secret)?
+            build_runtime_adapter(&request.broker_slug, &blob)?
         };
         self.start_with_adapter(adapter)
+    }
+
+    fn resolve_credentials(
+        &self,
+        request: &BrokerSyncStartRequest,
+    ) -> anyhow::Result<CredentialBlob> {
+        // Transitional: optional wire secrets seed the host vault (tests / old clients).
+        if let (Some(api_key), Some(api_secret)) = (&request.api_key, &request.api_secret) {
+            if !api_key.is_empty() {
+                let blob = CredentialBlob::hmac(api_key, api_secret);
+                self.credential_vault.save(
+                    &request.environment,
+                    &request.broker_slug,
+                    &request.broker_connection_id,
+                    &blob,
+                )?;
+                return Ok(blob);
+            }
+        }
+
+        self.credential_vault
+            .load(
+                &request.environment,
+                &request.broker_slug,
+                &request.broker_connection_id,
+            )?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "missing credentials for connection {} (host vault / Keychain)",
+                    request.broker_connection_id
+                )
+            })
     }
 
     pub fn stop(&self) -> anyhow::Result<()> {
@@ -224,22 +267,45 @@ impl BrokerSyncController {
 
 fn build_runtime_adapter(
     broker_slug: &str,
-    api_key: &str,
-    api_secret: &str,
+    blob: &CredentialBlob,
 ) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
-    match broker_slug {
-        "binance_us" if api_key.starts_with("TA_TEST_SYNC") || api_key.starts_with("TA_FAKE_") => {
+    match (broker_slug, blob) {
+        ("binance_us", CredentialBlob::HmacApiKeySecret { api_key, .. })
+            if api_key.starts_with("TA_TEST_SYNC") || api_key.starts_with("TA_FAKE_") =>
+        {
             Ok(Arc::new(CountingPollAdapter::new()))
         }
-        "binance_us" => Ok(Arc::new(CountingPollAdapter::new())),
-        "binance_com"
+        ("binance_us", CredentialBlob::HmacApiKeySecret { .. }) => {
+            Ok(Arc::new(CountingPollAdapter::new()))
+        }
+        ("binance_com", CredentialBlob::HmacApiKeySecret { api_key, .. })
             if api_key.starts_with("TA_TEST_SYNC") || api_key.starts_with("TA_FAKE_COM_") =>
         {
             Ok(Arc::new(CountingPollAdapter::new()))
         }
-        "binance_com" => Ok(Arc::new(crate::binance_com_spot_adapter::BinanceComSpotBrokerAdapter::new(
-            api_key, api_secret,
-        ))),
-        other => anyhow::bail!("unsupported broker slug: {other}"),
+        (
+            "binance_com",
+            CredentialBlob::HmacApiKeySecret {
+                api_key,
+                api_secret,
+            },
+        ) => Ok(Arc::new(
+            crate::binance_com_spot_adapter::BinanceComSpotBrokerAdapter::new(api_key, api_secret),
+        )),
+        ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. }) => {
+            anyhow::bail!(
+                "kotak_neo Wasm adapter ships in Phase 3 — credentials accepted in vault only"
+            )
+        }
+        (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),
     }
+}
+
+/// Default vault for production: Keychain-backed.
+pub fn default_credential_vault() -> Arc<dyn BrokerCredentialVault> {
+    Arc::new(crate::ubi::KeyringBrokerCredentialVault)
+}
+
+pub fn memory_credential_vault() -> Arc<dyn BrokerCredentialVault> {
+    Arc::new(MemoryBrokerCredentialVault::new())
 }

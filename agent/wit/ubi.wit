@@ -1,0 +1,85 @@
+/// Universal Broker Interface — adapter contract (ADR 0001, R5/R6).
+/// Phase 1: FillEvent export + host-mediated broker_http_call.
+/// Components never receive raw credentials.
+package tradeautopsy:ubi@0.1.0;
+
+interface types {
+    /// Normalized fill every adapter must produce (R5).
+    record fill-event {
+        fill-id: string,
+        broker-slug: string,
+        /// Host injects/overwrites from the loaded connection (R5 §3.5).
+        connection-id: string,
+        /// v1: "crypto_spot" | "equities"
+        asset-class: string,
+        symbol: string,
+        /// "BUY" | "SELL"
+        side: string,
+        qty: f64,
+        price: f64,
+        /// Desk currency of the fill (e.g. USD, USDT, INR).
+        currency: string,
+        filled-at-unix-ms: s64,
+        fee-amount: option<f64>,
+        fee-currency: option<string>,
+        exchange-segment: option<string>,
+        product: option<string>,
+        trade-id: option<string>,
+    }
+
+    /// Opaque-ish cursor; venues differ (COM per-symbol fromId/time; Kotak day-book).
+    record fill-cursor {
+        since-unix-ms: option<s64>,
+        from-id: option<string>,
+        symbol: option<string>,
+    }
+
+    record http-header {
+        name: string,
+        value: string,
+    }
+
+    record http-query-param {
+        name: string,
+        value: string,
+    }
+
+    /// Component → host. No secrets. Host attaches auth from Keychain + authScheme (R6).
+    record broker-http-request {
+        method: string,
+        /// Must be on the host allowlist (align with Kill DNS later).
+        host: string,
+        path: string,
+        query: list<http-query-param>,
+        /// Non-auth headers only; host strips Authorization / X-MBX-APIKEY / Auth / Sid.
+        headers: list<http-header>,
+        body: option<string>,
+    }
+
+    /// Host → component. Never includes raw credentials or Set-Cookie secrets.
+    record broker-http-response {
+        status: u16,
+        headers: list<http-header>,
+        body: string,
+        /// e.g. rate_limited | unauthorized | session_expired | network | host_blocked
+        error-class: option<string>,
+    }
+}
+
+interface broker-http {
+    use types.{broker-http-request, broker-http-response};
+
+    /// Sole network egress for adapters. Host signs/attaches auth; component never sees secrets.
+    broker-http-call: func(request: broker-http-request) -> result<broker-http-response, string>;
+}
+
+interface adapter {
+    use types.{fill-event, fill-cursor};
+
+    fetch-fills: func(cursor: fill-cursor) -> result<list<fill-event>, string>;
+}
+
+world broker-adapter {
+    import broker-http;
+    export adapter;
+}

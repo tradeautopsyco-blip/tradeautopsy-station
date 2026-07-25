@@ -3,6 +3,10 @@ import Foundation
 public enum BrokerCredentialField: String, Equatable, Sendable, CaseIterable {
     case apiKey
     case apiSecret
+    case consumerKey
+    case tradeToken
+    case sid
+    case baseUrl
 }
 
 public enum BrokerPermissionPosture: Equatable, Sendable {

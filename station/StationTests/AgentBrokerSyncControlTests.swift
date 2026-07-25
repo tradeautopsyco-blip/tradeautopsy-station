@@ -4,19 +4,29 @@ import Testing
 
 @MainActor
 struct AgentBrokerSyncControlTests {
-    @Test func startSyncReadsCredentialsFreshFromStore() async throws {
+    @Test func startSyncRequiresCredentialsButDoesNotForwardSecrets() async throws {
         let store = FakeBrokerCredentialStore()
         let runtime = FakeBrokerAgentRuntimeClient()
-        let stale = BrokerCredentials(apiKey: "stale-key", apiSecret: "stale-secret")
         let fresh = BrokerCredentials(apiKey: "fresh-key", apiSecret: "fresh-secret")
-        try store.save(credentials: stale, for: .binanceUSProd)
-        try store.save(credentials: fresh, for: .binanceUSProd)
+        try store.save(credentials: fresh, for: .binanceComProd)
 
         let control = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
 
-        try await control.startSync(for: .binanceUSProd)
+        try await control.startSync(for: .binanceComProd)
 
         #expect(store.readCallCount == 1)
-        #expect(runtime.lastStartedCredentials == fresh)
+        #expect(runtime.lastStartedIdentity == .binanceComProd)
+        #expect(runtime.startSyncCallCount == 1)
+    }
+
+    @Test func startSyncFailsWhenKeychainEmpty() async {
+        let store = FakeBrokerCredentialStore()
+        let runtime = FakeBrokerAgentRuntimeClient()
+        let control = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
+
+        await #expect(throws: BrokerSyncStartError.missingCredentials) {
+            try await control.startSync(for: .binanceComProd)
+        }
+        #expect(runtime.startSyncCallCount == 0)
     }
 }

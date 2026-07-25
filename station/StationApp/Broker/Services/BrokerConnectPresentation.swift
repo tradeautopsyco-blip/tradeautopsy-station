@@ -26,8 +26,17 @@ public struct BrokerConnectPresentation: Equatable, Sendable, Codable {
 public enum BrokerSecretGuard {
     public static func containsSecretMaterial(_ value: String, credentials: BrokerCredentials) -> Bool {
         guard !value.isEmpty else { return false }
-        if value.contains(credentials.apiKey) { return true }
-        if value.contains(credentials.apiSecret) { return true }
+        if !credentials.apiKey.isEmpty, value.contains(credentials.apiKey) { return true }
+        if !credentials.apiSecret.isEmpty, value.contains(credentials.apiSecret) { return true }
+        if let consumerKey = credentials.consumerKey, !consumerKey.isEmpty, value.contains(consumerKey) {
+            return true
+        }
+        if let tradeToken = credentials.tradeToken, !tradeToken.isEmpty, value.contains(tradeToken) {
+            return true
+        }
+        if let sid = credentials.sid, !sid.isEmpty, value.contains(sid) {
+            return true
+        }
         return false
     }
 

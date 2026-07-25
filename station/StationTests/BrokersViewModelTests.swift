@@ -28,7 +28,7 @@ struct BrokersViewModelTests {
         await viewModel.load()
 
         #expect(client.loadSnapshotCallCount == 1)
-        let binance = viewModel.cards.first { $0.id == "binance_us" }
+        let binance = viewModel.cards.first { $0.id == "binance_com" }
         #expect(binance?.status == .notConfigured)
     }
 
@@ -38,7 +38,7 @@ struct BrokersViewModelTests {
 
         await viewModel.load()
 
-        let binance = viewModel.cards.first { $0.id == "binance_us" }
+        let binance = viewModel.cards.first { $0.id == "binance_com" }
         #expect(binance?.status == .unavailableAgentOffline)
         #expect(binance?.isStartEnabled == false)
         #expect(binance?.isStopEnabled == false)
@@ -51,21 +51,21 @@ struct BrokersViewModelTests {
 
         await viewModel.load()
 
-        let binance = viewModel.cards.first { $0.id == "binance_us" }
+        let binance = viewModel.cards.first { $0.id == "binance_com" }
         #expect(binance?.status == .readyToStart)
         #expect(binance?.status != .syncing)
     }
 
     @Test func connectDisclosureMentionsSyncAndUpload() {
         let (viewModel, _, _, _) = makeViewModel()
-        viewModel.presentConnectSheet(for: "binance_us")
+        viewModel.presentConnectSheet(for: "binance_com")
         #expect(viewModel.connectDisclosure.localizedCaseInsensitiveContains("broker sync"))
         #expect(viewModel.connectDisclosure.localizedCaseInsensitiveContains("behavioral"))
     }
 
     @Test func submitConnectWithEmptyFieldsSurfacesLocalValidation() async {
         let (viewModel, _, store, sync) = makeViewModel()
-        viewModel.presentConnectSheet(for: "binance_us")
+        viewModel.presentConnectSheet(for: "binance_com")
 
         await viewModel.submitConnect()
 
@@ -90,13 +90,13 @@ struct BrokersViewModelTests {
         )
         await viewModel.load()
 
-        viewModel.presentConnectSheet(for: "binance_us")
+        viewModel.presentConnectSheet(for: "binance_com")
         viewModel.updateConnectFields(apiKey: "key", apiSecret: "secret")
 
         let connectTask = Task { await viewModel.submitConnect() }
         try? await Task.sleep(for: .milliseconds(50))
 
-        let binance = viewModel.cards.first { $0.id == "binance_us" }
+        let binance = viewModel.cards.first { $0.id == "binance_com" }
         #expect(binance?.status == .validating)
 
         await connectTask.value

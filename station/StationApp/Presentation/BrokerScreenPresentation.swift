@@ -84,6 +84,25 @@ public enum BrokerScreenPresentation {
             )
         }
 
+        if descriptor.availability == .parked {
+            return BrokerCardPresentation(
+                id: descriptor.slug,
+                displayName: descriptor.displayName,
+                assetClass: descriptor.assetClass,
+                status: .notConfigured,
+                statusLabel: "Parked",
+                isConnectable: false,
+                isStartEnabled: false,
+                isStopEnabled: false,
+                isDeleteEnabled: false,
+                lastValidatedAtText: nil,
+                lastSyncSummary: nil,
+                plannedLabel: "Parked",
+                permissionWarning: nil,
+                identity: nil
+            )
+        }
+
         let connection = snapshot.configuredConnections.first {
             $0.identity.brokerSlug == descriptor.slug
         }

@@ -32,7 +32,7 @@ struct BrokerDeleteLifecycleTests {
             runtimeClient: runtimeClient
         )
         let connectController = BrokerConnectController(
-            identity: .binanceUSProd,
+            identity: .binanceComProd,
             credentialStore: store,
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
@@ -53,7 +53,7 @@ struct BrokerDeleteLifecycleTests {
         _ = supervisor
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         metadataStore.save(
             BrokerConnectionMetadata(
@@ -61,15 +61,15 @@ struct BrokerDeleteLifecycleTests {
                 lastValidatedAt: Date(),
                 syncPaused: false
             ),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
-        try await client.deleteConnection(for: .binanceUSProd, connectController: connectController)
+        try await client.deleteConnection(for: .binanceComProd, connectController: connectController)
 
         #expect(runtime.stopSyncCallCount == 1)
-        #expect(store.hasCredentials(for: .binanceUSProd) == false)
+        #expect(store.hasCredentials(for: .binanceComProd) == false)
         #expect(store.deleteCallCount == 1)
-        #expect(metadataStore.load(for: .binanceUSProd) == nil)
+        #expect(metadataStore.load(for: .binanceComProd) == nil)
         #expect(connectController.permissionWarning == nil)
     }
 
@@ -90,7 +90,7 @@ struct BrokerDeleteLifecycleTests {
             runtimeClient: runtime
         )
         let connectController = BrokerConnectController(
-            identity: .binanceUSProd,
+            identity: .binanceComProd,
             credentialStore: store,
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
@@ -98,13 +98,13 @@ struct BrokerDeleteLifecycleTests {
         )
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
-        try await client.deleteConnection(for: .binanceUSProd, connectController: connectController)
+        try await client.deleteConnection(for: .binanceComProd, connectController: connectController)
 
         #expect(runtime.stopSyncCallCount == 0)
-        #expect(store.hasCredentials(for: .binanceUSProd) == false)
+        #expect(store.hasCredentials(for: .binanceComProd) == false)
     }
 
     @Test func loadSnapshotAfterDeleteShowsNotConfigured() async throws {
@@ -112,15 +112,15 @@ struct BrokerDeleteLifecycleTests {
         _ = supervisor
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
-        try await client.deleteConnection(for: .binanceUSProd, connectController: connectController)
+        try await client.deleteConnection(for: .binanceComProd, connectController: connectController)
         let snapshot = await client.loadSnapshot()
 
         #expect(snapshot.configuredConnections.isEmpty)
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let binance = cards.first { $0.id == "binance_us" }
+        let binance = cards.first { $0.id == "binance_com" }
         #expect(binance?.status == .notConfigured)
     }
 }

@@ -31,8 +31,8 @@ final class FakeBrokerControlClient: BrokerControlling {
             return BrokerControlSnapshot(
                 configuredConnections: [
                     BrokerConfiguredConnection(
-                        identity: .binanceUSProd,
-                        displayName: "Binance.US",
+                        identity: .binanceComProd,
+                        displayName: "Binance.com",
                         lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000),
                         lastSyncSummary: "Last sync: 2 fills imported"
                     )
@@ -44,8 +44,8 @@ final class FakeBrokerControlClient: BrokerControlling {
             return BrokerControlSnapshot(
                 configuredConnections: [
                     BrokerConfiguredConnection(
-                        identity: .binanceUSProd,
-                        displayName: "Binance.US",
+                        identity: .binanceComProd,
+                        displayName: "Binance.com",
                         lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000)
                     )
                 ],
@@ -53,12 +53,12 @@ final class FakeBrokerControlClient: BrokerControlling {
                 runtimeStatusByConnectionID: [:]
             )
         case .syncing:
-            let identity = BrokerConnectionIdentity.binanceUSProd
+            let identity = BrokerConnectionIdentity.binanceComProd
             return BrokerControlSnapshot(
                 configuredConnections: [
                     BrokerConfiguredConnection(
                         identity: identity,
-                        displayName: "Binance.US",
+                        displayName: "Binance.com",
                         lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000)
                     )
                 ],

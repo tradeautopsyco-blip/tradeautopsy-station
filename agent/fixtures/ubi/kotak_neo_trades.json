@@ -1,0 +1,18 @@
+{
+  "stat": "Ok",
+  "stCode": 0,
+  "data": [
+    {
+      "trdSym": "ITBEES-EQ",
+      "trnsTp": "B",
+      "fldQty": "100",
+      "avgPrc": "25.50",
+      "exSeg": "nse_cm",
+      "prod": "CNC",
+      "exOrdId": "NSE123456",
+      "nOrdNo": "2401010001",
+      "exTm": "25-07-2026 10:15:30",
+      "flDt": "25-07-2026"
+    }
+  ]
+}
