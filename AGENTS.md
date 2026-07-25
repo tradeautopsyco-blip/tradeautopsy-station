@@ -15,6 +15,12 @@ WIT contract hosted by the Enforcer — see
 and [`CONTEXT.md`](./CONTEXT.md). Phase 1: `agent/wit/`, `agent/src/ubi/`, fixture adapter.
 Phase 2: catalog (`BrokerDescriptor`), tagged Keychain blobs, identity-only Start (agent
 loads secrets from host vault — never posts apiKey/apiSecret into Wasm).
+Phase 3: live components `agent/ubi-binance-com-adapter/` and `agent/ubi-kotak-neo-adapter/`
+(build with `cargo build --release --target wasm32-wasip2 --manifest-path <crate>/Cargo.toml`).
+Runtime Start loads the component by broker slug; `TRADEAUTOPSY_UBI_COMPONENT_DIR` overrides
+the lookup directory for packaged builds. The Enforcer attaches Binance HMAC and Kotak
+`Auth`/`Sid` inside `broker_http_call` (`agent/src/ubi/http.rs`); native
+`binance_com_spot_*.rs` is reference material only.
 
 **Pairing repo:** `FExEVIL/tradeautopsy` (web + behavioral engine)
 **Product AGENTS.md:** `Tradeautopsy1/AGENTS.md` (authoritative product invariants,

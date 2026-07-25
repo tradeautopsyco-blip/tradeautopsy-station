@@ -1,11 +1,21 @@
-//! Wasmtime host for `tradeautopsy:ubi/broker-adapter` (Phase 1 stub).
+//! Wasmtime host for `tradeautopsy:ubi/broker-adapter`.
+//!
+//! Phase 1 fixture mode + Phase 3 live mode: the host attaches auth from the vault
+//! credential blob inside `broker_http_call`, so no secret ever enters component memory.
 
 use crate::ubi::allowlist::host_allowed;
+use crate::ubi::http::{
+    classify_response, effective_host, prepare_request, redact_response_headers,
+    BrokerHttpTransport,
+};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use wasmtime::component::{Component, HasSelf, Linker, ResourceTable};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
+
+pub use crate::ubi::http::HostCredentialBlob;
 
 wasmtime::component::bindgen!({
     path: "wit",
@@ -24,20 +34,22 @@ pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &[
     "sid",
 ];
 
-/// Host-only credential material. Never copied into Wasm component memory / HTTP responses.
-#[derive(Debug, Clone)]
-pub struct HostCredentialBlob {
-    pub api_key: String,
-    pub api_secret: String,
-}
-
-/// Fixture response keyed by path (Phase 1 — no live HTTP).
+/// Fixture response keyed by path (contract tests — no live HTTP).
 #[derive(Debug, Clone)]
 pub struct BrokerHttpFixture {
     pub status: u16,
     pub body: String,
     pub headers: Vec<(String, String)>,
     pub error_class: Option<String>,
+}
+
+/// Where `broker_http_call` gets its response from.
+#[derive(Clone)]
+pub enum BrokerHttpMode {
+    /// path → canned response (contract/integration tests).
+    Fixtures(HashMap<String, BrokerHttpFixture>),
+    /// Real network egress with host-attached auth.
+    Live(Arc<dyn BrokerHttpTransport>),
 }
 
 #[derive(Debug, Clone)]
@@ -82,8 +94,8 @@ impl From<std::io::Error> for UbiHostError {
 
 pub struct UbiHostState {
     pub config: UbiHostConfig,
-    /// path → fixture (host must still be allowlisted)
-    pub fixtures: HashMap<String, BrokerHttpFixture>,
+    /// Fixture map or live transport (host must still be allowlisted either way).
+    pub mode: BrokerHttpMode,
     /// Paths the component requested (for contract assertions).
     pub calls: Vec<BrokerHttpRequest>,
     /// True if any credential substring was about to be returned to the component.
@@ -103,9 +115,17 @@ impl WasiView for UbiHostState {
 
 impl UbiHostState {
     pub fn new(config: UbiHostConfig, fixtures: HashMap<String, BrokerHttpFixture>) -> Self {
+        Self::with_mode(config, BrokerHttpMode::Fixtures(fixtures))
+    }
+
+    pub fn live(config: UbiHostConfig, transport: Arc<dyn BrokerHttpTransport>) -> Self {
+        Self::with_mode(config, BrokerHttpMode::Live(transport))
+    }
+
+    pub fn with_mode(config: UbiHostConfig, mode: BrokerHttpMode) -> Self {
         Self {
             config,
-            fixtures,
+            mode,
             calls: Vec::new(),
             credential_leak_attempted: false,
             ctx: WasiCtx::builder().build(),
@@ -114,17 +134,12 @@ impl UbiHostState {
     }
 
     fn response_contains_secret(&self, body: &str, headers: &[(String, String)]) -> bool {
-        let key = &self.config.credentials.api_key;
-        let secret = &self.config.credentials.api_secret;
-        if !key.is_empty() && (body.contains(key) || headers.iter().any(|(_, v)| v.contains(key))) {
-            return true;
-        }
-        if !secret.is_empty()
-            && (body.contains(secret) || headers.iter().any(|(_, v)| v.contains(secret)))
-        {
-            return true;
-        }
-        false
+        self.config
+            .credentials
+            .secret_values()
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .any(|s| body.contains(s) || headers.iter().any(|(_, v)| v.contains(s)))
     }
 }
 
@@ -148,7 +163,9 @@ impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
             }
         }
 
-        if !host_allowed(&request.host) {
+        // Kotak's real host comes from the credential blob, not the component (R6 §3.4).
+        let target_host = effective_host(&request.host, &self.config.credentials);
+        if !host_allowed(&target_host) {
             return Ok(BrokerHttpResponse {
                 status: 0,
                 headers: vec![],
@@ -159,46 +176,77 @@ impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
 
         self.calls.push(request.clone());
 
-        let fixture = self.fixtures.get(&request.path).ok_or_else(|| {
-            format!(
-                "no fixture for path {} on host {}",
-                request.path, request.host
-            )
-        })?;
+        let (status, headers, body, error_class) = match &self.mode {
+            BrokerHttpMode::Fixtures(fixtures) => {
+                let fixture = fixtures.get(&request.path).ok_or_else(|| {
+                    format!(
+                        "no fixture for path {} on host {}",
+                        request.path, request.host
+                    )
+                })?;
+                let mut headers = redact_response_headers(&fixture.headers);
+                // Prove the host *would* attach auth without exposing any value.
+                headers.push(("x-ubi-auth-attached".to_string(), "true".to_string()));
+                (
+                    fixture.status,
+                    headers,
+                    fixture.body.clone(),
+                    fixture
+                        .error_class
+                        .clone()
+                        .or_else(|| classify_response(fixture.status, &fixture.body)),
+                )
+            }
+            BrokerHttpMode::Live(transport) => {
+                let query: Vec<(String, String)> = request
+                    .query
+                    .iter()
+                    .map(|q| (q.name.clone(), q.value.clone()))
+                    .collect();
+                let headers: Vec<(String, String)> = request
+                    .headers
+                    .iter()
+                    .map(|h| (h.name.clone(), h.value.clone()))
+                    .collect();
+                let prepared = prepare_request(
+                    &request.method,
+                    &target_host,
+                    &request.path,
+                    &query,
+                    &headers,
+                    request.body.as_deref(),
+                    &self.config.credentials,
+                    chrono::Utc::now().timestamp_millis(),
+                );
+                match transport.send(&prepared) {
+                    Ok(response) => {
+                        let error_class = classify_response(response.status, &response.body);
+                        (
+                            response.status,
+                            redact_response_headers(&response.headers),
+                            response.body,
+                            error_class,
+                        )
+                    }
+                    // Transport errors carry no body the component can trust.
+                    Err(_) => (0, vec![], String::new(), Some("network".to_string())),
+                }
+            }
+        };
 
-        // Phase 1 stub: host *would* attach auth from Keychain.
-        // Credentials stay in HostState only — never in the response body/headers.
-        let mut out_headers: Vec<HttpHeader> = fixture
-            .headers
-            .iter()
-            .map(|(n, v)| HttpHeader {
-                name: n.clone(),
-                value: v.clone(),
-            })
-            .collect();
-
-        // Simulate host-attached auth *presence* without secret values.
-        if !self.config.credentials.api_key.is_empty() {
-            out_headers.push(HttpHeader {
-                name: "x-mbx-apikey-present".to_string(),
-                value: "true".to_string(),
-            });
-        }
-
-        let header_pairs: Vec<(String, String)> = out_headers
-            .iter()
-            .map(|h| (h.name.clone(), h.value.clone()))
-            .collect();
-        if self.response_contains_secret(&fixture.body, &header_pairs) {
+        if self.response_contains_secret(&body, &headers) {
             self.credential_leak_attempted = true;
             return Err("host refused to return response containing raw credentials".into());
         }
 
         Ok(BrokerHttpResponse {
-            status: fixture.status,
-            headers: out_headers,
-            body: fixture.body.clone(),
-            error_class: fixture.error_class.clone(),
+            status,
+            headers: headers
+                .into_iter()
+                .map(|(name, value)| HttpHeader { name, value })
+                .collect(),
+            body,
+            error_class,
         })
     }
 }
@@ -249,6 +297,7 @@ pub fn run_fetch_fills(
 mod tests {
     use super::*;
     use crate::ubi::allowlist::host_allowed;
+    use crate::ubi::http::{RecordingTransport, TransportResponse};
     use std::collections::HashMap;
 
     #[test]
@@ -270,10 +319,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 asset_class: "crypto_spot".into(),
-                credentials: HostCredentialBlob {
-                    api_key: "k".into(),
-                    api_secret: "s".into(),
-                },
+                credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
         );
@@ -300,10 +346,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 asset_class: "crypto_spot".into(),
-                credentials: HostCredentialBlob {
-                    api_key: "k".into(),
-                    api_secret: "s".into(),
-                },
+                credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
         );
@@ -343,10 +386,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 asset_class: "crypto_spot".into(),
-                credentials: HostCredentialBlob {
-                    api_key: "KEY".into(),
-                    api_secret: secret.into(),
-                },
+                credentials: HostCredentialBlob::hmac("KEY", secret),
             },
             fixtures,
         );
@@ -365,5 +405,119 @@ mod tests {
         assert!(!resp.body.contains(secret));
         assert!(!resp.headers.iter().any(|h| h.value.contains(secret)));
         assert!(!state.credential_leak_attempted);
+    }
+
+    #[test]
+    fn live_mode_attaches_hmac_auth_outside_the_component() {
+        let transport = Arc::new(RecordingTransport::ok(200, "[]"));
+        let mut state = UbiHostState::live(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
+            },
+            transport.clone(),
+        );
+        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "api.binance.com".into(),
+                path: "/api/v3/myTrades".into(),
+                query: vec![crate::ubi::host::tradeautopsy::ubi::types::HttpQueryParam {
+                    name: "symbol".into(),
+                    value: "BTCUSDT".into(),
+                }],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("live ok");
+
+        let sent = transport.last().expect("request sent");
+        assert!(sent.url.starts_with("https://api.binance.com/api/v3/myTrades?symbol=BTCUSDT"));
+        assert!(sent.url.contains("&signature="));
+        assert!(sent
+            .headers
+            .iter()
+            .any(|(n, v)| n == "X-MBX-APIKEY" && v == "LIVE_KEY"));
+        assert_eq!(resp.status, 200);
+        assert!(!resp.headers.iter().any(|h| h.value.contains("LIVE_SECRET")));
+    }
+
+    #[test]
+    fn live_mode_classifies_rate_limit_and_drops_set_cookie() {
+        let transport = Arc::new(RecordingTransport::new(Ok(TransportResponse {
+            status: 429,
+            headers: vec![
+                ("set-cookie".into(), "sid=leak".into()),
+                ("x-mbx-used-weight-1m".into(), "6100".into()),
+            ],
+            body: "{\"code\":-1003}".into(),
+        })));
+        let mut state = UbiHostState::live(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("k", "s"),
+            },
+            transport,
+        );
+        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "api.binance.com".into(),
+                path: "/api/v3/myTrades".into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("live ok");
+        assert_eq!(resp.error_class.as_deref(), Some("rate_limited"));
+        assert!(!resp.headers.iter().any(|h| h.name == "set-cookie"));
+        assert!(resp
+            .headers
+            .iter()
+            .any(|h| h.name == "x-mbx-used-weight-1m"));
+    }
+
+    #[test]
+    fn live_mode_network_failure_is_classified_not_leaked() {
+        let transport = Arc::new(RecordingTransport::new(Err(
+            "network: <redacted-url>".to_string()
+        )));
+        let mut state = UbiHostState::live(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "kotak_neo".into(),
+                asset_class: "equities".into(),
+                credentials: HostCredentialBlob::KotakSession {
+                    consumer_key: "ck".into(),
+                    trade_token: "tt".into(),
+                    sid: "sid".into(),
+                    base_url: "https://cis.kotaksecurities.com".into(),
+                },
+            },
+            transport,
+        );
+        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "cis.kotaksecurities.com".into(),
+                path: "/quick/user/trades".into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("live ok");
+        assert_eq!(resp.error_class.as_deref(), Some("network"));
+        assert_eq!(resp.status, 0);
+        assert!(resp.body.is_empty());
     }
 }

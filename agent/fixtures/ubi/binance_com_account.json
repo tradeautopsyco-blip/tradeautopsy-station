@@ -1,0 +1,10 @@
+{
+  "canTrade": true,
+  "canWithdraw": false,
+  "canDeposit": true,
+  "balances": [
+    { "asset": "BTC", "free": "0.01000000", "locked": "0.00000000" },
+    { "asset": "USDT", "free": "250.00000000", "locked": "0.00000000" },
+    { "asset": "ETH", "free": "0.00000000", "locked": "0.00000000" }
+  ]
+}

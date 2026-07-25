@@ -1,0 +1,50 @@
+{
+  "stat": "Ok",
+  "stCode": 200,
+  "data": [
+    {
+      "trdSym": "ITBEES-EQ",
+      "trnsTp": "B",
+      "fldQty": "100",
+      "avgPrc": "25.50",
+      "exSeg": "nse_cm",
+      "prod": "CNC",
+      "exOrdId": "NSE123456",
+      "nOrdNo": "2401010001",
+      "flId": "FILL-1",
+      "exTm": "25-07-2026 10:15:30",
+      "flDt": "25-07-2026"
+    },
+    {
+      "trdSym": "RELIANCE-EQ",
+      "trnsTp": "S",
+      "fldQty": "5",
+      "avgPrc": "1450.75",
+      "exSeg": "nse_cm",
+      "prod": "MIS",
+      "exOrdId": "NSE998877",
+      "nOrdNo": "2401010002",
+      "exTm": "25-07-2026 14:05:00"
+    },
+    {
+      "trdSym": "NIFTY25JUL24000CE",
+      "trnsTp": "B",
+      "fldQty": "50",
+      "avgPrc": "112.35",
+      "exSeg": "nse_fo",
+      "prod": "NRML",
+      "exOrdId": "FO112233",
+      "exTm": "25-07-2026 11:00:00"
+    },
+    {
+      "trdSym": "TCS-EQ",
+      "trnsTp": "B",
+      "fldQty": "2",
+      "avgPrc": "3900.00",
+      "exSeg": "nse_cm",
+      "prod": "CO",
+      "exOrdId": "NSE445566",
+      "exTm": "25-07-2026 09:30:00"
+    }
+  ]
+}

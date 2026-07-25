@@ -50,13 +50,17 @@ pub use broker::{
     DataClassPollRound, SeqMockBrokerAdapter,
 };
 pub use ubi::{
-    calc_profile, catalog_v1, compliance_profile, decode_credential_blob, descriptor_for_slug,
-    host_allowed, run_fetch_fills, AdapterOrigin, AuthScheme, BrokerAvailability,
-    BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, CalcProfile, ComplianceProfile,
-    CredentialBlob, FillCursor, FillEvent as UbiFillEvent, HostCredentialBlob,
-    KeyringBrokerCredentialVault, MemoryBrokerCredentialVault, UbiHostConfig, UbiHostError,
-    UbiHostState, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
-    FORBIDDEN_COMPONENT_HEADERS,
+    calc_profile, catalog_v1, classify_response, component_candidate_paths, component_crate_dir,
+    component_file_name, component_path_for_slug, compliance_profile, decode_credential_blob,
+    descriptor_for_slug, effective_host, fill_event_to_broker_fill, host_allowed, prepare_request,
+    redact_response_headers, run_fetch_fills, AdapterOrigin, AuthScheme, BrokerAvailability,
+    BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, BrokerHttpMode,
+    BrokerHttpTransport, CalcProfile, ComplianceProfile, CredentialBlob, FillCursor,
+    FillEvent as UbiFillEvent, HostCredentialBlob, KeyringBrokerCredentialVault,
+    MemoryBrokerCredentialVault, PreparedHttpRequest, RecordingTransport,
+    ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig, UbiHostError, UbiHostState,
+    WasmBrokerAdapter, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
+    COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, RESPONSE_HEADER_ALLOWLIST,
 };
 pub use broker_behavioral::{BrokerBehavioralRecorder, BrokerConnectionIdentityFields};
 pub use broker_data_class::{
@@ -66,8 +70,8 @@ pub use broker_data_class::{
 pub use broker_redaction::RedactionBoundary;
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 pub use broker_sync_control::{
-    default_credential_vault, memory_credential_vault, BrokerRuntimeCardStatus,
-    BrokerSyncController, BrokerSyncStartRequest,
+    build_wasm_runtime_adapter, default_credential_vault, memory_credential_vault,
+    uses_wasm_component, BrokerRuntimeCardStatus, BrokerSyncController, BrokerSyncStartRequest,
 };
 pub use broker_validation::{
     BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,

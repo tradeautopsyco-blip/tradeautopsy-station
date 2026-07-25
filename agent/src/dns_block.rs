@@ -12,7 +12,15 @@ const KOTAK_HOSTS: &[&str] = &[
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
     "mis.kotaksecurities.com",
+    // Trading-API gateway named by the login response (B6 kotak_neo §0).
+    "gw-napi.kotaksecurities.com",
 ];
+
+/// R8 gap closed: COM was reachable during an L3 block because it had no host set here.
+/// Keep aligned with `ubi::ALLOWED_BROKER_HOSTS`.
+const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com"];
+
+const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
 
 const ZERODHA_HOSTS: &[&str] = &["kite.zerodha.com", "api.kite.trade"];
 
@@ -25,6 +33,8 @@ pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
         "zerodha" | "kite" => ZERODHA_HOSTS,
         "upstox" => UPSTOX_HOSTS,
         "kotak" | "kotak_neo" => KOTAK_HOSTS,
+        "binance" | "binance_com" => BINANCE_COM_HOSTS,
+        "binance_us" => BINANCE_US_HOSTS,
         _ => KOTAK_HOSTS,
     }
 }
@@ -331,6 +341,24 @@ mod tests {
         let hosts = hosts_for_broker("kotak_neo");
         assert!(hosts.contains(&"neo.kotaksecurities.com"));
         assert!(hosts.contains(&"cis.kotaksecurities.com"));
+    }
+
+    #[test]
+    fn binance_com_maps_to_com_host_never_the_us_venue() {
+        let hosts = hosts_for_broker("binance_com");
+        assert!(hosts.contains(&"api.binance.com"));
+        assert!(!hosts.contains(&"api.binance.us"));
+        assert!(hosts_for_broker("binance_us").contains(&"api.binance.us"));
+    }
+
+    #[test]
+    fn kill_dns_covers_every_ubi_allowlisted_host() {
+        for host in crate::ubi::ALLOWED_BROKER_HOSTS {
+            let covered = ["binance_com", "kotak_neo"]
+                .iter()
+                .any(|slug| hosts_for_broker(slug).contains(host));
+            assert!(covered, "no Kill DNS entry for allowlisted host {host}");
+        }
     }
 
     #[test]

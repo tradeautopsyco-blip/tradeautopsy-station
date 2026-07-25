@@ -1,0 +1,568 @@
+//! Live `broker_http_call` transport + host auth attach (Phase 3, R6 §3.5).
+//!
+//! Secrets live only in [`HostCredentialBlob`]. The component supplies method/path/
+//! query/body shape; the host signs (Binance HMAC) or attaches session headers
+//! (Kotak `Auth`/`Sid`) here, outside Wasm memory, and redacts the response.
+
+use crate::ubi::credentials::CredentialBlob;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use std::sync::{Arc, OnceLock};
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Host-only credential material. Never copied into Wasm component memory / HTTP responses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostCredentialBlob {
+    Hmac {
+        api_key: String,
+        api_secret: String,
+    },
+    KotakSession {
+        consumer_key: String,
+        trade_token: String,
+        sid: String,
+        base_url: String,
+    },
+}
+
+impl HostCredentialBlob {
+    pub fn hmac(api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
+        Self::Hmac {
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
+        }
+    }
+
+    /// Values that must never reach the component (leak scan input).
+    pub fn secret_values(&self) -> Vec<&str> {
+        match self {
+            Self::Hmac {
+                api_key,
+                api_secret,
+            } => vec![api_key.as_str(), api_secret.as_str()],
+            Self::KotakSession {
+                consumer_key,
+                trade_token,
+                sid,
+                ..
+            } => vec![consumer_key.as_str(), trade_token.as_str(), sid.as_str()],
+        }
+    }
+
+    pub fn api_key_for_tests(&self) -> Option<&str> {
+        match self {
+            Self::Hmac { api_key, .. } => Some(api_key),
+            Self::KotakSession { .. } => None,
+        }
+    }
+}
+
+impl From<&CredentialBlob> for HostCredentialBlob {
+    fn from(blob: &CredentialBlob) -> Self {
+        match blob {
+            CredentialBlob::HmacApiKeySecret {
+                api_key,
+                api_secret,
+            } => Self::hmac(api_key, api_secret),
+            CredentialBlob::KotakNeoTotpSession {
+                consumer_key,
+                trade_token,
+                sid,
+                base_url,
+                ..
+            } => Self::KotakSession {
+                consumer_key: consumer_key.clone(),
+                trade_token: trade_token.clone(),
+                sid: sid.clone(),
+                base_url: base_url.clone(),
+            },
+        }
+    }
+}
+
+/// Response headers the host is willing to hand back to a component.
+/// Everything else (notably `set-cookie`) is dropped.
+pub const RESPONSE_HEADER_ALLOWLIST: &[&str] = &[
+    "content-type",
+    "retry-after",
+    "x-mbx-used-weight",
+    "x-mbx-used-weight-1m",
+    "x-mbx-order-count-10s",
+    "x-mbx-order-count-1d",
+];
+
+/// Fully-formed, auth-attached request. Host-side only — never crosses into Wasm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedHttpRequest {
+    pub method: String,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransportResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+pub trait BrokerHttpTransport: Send + Sync {
+    fn send(&self, request: &PreparedHttpRequest) -> Result<TransportResponse, String>;
+}
+
+/// Host the request actually goes to. Kotak's base URL is credential-carried (R6 §3.4),
+/// so the component's placeholder host is replaced before the allowlist check.
+pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) -> String {
+    match credentials {
+        HostCredentialBlob::KotakSession { base_url, .. } => host_of(base_url)
+            .unwrap_or_else(|| component_host.trim().to_ascii_lowercase()),
+        HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
+    }
+}
+
+fn host_of(base_url: &str) -> Option<String> {
+    let without_scheme = base_url
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    let host = without_scheme.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_ascii_lowercase())
+    }
+}
+
+/// Path prefix carried by a Kotak base URL (e.g. `/trading`).
+fn base_path_prefix(base_url: &str) -> String {
+    let without_scheme = base_url
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    match without_scheme.find('/') {
+        Some(idx) => without_scheme[idx..].trim_end_matches('/').to_string(),
+        None => String::new(),
+    }
+}
+
+fn encode(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+fn sign_query(api_secret: &str, query: &str) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(api_secret.as_bytes()).expect("HMAC accepts any key length");
+    mac.update(query.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Attach auth for the connection's scheme. `now_unix_ms` is injected for deterministic tests.
+pub fn prepare_request(
+    method: &str,
+    host: &str,
+    path: &str,
+    query: &[(String, String)],
+    headers: &[(String, String)],
+    body: Option<&str>,
+    credentials: &HostCredentialBlob,
+    now_unix_ms: i64,
+) -> PreparedHttpRequest {
+    let mut out_headers: Vec<(String, String)> = headers
+        .iter()
+        .map(|(n, v)| (n.clone(), v.clone()))
+        .collect();
+
+    match credentials {
+        HostCredentialBlob::Hmac {
+            api_key,
+            api_secret,
+        } => {
+            let mut pairs: Vec<(String, String)> = query.to_vec();
+            pairs.sort_by(|a, b| a.0.cmp(&b.0));
+            pairs.push(("timestamp".to_string(), now_unix_ms.to_string()));
+            let canonical = pairs
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let signature = sign_query(api_secret, &canonical);
+            out_headers.push(("X-MBX-APIKEY".to_string(), api_key.clone()));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url: format!("https://{host}{path}?{canonical}&signature={signature}"),
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::KotakSession {
+            trade_token,
+            sid,
+            base_url,
+            ..
+        } => {
+            let canonical = query
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let prefix = base_path_prefix(base_url);
+            let url = if canonical.is_empty() {
+                format!("https://{host}{prefix}{path}")
+            } else {
+                format!("https://{host}{prefix}{path}?{canonical}")
+            };
+            out_headers.push(("Auth".to_string(), trade_token.clone()));
+            out_headers.push(("Sid".to_string(), sid.clone()));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+    }
+}
+
+/// Host classification the component may act on without seeing credentials (R6 §3.3).
+pub fn classify_response(status: u16, body: &str) -> Option<String> {
+    if body_signals_expired_session(body) {
+        return Some("session_expired".to_string());
+    }
+    match status {
+        200..=299 => None,
+        401 | 403 => Some("unauthorized".to_string()),
+        418 | 429 => Some("rate_limited".to_string()),
+        500..=599 => Some("server_error".to_string()),
+        _ => Some("http_error".to_string()),
+    }
+}
+
+/// Kotak returns HTTP 200 with `stCode` 1003 for a dead session (B6 kotak_neo §9).
+fn body_signals_expired_session(body: &str) -> bool {
+    let head = &body[..body.len().min(2048)];
+    head.contains("\"stCode\":1003")
+        || head.contains("\"stCode\": 1003")
+        || head.contains("Invalid Session")
+        || head.contains("Complete the 2fa process")
+}
+
+pub fn redact_response_headers(headers: &[(String, String)]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter(|(name, _)| {
+            RESPONSE_HEADER_ALLOWLIST
+                .iter()
+                .any(|allowed| name.eq_ignore_ascii_case(allowed))
+        })
+        .map(|(n, v)| (n.to_ascii_lowercase(), v.clone()))
+        .collect()
+}
+
+/// Live transport: async reqwest driven by a dedicated current-thread runtime so the
+/// synchronous Wasm import can block without borrowing the agent's runtime workers.
+pub struct ReqwestBrokerHttpTransport {
+    client: reqwest::Client,
+    runtime: tokio::runtime::Runtime,
+}
+
+impl ReqwestBrokerHttpTransport {
+    pub fn new() -> Result<Self, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("ubi http runtime: {e}"))?;
+        Ok(Self {
+            client: reqwest::Client::new(),
+            runtime,
+        })
+    }
+
+    /// Process-wide transport (one runtime, reused across syncs).
+    pub fn shared() -> Result<Arc<dyn BrokerHttpTransport>, String> {
+        static SHARED: OnceLock<Result<Arc<ReqwestBrokerHttpTransport>, String>> = OnceLock::new();
+        SHARED
+            .get_or_init(|| Self::new().map(Arc::new))
+            .clone()
+            .map(|t| t as Arc<dyn BrokerHttpTransport>)
+    }
+}
+
+impl BrokerHttpTransport for ReqwestBrokerHttpTransport {
+    fn send(&self, request: &PreparedHttpRequest) -> Result<TransportResponse, String> {
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|e| format!("bad method {}: {e}", request.method))?;
+        let mut builder = self.client.request(method, &request.url);
+        for (name, value) in &request.headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(body) = &request.body {
+            builder = builder.body(body.clone());
+        }
+
+        self.runtime.block_on(async move {
+            let response = builder
+                .send()
+                .await
+                .map_err(|e| format!("network: {}", redact_url(&e.to_string())))?;
+            let status = response.status().as_u16();
+            let headers = response
+                .headers()
+                .iter()
+                .map(|(n, v)| {
+                    (
+                        n.as_str().to_string(),
+                        v.to_str().unwrap_or_default().to_string(),
+                    )
+                })
+                .collect();
+            let body = response
+                .text()
+                .await
+                .map_err(|e| format!("network: {}", redact_url(&e.to_string())))?;
+            Ok(TransportResponse {
+                status,
+                headers,
+                body,
+            })
+        })
+    }
+}
+
+/// Offline transport for tests: routes by URL substring and records what the host sent,
+/// which is how we prove auth is attached host-side rather than inside the component.
+pub struct RecordingTransport {
+    routes: Vec<(String, TransportResponse)>,
+    fallback: Result<TransportResponse, String>,
+    sent: std::sync::Mutex<Vec<PreparedHttpRequest>>,
+}
+
+impl RecordingTransport {
+    pub fn new(fallback: Result<TransportResponse, String>) -> Self {
+        Self {
+            routes: Vec::new(),
+            fallback,
+            sent: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn ok(status: u16, body: impl Into<String>) -> Self {
+        Self::new(Ok(TransportResponse {
+            status,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: body.into(),
+        }))
+    }
+
+    /// `(url substring, response)` — first match wins.
+    pub fn routed(routes: Vec<(String, TransportResponse)>) -> Self {
+        Self {
+            routes,
+            fallback: Ok(TransportResponse {
+                status: 404,
+                headers: vec![],
+                body: "{\"error\":\"no route\"}".into(),
+            }),
+            sent: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn json_route(url_contains: &str, status: u16, body: &str) -> (String, TransportResponse) {
+        (
+            url_contains.to_string(),
+            TransportResponse {
+                status,
+                headers: vec![("content-type".into(), "application/json".into())],
+                body: body.to_string(),
+            },
+        )
+    }
+
+    pub fn sent(&self) -> Vec<PreparedHttpRequest> {
+        self.sent.lock().expect("sent log").clone()
+    }
+
+    pub fn last(&self) -> Option<PreparedHttpRequest> {
+        self.sent.lock().expect("sent log").last().cloned()
+    }
+}
+
+impl BrokerHttpTransport for RecordingTransport {
+    fn send(&self, request: &PreparedHttpRequest) -> Result<TransportResponse, String> {
+        self.sent.lock().expect("sent log").push(request.clone());
+        for (needle, response) in &self.routes {
+            if request.url.contains(needle.as_str()) {
+                return Ok(response.clone());
+            }
+        }
+        self.fallback.clone()
+    }
+}
+
+/// reqwest error strings embed the URL — which carries the HMAC signature.
+fn redact_url(message: &str) -> String {
+    match message.find("http") {
+        Some(idx) => format!("{}<redacted-url>", &message[..idx]),
+        None => message.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hmac_creds() -> HostCredentialBlob {
+        HostCredentialBlob::hmac("KEY123", "secret")
+    }
+
+    fn kotak_creds() -> HostCredentialBlob {
+        HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt-token".into(),
+            sid: "sid-1".into(),
+            base_url: "https://cis.kotaksecurities.com/trading".into(),
+        }
+    }
+
+    #[test]
+    fn hmac_attach_signs_query_with_timestamp_and_sets_api_key_header() {
+        let prepared = prepare_request(
+            "get",
+            "api.binance.com",
+            "/api/v3/myTrades",
+            &[("symbol".into(), "BTCUSDT".into())],
+            &[],
+            None,
+            &hmac_creds(),
+            1_700_000_000_000,
+        );
+        assert_eq!(prepared.method, "GET");
+        let expected_query = "symbol=BTCUSDT&timestamp=1700000000000";
+        let expected_sig = sign_query("secret", expected_query);
+        assert_eq!(
+            prepared.url,
+            format!("https://api.binance.com/api/v3/myTrades?{expected_query}&signature={expected_sig}")
+        );
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "X-MBX-APIKEY" && v == "KEY123"));
+    }
+
+    #[test]
+    fn hmac_query_is_sorted_before_timestamp_like_native_client() {
+        let prepared = prepare_request(
+            "GET",
+            "api.binance.com",
+            "/api/v3/myTrades",
+            &[
+                ("symbol".into(), "BTCUSDT".into()),
+                ("limit".into(), "500".into()),
+            ],
+            &[],
+            None,
+            &hmac_creds(),
+            42,
+        );
+        assert!(prepared.url.contains("limit=500&symbol=BTCUSDT&timestamp=42"));
+    }
+
+    #[test]
+    fn kotak_attach_uses_blob_base_url_and_session_headers() {
+        let creds = kotak_creds();
+        assert_eq!(
+            effective_host("cis.kotaksecurities.com", &creds),
+            "cis.kotaksecurities.com"
+        );
+        let prepared = prepare_request(
+            "GET",
+            "cis.kotaksecurities.com",
+            "/quick/user/trades",
+            &[],
+            &[],
+            None,
+            &creds,
+            0,
+        );
+        assert_eq!(
+            prepared.url,
+            "https://cis.kotaksecurities.com/trading/quick/user/trades"
+        );
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Auth" && v == "tt-token"));
+        assert!(prepared.headers.iter().any(|(n, v)| n == "Sid" && v == "sid-1"));
+        assert!(!prepared.url.contains("tt-token"));
+    }
+
+    #[test]
+    fn kotak_base_url_host_overrides_component_supplied_host() {
+        let creds = HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://neo.kotaksecurities.com".into(),
+        };
+        assert_eq!(
+            effective_host("cis.kotaksecurities.com", &creds),
+            "neo.kotaksecurities.com"
+        );
+    }
+
+    #[test]
+    fn classify_maps_rate_limit_unauthorized_and_kotak_session() {
+        assert_eq!(classify_response(200, "[]"), None);
+        assert_eq!(classify_response(429, ""), Some("rate_limited".into()));
+        assert_eq!(classify_response(418, ""), Some("rate_limited".into()));
+        assert_eq!(classify_response(401, ""), Some("unauthorized".into()));
+        assert_eq!(classify_response(503, ""), Some("server_error".into()));
+        assert_eq!(
+            classify_response(200, r#"{"stat":"Not_Ok","stCode":1003}"#),
+            Some("session_expired".into())
+        );
+    }
+
+    #[test]
+    fn response_headers_drop_set_cookie_and_keep_rate_limit_headers() {
+        let redacted = redact_response_headers(&[
+            ("Set-Cookie".into(), "session=abc".into()),
+            ("X-MBX-USED-WEIGHT-1M".into(), "12".into()),
+            ("Authorization".into(), "Bearer x".into()),
+        ]);
+        assert_eq!(redacted, vec![("x-mbx-used-weight-1m".to_string(), "12".to_string())]);
+    }
+
+    #[test]
+    fn credential_blob_converts_from_keychain_shapes() {
+        let hmac: HostCredentialBlob = (&CredentialBlob::hmac("k", "s")).into();
+        assert_eq!(hmac, HostCredentialBlob::hmac("k", "s"));
+        let kotak: HostCredentialBlob = (&CredentialBlob::KotakNeoTotpSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://cis.kotaksecurities.com".into(),
+            expires_at: None,
+        })
+            .into();
+        assert!(kotak.secret_values().contains(&"tt"));
+        assert!(kotak.api_key_for_tests().is_none());
+    }
+
+    #[test]
+    fn network_error_strings_never_leak_the_signed_url() {
+        let redacted = redact_url("error sending request for url (https://api.binance.com/x?signature=deadbeef)");
+        assert!(!redacted.contains("signature"));
+    }
+}

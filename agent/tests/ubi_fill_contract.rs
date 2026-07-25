@@ -60,10 +60,10 @@ fn read_fixture_json(name: &str) -> String {
 }
 
 fn secret_blob() -> HostCredentialBlob {
-    HostCredentialBlob {
-        api_key: "TEST_API_KEY_SHOULD_NEVER_REACH_COMPONENT".to_string(),
-        api_secret: "TEST_API_SECRET_SHOULD_NEVER_REACH_COMPONENT".to_string(),
-    }
+    HostCredentialBlob::hmac(
+        "TEST_API_KEY_SHOULD_NEVER_REACH_COMPONENT",
+        "TEST_API_SECRET_SHOULD_NEVER_REACH_COMPONENT",
+    )
 }
 
 fn com_host_state() -> UbiHostState {
@@ -196,8 +196,9 @@ fn host_allowlist_and_forbidden_headers_are_enforced_constants() {
 
 /// Proof: raw credentials never appear on the component data channel (R6).
 fn assert_secrets_never_reached_component(state: &UbiHostState, component_path: &Path) {
-    let key = &state.config.credentials.api_key;
-    let secret = &state.config.credentials.api_secret;
+    let secrets = state.config.credentials.secret_values();
+    let key = secrets[0];
+    let secret = secrets[1];
     assert!(!state.credential_leak_attempted);
 
     // Responses recorded indirectly: fixture bodies on disk must not embed test secrets.

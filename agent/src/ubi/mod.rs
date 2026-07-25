@@ -6,14 +6,21 @@
 
 mod allowlist;
 mod catalog;
+mod components;
 mod credential_vault;
 mod credentials;
 mod host;
+mod http;
+mod wasm_adapter;
 
 pub use allowlist::{host_allowed, ALLOWED_BROKER_HOSTS};
 pub use catalog::{
     calc_profile, catalog_v1, compliance_profile, descriptor_for_slug, AdapterOrigin, AuthScheme,
     BrokerAvailability, BrokerDescriptor, CalcProfile, ComplianceProfile,
+};
+pub use components::{
+    component_candidate_paths, component_crate_dir, component_file_name, component_path_for_slug,
+    COMPONENT_DIR_ENV,
 };
 pub use credential_vault::{
     BrokerCredentialVault, KeyringBrokerCredentialVault, MemoryBrokerCredentialVault,
@@ -22,6 +29,12 @@ pub use credentials::{
     decode_credential_blob, CredentialBlob, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
 };
 pub use host::{
-    run_fetch_fills, BrokerHttpFixture, FillCursor, FillEvent, HostCredentialBlob, UbiHostConfig,
-    UbiHostError, UbiHostState, FORBIDDEN_COMPONENT_HEADERS,
+    run_fetch_fills, BrokerHttpFixture, BrokerHttpMode, FillCursor, FillEvent, HostCredentialBlob,
+    UbiHostConfig, UbiHostError, UbiHostState, FORBIDDEN_COMPONENT_HEADERS,
 };
+pub use http::{
+    classify_response, effective_host, prepare_request, redact_response_headers,
+    BrokerHttpTransport, PreparedHttpRequest, RecordingTransport, ReqwestBrokerHttpTransport,
+    TransportResponse, RESPONSE_HEADER_ALLOWLIST,
+};
+pub use wasm_adapter::{fill_event_to_broker_fill, WasmBrokerAdapter};

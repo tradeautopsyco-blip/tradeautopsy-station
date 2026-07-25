@@ -6,7 +6,9 @@ use crate::broker::{BrokerAdapter, CountingPollAdapter};
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 use crate::event_bus::EventBus;
 use crate::recent_trades::RecentTradesStore;
-use crate::ubi::{BrokerCredentialVault, CredentialBlob, MemoryBrokerCredentialVault};
+use crate::ubi::{
+    BrokerCredentialVault, CredentialBlob, HostCredentialBlob, MemoryBrokerCredentialVault,
+};
 use crate::UpstreamClient;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -198,7 +200,11 @@ impl BrokerSyncController {
         let adapter = if let Some(fixed) = &self.test_runtime_adapter {
             fixed.clone()
         } else {
-            build_runtime_adapter(&request.broker_slug, &blob)?
+            build_runtime_adapter(
+                &request.broker_slug,
+                &request.broker_connection_id,
+                &blob,
+            )?
         };
         self.start_with_adapter(adapter)
     }
@@ -265,8 +271,33 @@ impl BrokerSyncController {
     }
 }
 
+/// Slugs whose adapter is a Wasm component (ADR 0001). Native COM code is reference only.
+pub fn uses_wasm_component(broker_slug: &str) -> bool {
+    matches!(broker_slug, "binance_com" | "kotak_neo")
+}
+
+/// Build the sandboxed component adapter for a UBI broker; credentials stay host-side.
+pub fn build_wasm_runtime_adapter(
+    broker_slug: &str,
+    connection_id: &str,
+    blob: &CredentialBlob,
+) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
+    let descriptor = crate::ubi::descriptor_for_slug(broker_slug)
+        .ok_or_else(|| anyhow::anyhow!("no catalog descriptor for {broker_slug}"))?;
+    let transport = crate::ubi::ReqwestBrokerHttpTransport::shared()
+        .map_err(|e| anyhow::anyhow!("ubi transport: {e}"))?;
+    Ok(Arc::new(crate::ubi::WasmBrokerAdapter::new(
+        broker_slug,
+        connection_id,
+        descriptor.asset_class,
+        HostCredentialBlob::from(blob),
+        transport,
+    )?))
+}
+
 fn build_runtime_adapter(
     broker_slug: &str,
+    connection_id: &str,
     blob: &CredentialBlob,
 ) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
     match (broker_slug, blob) {
@@ -283,19 +314,9 @@ fn build_runtime_adapter(
         {
             Ok(Arc::new(CountingPollAdapter::new()))
         }
-        (
-            "binance_com",
-            CredentialBlob::HmacApiKeySecret {
-                api_key,
-                api_secret,
-            },
-        ) => Ok(Arc::new(
-            crate::binance_com_spot_adapter::BinanceComSpotBrokerAdapter::new(api_key, api_secret),
-        )),
-        ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. }) => {
-            anyhow::bail!(
-                "kotak_neo Wasm adapter ships in Phase 3 — credentials accepted in vault only"
-            )
+        ("binance_com", CredentialBlob::HmacApiKeySecret { .. })
+        | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. }) => {
+            build_wasm_runtime_adapter(broker_slug, connection_id, blob)
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),
     }

@@ -1,15 +1,17 @@
 //! Host allowlist for `broker_http_call` targets (R6 / R8).
-//! Align with Kill DNS host sets; Binance hosts are listed here even though
-//! `dns_block.rs` still lacks them (known gap — track for Kill dogfood).
+//! Mirrored by Kill DNS (`dns_block::hosts_for_broker`) — a test asserts every host
+//! here is sinkholed by an L3 block.
 
 /// Broker API hosts the Enforcer may contact on behalf of a component.
 pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
-    // binance_com (Kill DNS gap in dns_block.rs — R8)
+    // binance_com (never binance.us — B6 refuse list)
     "api.binance.com",
-    // kotak_neo (already in dns_block)
+    // kotak_neo — trading base comes from login; `gw-napi` is the documented
+    // fallback gateway (B6 kotak_neo §0).
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
     "mis.kotaksecurities.com",
+    "gw-napi.kotaksecurities.com",
 ];
 
 pub fn host_allowed(host: &str) -> bool {
