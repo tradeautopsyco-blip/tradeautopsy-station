@@ -82,8 +82,6 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 | After Stop | L3 still writes COM hosts + audit fire; dismiss clears DNS **without** resuming sync |
 | Proof | `agent/tests/broker_stop_vs_kill.rs` (R10 combined invariant) |
 
-**Next:** T2 step 4 — **B5** Enforcer = live SoT (Console zero live broker).
-
 ## T2.4 — B5 Enforcer = live SoT
 
 **Date:** 2026-07-26  
