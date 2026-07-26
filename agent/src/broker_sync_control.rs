@@ -245,6 +245,8 @@ impl BrokerSyncController {
             })
     }
 
+    /// Pause poll only (B3 / R10). Does **not** arm, dismiss, or weaken Kill —
+    /// Kill DNS / audit / SSE stay on their own stack. Never synonym for Kill.
     pub fn stop(&self) -> anyhow::Result<()> {
         self.user_paused.store(true, Ordering::Relaxed);
         self.stop_active_sync()?;

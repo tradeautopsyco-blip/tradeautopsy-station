@@ -69,3 +69,17 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 | Tests | `b2_keychain_only_tests` · broker_sync_control B2 cases · Swift identity-only payload |
 
 **Next:** T2 step 3 — **B3** Start/Stop ≠ Kill.
+
+## T2.3 — B3 Start/Stop ≠ Kill
+
+**Date:** 2026-07-26  
+**Station tip:** (this commit) — Stop pauses poll only; Kill/SSE/audit stay on
+
+| Concern | Lock |
+|---------|------|
+| Stop | `user_paused` + abort poll/coalesce only — never arms/dismisses Kill |
+| After Stop | L1 Kill still publishes `kill_switch_state` SSE; poll stays frozen |
+| After Stop | L3 still writes COM hosts + audit fire; dismiss clears DNS **without** resuming sync |
+| Proof | `agent/tests/broker_stop_vs_kill.rs` (R10 combined invariant) |
+
+**Next:** T2 step 4 — **B5** Enforcer = live SoT (Console zero live broker).
