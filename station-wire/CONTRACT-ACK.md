@@ -58,7 +58,7 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 ## T2.2 — B2 Keychain-only Start
 
 **Date:** 2026-07-26  
-**Station tip:** (this commit) — refuse wire secrets on Start; vault/Keychain only
+**Station tip:** `78943de` — refuse wire secrets on Start; vault/Keychain only
 
 | Concern | Lock |
 |---------|------|
