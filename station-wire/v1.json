@@ -17,12 +17,12 @@
           "x-nonce",
           "x-signature"
         ],
-        "notes": "HMAC-SHA256 wire v1 on loopback only. x-user-id is a fixed machine UUID hint (loopbackWireUserId), never Console profile / WorkOS identity. UDS token file: not implemented."
+        "notes": "HMAC-SHA256 wire v1 on loopback only. x-user-id is a fixed machine UUID hint (loopbackWireUserId), never Console profile / WorkOS identity. UDS token file: not implemented. T1 harden: Notch and StationApp now share one Swift signer (station/StationApp + notch package `StationWireClient`) — no protocol change, just removed duplicate HMAC implementations."
       },
       "agent_to_brain": {
         "kind": "station_caller_bearer",
         "headers": ["Authorization"],
-        "notes": "Authorization: Bearer <aud=station JWT> from Keychain (TradeAutopsy / station_caller_tokens). Never send x-daemon-secret or x-user-id as Console who-am-I (A8 Phase IV)."
+        "notes": "Authorization: Bearer <aud=station JWT> from Keychain (TradeAutopsy / station_caller_tokens). Never send x-daemon-secret or x-user-id as Console who-am-I (A8 Phase IV). T1 harden: the STATION_ACCESS_TOKEN env fallback (test/bootstrap only) is now gated to a loopback-http base URL and can never substitute for Keychain against a real (https) Console."
       }
     },
     "hops": {

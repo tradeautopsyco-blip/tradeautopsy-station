@@ -282,6 +282,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use reqwest::header::CONTENT_TYPE;
+    use serial_test::serial;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -387,6 +388,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn post_sends_bearer_authorization_and_json_body_not_daemon_identity() {
         std::env::set_var("STATION_ACCESS_TOKEN", "station.test.jwt");
         let server = MockServer::start().await;

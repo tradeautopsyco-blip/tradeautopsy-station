@@ -22,4 +22,22 @@ Console A8 Phase III–IV already reject `DAEMON_SECRET` + `x-user-id` as who-am
 
 ## Next desk slice
 
-Architecture-deepening **Issue 2** — live Binance.US `BrokerAdapter` (Station agent).
+**SUPERSEDED (2026-07-24):** Architecture-deepening Issue 2 (live Binance.US) is not the next product slice.
+
+**Next:** Brokers SYSTEM research → founder FINALIZE — `docs/research/BROKERS-SYSTEM.md` · issues pack `/Users/bishnu/issues/brokers/research/BROKERS-SYSTEM.md` (multi-broker · asset class · currency · calc · compliance · B1–B6 + D1–D5). Temporary Binance only.
+
+## T1 — Station ↔ Enforcer bridge harden (pending commit — SHA to follow)
+
+**Date:** 2026-07-26
+**Station tip:** T1 harden commit (SHA recorded in follow-up note below)
+
+Locks the dual-hop auth already frozen above with zero protocol change:
+
+| Concern | Harden |
+|---------|--------|
+| Duplicate loopback Wire v1 HMAC signers | Collapsed into one shared Swift type — `StationWireClient` (`notch/StationWireClient.swift`, part of the `Notch` package both Notch and StationApp already depend on). `notch/NotchViewModel.swift` and `station/StationApp/Broker/Services/LocalAgentBrokerRuntimeClient.swift` (plus `AgentSupervisor.swift`, `LocalDeviceLoginAgentClient.swift`, `LocalTodayAgentClient.swift`) all now call it; the old private `AgentWireSigner` / `makeWireSignature` duplicates are deleted. |
+| `x-user-id` wire hint | Unchanged fixed UUID (`loopbackWireUserId` = `00000000-0000-4000-8000-000000000002`), now defined once on `StationWireClient` — every other copy in Swift references it instead of re-declaring the literal. |
+| `STATION_ACCESS_TOKEN` test/bootstrap fallback | Tightened in `agent/src/lib.rs`: `UpstreamClient::brain_authorization_header` now only honors this env fallback when `UpstreamConfig::is_loopback_http_bootstrap()` is true (loopback http base + token set) — it can never substitute for the Keychain Bearer against a real (https) Console, even if the env var is stray-set in a production process. |
+| Regression coverage | New `agent/tests/station_bridge_harden.rs` — asserts the capture-accept→outbox and `/instruments/ltp` upstream hops send `Authorization: Bearer …` and never forward `x-daemon-secret` / `x-user-id`. New `agent/src/lib.rs` unit tests lock the loopback-only gating. Existing `bar_forward.rs`, `phase7_screenshot_proxy.rs`, `station_wire_contract.rs`, `wire_phase2.rs` all still green. |
+
+No hop paths, header names, or the wire v1 canonical string changed — see `v1.json` notes for the same clarification inline.

@@ -139,17 +139,25 @@ impl UpstreamConfig {
         if self.base_url.starts_with("https://") {
             return Ok(());
         }
-        let testing = std::env::var("STATION_ACCESS_TOKEN").is_ok();
-        let loopback_http = self.base_url.starts_with("http://127.0.0.1")
-            || self.base_url.starts_with("http://localhost")
-            || self.base_url.starts_with("http://[::1]");
-        if testing && loopback_http {
+        if self.is_loopback_http_bootstrap() {
             return Ok(());
         }
         anyhow::bail!(
             "TRADEAUTOPSY_SERVER_BASE_URL must be https:// (got {})",
             self.base_url
         )
+    }
+
+    /// True only for the loopback-http test/bootstrap escape hatch (wiremock, integration
+    /// tests). T1 hardening: `STATION_ACCESS_TOKEN` must never be treated as a production
+    /// identity rail — it is only honored against a loopback base URL, never a real
+    /// (https) Console, so a stray env var can't substitute for the Keychain Bearer.
+    fn is_loopback_http_bootstrap(&self) -> bool {
+        let testing = std::env::var("STATION_ACCESS_TOKEN").is_ok();
+        let loopback_http = self.base_url.starts_with("http://127.0.0.1")
+            || self.base_url.starts_with("http://localhost")
+            || self.base_url.starts_with("http://[::1]");
+        testing && loopback_http
     }
 }
 
@@ -174,10 +182,14 @@ impl UpstreamClient {
         if let Some(tokens) = KeyringStationTokenStore.load()? {
             return Ok(bearer_authorization(&tokens));
         }
-        // Test / bootstrap only — not a second identity rail in production.
-        if let Ok(token) = std::env::var("STATION_ACCESS_TOKEN") {
-            if !token.trim().is_empty() {
-                return Ok(format!("Bearer {}", token.trim()));
+        // Test / bootstrap only — never a production identity rail (T1). Gated to the
+        // same loopback-http escape hatch as `require_https_base` so this can never
+        // apply against a real (https) Console, even if the env var is stray-set.
+        if self.config.is_loopback_http_bootstrap() {
+            if let Ok(token) = std::env::var("STATION_ACCESS_TOKEN") {
+                if !token.trim().is_empty() {
+                    return Ok(format!("Bearer {}", token.trim()));
+                }
             }
         }
         anyhow::bail!("No Station Caller tokens in Keychain — complete device login")
@@ -328,6 +340,59 @@ impl AgentConfig {
             daemon_poll_user_id: None,
             station_token_store: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod upstream_config_bridge_harden_tests {
+    use super::UpstreamConfig;
+    use serial_test::serial;
+
+    fn cfg(base_url: &str) -> UpstreamConfig {
+        UpstreamConfig {
+            base_url: base_url.to_string(),
+            daemon_secret: "unit-test-secret".to_string(),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn https_base_never_uses_bootstrap_escape_hatch() {
+        std::env::set_var("STATION_ACCESS_TOKEN", "unit-test-token");
+        let c = cfg("https://tradeautopsy.in");
+        assert!(c.require_https_base().is_ok());
+        assert!(
+            !c.is_loopback_http_bootstrap(),
+            "a real https Console base must never be treated as the STATION_ACCESS_TOKEN bootstrap escape hatch"
+        );
+        std::env::remove_var("STATION_ACCESS_TOKEN");
+    }
+
+    #[test]
+    #[serial]
+    fn loopback_http_requires_station_access_token_to_bootstrap() {
+        std::env::remove_var("STATION_ACCESS_TOKEN");
+        let c = cfg("http://127.0.0.1:9999");
+        assert!(c.require_https_base().is_err(), "no bootstrap token set");
+        assert!(!c.is_loopback_http_bootstrap());
+
+        std::env::set_var("STATION_ACCESS_TOKEN", "unit-test-token");
+        assert!(c.require_https_base().is_ok());
+        assert!(c.is_loopback_http_bootstrap());
+        std::env::remove_var("STATION_ACCESS_TOKEN");
+    }
+
+    #[test]
+    #[serial]
+    fn non_loopback_http_base_is_never_a_bootstrap_target() {
+        std::env::set_var("STATION_ACCESS_TOKEN", "unit-test-token");
+        let c = cfg("http://example.com");
+        assert!(
+            !c.is_loopback_http_bootstrap(),
+            "STATION_ACCESS_TOKEN must not bootstrap a non-loopback http base"
+        );
+        assert!(c.require_https_base().is_err());
+        std::env::remove_var("STATION_ACCESS_TOKEN");
     }
 }
 

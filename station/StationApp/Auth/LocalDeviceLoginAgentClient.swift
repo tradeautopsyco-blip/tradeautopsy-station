@@ -1,12 +1,12 @@
-import CryptoKit
 import Foundation
+import Notch
 
 /// Loopback client for A8 Station device-login (`/api/daemon/auth/station/*`).
 @MainActor
 public struct LocalDeviceLoginAgentClient: DeviceLoginClient {
     private let port: UInt16
     private let session: URLSession
-    private let signRequest: LocalAgentBrokerRuntimeClient.RequestSigner
+    private let signRequest: StationWireClient.RequestSigner
     private let isAgentHealthy: () -> Bool
 
     public init(
@@ -18,7 +18,7 @@ public struct LocalDeviceLoginAgentClient: DeviceLoginClient {
         self.port = port
         self.session = session
         let secret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
-        self.signRequest = AgentWireSigner(secret: secret).signedRequest
+        self.signRequest = StationWireClient.requestSigner(daemonSecret: secret)
         self.isAgentHealthy = isAgentHealthy
     }
 

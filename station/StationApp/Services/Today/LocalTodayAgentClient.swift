@@ -1,11 +1,11 @@
-import CryptoKit
 import Foundation
+import Notch
 
 @MainActor
 public struct LocalTodayAgentClient: TodayAgentClient {
     private let port: UInt16
     private let session: URLSession
-    private let signRequest: LocalAgentBrokerRuntimeClient.RequestSigner
+    private let signRequest: StationWireClient.RequestSigner
     private let isAgentHealthy: () -> Bool
 
     public init(
@@ -17,7 +17,7 @@ public struct LocalTodayAgentClient: TodayAgentClient {
         self.port = port
         self.session = session
         let secret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
-        self.signRequest = AgentWireSigner(secret: secret).signedRequest
+        self.signRequest = StationWireClient.requestSigner(daemonSecret: secret)
         self.isAgentHealthy = isAgentHealthy
     }
 

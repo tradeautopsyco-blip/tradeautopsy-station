@@ -1,4 +1,5 @@
 import Foundation
+import Notch
 
 /// Spawns, health-checks, supervises, and tears down `tradeautopsy-agent` on loopback.
 @MainActor
@@ -330,10 +331,11 @@ public final class AgentSupervisor: AgentSupervising {
 
     private func signedHealthRequest() -> URLRequest? {
         let path = Self.healthPath
-        var request = AgentWireSigner(secret: daemonSecret).signedRequest(
+        var request = StationWireClient.signedRequest(
             method: "GET",
             path: path,
-            body: Data()
+            body: Data(),
+            daemonSecret: daemonSecret
         )
         request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
         return request

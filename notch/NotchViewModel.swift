@@ -3,7 +3,6 @@ import Combine
 import CryptoKit
 import Darwin
 import Foundation
-import Security
 import SwiftUI
 
 /// Local optimistic “armed” state after `POST …/declare` until `live-state` shows matching `pending_declaration`.
@@ -431,7 +430,7 @@ public final class NotchViewModel: ObservableObject {
     var daemonSecret: String = ""
     var daemonPort: UInt16 = 9137
     /// Loopback wire UUID only (machine integrity). Never Console / brain identity (A8).
-    var loopbackWireUserId: String = "00000000-0000-4000-8000-000000000002"
+    var loopbackWireUserId: String = StationWireClient.loopbackWireUserId
     var webBaseURL: String = "https://localhost:3000"
 
     private var pollFast: Timer?
@@ -847,9 +846,7 @@ public final class NotchViewModel: ObservableObject {
                 let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                 let url = URL(string: self.baseURL() + "/instruments/search?q=\(encoded)")
             else { return }
-            var req = URLRequest(url: url)
-            req.setValue(self.daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-            req.setValue(self.loopbackWireUserId, forHTTPHeaderField: "x-user-id")
+            let req = self.authorizedRequest(url: url)
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
                 let resp = try JSONDecoder().decode(InstrumentSearchResponse.self, from: data)
@@ -890,9 +887,7 @@ public final class NotchViewModel: ObservableObject {
             let url = URL(string: "\(baseURL())/instruments/ltp?symbol=\(sym)&exchange=\(exc)&segment=\(seg)")
         else { return }
         Task {
-            var req = URLRequest(url: url)
-            req.setValue(daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-            req.setValue(loopbackWireUserId, forHTTPHeaderField: "x-user-id")
+            let req = authorizedRequest(url: url)
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
                 let resp = try JSONDecoder().decode(LTPResponse.self, from: data)
@@ -1402,7 +1397,7 @@ public final class NotchViewModel: ObservableObject {
         var body: [String: Any] = [
             "draftText": draft,
             "explicitPending": journalCaptureExplicitPending,
-            "idempotencyKey": Self.makeULID(),
+            "idempotencyKey": StationWireClient.makeULID(),
         ]
         if journalCaptureExplicitPending {
             body["tradeId"] = NSNull()
@@ -2165,29 +2160,19 @@ public final class NotchViewModel: ObservableObject {
         return "Request failed (\(statusCode))"
     }
 
+    /// Wire v1 loopback request via shared `StationWireClient` (T1 — bridge harden).
+    /// `x-daemon-secret` + HMAC are machine integrity only; `loopbackWireUserId` is a
+    /// fixed wire hint, never Console identity — see `StationWireClient` doc comment.
     private func authorizedRequest(url: URL, method: String = "GET", body: Data? = nil) -> URLRequest {
-        var r = URLRequest(url: url)
-        r.httpMethod = method
         let payload = body ?? Data()
         let path = url.path.isEmpty ? "/" : url.path
-        let timestamp = DateFormatter.wireTimestamp.string(from: Date())
-        let requestId = Self.makeULID()
-        let nonce = Self.makeNonceBase64()
-        let sig = makeWireSignature(
+        var r = StationWireClient.signedRequest(
             method: method,
             path: path,
-            timestamp: timestamp,
-            requestId: requestId,
-            body: payload
+            body: payload,
+            daemonSecret: daemonSecret
         )
-
-        r.setValue("1", forHTTPHeaderField: "x-proto-version")
-        r.setValue(daemonSecret, forHTTPHeaderField: "x-daemon-secret")
-        r.setValue(loopbackWireUserId, forHTTPHeaderField: "x-user-id")
-        r.setValue(requestId, forHTTPHeaderField: "x-request-id")
-        r.setValue(timestamp, forHTTPHeaderField: "x-timestamp")
-        r.setValue(nonce, forHTTPHeaderField: "x-nonce")
-        r.setValue(sig, forHTTPHeaderField: "x-signature")
+        r.url = url
         r.setValue("notch", forHTTPHeaderField: "x-daemon-source")
         if body != nil {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -2200,75 +2185,6 @@ public final class NotchViewModel: ObservableObject {
         r.setValue(String(getpid()), forHTTPHeaderField: "x-tradeautopsy-caller-pid")
         #endif
         return r
-    }
-
-    private func makeWireSignature(
-        method: String,
-        path: String,
-        timestamp: String,
-        requestId: String,
-        body: Data
-    ) -> String {
-        let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
-        let canonical = "\(method.uppercased())\n\(path)\n\(timestamp)\n\(requestId)\n\(bodyHash)"
-        let key = SymmetricKey(data: Data(daemonSecret.utf8))
-        let sig = HMAC<SHA256>.authenticationCode(for: Data(canonical.utf8), using: key)
-        return Data(sig).base64EncodedString()
-    }
-
-    private static func makeNonceBase64() -> String {
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64EncodedString()
-    }
-
-    /// ULID generator for wire `x-request-id` contract.
-    private static func makeULID() -> String {
-        let ms = UInt64(Date().timeIntervalSince1970 * 1000.0)
-        var randomness = [UInt8](repeating: 0, count: 10)
-        _ = SecRandomCopyBytes(kSecRandomDefault, randomness.count, &randomness)
-
-        var bytes = [UInt8](repeating: 0, count: 16)
-        bytes[0] = UInt8((ms >> 40) & 0xFF)
-        bytes[1] = UInt8((ms >> 32) & 0xFF)
-        bytes[2] = UInt8((ms >> 24) & 0xFF)
-        bytes[3] = UInt8((ms >> 16) & 0xFF)
-        bytes[4] = UInt8((ms >> 8) & 0xFF)
-        bytes[5] = UInt8(ms & 0xFF)
-        for i in 0..<10 { bytes[6 + i] = randomness[i] }
-        return encodeULID(bytes)
-    }
-
-    private static func encodeULID(_ bytes: [UInt8]) -> String {
-        let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-        precondition(bytes.count == 16)
-        var out: [Character] = []
-        out.reserveCapacity(26)
-        var buffer = 0
-        var bitCount = 0
-
-        for byte in bytes {
-            buffer = (buffer << 8) | Int(byte)
-            bitCount += 8
-            while bitCount >= 5 {
-                let idx = (buffer >> (bitCount - 5)) & 0x1F
-                out.append(alphabet[idx])
-                bitCount -= 5
-            }
-        }
-
-        if bitCount > 0 {
-            let idx = (buffer << (5 - bitCount)) & 0x1F
-            out.append(alphabet[idx])
-        }
-
-        if out.count < 26 {
-            out = Array(repeating: "0", count: 26 - out.count) + out
-        } else if out.count > 26 {
-            out = Array(out.suffix(26))
-        }
-
-        return String(out)
     }
 
     func fetchPulseData() async {
@@ -2859,15 +2775,4 @@ extension NotchViewModel {
             activeBrokerSlug = nil
         }
     }
-}
-
-private extension DateFormatter {
-    static let wireTimestamp: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        return formatter
-    }()
 }

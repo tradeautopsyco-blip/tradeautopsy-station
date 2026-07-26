@@ -282,6 +282,7 @@ fn urlencoding_loose(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::station_tokens::MemoryStationTokenStore;
+    use serial_test::serial;
 
     #[test]
     fn device_login_public_type_has_no_device_code_field() {
@@ -322,7 +323,12 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn mint_rejects_non_https_console_base() {
+        // `http://localhost` is inside the STATION_ACCESS_TOKEN loopback-bootstrap
+        // allowlist, so this test must run without that env var to actually exercise
+        // the http-rejection path (guard against leakage from other #[serial] tests).
+        std::env::remove_var("STATION_ACCESS_TOKEN");
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

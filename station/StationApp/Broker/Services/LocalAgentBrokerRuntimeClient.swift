@@ -1,5 +1,5 @@
-import CryptoKit
 import Foundation
+import Notch
 
 @MainActor
 public protocol BrokerAgentRuntimeClient {
@@ -10,13 +10,13 @@ public protocol BrokerAgentRuntimeClient {
 }
 
 /// Loopback wire-v1 client for broker runtime control (#13/#14).
+///
+/// Signing is delegated to the shared `StationWireClient` (T1 — bridge harden):
+/// wire HMAC + `x-daemon-secret` are machine-integrity-only, `x-user-id` is a
+/// fixed wire hint — neither is ever a Console identity.
 @MainActor
 public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
-    public typealias RequestSigner = (
-        _ method: String,
-        _ path: String,
-        _ body: Data
-    ) -> URLRequest
+    public typealias RequestSigner = StationWireClient.RequestSigner
 
     private let port: UInt16
     private let session: URLSession
@@ -30,7 +30,7 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         self.port = port
         self.session = session
         let secret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
-        self.signRequest = AgentWireSigner(secret: secret).signedRequest
+        self.signRequest = StationWireClient.requestSigner(daemonSecret: secret)
     }
 
     public init(port: UInt16, session: URLSession, signRequest: @escaping RequestSigner) {
@@ -110,99 +110,6 @@ private struct BrokerAgentSyncStateResponse: Decodable {
         case "paused": return .paused
         default: return nil
         }
-    }
-}
-
-struct AgentWireSigner {
-    let secret: String
-
-    func signedRequest(method: String, path: String, body: Data) -> URLRequest {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:0")!)
-        request.httpMethod = method
-        let timestamp = AgentWireSigner.wireTimestamp()
-        let requestID = AgentWireSigner.makeULID()
-        let nonce = AgentWireSigner.makeNonceBase64()
-        let signature = makeSignature(
-            method: method,
-            path: path,
-            timestamp: timestamp,
-            requestID: requestID,
-            body: body
-        )
-
-        request.setValue("1", forHTTPHeaderField: "x-proto-version")
-        request.setValue(secret, forHTTPHeaderField: "x-daemon-secret")
-        request.setValue("00000000-0000-4000-8000-000000000002", forHTTPHeaderField: "x-user-id")
-        request.setValue(requestID, forHTTPHeaderField: "x-request-id")
-        request.setValue(timestamp, forHTTPHeaderField: "x-timestamp")
-        request.setValue(nonce, forHTTPHeaderField: "x-nonce")
-        request.setValue(signature, forHTTPHeaderField: "x-signature")
-        return request
-    }
-
-    private func makeSignature(
-        method: String,
-        path: String,
-        timestamp: String,
-        requestID: String,
-        body: Data
-    ) -> String {
-        let bodyHash = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
-        let canonical = "\(method.uppercased())\n\(path)\n\(timestamp)\n\(requestID)\n\(bodyHash)"
-        let key = SymmetricKey(data: Data(secret.utf8))
-        let signature = HMAC<SHA256>.authenticationCode(for: Data(canonical.utf8), using: key)
-        return Data(signature).base64EncodedString()
-    }
-
-    private static func wireTimestamp() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: Date())
-    }
-
-    private static func makeNonceBase64() -> String {
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes).base64EncodedString()
-    }
-
-    private static func makeULID() -> String {
-        let ms = UInt64(Date().timeIntervalSince1970 * 1000.0)
-        var randomness = [UInt8](repeating: 0, count: 10)
-        _ = SecRandomCopyBytes(kSecRandomDefault, randomness.count, &randomness)
-
-        var bytes = [UInt8](repeating: 0, count: 16)
-        bytes[0] = UInt8((ms >> 40) & 0xFF)
-        bytes[1] = UInt8((ms >> 32) & 0xFF)
-        bytes[2] = UInt8((ms >> 24) & 0xFF)
-        bytes[3] = UInt8((ms >> 16) & 0xFF)
-        bytes[4] = UInt8((ms >> 8) & 0xFF)
-        bytes[5] = UInt8(ms & 0xFF)
-        for index in 0..<10 { bytes[6 + index] = randomness[index] }
-        return encodeULID(bytes)
-    }
-
-    private static func encodeULID(_ bytes: [UInt8]) -> String {
-        let alphabet = Array("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
-        var out: [Character] = []
-        out.reserveCapacity(26)
-        var value: UInt64 = 0
-        var bits = 0
-        for byte in bytes {
-            value = (value << 8) | UInt64(byte)
-            bits += 8
-            while bits >= 5 {
-                bits -= 5
-                let index = Int((value >> UInt64(bits)) & 0x1F)
-                out.append(alphabet[index])
-            }
-        }
-        if bits > 0 {
-            let index = Int((value << UInt64(5 - bits)) & 0x1F)
-            out.append(alphabet[index])
-        }
-        while out.count < 26 { out.insert("0", at: 0) }
-        return String(out.prefix(26))
     }
 }
 
