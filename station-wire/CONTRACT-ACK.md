@@ -87,7 +87,7 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 ## T2.4 — B5 Enforcer = live SoT
 
 **Date:** 2026-07-26  
-**Station tip:** `TIP_PLACEHOLDER` (`chore/commit-landed-work`) — Start factory Wasm lock + B5 tests
+**Station tip:** `b96a261` (`chore/commit-landed-work`) — Start factory Wasm lock + B5 tests
 
 | Concern | Lock |
 |---------|------|
