@@ -157,8 +157,45 @@ fn pinned_symbol_cursor_skips_account_call_and_derives_quote_currency() {
         .map(|q| (q.name.as_str(), q.value.as_str()))
         .collect();
     assert_eq!(query.get("symbol"), Some(&"ETHBTC"));
-    assert_eq!(query.get("startTime"), Some(&"1699000000000"));
+    // B6 §4: fromId wins; never combine with startTime (Binance -1128).
     assert_eq!(query.get("fromId"), Some(&"900"));
+    assert!(!query.contains_key("startTime"));
+}
+
+#[test]
+fn pinned_symbol_time_cursor_sends_start_time_without_from_id() {
+    let wasm = component_wasm("binance_com");
+    let body = r#"[{
+        "symbol": "ETHBTC",
+        "id": 991,
+        "orderId": 5501,
+        "price": "0.05000000",
+        "qty": "3.00000000",
+        "commission": "0.00001000",
+        "commissionAsset": "BNB",
+        "time": 1700000000000,
+        "isBuyer": false
+    }]"#;
+    let state = fixture_state(vec![(MY_TRADES_PATH, 200, body.to_string())]);
+
+    let (_fills, state) = run_fetch_fills(
+        &wasm,
+        state,
+        FillCursor {
+            since_unix_ms: Some(1_699_000_000_000),
+            from_id: None,
+            symbol: Some("ETHBTC".into()),
+        },
+    )
+    .expect("fetch_fills");
+
+    let query: HashMap<&str, &str> = state.calls[0]
+        .query
+        .iter()
+        .map(|q| (q.name.as_str(), q.value.as_str()))
+        .collect();
+    assert_eq!(query.get("startTime"), Some(&"1699000000000"));
+    assert!(!query.contains_key("fromId"));
 }
 
 #[test]

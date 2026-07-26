@@ -55,6 +55,8 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
 
 public enum BrokerCatalog {
     /// First pair enabled; binance_us parked; v1 origin = first_party only (R7).
+    /// Named next broker (T2.1): `zerodha_kite` — B6 sheet stub only; stays `.planned`
+    /// until `/Users/bishnu/issues/brokers/sheets/zerodha_kite.md` is SIGNED.
     public static let v1: [PlannedBrokerDescriptor] = [
         PlannedBrokerDescriptor(
             slug: "binance_com",

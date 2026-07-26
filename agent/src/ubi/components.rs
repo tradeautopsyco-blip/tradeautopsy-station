@@ -90,6 +90,15 @@ mod tests {
         assert!(component_file_name("binance_us").is_none());
     }
 
+    /// B6: no Wasm component for unsheeted / unsigned slugs (named next included).
+    #[test]
+    fn b6_gate_no_component_for_unsheeted_slugs() {
+        assert!(component_file_name("zerodha_kite").is_none());
+        assert!(component_file_name("interactive_brokers").is_none());
+        assert!(component_file_name("binance_us").is_none());
+        assert_eq!(COMPONENTS.len(), 2, "only first-pair components ship");
+    }
+
     #[test]
     fn candidate_paths_include_dev_build_output() {
         let paths = component_candidate_paths("kotak_neo");

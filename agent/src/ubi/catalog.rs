@@ -84,6 +84,10 @@ pub fn compliance_profile(id: &str) -> Option<ComplianceProfile> {
 }
 
 /// Catalog v1 — first pair enabled; binance_us parked; no community entries.
+///
+/// **Named next broker (T2.1):** `zerodha_kite` — B6 sheet stub only
+/// (`issues/brokers/sheets/zerodha_kite.md`). Must stay `Planned` until that
+/// sheet is `SIGNED`. Do not invent `community_reviewed`.
 pub fn catalog_v1() -> Vec<BrokerDescriptor> {
     vec![
         BrokerDescriptor {
@@ -166,6 +170,24 @@ mod tests {
         assert_eq!(kotak.quote_currency, "INR");
         assert_eq!(us.availability, BrokerAvailability::Parked);
         assert!(cat.iter().all(|d| d.origin == AdapterOrigin::FirstParty));
+    }
+
+    /// B6 gate: only signed first-pair slugs may be Enabled. Named next
+    /// (`zerodha_kite`) and all other stubs stay Planned/Parked until a sheet
+    /// is SIGNED — no Wasm ship for them.
+    #[test]
+    fn b6_gate_only_signed_first_pair_is_enabled() {
+        let enabled: Vec<_> = catalog_v1()
+            .into_iter()
+            .filter(|d| d.availability == BrokerAvailability::Enabled)
+            .map(|d| d.slug)
+            .collect();
+        assert_eq!(enabled, vec!["binance_com".to_string(), "kotak_neo".to_string()]);
+
+        let zerodha = descriptor_for_slug("zerodha_kite").expect("named next in catalog");
+        assert_eq!(zerodha.availability, BrokerAvailability::Planned);
+        let ib = descriptor_for_slug("interactive_brokers").unwrap();
+        assert_eq!(ib.availability, BrokerAvailability::Planned);
     }
 
     #[test]

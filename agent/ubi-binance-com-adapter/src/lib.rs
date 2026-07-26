@@ -100,20 +100,23 @@ fn fetch_symbol_trades(
             value: TRADES_LIMIT.to_string(),
         },
     ];
-    if let Some(since) = cursor.since_unix_ms {
+    // B6 §4 / R1: `fromId` + `startTime`/`endTime` together is refused (-1128).
+    // Prefer incremental `fromId` when the caller pinned one symbol (B6 §5/§6).
+    let from_id = cursor
+        .symbol
+        .as_ref()
+        .and_then(|_| cursor.from_id.as_ref())
+        .filter(|id| is_digits(id));
+    if let Some(from_id) = from_id {
+        query.push(HttpQueryParam {
+            name: "fromId".to_string(),
+            value: from_id.clone(),
+        });
+    } else if let Some(since) = cursor.since_unix_ms {
         query.push(HttpQueryParam {
             name: "startTime".to_string(),
             value: since.to_string(),
         });
-    }
-    // `fromId` only makes sense when the caller pinned one symbol (B6 §5 pagination).
-    if cursor.symbol.is_some() {
-        if let Some(from_id) = cursor.from_id.as_ref().filter(|id| is_digits(id)) {
-            query.push(HttpQueryParam {
-                name: "fromId".to_string(),
-                value: from_id.clone(),
-            });
-        }
     }
 
     let response = call(MY_TRADES_PATH, query)?;

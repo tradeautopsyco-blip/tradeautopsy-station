@@ -41,3 +41,18 @@ Locks the dual-hop auth already frozen above with zero protocol change:
 | Regression coverage | New `agent/tests/station_bridge_harden.rs` — asserts the capture-accept→outbox and `/instruments/ltp` upstream hops send `Authorization: Bearer …` and never forward `x-daemon-secret` / `x-user-id`. New `agent/src/lib.rs` unit tests lock the loopback-only gating. Existing `bar_forward.rs`, `phase7_screenshot_proxy.rs`, `station_wire_contract.rs`, `wire_phase2.rs` all still green. |
 
 No hop paths, header names, or the wire v1 canonical string changed — see `v1.json` notes for the same clarification inline.
+
+## T2.1 — B6 sheet gate (Wasm vs signed sheets)
+
+**Date:** 2026-07-26  
+**Station branch:** `chore/commit-landed-work` — B6 audit + COM cursor honesty + named next stub (commit when asked)
+
+| Concern | Lock |
+|---------|------|
+| Sheet SoT | `/Users/bishnu/issues/brokers/sheets/` — audit in `B6-AUDIT-T2.md` |
+| Enabled slugs | `binance_com` + `kotak_neo` only (SIGNED sheets); gate tests in `catalog` / `components` |
+| Sheet fix | COM Wasm never combines `fromId` + `startTime` (B6 §4 / R1 `-1128`) |
+| Named next | `zerodha_kite` — `sheets/zerodha_kite.md` Status=`RESEARCH`; catalog stays Planned; **no Wasm** |
+| Don't | Invent community_reviewed · enable unsheeted slug · Binance.US as next |
+
+**Next:** T2 step 2 — **B2** Keychain-only Start by connection id.
