@@ -73,7 +73,7 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 ## T2.3 — B3 Start/Stop ≠ Kill
 
 **Date:** 2026-07-26  
-**Station tip:** (this commit) — Stop pauses poll only; Kill/SSE/audit stay on
+**Station tip:** `d0c42f9` — Stop pauses poll only; Kill/SSE/audit stay on
 
 | Concern | Lock |
 |---------|------|
