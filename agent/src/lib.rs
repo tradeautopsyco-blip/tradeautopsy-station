@@ -1,5 +1,7 @@
 mod api;
 mod bar_fill_ingress;
+/// Native Binance.com spot modules — **reference only** (ADR 0001 / B5).
+/// Live Start uses `build_runtime_adapter` → `WasmBrokerAdapter`, never these.
 mod binance_com_spot_adapter;
 mod binance_com_spot_client;
 mod binance_com_validation;
@@ -70,8 +72,9 @@ pub use broker_data_class::{
 pub use broker_redaction::RedactionBoundary;
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 pub use broker_sync_control::{
-    build_wasm_runtime_adapter, default_credential_vault, memory_credential_vault,
-    uses_wasm_component, BrokerRuntimeCardStatus, BrokerSyncController, BrokerSyncStartRequest,
+    build_runtime_adapter, build_wasm_runtime_adapter, default_credential_vault,
+    memory_credential_vault, uses_wasm_component, BrokerRuntimeCardStatus, BrokerSyncController,
+    BrokerSyncStartRequest,
 };
 pub use broker_validation::{
     BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,

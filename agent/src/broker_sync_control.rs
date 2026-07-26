@@ -303,7 +303,11 @@ pub fn build_wasm_runtime_adapter(
     )?))
 }
 
-fn build_runtime_adapter(
+/// Start-path factory (B5): live first-pair → Wasm; native COM modules are never selected.
+///
+/// ADR 0001 — `binance_com_spot_*.rs` remains **reference only**. Test/fake key prefixes
+/// still get `CountingPollAdapter` (empty fills), never the native COM adapter.
+pub fn build_runtime_adapter(
     broker_slug: &str,
     connection_id: &str,
     blob: &CredentialBlob,
@@ -456,5 +460,49 @@ mod b2_keychain_only_tests {
             vec!["vault-key".to_string()]
         );
         ctrl.stop().expect("stop");
+    }
+}
+
+#[cfg(test)]
+mod b5_enforcer_sot_tests {
+    use super::*;
+
+    #[test]
+    fn first_pair_slugs_are_wasm_components() {
+        assert!(uses_wasm_component("binance_com"));
+        assert!(uses_wasm_component("kotak_neo"));
+        assert!(!uses_wasm_component("binance_us"));
+        assert!(!uses_wasm_component("zerodha_kite"));
+    }
+
+    #[test]
+    fn live_com_match_arm_does_not_construct_native_spot_name() {
+        // Factory returns CountingPoll for test prefixes without loading Wasm.
+        let adapter = build_runtime_adapter(
+            "binance_com",
+            "conn-b5-fake",
+            &CredentialBlob::hmac("TA_FAKE_COM_key", "secret"),
+        )
+        .expect("fake com");
+        assert_eq!(adapter.name(), "counting_poll");
+        assert_ne!(adapter.name(), "binance_com_spot");
+    }
+
+    #[test]
+    fn unsupported_slug_still_fails_closed() {
+        let result = build_runtime_adapter(
+            "zerodha_kite",
+            "conn-b5-z",
+            &CredentialBlob::hmac("k", "s"),
+        );
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("unsigned slug must fail closed"),
+        };
+        assert!(
+            err.to_string().contains("unsupported broker"),
+            "{}",
+            err
+        );
     }
 }

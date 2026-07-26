@@ -83,3 +83,18 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 | Proof | `agent/tests/broker_stop_vs_kill.rs` (R10 combined invariant) |
 
 **Next:** T2 step 4 — **B5** Enforcer = live SoT (Console zero live broker).
+
+## T2.4 — B5 Enforcer = live SoT
+
+**Date:** 2026-07-26  
+**Station tip:** `TIP_PLACEHOLDER` (`chore/commit-landed-work`) — Start factory Wasm lock + B5 tests
+
+| Concern | Lock |
+|---------|------|
+| Live Start factory | `build_runtime_adapter` → Wasm for `binance_com` + `kotak_neo` only |
+| Native COM | `binance_com_spot_*.rs` = **reference only** (ADR 0001) — never selected for live Start |
+| Test/fake prefixes | CountingPoll only — still not native COM |
+| Console | R9 UBI removal on PR #325; **PARKED-with-note** (CI · Neon wipe · `lib/zerodha` residue) — see `issues/brokers/sheets/B5-AUDIT-T2.md` |
+| Proof | `ubi_runtime_start` `b5_live_start_factory_*` · `b5_enforcer_sot_tests` |
+
+**Next:** T2 step 5 — **Dogfood leftovers** (live-key dual dogfood · dual side-by-side UI · BarPlanStateView INR leftovers).
