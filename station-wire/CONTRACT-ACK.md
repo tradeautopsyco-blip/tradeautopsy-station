@@ -26,10 +26,10 @@ Console A8 Phase III–IV already reject `DAEMON_SECRET` + `x-user-id` as who-am
 
 **Next:** Brokers SYSTEM research → founder FINALIZE — `docs/research/BROKERS-SYSTEM.md` · issues pack `/Users/bishnu/issues/brokers/research/BROKERS-SYSTEM.md` (multi-broker · asset class · currency · calc · compliance · B1–B6 + D1–D5). Temporary Binance only.
 
-## T1 — Station ↔ Enforcer bridge harden (pending commit — SHA to follow)
+## T1 — Station ↔ Enforcer bridge harden
 
 **Date:** 2026-07-26
-**Station tip:** T1 harden commit (SHA recorded in follow-up note below)
+**Station tip:** `8cec50a` (`chore/commit-landed-work`) — `feat(bridge): T1 single Wire client + wire≠identity harden`
 
 Locks the dual-hop auth already frozen above with zero protocol change:
 
