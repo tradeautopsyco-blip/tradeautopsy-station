@@ -18,8 +18,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 
-/// Identity-first start. Optional legacy apiKey/apiSecret seed the host vault for tests
-/// and transitional clients — never forwarded into Wasm (ADR 0001 / R6).
+/// Identity-first start (B2 / R6). Credentials load from the host vault / Keychain by
+/// connection id. Wire `apiKey`/`apiSecret` are refused — never seed the vault from the
+/// Start body (and never forward into Wasm).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BrokerSyncStartRequest {
     #[serde(rename = "brokerSlug")]
@@ -29,7 +30,8 @@ pub struct BrokerSyncStartRequest {
     pub environment: String,
     #[serde(rename = "assetClass")]
     pub asset_class: String,
-    /// Deprecated wire fields — if present, written into the host vault then used.
+    /// Rejected when present/non-empty (B2). Kept on the type so clients get a clear error
+    /// instead of silent ignore.
     #[serde(default, rename = "apiKey")]
     pub api_key: Option<String>,
     #[serde(default, rename = "apiSecret")]
@@ -223,18 +225,10 @@ impl BrokerSyncController {
         &self,
         request: &BrokerSyncStartRequest,
     ) -> anyhow::Result<CredentialBlob> {
-        // Transitional: optional wire secrets seed the host vault (tests / old clients).
-        if let (Some(api_key), Some(api_secret)) = (&request.api_key, &request.api_secret) {
-            if !api_key.is_empty() {
-                let blob = CredentialBlob::hmac(api_key, api_secret);
-                self.credential_vault.save(
-                    &request.environment,
-                    &request.broker_slug,
-                    &request.broker_connection_id,
-                    &blob,
-                )?;
-                return Ok(blob);
-            }
+        if wire_credentials_present(request) {
+            anyhow::bail!(
+                "wire credentials refused (B2): Start by connection id only; secrets stay in host vault / Keychain"
+            );
         }
 
         self.credential_vault
@@ -334,6 +328,12 @@ fn build_runtime_adapter(
     }
 }
 
+fn wire_credentials_present(request: &BrokerSyncStartRequest) -> bool {
+    let key = request.api_key.as_deref().unwrap_or("").trim();
+    let secret = request.api_secret.as_deref().unwrap_or("").trim();
+    !key.is_empty() || !secret.is_empty()
+}
+
 /// Default vault for production: Keychain-backed.
 pub fn default_credential_vault() -> Arc<dyn BrokerCredentialVault> {
     Arc::new(crate::ubi::KeyringBrokerCredentialVault)
@@ -341,4 +341,118 @@ pub fn default_credential_vault() -> Arc<dyn BrokerCredentialVault> {
 
 pub fn memory_credential_vault() -> Arc<dyn BrokerCredentialVault> {
     Arc::new(MemoryBrokerCredentialVault::new())
+}
+
+#[cfg(test)]
+mod b2_keychain_only_tests {
+    use super::*;
+    use crate::broker_sync::BrokerSyncConfig;
+    use crate::event_bus::EventBus;
+    use crate::recent_trades::RecentTradesStore;
+    use std::sync::Mutex;
+
+    fn unique_db(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "rta-b2-{label}-{}-{}.db",
+            std::process::id(),
+            ulid::Ulid::new()
+        ))
+    }
+
+    fn controller(vault: Arc<dyn BrokerCredentialVault>) -> BrokerSyncController {
+        let db = unique_db("ctrl");
+        let recent = RecentTradesStore::open(&db).expect("recent trades");
+        BrokerSyncController::new(
+            Arc::new(Mutex::new(BrokerRuntimeState::default())),
+            recent,
+            Arc::new(RwLock::new(None)),
+            BrokerSyncConfig::default(),
+            EventBus::new(32),
+            None,
+            None,
+            Some(Arc::new(CountingPollAdapter::new())),
+            None,
+            Arc::new(Mutex::new(None)),
+            vault,
+        )
+    }
+
+    fn identity_request() -> BrokerSyncStartRequest {
+        BrokerSyncStartRequest {
+            broker_slug: "binance_us".into(),
+            broker_connection_id: "00000000-0000-4000-8000-000000000001".into(),
+            environment: "prod".into(),
+            asset_class: "crypto".into(),
+            api_key: None,
+            api_secret: None,
+        }
+    }
+
+    #[test]
+    fn b2_empty_vault_fails_start() {
+        let vault = memory_credential_vault();
+        let ctrl = controller(vault);
+        let err = ctrl.start(&identity_request()).expect_err("empty vault");
+        let msg = err.to_string();
+        assert!(msg.contains("missing credentials"), "{msg}");
+        assert!(!msg.contains("secret"), "{msg}");
+    }
+
+    #[test]
+    fn b2_wire_secrets_are_refused() {
+        let vault = MemoryBrokerCredentialVault::new();
+        let vault: Arc<dyn BrokerCredentialVault> = Arc::new(vault);
+        let ctrl = controller(vault.clone());
+        let mut req = identity_request();
+        req.api_key = Some("leak-key".into());
+        req.api_secret = Some("leak-secret".into());
+        let err = ctrl.start(&req).expect_err("wire secrets");
+        let msg = err.to_string();
+        assert!(msg.contains("wire credentials refused"), "{msg}");
+        assert!(!msg.contains("leak-key"), "{msg}");
+        assert!(!msg.contains("leak-secret"), "{msg}");
+        assert!(
+            vault
+                .load("prod", "binance_us", &req.broker_connection_id)
+                .unwrap()
+                .is_none(),
+            "refused wire secrets must not seed the vault"
+        );
+    }
+
+    #[tokio::test]
+    async fn b2_start_by_connection_id_loads_vault() {
+        let vault = MemoryBrokerCredentialVault::new();
+        let conn = "00000000-0000-4000-8000-000000000001";
+        vault
+            .save(
+                "prod",
+                "binance_us",
+                conn,
+                &CredentialBlob::hmac("vault-key", "vault-secret"),
+            )
+            .unwrap();
+        let vault: Arc<dyn BrokerCredentialVault> = Arc::new(vault);
+        let keys = Arc::new(Mutex::new(Vec::<String>::new()));
+        let recent = RecentTradesStore::open(&unique_db("load")).expect("db");
+        let ctrl = BrokerSyncController::new(
+            Arc::new(Mutex::new(BrokerRuntimeState::default())),
+            recent,
+            Arc::new(RwLock::new(None)),
+            BrokerSyncConfig::default(),
+            EventBus::new(32),
+            None,
+            None,
+            Some(Arc::new(CountingPollAdapter::new())),
+            Some(keys.clone()),
+            Arc::new(Mutex::new(None)),
+            vault,
+        );
+        ctrl.start(&identity_request()).expect("start");
+        assert_eq!(
+            keys.lock().expect("keys").clone(),
+            vec!["vault-key".to_string()]
+        );
+        ctrl.stop().expect("stop");
+    }
 }

@@ -2,27 +2,23 @@
 
 mod common;
 
-use common::{apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides};
-use serde_json::{json, Value};
+use common::{
+    apply_wire_v1, client, identity_start_body, seeded_hmac_vault, spawn_test_agent_with_options,
+    TestAgentOptions, WireHeaderOverrides,
+};
+use serde_json::Value;
 use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
     BrokerAdapter, BrokerBalancesSnapshot, BrokerError, BrokerOpenOrdersSnapshot,
-    ConfigurableDataClassAdapter, DataClassPollRound,
+    BrokerCredentialVault, ConfigurableDataClassAdapter, DataClassPollRound,
 };
 
 async fn post_broker_sync_start(port: u16) -> reqwest::Response {
     let path = "/api/daemon/broker/sync/start";
     let url = format!("http://127.0.0.1:{port}{path}");
-    let body = json!({
-        "brokerSlug": "binance_us",
-        "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
-        "environment": "prod",
-        "assetClass": "crypto",
-        "apiKey": "TA_TEST_SYNC",
-        "apiSecret": "test-secret"
-    });
+    let body = identity_start_body("binance_us");
     let payload = serde_json::to_vec(&body).expect("json");
     apply_wire_v1(
         client().post(&url).header("content-type", "application/json"),
@@ -85,9 +81,11 @@ async fn rate_limited_class_reports_rate_limited_status() {
         }),
         open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
     }]));
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
     let opts = TestAgentOptions {
         runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),
         broker_base_poll_ms: 80,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
@@ -124,10 +122,12 @@ async fn manual_retry_clears_requires_manual_retry_flag() {
             open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
         },
     ]));
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
     let opts = TestAgentOptions {
         runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),
         broker_base_poll_ms: 40,
         failures_until_open: 3,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);

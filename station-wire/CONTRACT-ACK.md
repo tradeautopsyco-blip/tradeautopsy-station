@@ -45,7 +45,7 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 ## T2.1 — B6 sheet gate (Wasm vs signed sheets)
 
 **Date:** 2026-07-26  
-**Station branch:** `chore/commit-landed-work` — B6 audit + COM cursor honesty + named next stub (commit when asked)
+**Station tip:** `b515902` (`chore/commit-landed-work`) — B6 audit + COM cursor honesty + named next stub
 
 | Concern | Lock |
 |---------|------|
@@ -55,4 +55,17 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 | Named next | `zerodha_kite` — `sheets/zerodha_kite.md` Status=`RESEARCH`; catalog stays Planned; **no Wasm** |
 | Don't | Invent community_reviewed · enable unsheeted slug · Binance.US as next |
 
-**Next:** T2 step 2 — **B2** Keychain-only Start by connection id.
+## T2.2 — B2 Keychain-only Start
+
+**Date:** 2026-07-26  
+**Station tip:** (this commit) — refuse wire secrets on Start; vault/Keychain only
+
+| Concern | Lock |
+|---------|------|
+| Start body | Identity only (`brokerSlug` · `brokerConnectionId` · `environment` · `assetClass`) |
+| Wire `apiKey`/`apiSecret` | **Refused** with clear error — never seed vault from Start |
+| Empty vault / Keychain | Start fails (`missing credentials` / Swift `missingCredentials`) |
+| Secrets | Host vault / Keychain only; never Wasm; never error-string echoed |
+| Tests | `b2_keychain_only_tests` · broker_sync_control B2 cases · Swift identity-only payload |
+
+**Next:** T2 step 3 — **B3** Start/Stop ≠ Kill.

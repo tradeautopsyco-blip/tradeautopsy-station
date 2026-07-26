@@ -84,7 +84,8 @@ public enum BrokerAgentRuntimeError: Error, Equatable {
     case requestFailed
 }
 
-private struct BrokerSyncStartPayload: Encodable {
+/// Identity-only Start body (B2). Secrets stay in Keychain; never encoded here.
+struct BrokerSyncStartPayload: Encodable {
     let brokerSlug: String
     let brokerConnectionId: String
     let environment: String
@@ -95,6 +96,11 @@ private struct BrokerSyncStartPayload: Encodable {
         brokerConnectionId = identity.brokerConnectionID.uuidString
         environment = identity.environment
         assetClass = identity.assetClass
+    }
+
+    /// Test/helper: encode identity-only JSON and assert no secret keys.
+    static func identityOnlyJSON(for identity: BrokerConnectionIdentity) throws -> Data {
+        try JSONEncoder().encode(BrokerSyncStartPayload(identity: identity))
     }
 }
 

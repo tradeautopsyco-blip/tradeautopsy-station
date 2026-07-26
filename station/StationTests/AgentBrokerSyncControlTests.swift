@@ -29,4 +29,15 @@ struct AgentBrokerSyncControlTests {
         }
         #expect(runtime.startSyncCallCount == 0)
     }
+
+    @Test func startWirePayloadIsIdentityOnly() throws {
+        let data = try BrokerSyncStartPayload.identityOnlyJSON(for: .binanceComProd)
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(json["brokerSlug"] as? String == "binance_com")
+        #expect(json["brokerConnectionId"] != nil)
+        #expect(json["apiKey"] == nil)
+        #expect(json["apiSecret"] == nil)
+        #expect(json["tradeToken"] == nil)
+        #expect(json["consumerKey"] == nil)
+    }
 }

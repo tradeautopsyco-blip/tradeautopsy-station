@@ -1,13 +1,20 @@
 //! Issue #13/#14 — runtime broker sync start/stop without agent restart.
+//! T2.2 / B2 — Start is identity-only; credentials seed the host vault, never the wire.
 
 mod common;
 
-use common::{apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides};
+use common::{
+    apply_wire_v1, client, identity_start_body, seeded_hmac_vault, spawn_test_agent_with_options,
+    TestAgentOptions, WireHeaderOverrides, TEST_BROKER_CONNECTION_ID,
+};
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tradeautopsy_agent::{BrokerAdapter, CountingPollAdapter};
+use tradeautopsy_agent::{
+    BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, CredentialBlob,
+    MemoryBrokerCredentialVault,
+};
 
 async fn get_health_boot_id(port: u16) -> String {
     let path = "/api/daemon/health";
@@ -86,34 +93,31 @@ async fn get_broker_sync_state(port: u16) -> Value {
         .expect("sync-state json")
 }
 
-fn start_body(api_key: &str) -> Value {
-    json!({
-        "brokerSlug": "binance_us",
-        "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
-        "environment": "prod",
-        "assetClass": "crypto",
-        "apiKey": api_key,
-        "apiSecret": "test-secret"
-    })
+fn opts_with_vault(
+    vault: Arc<MemoryBrokerCredentialVault>,
+    counter: Arc<CountingPollAdapter>,
+) -> TestAgentOptions {
+    TestAgentOptions {
+        runtime_poll_adapter: Some(counter as Arc<dyn BrokerAdapter>),
+        broker_base_poll_ms: 80,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+        ..TestAgentOptions::default()
+    }
 }
 
 #[tokio::test]
 #[serial]
 async fn runtime_start_reports_syncing_and_polls_without_preconfigured_adapter() {
     const PORT: u16 = 19_470;
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
     let counter = Arc::new(CountingPollAdapter::new());
-    let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(counter.clone() as Arc<dyn BrokerAdapter>),
-        broker_base_poll_ms: 80,
-        ..TestAgentOptions::default()
-    };
-    let handle = spawn_test_agent_with_options(PORT, opts);
+    let handle = spawn_test_agent_with_options(PORT, opts_with_vault(vault, counter.clone()));
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let before = get_broker_sync_state(PORT).await;
     assert_eq!(before["runtimeStatus"], "ready_to_start");
 
-    let resp = post_broker_sync_start(PORT, start_body("TA_TEST_SYNC")).await;
+    let resp = post_broker_sync_start(PORT, identity_start_body("binance_us")).await;
     assert_eq!(resp.status(), 200, "start status");
 
     tokio::time::sleep(Duration::from_millis(450)).await;
@@ -128,17 +132,17 @@ async fn runtime_start_reports_syncing_and_polls_without_preconfigured_adapter()
 #[serial]
 async fn stop_halts_polling_without_changing_agent_boot_id() {
     const PORT: u16 = 19_471;
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
     let counter = Arc::new(CountingPollAdapter::new());
     let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(counter.clone() as Arc<dyn BrokerAdapter>),
         broker_base_poll_ms: 60,
-        ..TestAgentOptions::default()
+        ..opts_with_vault(vault, counter.clone())
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert_eq!(
-        post_broker_sync_start(PORT, start_body("TA_TEST_SYNC"))
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
             .await
             .status(),
         200
@@ -173,40 +177,52 @@ async fn stop_halts_polling_without_changing_agent_boot_id() {
 
 #[tokio::test]
 #[serial]
-async fn start_after_stop_resumes_polling_with_fresh_credentials() {
+async fn start_after_stop_resumes_polling_with_fresh_vault_credentials() {
     const PORT: u16 = 19_472;
+    let vault = Arc::new(MemoryBrokerCredentialVault::new());
+    vault
+        .save(
+            "prod",
+            "binance_us",
+            TEST_BROKER_CONNECTION_ID,
+            &CredentialBlob::hmac("first-key", "test-secret"),
+        )
+        .unwrap();
     let start_keys = Arc::new(Mutex::new(Vec::<String>::new()));
     let counter = Arc::new(CountingPollAdapter::new());
     let opts = TestAgentOptions {
         runtime_poll_adapter: Some(counter.clone() as Arc<dyn BrokerAdapter>),
         start_key_log: Some(start_keys.clone()),
         broker_base_poll_ms: 80,
+        credential_vault: Some(vault.clone() as Arc<dyn BrokerCredentialVault>),
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert_eq!(
-        post_broker_sync_start(PORT, start_body("first-key")).await.status(),
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(post_broker_sync_stop(PORT).await.status(), 200);
 
-    assert_eq!(
-        post_broker_sync_start(
-            PORT,
-            json!({
-                "brokerSlug": "binance_us",
-                "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
-                "environment": "prod",
-                "assetClass": "crypto",
-                "apiKey": "second-key",
-                "apiSecret": "rotated-secret"
-            })
+    // Rotate in the host vault (not on the wire), then Start identity-only again.
+    vault
+        .save(
+            "prod",
+            "binance_us",
+            TEST_BROKER_CONNECTION_ID,
+            &CredentialBlob::hmac("second-key", "rotated-secret"),
         )
-        .await
-        .status(),
+        .unwrap();
+
+    assert_eq!(
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -225,36 +241,64 @@ async fn start_after_stop_resumes_polling_with_fresh_credentials() {
 #[serial]
 async fn start_without_wire_secrets_loads_host_vault() {
     const PORT: u16 = 19_473;
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC_VAULT");
     let counter = Arc::new(CountingPollAdapter::new());
-    let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(counter.clone() as Arc<dyn BrokerAdapter>),
-        broker_base_poll_ms: 80,
-        ..TestAgentOptions::default()
-    };
-    let handle = spawn_test_agent_with_options(PORT, opts);
+    let handle = spawn_test_agent_with_options(PORT, opts_with_vault(vault, counter.clone()));
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Seed vault via transitional wire fields once…
-    assert_eq!(
-        post_broker_sync_start(PORT, start_body("TA_TEST_SYNC_VAULT")).await.status(),
-        200
-    );
-    assert_eq!(post_broker_sync_stop(PORT).await.status(), 200);
-
-    // …then Start with identity only (no apiKey/apiSecret on wire).
-    let resp = post_broker_sync_start(
-        PORT,
-        json!({
-            "brokerSlug": "binance_us",
-            "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
-            "environment": "prod",
-            "assetClass": "crypto"
-        }),
-    )
-    .await;
+    let resp = post_broker_sync_start(PORT, identity_start_body("binance_us")).await;
     assert_eq!(resp.status(), 200, "identity-only start");
 
     tokio::time::sleep(Duration::from_millis(350)).await;
     assert!(counter.poll_count() >= 1);
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn b2_wire_secrets_on_start_are_rejected() {
+    const PORT: u16 = 19_474;
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
+    let counter = Arc::new(CountingPollAdapter::new());
+    let handle = spawn_test_agent_with_options(PORT, opts_with_vault(vault, counter));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let resp = post_broker_sync_start(
+        PORT,
+        json!({
+            "brokerSlug": "binance_us",
+            "brokerConnectionId": TEST_BROKER_CONNECTION_ID,
+            "environment": "prod",
+            "assetClass": "crypto",
+            "apiKey": "leak-key",
+            "apiSecret": "leak-secret"
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.expect("json");
+    let err = body["error"].as_str().unwrap_or("");
+    assert!(err.contains("wire credentials refused"), "{err}");
+    assert!(!err.contains("leak-key"), "{err}");
+    assert!(!err.contains("leak-secret"), "{err}");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn b2_empty_vault_start_fails() {
+    const PORT: u16 = 19_475;
+    let vault = Arc::new(MemoryBrokerCredentialVault::new());
+    let counter = Arc::new(CountingPollAdapter::new());
+    let handle = spawn_test_agent_with_options(PORT, opts_with_vault(vault, counter));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let resp = post_broker_sync_start(PORT, identity_start_body("binance_us")).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.expect("json");
+    let err = body["error"].as_str().unwrap_or("");
+    assert!(err.contains("missing credentials"), "{err}");
+
     handle.abort();
 }

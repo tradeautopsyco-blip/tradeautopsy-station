@@ -1,15 +1,19 @@
 //! Issue #16 — balances/holdings and open-orders data classes + completeness.
+//! T2.2 / B2 — Start is identity-only; credentials seed the host vault.
 
 mod common;
 
-use common::{apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides};
-use serde_json::{json, Value};
+use common::{
+    apply_wire_v1, client, identity_start_body, seeded_hmac_vault, spawn_test_agent_with_options,
+    TestAgentOptions, WireHeaderOverrides,
+};
+use serde_json::Value;
 use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
-    BrokerAdapter, BrokerBalancesSnapshot, BrokerError, ConfigurableDataClassAdapter,
-    DataClassPollRound,
+    BrokerAdapter, BrokerBalancesSnapshot, BrokerCredentialVault, BrokerError,
+    ConfigurableDataClassAdapter, DataClassPollRound,
 };
 
 async fn post_broker_sync_start(port: u16, body: Value) -> reqwest::Response {
@@ -49,15 +53,14 @@ async fn get_broker_sync_state(port: u16) -> Value {
         .expect("sync-state json")
 }
 
-fn start_body() -> Value {
-    json!({
-        "brokerSlug": "binance_us",
-        "brokerConnectionId": "00000000-0000-4000-8000-000000000001",
-        "environment": "prod",
-        "assetClass": "crypto",
-        "apiKey": "TA_TEST_SYNC",
-        "apiSecret": "test-secret"
-    })
+fn start_with_vault(adapter: Arc<dyn BrokerAdapter>, poll_ms: u64) -> TestAgentOptions {
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
+    TestAgentOptions {
+        runtime_poll_adapter: Some(adapter),
+        broker_base_poll_ms: poll_ms,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+        ..TestAgentOptions::default()
+    }
 }
 
 #[tokio::test]
@@ -65,16 +68,16 @@ fn start_body() -> Value {
 async fn all_data_classes_current_reports_syncing() {
     const PORT: u16 = 19_480;
     let adapter = Arc::new(ConfigurableDataClassAdapter::all_ok());
-    let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),
-        broker_base_poll_ms: 80,
-        ..TestAgentOptions::default()
-    };
-    let handle = spawn_test_agent_with_options(PORT, opts);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        start_with_vault(adapter as Arc<dyn BrokerAdapter>, 80),
+    );
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert_eq!(
-        post_broker_sync_start(PORT, start_body()).await.status(),
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(450)).await;
@@ -103,16 +106,16 @@ async fn partial_data_class_failure_reports_degraded() {
         failing.clone(),
         failing,
     ]));
-    let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),
-        broker_base_poll_ms: 80,
-        ..TestAgentOptions::default()
-    };
-    let handle = spawn_test_agent_with_options(PORT, opts);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        start_with_vault(adapter as Arc<dyn BrokerAdapter>, 80),
+    );
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     assert_eq!(
-        post_broker_sync_start(PORT, start_body()).await.status(),
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(450)).await;
@@ -135,15 +138,15 @@ async fn partial_data_class_failure_reports_degraded() {
 async fn empty_open_orders_snapshot_is_current() {
     const PORT: u16 = 19_482;
     let adapter = Arc::new(ConfigurableDataClassAdapter::all_ok());
-    let opts = TestAgentOptions {
-        runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),
-        broker_base_poll_ms: 80,
-        ..TestAgentOptions::default()
-    };
-    let handle = spawn_test_agent_with_options(PORT, opts);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        start_with_vault(adapter as Arc<dyn BrokerAdapter>, 80),
+    );
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
-        post_broker_sync_start(PORT, start_body()).await.status(),
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(450)).await;

@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
-    AgentConfig, BrokerAdapter, BrokerSyncConfig, WireVerifier, WIRE_PROTO_VERSION,
+    AgentConfig, BrokerAdapter, BrokerCredentialVault, BrokerSyncConfig, CredentialBlob,
+    MemoryBrokerCredentialVault, WireVerifier, WIRE_PROTO_VERSION,
 };
 
 pub const TEST_SECRET: &str = "integration-test-daemon-secret-min-32b";
@@ -37,6 +38,8 @@ pub struct TestAgentOptions {
     pub runtime_poll_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub start_key_log: Option<Arc<std::sync::Mutex<Vec<String>>>>,
     pub station_token_store: Option<Arc<dyn tradeautopsy_agent::StationTokenStore>>,
+    /// B2 — shared host vault so tests seed credentials without wire secrets.
+    pub credential_vault: Option<Arc<dyn BrokerCredentialVault>>,
 }
 
 impl Default for TestAgentOptions {
@@ -61,6 +64,7 @@ impl Default for TestAgentOptions {
             runtime_poll_adapter: None,
             start_key_log: None,
             station_token_store: None,
+            credential_vault: None,
         }
     }
 }
@@ -91,6 +95,9 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.test_runtime_adapter = opts.runtime_poll_adapter.clone();
     cfg.test_start_key_log = opts.start_key_log.clone();
     cfg.station_token_store = opts.station_token_store.clone();
+    if let Some(vault) = &opts.credential_vault {
+        cfg.broker_credential_vault = Some(vault.clone());
+    }
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {
@@ -176,4 +183,32 @@ pub struct WireHeaderOverrides<'a> {
 
 pub fn client() -> reqwest::Client {
     reqwest::Client::new()
+}
+
+pub const TEST_BROKER_CONNECTION_ID: &str = "00000000-0000-4000-8000-000000000001";
+
+/// Shared memory vault + seed HMAC credentials for B2 identity-only Start tests.
+pub fn seeded_hmac_vault(
+    broker_slug: &str,
+    api_key: &str,
+) -> Arc<MemoryBrokerCredentialVault> {
+    let vault = Arc::new(MemoryBrokerCredentialVault::new());
+    vault
+        .save(
+            "prod",
+            broker_slug,
+            TEST_BROKER_CONNECTION_ID,
+            &CredentialBlob::hmac(api_key, "test-secret"),
+        )
+        .expect("seed vault");
+    vault
+}
+
+pub fn identity_start_body(broker_slug: &str) -> serde_json::Value {
+    serde_json::json!({
+        "brokerSlug": broker_slug,
+        "brokerConnectionId": TEST_BROKER_CONNECTION_ID,
+        "environment": "prod",
+        "assetClass": "crypto"
+    })
 }

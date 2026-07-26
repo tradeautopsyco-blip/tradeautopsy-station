@@ -3,12 +3,17 @@
 mod common;
 
 use chrono::{DateTime, TimeZone, Utc};
-use common::{apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, TEST_SECRET};
+use common::{
+    apply_wire_v1, client, seeded_hmac_vault, spawn_test_agent_with_options, TestAgentOptions,
+    TEST_SECRET,
+};
 use serial_test::serial;
 use std::time::Duration;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use tradeautopsy_agent::{BrokerError, BrokerFill, RecentTradesStore, SeqMockBrokerAdapter};
+use tradeautopsy_agent::{
+    BrokerCredentialVault, BrokerError, BrokerFill, RecentTradesStore, SeqMockBrokerAdapter,
+};
 
 const PORT: u16 = 39650;
 
@@ -44,11 +49,22 @@ async fn today_api_returns_json_when_broker_syncing() {
 
     let q = Arc::new(Mutex::new(VecDeque::from([Ok::<Vec<BrokerFill>, BrokerError>(vec![])])));
     let adapter = Arc::new(SeqMockBrokerAdapter { calls: q });
+    let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
+    // today_api uses a distinct connection id — seed that slot too.
+    vault
+        .save(
+            "prod",
+            "binance_us",
+            "00000000-0000-4000-8000-000000000099",
+            &tradeautopsy_agent::CredentialBlob::hmac("TA_TEST_SYNC", "secret"),
+        )
+        .unwrap();
     let _agent = spawn_test_agent_with_options(
         PORT,
         TestAgentOptions {
             recent_trades_db_path: Some(db),
             runtime_poll_adapter: Some(adapter.clone()),
+            credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
             ..Default::default()
         },
     );
@@ -58,9 +74,7 @@ async fn today_api_returns_json_when_broker_syncing() {
         "brokerSlug": "binance_us",
         "brokerConnectionId": "00000000-0000-4000-8000-000000000099",
         "environment": "prod",
-        "assetClass": "crypto",
-        "apiKey": "TA_TEST_SYNC",
-        "apiSecret": "secret"
+        "assetClass": "crypto"
     });
     let body = serde_json::to_vec(&start_body).unwrap();
     let req = apply_wire_v1(
