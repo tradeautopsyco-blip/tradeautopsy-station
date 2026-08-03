@@ -1,11 +1,10 @@
 import Foundation
-import Notch
 
 public enum NavigationPolicy {
     public static let sessionStickinessSeconds: TimeInterval = 60
 
-    /// Map `BarSurfacePhase` → default Session route.
-    public static func routeForPhase(_ phase: BarSurfacePhase) -> StationRoute {
+    /// Map `SessionSurfacePhase` → default Session route.
+    public static func routeForPhase(_ phase: SessionSurfacePhase) -> StationRoute {
         switch phase {
         case .declaration: return .preTrade
         case .armed, .livePlan: return .liveTrade
@@ -14,7 +13,7 @@ public enum NavigationPolicy {
     }
 
     /// Launch route: restore Desk if saved; else phase-derived Session route.
-    public static func launchRoute(saved: StationRoute?, phase: BarSurfacePhase) -> StationRoute {
+    public static func launchRoute(saved: StationRoute?, phase: SessionSurfacePhase) -> StationRoute {
         if let saved, saved.isDesk {
             return saved
         }
@@ -24,7 +23,7 @@ public enum NavigationPolicy {
     /// Returns new route if auto-follow should apply; nil = no change.
     public static func shouldAutoFollowPhase(
         active: StationRoute,
-        phase: BarSurfacePhase,
+        phase: SessionSurfacePhase,
         manualSessionPickAt: Date?,
         now: Date
     ) -> StationRoute? {

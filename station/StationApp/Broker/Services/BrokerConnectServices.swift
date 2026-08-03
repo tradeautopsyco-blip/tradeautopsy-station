@@ -2,40 +2,24 @@ import Foundation
 
 public enum BrokerConnectServices {
     public static func identity(for slug: String, environment: TradeAutopsyEnvironment = .prod) -> BrokerConnectionIdentity {
-        if let descriptor = BrokerCatalog.descriptor(for: slug) {
-            switch slug {
-            case "binance_us":
-                return .binanceUS(environment)
-            case "binance_com":
-                return .binanceCom(environment)
-            case "kotak_neo":
-                return BrokerConnectionIdentity(
-                    brokerConnectionID: BrokerConnectionIdentity.kotakNeoConnectionID,
-                    brokerSlug: "kotak_neo",
-                    assetClass: descriptor.assetClass,
-                    environment: environment.rawValue
-                )
-            default:
-                return BrokerConnectionIdentity(
-                    brokerConnectionID: UUID(),
-                    brokerSlug: slug,
-                    assetClass: descriptor.assetClass,
-                    environment: environment.rawValue
-                )
-            }
+        switch slug {
+        case "binance_com":
+            return .binanceCom(environment)
+        case "kotak_neo":
+            return .kotakNeo(environment)
+        default:
+            // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
+            return BrokerConnectionIdentity(
+                brokerConnectionID: UUID(uuidString: "00000000-0000-4000-8000-00000000ffff")!,
+                brokerSlug: slug,
+                assetClass: BrokerCatalog.descriptor(for: slug)?.assetClass ?? "crypto_spot",
+                environment: environment.rawValue
+            )
         }
-        return BrokerConnectionIdentity(
-            brokerConnectionID: UUID(),
-            brokerSlug: slug,
-            assetClass: "crypto_spot",
-            environment: environment.rawValue
-        )
     }
 
     public static func validator(for slug: String) -> BrokerCredentialValidating {
         switch slug {
-        case "binance_us":
-            return BinanceUSCredentialValidator()
         case "binance_com":
             return BinanceComCredentialValidator()
         case "kotak_neo":
@@ -54,7 +38,7 @@ public enum BrokerConnectServices {
     }
 }
 
-/// Phase 2: accept non-empty Kotak session fields; live venue check ships with Phase 3 Wasm.
+/// Phase 3: Kotak TOTP mint is the live venue check (agent session mint).
 private struct KotakNeoSessionCredentialValidator: BrokerCredentialValidating, Sendable {
     func validate(
         credentials: BrokerCredentials,
@@ -69,6 +53,7 @@ private struct KotakNeoSessionCredentialValidator: BrokerCredentialValidating, S
         else {
             return .permanentFailure(.invalidCredentials)
         }
+        _ = credentials.hsServerId
         return .success(permissionPosture: .readOnlyConfirmed)
     }
 }

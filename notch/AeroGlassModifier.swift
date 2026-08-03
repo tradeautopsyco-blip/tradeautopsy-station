@@ -78,7 +78,18 @@ struct GlassPanel: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(reduceTransparency ? 0.1 : 0.18),
+                                Color.white.opacity(0.06),
+                                Color.white.opacity(0.03),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
             )
     }
 }

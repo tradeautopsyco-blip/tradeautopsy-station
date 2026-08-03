@@ -19,7 +19,7 @@ enum KillSwitchFirePayloadBuilder {
             "level": level,
             "reason": reason,
         ]
-        if !broker.isEmpty, broker != "mockbroker" {
+        if !broker.isEmpty {
             payload["broker"] = broker
         }
         return .success(payload)

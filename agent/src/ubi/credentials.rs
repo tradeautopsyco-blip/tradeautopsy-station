@@ -3,7 +3,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Station HMAC (and legacy Kotak) Keychain service — ACL-trusted for Station + agent.
 pub const BROKER_CREDENTIAL_KEYCHAIN_SERVICE: &str = "in.tradeautopsy.station.broker-credentials";
+
+/// Kotak Neo session vault only — avoids sharing SecAccess with Station HMAC items.
+pub const KOTAK_SESSION_KEYCHAIN_SERVICE: &str = "in.tradeautopsy.station.kotak-session-vault";
+
+/// Keychain `kSecAttrService` for a catalog slug.
+pub fn keychain_service_for(broker_slug: &str) -> &'static str {
+    match broker_slug {
+        "kotak_neo" | "kotak" => KOTAK_SESSION_KEYCHAIN_SERVICE,
+        _ => BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "authScheme", rename_all = "snake_case")]
@@ -24,6 +36,9 @@ pub enum CredentialBlob {
         sid: String,
         #[serde(rename = "baseUrl")]
         base_url: String,
+        /// OMS server id — required as trade-book query `sId` (SDK TradeReportAPI).
+        #[serde(default, rename = "hsServerId")]
+        hs_server_id: String,
         #[serde(default, rename = "expiresAt")]
         expires_at: Option<String>,
     },
@@ -93,10 +108,47 @@ mod tests {
             trade_token: "tt".into(),
             sid: "sid1".into(),
             base_url: "https://cis.kotaksecurities.com".into(),
+            hs_server_id: "server4".into(),
             expires_at: Some("2026-07-25T18:00:00Z".into()),
         };
         let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("hsServerId"));
         let decoded = decode_credential_blob(&json).unwrap();
         assert_eq!(decoded, blob);
+    }
+
+    #[test]
+    fn kotak_session_blob_defaults_missing_hs_server_id() {
+        let json = r#"{
+            "authScheme":"kotak_neo_totp_session",
+            "consumerKey":"ck",
+            "tradeToken":"tt",
+            "sid":"sid1",
+            "baseUrl":"https://cis.kotaksecurities.com"
+        }"#;
+        let decoded = decode_credential_blob(json).unwrap();
+        match decoded {
+            CredentialBlob::KotakNeoTotpSession { hs_server_id, .. } => {
+                assert!(hs_server_id.is_empty());
+            }
+            _ => panic!("expected kotak"),
+        }
+    }
+
+    #[test]
+    fn keychain_service_routes_kotak_to_dedicated_vault() {
+        assert_eq!(
+            keychain_service_for("kotak_neo"),
+            KOTAK_SESSION_KEYCHAIN_SERVICE
+        );
+        assert_eq!(keychain_service_for("kotak"), KOTAK_SESSION_KEYCHAIN_SERVICE);
+        assert_eq!(
+            keychain_service_for("binance_com"),
+            BROKER_CREDENTIAL_KEYCHAIN_SERVICE
+        );
+        assert_ne!(
+            KOTAK_SESSION_KEYCHAIN_SERVICE,
+            BROKER_CREDENTIAL_KEYCHAIN_SERVICE
+        );
     }
 }

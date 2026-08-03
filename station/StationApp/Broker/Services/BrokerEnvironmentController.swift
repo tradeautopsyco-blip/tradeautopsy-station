@@ -53,10 +53,11 @@ public final class BrokerEnvironmentController {
     }
 
     public func activeIdentity(
-        brokerSlug: String = "binance_us",
-        assetClass: String = "crypto"
+        brokerSlug: String = "binance_com",
+        assetClass: String = "crypto_spot"
     ) -> BrokerConnectionIdentity {
-        BrokerConnectionIdentity.binanceUS(activeEnvironment)
+        _ = (brokerSlug, assetClass)
+        return BrokerConnectionIdentity.binanceCom(activeEnvironment)
     }
 
     public func switchEnvironment(

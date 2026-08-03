@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 
 public enum TodayPalette {
     public static let profit = "#0ECB81"

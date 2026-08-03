@@ -12,24 +12,28 @@ public enum BrokerCredentialFieldValidator {
         return invalid
     }
 
-    public static func invalidKotakFields(
+    public static func invalidKotakLoginFields(
         consumerKey: String,
-        tradeToken: String,
-        sid: String,
-        baseUrl: String
+        mobileNumber: String,
+        ucc: String,
+        totp: String,
+        mpin: String
     ) -> Set<BrokerCredentialField> {
         var invalid = Set<BrokerCredentialField>()
         if consumerKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             invalid.insert(.consumerKey)
         }
-        if tradeToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            invalid.insert(.tradeToken)
+        if mobileNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.mobileNumber)
         }
-        if sid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            invalid.insert(.sid)
+        if ucc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.ucc)
         }
-        if baseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            invalid.insert(.baseUrl)
+        if totp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.totp)
+        }
+        if mpin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.mpin)
         }
         return invalid
     }

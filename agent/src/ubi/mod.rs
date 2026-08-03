@@ -12,6 +12,7 @@ mod credentials;
 mod desk;
 mod host;
 mod http;
+mod kotak_session;
 mod wasm_adapter;
 
 pub use allowlist::{host_allowed, ALLOWED_BROKER_HOSTS};
@@ -28,7 +29,8 @@ pub use credential_vault::{
     BrokerCredentialVault, KeyringBrokerCredentialVault, MemoryBrokerCredentialVault,
 };
 pub use credentials::{
-    decode_credential_blob, CredentialBlob, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
+    decode_credential_blob, keychain_service_for, CredentialBlob,
+    BROKER_CREDENTIAL_KEYCHAIN_SERVICE, KOTAK_SESSION_KEYCHAIN_SERVICE,
 };
 pub use host::{
     run_fetch_fills, BrokerHttpFixture, BrokerHttpMode, FillCursor, FillEvent, HostCredentialBlob,
@@ -38,5 +40,9 @@ pub use http::{
     classify_response, effective_host, prepare_request, redact_response_headers,
     BrokerHttpTransport, PreparedHttpRequest, RecordingTransport, ReqwestBrokerHttpTransport,
     TransportResponse, RESPONSE_HEADER_ALLOWLIST,
+};
+pub use kotak_session::{
+    mint_totp_session, KotakMintError, KotakMintErrorClass, KotakMintRequest,
+    ReqwestKotakSessionHttp,
 };
 pub use wasm_adapter::{fill_event_to_broker_fill, WasmBrokerAdapter};

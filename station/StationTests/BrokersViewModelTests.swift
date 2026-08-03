@@ -112,4 +112,34 @@ struct BrokersViewModelTests {
         #expect(binanceCom?.status == .notConfigured)
         #expect(binanceCom?.isConnectable == true)
     }
+
+    @Test func confirmDeleteSurfacesTeardownFailureAndLeavesCardConfigured() async {
+        let store = FakeBrokerCredentialStore()
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.BrokersVM.DeleteFail.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
+        let client = FakeBrokerControlClient()
+        client.scenario = .readyToStart
+        client.deleteConnectionError = BrokerCredentialTeardownError.keychainDeleteFailed(
+            service: BrokerCredentialOrphanCleanup.kotakSessionVaultService,
+            status: -25293
+        )
+        let viewModel = BrokersViewModel(
+            brokerControl: client,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync
+        )
+        await viewModel.load()
+        #expect(viewModel.cards.contains { $0.id == "binance_com" && $0.status == .readyToStart })
+
+        viewModel.requestDelete(for: .binanceComProd)
+        await viewModel.confirmDelete()
+
+        #expect(client.deleteConnectionCallCount == 1)
+        #expect(viewModel.syncActionMessage?.localizedCaseInsensitiveContains("keychain") == true)
+        #expect(viewModel.cards.contains { $0.id == "binance_com" && $0.status == .readyToStart })
+    }
 }

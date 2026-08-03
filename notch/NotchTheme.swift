@@ -1,6 +1,11 @@
+import AppKit
+import QuartzCore
 import SwiftUI
 
 /// Aero-Glass design tokens — TradeAutopsy notch.
+///
+/// Motion tokens follow Apple *Designing Fluid Interfaces*: critically damped springs
+/// for chrome (no bounce); underdamped only when momentum/gesture justifies it.
 enum NotchTheme {
     // Backgrounds
     static let bgApp = Color(hex: "#050505")
@@ -81,6 +86,57 @@ enum NotchTheme {
         .system(size: size, weight: weight, design: .monospaced)
     }
 
-    static let springExpand = Animation.spring(response: 0.4, dampingFraction: 0.85, blendDuration: 0.2)
-    static let springRing = Animation.spring(response: 0.7, dampingFraction: 0.8)
+    /// Expand / collapse chrome — critically damped (Apple default UI spring).
+    static let springExpand = Animation.spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0)
+
+    /// Sidebar / content remaps — snappier critical settle.
+    static let springContent = Animation.spring(response: 0.28, dampingFraction: 1.0, blendDuration: 0)
+
+    /// Score / ring pulses that ride continuous state — slight underdamping OK.
+    static let springRing = Animation.spring(response: 0.55, dampingFraction: 0.9, blendDuration: 0)
+
+    /// Honors Reduce Motion: short cross-fade instead of spring travel.
+    static var expandCollapseAnimation: Animation {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return .easeInOut(duration: 0.2)
+        }
+        return springExpand
+    }
+
+    static var contentAnimation: Animation {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return .easeInOut(duration: 0.15)
+        }
+        return springContent
+    }
+
+    /// AppKit panel frame timing matched to `springExpand` settle (critically damped ~0.35s).
+    static var panelFrameAnimationDuration: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.2 : 0.38
+    }
+
+    /// Soft ease-out that approximates a critically damped spring settle (no overshoot).
+    static var panelFrameTimingFunction: CAMediaTimingFunction {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            return CAMediaTimingFunction(name: .easeInEaseOut)
+        }
+        // controlPoints ≈ Apple response 0.35, damping 1.0 (fast attack, soft settle)
+        return CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
+    }
+}
+
+/// Instant press-down scale — Apple: feedback on pointer-down, not release.
+struct NotchPressButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.97
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .animation(
+                configuration.isPressed
+                    ? .easeOut(duration: 0.08)
+                    : .spring(response: 0.28, dampingFraction: 1.0),
+                value: configuration.isPressed
+            )
+    }
 }

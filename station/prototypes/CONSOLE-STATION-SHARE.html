@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<!--
+  FULL TWIN — Console + Station + PLAN Notch (current plan)
+  Offline, phone + desktop. See CONSOLE-STATION-SHARE.md
+  open station/prototypes/CONSOLE-STATION-SHARE.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>FULL TWIN — Console + Station + Notch</title>
+<style>
+:root {
+  --fill-panel:#0d0d0d; --fill-sidebar:#0a0a0a; --fill-card:#111;
+  --fill-input:rgba(255,255,255,.03);
+  --t1:#ededed; --t2:#666; --t3:#444; --hint:#555;
+  --teal:#00e5c0; --amber:#eab308; --red:#ef4444; --green:#22c55e; --blue:#60a5fa;
+  --bd:rgba(255,255,255,.06); --bd-card:rgba(255,255,255,.07);
+  --today-profit:#0ECB81; --today-loss:#F6465D; --today-watch:#FF7A6B;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --r:8px; --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans); background:#050505; color:var(--t1);
+  min-height:100dvh; display:flex; flex-direction:column;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+
+/* Product switcher */
+.switcher{
+  position:sticky; top:0; z-index:100;
+  display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+  padding:10px 12px calc(8px + env(safe-area-inset-top,0px));
+  background:rgba(10,10,10,.94); border-bottom:1px solid var(--bd);
+  backdrop-filter:blur(12px);
+}
+.switcher .brand{
+  font:600 10px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase;
+  color:var(--teal); margin-right:8px;
+}
+.sw-btn{
+  font:600 11px/1 var(--mono); letter-spacing:.04em; text-transform:uppercase;
+  color:var(--t2); background:var(--fill-card); border:1px solid var(--bd-card);
+  padding:10px 14px; border-radius:999px; min-height:40px;
+}
+.sw-btn.on{color:var(--t1); border-color:rgba(255,255,255,.22); background:rgba(255,255,255,.08)}
+.sw-meta{margin-left:auto; font:10px/1.3 var(--mono); color:var(--t3); max-width:42ch}
+@media(max-width:820px){.sw-meta{display:none}}
+
+.workspace{flex:1; min-height:0; display:flex; flex-direction:column}
+.product{flex:1; min-height:0; display:none; flex-direction:column}
+.product.on{display:flex}
+
+/* Shared desk chrome */
+.frame{
+  flex:1; min-height:0; margin:16px auto; width:min(1100px, calc(100% - 24px));
+  height:min(720px, calc(100dvh - 88px));
+  background:#000; border-radius:12px; overflow:hidden;
+  display:flex; flex-direction:column;
+  box-shadow:0 30px 80px rgba(0,0,0,.65), 0 0 0 .5px rgba(255,255,255,.04);
+}
+@media(max-width:820px){
+  .frame{
+    margin:0; width:100%; height:auto; flex:1;
+    border-radius:0; box-shadow:none;
+    min-height:calc(100dvh - 56px);
+  }
+}
+.toolbar-local{
+  display:flex; gap:6px; flex-wrap:wrap; padding:8px 10px;
+  border-bottom:1px solid var(--bd); background:var(--fill-sidebar);
+}
+.toolbar-local button{
+  font:600 10px/1 var(--mono); text-transform:uppercase; letter-spacing:.04em;
+  color:var(--t2); background:var(--fill-card); border:1px solid var(--bd);
+  padding:8px 10px; border-radius:8px; min-height:36px;
+}
+.toolbar-local button.on{color:var(--t1); border-color:rgba(255,255,255,.2)}
+
+.body-row{flex:1; display:flex; min-height:0}
+.sidebar{
+  width:200px; flex-shrink:0; background:var(--fill-sidebar);
+  border-right:1px solid var(--bd); overflow-y:auto; padding:8px 0 20px;
+}
+@media(max-width:820px){
+  .body-row{flex-direction:column}
+  .sidebar{
+    width:100%; border-right:0; border-bottom:1px solid var(--bd);
+    display:flex; overflow-x:auto; overflow-y:hidden; padding:8px; gap:4px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .sb-section{display:none}
+  .nav-item{flex:0 0 auto; white-space:nowrap; margin:0}
+}
+.sb-section{
+  padding:14px 16px 6px; font-size:11px; font-weight:600;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--t3);
+}
+.nav-item{
+  display:flex; align-items:center; gap:8px; margin:1px 8px;
+  padding:9px 10px; border-radius:8px; font-size:13px; font-weight:500;
+  color:var(--t2); user-select:none; border:0; background:transparent; width:calc(100% - 16px); text-align:left;
+}
+.nav-item:hover{background:rgba(255,255,255,.04); color:var(--t1)}
+.nav-item.active{background:rgba(255,255,255,.08); color:var(--t1)}
+.main{flex:1; display:flex; flex-direction:column; min-width:0; background:var(--fill-panel)}
+.topbar{
+  height:44px; flex-shrink:0; border-bottom:.5px solid var(--bd);
+  display:flex; align-items:center; padding:0 14px; gap:10px;
+}
+.topbar h1{font-size:16px; font-weight:600}
+.topbar .sub{font:11px/1 var(--mono); color:var(--t3)}
+.topbar .spacer{flex:1}
+.agent-dot{width:8px;height:8px;border-radius:50%;background:#30d158}
+.scroll{flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:16px; padding-bottom:calc(20px + var(--safe-b))}
+.screen{display:none; flex:1; flex-direction:column; min-height:0}
+.screen.active,.screen.on{display:flex}
+
+/* Pulse */
+.pulse{
+  height:38px; flex-shrink:0; background:var(--fill-panel);
+  border-bottom:.5px solid var(--bd); display:flex; align-items:center;
+  padding:0 14px; gap:14px; overflow-x:auto;
+}
+.pulse .dot-warn{width:6px;height:6px;border-radius:50%;background:var(--amber);display:none;flex-shrink:0}
+.app.degraded .dot-warn{display:block}
+.chips{display:none;gap:8px}
+.app.dual .chips{display:flex}
+.chip{font:11px var(--mono);padding:3px 8px;border-radius:6px;background:var(--fill-input);color:var(--t3)}
+.chip.active,.chip.on{color:var(--t1)}
+.metric{display:flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap}
+.metric .lbl{color:var(--t2)}
+.metric .val{font:500 12px var(--mono)}
+.metric .val.pos{color:var(--green)}
+.metric .val.neg{color:var(--red)}
+.sym-chip{font:11px var(--mono);padding:3px 8px;border-radius:6px;background:var(--fill-input)}
+.app.degraded .sym-chip{display:none}
+.app.degraded .metric .val{color:var(--t3)!important}
+.pulse .spacer{flex:1}
+
+/* Cards / forms */
+.card{
+  background:var(--fill-input); border:1px solid var(--bd); border-radius:16px; padding:14px;
+}
+.card h3,.card h4{font-size:13px; font-weight:600; margin-bottom:6px}
+.card p,.card .sub{font-size:12px; color:var(--t2); line-height:1.45}
+.hero{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+@media(max-width:640px){.hero{grid-template-columns:1fr}}
+.tile{background:var(--fill-input);border:1px solid var(--bd);border-radius:16px;padding:14px;min-height:96px}
+.tile.pos{background:rgba(14,203,129,.08);border-color:rgba(14,203,129,.22)}
+.tile .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);font-weight:600;margin-bottom:8px}
+.tile .val{font-size:26px;font-weight:700;letter-spacing:-.02em}
+.tile .val.pos{color:var(--today-profit)}
+.tile .cap{margin-top:8px;font:11px var(--mono);color:var(--t3)}
+.sec-h{font-size:13px;font-weight:600;color:var(--t2);display:flex;align-items:center;margin-bottom:10px}
+.sec-h .meta{margin-left:auto;font:11px var(--mono);color:var(--t3);font-weight:400}
+.signals{display:flex;gap:10px;flex-wrap:wrap}
+.signal{flex:1;min-width:180px;padding:12px;background:var(--fill-input);border:1px solid var(--bd);border-radius:16px}
+.signal .name{font-size:12px;font-weight:600;flex:1}
+.badge{font:600 10px var(--mono);padding:3px 8px;border-radius:999px}
+.badge.watch{background:rgba(255,122,107,.12);color:var(--today-watch)}
+.badge.ok{background:rgba(14,203,129,.12);color:var(--today-profit)}
+.badge.hot{background:rgba(239,68,68,.15);color:var(--red)}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.trades{background:var(--fill-input);border:1px solid var(--bd);border-radius:16px;overflow:hidden;overflow-x:auto}
+.t-head,.t-row{display:grid;grid-template-columns:52px 1fr 76px 76px 88px 80px;gap:0;padding:0 12px;align-items:center;min-width:520px}
+.t-head{height:30px;background:rgba(255,255,255,.08);font-size:11px;font-weight:600;color:var(--t3)}
+.t-row{height:36px;font-size:12px;border-bottom:.5px solid var(--bd)}
+.t-row .mono{font-family:var(--mono);font-size:11px}
+.t-row .pos{color:var(--today-profit)} .t-row .neg{color:var(--today-loss)}
+.t-row.flagged{background:rgba(246,70,93,.04)}
+.cb{display:none;align-items:center;gap:12px;padding:12px;border-radius:16px;background:rgba(246,70,93,.1);border:1px solid rgba(246,70,93,.28)}
+.app.breaker .cb{display:flex}
+.cb-h{font-size:12px;font-weight:600;color:var(--today-loss)}
+.cb-btn{margin-left:auto;border:1px solid rgba(246,70,93,.35);background:transparent;color:var(--today-loss);padding:8px 14px;border-radius:999px;font-size:11px;font-weight:600}
+
+.btn{
+  border:1px solid var(--bd-card); background:rgba(255,255,255,.06);
+  color:var(--t1); padding:10px 14px; border-radius:10px; font-size:12px; font-weight:600;
+  min-height:40px;
+}
+.btn.primary{background:rgba(0,229,192,.15); border-color:rgba(0,229,192,.35); color:var(--teal)}
+.btn.danger{background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.35); color:#fca5a5}
+.btn.ghost{background:transparent}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px}
+.field,.ta{
+  width:100%; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.1);
+  border-radius:8px; padding:10px 12px; margin:6px 0; font-size:13px; color:var(--t1);
+}
+.ta{min-height:72px; resize:vertical}
+.toggle-row{
+  display:flex; align-items:center; gap:12px; padding:12px;
+  background:var(--fill-input); border:1px solid var(--bd); border-radius:12px; margin:6px 0;
+}
+.toggle-row .lab{font-size:13px;font-weight:500}
+.toggle-row .sub{font-size:11px;color:var(--t2);margin-top:2px}
+.switch{
+  width:42px;height:24px;border-radius:999px;background:#333;position:relative;flex-shrink:0;border:0;
+}
+.switch::after{
+  content:""; position:absolute; top:3px; left:3px; width:18px; height:18px;
+  border-radius:50%; background:#bbb; transition:transform .15s;
+}
+.switch.on{background:rgba(0,229,192,.35)}
+.switch.on::after{transform:translateX(18px);background:var(--teal)}
+
+.broker-card{
+  display:flex; flex-direction:column; gap:10px; padding:14px;
+  background:var(--fill-input); border:1px solid var(--bd); border-radius:16px;
+}
+.broker-card .name{font-size:14px;font-weight:600}
+.broker-card .status{font:11px var(--mono);color:var(--t2)}
+.broker-card .status.live{color:var(--teal)}
+.broker-card .status.off{color:var(--amber)}
+.status-pill{
+  display:inline-flex; align-items:center; gap:6px; font:11px var(--mono);
+  padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.05);
+}
+.status-pill i{width:6px;height:6px;border-radius:50%;background:var(--t3);display:block}
+.status-pill.ok i{background:var(--teal)}
+.status-pill.warn i{background:var(--amber)}
+.status-pill.bad i{background:var(--red)}
+
+.list-item{
+  display:flex; gap:12px; padding:12px; border-bottom:1px solid var(--bd);
+  cursor:pointer; align-items:flex-start;
+}
+.list-item:hover,.list-item.on{background:rgba(255,255,255,.04)}
+.list-item .when{font:10px var(--mono);color:var(--t3);white-space:nowrap}
+.list-item .ttl{font-size:13px;font-weight:600}
+.list-item .snip{font-size:12px;color:var(--t2);margin-top:4px;line-height:1.4}
+.ws-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.ws-card{
+  min-height:100px; padding:12px; border-radius:12px; border:1px solid var(--bd);
+  background:#141414; cursor:pointer;
+}
+.ws-card.on{border-color:rgba(0,229,192,.4); box-shadow:0 0 0 1px rgba(0,229,192,.2)}
+.ws-card .k{font:10px var(--mono);color:var(--t3);text-transform:uppercase;margin-bottom:8px}
+.filter-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.filter-row button{padding:8px 12px;border-radius:999px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-size:11px;font-weight:600}
+.filter-row button.on{color:var(--t1);border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.06)}
+
+.banner-thin{
+  font:11px/1.4 var(--mono); color:var(--teal);
+  background:rgba(0,229,192,.08); border:1px solid rgba(0,229,192,.22);
+  padding:10px 12px; border-radius:10px;
+}
+
+/* Notch */
+.notch-wrap{
+  flex:1; min-height:0; display:flex; flex-direction:column;
+  background:#1a1a1c;
+  background-image:radial-gradient(ellipse 80% 50% at 50% 0%,#2a2a2e 0%,transparent 55%);
+}
+.desktop{
+  flex:1; margin:12px auto; width:min(1040px,calc(100% - 16px));
+  height:min(680px, calc(100dvh - 120px));
+  border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.08);
+  background:#0c0c0e; position:relative; display:flex; flex-direction:column;
+}
+@media(max-width:820px){
+  .desktop{margin:0;width:100%;height:auto;flex:1;border-radius:0;border:0;min-height:calc(100dvh - 110px)}
+}
+.menubar{
+  height:28px; flex-shrink:0; background:rgba(30,30,32,.92);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex; align-items:center; justify-content:center;
+  font-size:11px; color:rgba(255,255,255,.55); position:relative;
+}
+.menubar .apple{position:absolute;left:12px}
+.menubar .clock{position:absolute;right:12px;font-family:var(--mono);font-size:10px}
+.notch-anchor{position:absolute;top:6px;left:50%;transform:translateX(-50%);z-index:20}
+.pill{
+  display:flex; align-items:center; gap:10px; height:32px; padding:0 16px;
+  background:#0a0a0a; border:1px solid rgba(255,255,255,.1); border-radius:20px;
+  box-shadow:0 8px 24px rgba(0,0,0,.45); font:600 11px/1 var(--mono); color:var(--t1);
+  min-width:160px; justify-content:center;
+}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:var(--teal)}
+.pill .dot.bad{background:var(--red)} .pill .dot.warn{background:var(--amber)}
+.pill .sep{opacity:.3} .pill .pnl{color:var(--green)} .pill .muted{color:var(--t2)}
+.pill .kw{color:#fecaca; letter-spacing:.04em}
+.pill.intervention{border-color:rgba(239,68,68,.45); background:#1a0a0a}
+.expanded{
+  display:none; flex:1; min-height:0; margin-top:40px;
+  flex-direction:column; position:relative;
+}
+.desktop.expanded-on .expanded{display:flex}
+.chrome-tap{height:18px; flex-shrink:0; cursor:pointer}
+.plan-shell{flex:1; min-height:0; display:flex; background:var(--fill-panel); border-top:1px solid var(--bd)}
+.plan-sb{
+  width:200px; flex-shrink:0; background:var(--fill-sidebar); border-right:1px solid var(--bd);
+  display:flex; flex-direction:column; min-height:0;
+}
+@media(max-width:820px){
+  .plan-shell{flex-direction:column}
+  .plan-sb{width:100%; border-right:0; border-bottom:1px solid var(--bd); max-height:42%}
+}
+.plan-brand{padding:12px 12px 8px}
+.plan-brand .t{font-size:13px;font-weight:600}
+.plan-brand .s{font-size:10px;color:var(--t3);margin-top:2px}
+.plan-nav-scroll{flex:1; overflow:auto; padding-bottom:8px}
+.plan-sec{padding:12px 12px 4px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t3)}
+.plan-nav{
+  display:flex; align-items:center; gap:8px; width:calc(100% - 16px); margin:2px 8px;
+  padding:9px 10px; border-radius:8px; border:0; background:transparent; color:var(--t2);
+  font-size:12px; font-weight:500; text-align:left;
+}
+.plan-nav.on{background:rgba(255,255,255,.08); color:var(--t1)}
+.plan-nav .badge{margin-left:auto; font:600 10px var(--mono); background:rgba(255,255,255,.08); padding:2px 6px; border-radius:999px}
+.plan-nav .badge.hot{background:rgba(239,68,68,.2); color:#fecaca}
+.plan-main{flex:1; min-width:0; display:flex; flex-direction:column}
+.plan-top{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:10px 12px; border-bottom:1px solid var(--bd);
+}
+.plan-top .title{font-size:14px;font-weight:600}
+.plan-top .score,.plan-top .mult{font:11px var(--mono);color:var(--t2)}
+.pill-chip{
+  display:inline-flex; align-items:center; gap:6px; font:10px var(--mono);
+  padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.05); color:var(--t2);
+}
+.pill-chip .d{width:6px;height:6px;border-radius:50%;background:var(--teal)}
+.pill-chip.warn .d{background:var(--amber)}
+.btn-new{
+  margin-left:auto; border:1px solid rgba(0,229,192,.35); background:rgba(0,229,192,.12);
+  color:var(--teal); padding:8px 12px; border-radius:8px; font:600 11px var(--mono);
+}
+.plan-body{flex:1; overflow:auto; padding:12px; padding-bottom:calc(16px + var(--safe-b))}
+.plan-body .screen{display:none}
+.plan-body .screen.on{display:block}
+.caps{font:10px/1 var(--mono); color:var(--t3); text-transform:uppercase; letter-spacing:.08em; margin:10px 0 6px}
+.idx-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.idx .n{font-size:10px;color:var(--t3)} .idx .v{font:600 14px var(--mono);margin-top:4px}
+.idx .c{font:11px var(--mono);color:var(--green);margin-top:2px} .idx .c.neg{color:var(--red)}
+.divider{height:1px;background:var(--bd);margin:12px 0}
+.big-btn{
+  width:100%; margin-top:10px; padding:12px; border-radius:10px; border:1px solid var(--bd);
+  background:rgba(255,255,255,.06); font-weight:600; font-size:13px;
+}
+.big-btn.primary{background:rgba(0,229,192,.15);border-color:rgba(0,229,192,.35);color:var(--teal)}
+.big-btn.outline{background:transparent;border-color:rgba(255,255,255,.15)}
+.big-btn.danger{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:#fecaca}
+.tabs-arch{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tab-arch{
+  padding:8px 12px; border-radius:8px; border:1px solid var(--bd); background:transparent;
+  color:var(--t2); font-size:11px; font-weight:600;
+}
+.tab-arch.on{color:var(--t1); border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.06)}
+.feel-row,.side-row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.feel,.side{
+  flex:1; min-width:56px; padding:8px 6px; border-radius:8px; border:1px solid var(--bd);
+  background:transparent; color:var(--t2); font-size:10px; text-align:center;
+}
+.feel strong,.side{display:block}
+.feel.on,.side.on{border-color:rgba(0,229,192,.4); color:var(--t1); background:rgba(0,229,192,.08)}
+.warn-box{margin-top:8px;padding:10px;border-radius:8px;background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);font-size:11px;color:var(--amber)}
+.warn-box.red{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.35);color:#fecaca}
+.chips-row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chips-row .chip-btn{
+  padding:8px 10px; border-radius:999px; border:1px solid var(--bd); background:transparent;
+  color:var(--t2); font-size:11px; font-weight:600;
+}
+.chips-row .chip-btn.on{color:var(--t1); border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.06)}
+.state-banner{
+  display:flex; gap:10px; padding:12px; border-radius:12px; margin-bottom:10px;
+  background:rgba(0,229,192,.06); border:1px solid rgba(0,229,192,.2);
+}
+.state-banner.broken{background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.3)}
+.state-banner .dot{width:8px;height:8px;border-radius:50%;background:var(--teal);margin-top:4px;flex-shrink:0}
+.state-banner.broken .dot{background:var(--red)}
+.state-banner .lab{font-size:12px;font-weight:600}
+.state-banner .sent{font-size:11px;color:var(--t2);margin-top:2px;line-height:1.4}
+.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px}
+.metrics .metric{flex-direction:column;align-items:flex-start;background:var(--fill-input);border:1px solid var(--bd);border-radius:12px;padding:10px}
+.metrics .k{font-size:10px;color:var(--t3);text-transform:uppercase}
+.metrics .v{font:600 16px var(--mono);margin-top:4px}
+.metrics .v.pos{color:var(--green)} .metrics .v.teal{color:var(--teal)} .metrics .v.amber{color:var(--amber)}
+.snap{border:1px solid var(--bd);border-radius:12px;padding:10px;margin:10px 0;background:var(--fill-input)}
+.snap .h{font-size:11px;font-weight:600;margin-bottom:8px}
+.snap-row,.escrow-row,.settings-row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px}
+.snap-row:last-child,.escrow-row:last-child{border-bottom:0}
+.snap-row .k,.escrow-row .k{color:var(--t2)} .snap-row .v,.escrow-row .v{font-family:var(--mono);font-size:11px}
+.footer-bar{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.footer-pill{padding:8px 10px;border-radius:999px;border:1px solid var(--bd);background:transparent;color:var(--t2);font-size:11px;font-weight:600}
+.progress .bar{height:6px;background:#222;border-radius:999px;overflow:hidden;margin-top:8px}
+.progress .bar i{display:block;height:100%;background:var(--teal)}
+.toast{
+  position:fixed; bottom:calc(16px + var(--safe-b)); left:50%; transform:translateX(-50%);
+  z-index:200; background:#111; border:1px solid rgba(0,229,192,.35); color:var(--teal);
+  font:600 12px var(--mono); padding:10px 14px; border-radius:999px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5); display:none;
+}
+.toast.show{display:block}
+
+.stat-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:4px}
+@media(max-width:640px){.stat-strip{grid-template-columns:repeat(2,1fr)}}
+.stat-tile{background:var(--fill-input);border:1px solid var(--bd);border-radius:12px;padding:12px}
+.stat-tile .v{font:300 18px/1.1 var(--sans);font-variant-numeric:tabular-nums}
+.stat-tile .v.pos{color:var(--today-profit)} .stat-tile .v.neg{color:var(--today-loss)}
+.stat-tile .l{font-size:10px;color:rgba(255,255,255,.25);margin-top:4px;text-transform:lowercase}
+.split-pane{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:820px){.split-pane{grid-template-columns:1fr}}
+.trades.wide .t-head,.trades.wide .t-row{grid-template-columns:72px 90px 56px 52px 70px 70px 72px 88px 1fr;min-width:760px}
+.insight-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.insight-card{background:var(--fill-input);border:1px solid var(--bd);border-radius:14px;padding:14px}
+.insight-card .impact{font:600 14px var(--mono);margin:8px 0}
+.insight-card .bar{height:6px;background:#222;border-radius:999px;overflow:hidden;margin:8px 0}
+.insight-card .bar i{display:block;height:100%;background:var(--teal)}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.ws-board.dense{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-cell{min-height:54px;border-radius:8px;border:1px solid var(--bd);background:var(--fill-input);padding:4px;font:10px var(--mono);cursor:pointer}
+.cal-cell .d{color:var(--t3)} .cal-cell .p{margin-top:6px;font-weight:600}
+.cal-cell.pos .p{color:var(--today-profit)} .cal-cell.neg .p{color:var(--today-loss)}
+.cal-cell.on{border-color:rgba(0,229,192,.4)}
+.list-item .pnl{font:11px var(--mono);margin-left:auto;flex-shrink:0}
+.list-item .pnl.pos{color:var(--today-profit)} .list-item .pnl.neg{color:var(--today-loss)}
+.mono{font-family:var(--mono)}
+
+</style>
+</head>
+<body>
+<div class="switcher">
+  <span class="brand">FULL TWIN · current plan</span>
+  <button type="button" class="sw-btn on" data-product="station">Station</button>
+  <button type="button" class="sw-btn" data-product="console">Console</button>
+  <button type="button" class="sw-btn" data-product="notch">Notch</button>
+  <span class="sw-meta">Offline mock · Station desk · thin Console · PLAN Notch</span>
+</div>
+<div class="workspace">
+
+<!-- ===================== STATION ===================== -->
+<section class="product on" id="product-station">
+  <div class="frame app" id="station-app">
+    <div class="toolbar-local">
+      <button type="button" id="st-dual">Dual desk</button>
+      <button type="button" id="st-degraded">Degraded</button>
+      <button type="button" id="st-breaker">Breaker</button>
+    </div>
+    <div class="pulse" id="st-pulse" title="Opens Live trade">
+      <div class="dot-warn"></div>
+      <div class="chips"><span class="chip active">USD</span><span class="chip">INR</span></div>
+      <div class="metric"><span class="lbl">Session P&amp;L</span><span class="val pos" data-live="+$1,250.00" data-deg="—">+$1,250.00</span></div>
+      <div class="metric"><span class="lbl">Unrealized</span><span class="val pos" data-live="+$420.50" data-deg="—">+$420.50</span></div>
+      <div class="metric"><span class="lbl">Positions</span><span class="val" data-live="1" data-deg="—">1</span></div>
+      <span class="sym-chip">RELIANCE</span>
+      <div class="spacer"></div>
+    </div>
+    <div class="body-row">
+      <nav class="sidebar" id="st-sidebar">
+        <div class="sb-section">Session</div>
+        <button type="button" class="nav-item active" data-st="today">☀ Today</button>
+        <button type="button" class="nav-item" data-st="pretrade">☑ Pre-trade</button>
+        <button type="button" class="nav-item" data-st="live">⚡ Live trade</button>
+        <button type="button" class="nav-item" data-st="posttrade">☰ Post-trade</button>
+        <div class="sb-section">Backend Box</div>
+        <button type="button" class="nav-item" data-st="brokers">⛓ Brokers</button>
+        <button type="button" class="nav-item" data-st="market">↗ Market Data</button>
+        <button type="button" class="nav-item" data-st="ai">✦ AI / Workflow</button>
+        <div class="sb-section">Desk</div>
+        <button type="button" class="nav-item" data-st="journal">📔 Journal</button>
+        <button type="button" class="nav-item" data-st="escrow">🛡 Escrow match</button>
+        <button type="button" class="nav-item" data-st="patterns">◉ Patterns</button>
+        <button type="button" class="nav-item" data-st="fidelity">▮ Fidelity score</button>
+        <button type="button" class="nav-item" data-st="settings">⚙ Settings</button>
+      </nav>
+      <div class="main">
+        <!-- TODAY -->
+        <div class="screen active" id="st-today">
+          <div class="topbar"><h1>Today</h1><span class="sub">2026-07-28 · performance basis</span><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="cb"><span>⬡</span><div><div class="cb-h">Circuit breaker active</div><div class="sub">Review behavior before resuming.</div></div><button type="button" class="cb-btn" id="st-resume">Review &amp; resume</button></div>
+            <div class="hero">
+              <div class="tile pos"><div class="lbl">P&amp;L today</div><div class="val pos">+$1,250</div><div class="cap">USD · binance_com</div></div>
+              <div class="tile"><div class="lbl">Trades</div><div class="val">4</div><div class="cap">2 closed · 1 open</div></div>
+              <div class="tile"><div class="lbl">Win rate</div><div class="val">75%</div><div class="cap">3W / 1L</div></div>
+            </div>
+            <div><div class="sec-h">Behavior signals <span class="meta">top 2</span></div>
+              <div class="signals">
+                <div class="signal"><div class="row"><span class="name">Revenge entry</span><span class="badge watch">WATCH</span></div><div class="sub">Second entry within 8m of a loss on the same symbol.</div></div>
+                <div class="signal"><div class="row"><span class="name">Size discipline</span><span class="badge ok">OK</span></div><div class="sub">Average size within plan band for the session.</div></div>
+              </div>
+            </div>
+            <div><div class="sec-h">Trades today <span class="meta">2 closed</span></div>
+              <div class="trades">
+                <div class="t-head"><span>Time</span><span>Symbol</span><span>Entry</span><span>Exit</span><span>Net P&amp;L</span><span>Flag</span></div>
+                <div class="t-row"><span class="mono">09:42</span><span class="mono">RELIANCE</span><span class="mono">2,841</span><span class="mono">2,868</span><span class="mono pos">+$275</span><span>—</span></div>
+                <div class="t-row flagged"><span class="mono">11:05</span><span class="mono">NIFTY</span><span class="mono">24,210</span><span class="mono">24,180</span><span class="mono neg">−$180</span><span>revenge</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- PRETRADE -->
+        <div class="screen" id="st-pretrade">
+          <div class="topbar"><h1>Pre-trade</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="banner-thin">Desk mirror of Notch declaration — declare before you click buy.</div>
+            <div class="card">
+              <h4>Checklist</h4>
+              <div class="toggle-row"><div><div class="lab">Thesis written</div><div class="sub">One sentence</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Stop defined</div><div class="sub">Exact price</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Size within band</div></div><button type="button" class="switch" data-sw></button></div>
+              <button type="button" class="btn primary" id="st-open-notch-pre">Open Notch Pre-trade →</button>
+            </div>
+          </div>
+        </div>
+        <!-- LIVE -->
+        <div class="screen" id="st-live">
+          <div class="topbar"><h1>Live trade</h1><span class="sub">pulse strip deep-link</span><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="hero">
+              <div class="tile pos"><div class="lbl">Unrealized</div><div class="val pos">+$420</div><div class="cap">RELIANCE</div></div>
+              <div class="tile"><div class="lbl">Risk used</div><div class="val">42%</div><div class="cap">of daily</div></div>
+              <div class="tile"><div class="lbl">Plan</div><div class="val">Intact</div><div class="cap">stop resting</div></div>
+            </div>
+            <div class="btn-row">
+              <button type="button" class="btn">Move SL to entry</button>
+              <button type="button" class="btn danger" id="st-stop-me">Stop me — flatten</button>
+            </div>
+          </div>
+        </div>
+        <!-- POST -->
+        <div class="screen" id="st-posttrade">
+          <div class="topbar"><h1>Post-trade</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="card">
+              <h4>Debrief queue</h4>
+              <p class="sub">Finish Moments A→C in Notch; desk shows completion.</p>
+              <div class="toggle-row"><div><div class="lab">Moment A — outcome</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Moment B — process</div></div><button type="button" class="switch" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Moment C — reflection</div></div><button type="button" class="switch" data-sw></button></div>
+            </div>
+          </div>
+        </div>
+        <!-- BROKERS -->
+        <div class="screen" id="st-brokers">
+          <div class="topbar"><h1>Brokers</h1><span class="sub">Station-owned desk</span><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="broker-card" data-broker="kotak">
+              <div class="row"><div class="name">Kotak Neo</div><span class="status-pill warn" id="kotak-pill"><i></i><span>needs TOTP</span></span></div>
+              <div class="status" id="kotak-status">Session vault missing — Start opens remint</div>
+              <div class="btn-row">
+                <button type="button" class="btn" data-baction="connect" data-broker="kotak">Connect</button>
+                <button type="button" class="btn" data-baction="reauth" data-broker="kotak">Re-auth</button>
+                <button type="button" class="btn primary" data-baction="start" data-broker="kotak">Start</button>
+                <button type="button" class="btn" data-baction="stop" data-broker="kotak">Stop</button>
+                <button type="button" class="btn ghost" data-baction="test" data-broker="kotak">Test</button>
+              </div>
+            </div>
+            <div class="broker-card" data-broker="binance">
+              <div class="row"><div class="name">Binance.com</div><span class="status-pill ok" id="binance-pill"><i></i><span>synced</span></span></div>
+              <div class="status live" id="binance-status">HMAC vault OK · sync idle</div>
+              <div class="btn-row">
+                <button type="button" class="btn" data-baction="connect" data-broker="binance">Connect</button>
+                <button type="button" class="btn primary" data-baction="start" data-broker="binance">Start</button>
+                <button type="button" class="btn" data-baction="stop" data-broker="binance">Stop</button>
+                <button type="button" class="btn ghost" data-baction="test" data-broker="binance">Test</button>
+              </div>
+            </div>
+            <div class="card hidden" id="totp-sheet">
+              <h4>Kotak TOTP remint</h4>
+              <p class="sub">Touch ID already unlocked profile (mock). Enter fresh TOTP.</p>
+              <input class="field" id="totp-input" placeholder="6-digit TOTP" inputmode="numeric" maxlength="6" />
+              <div class="btn-row">
+                <button type="button" class="btn primary" id="totp-refresh">Refresh session</button>
+                <button type="button" class="btn ghost" id="totp-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- MARKET -->
+        <div class="screen" id="st-market">
+          <div class="topbar"><h1>Market Data</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="card"><h4>Feed</h4>
+              <div class="toggle-row"><div><div class="lab">NSE / BSE quotes</div><div class="sub">via agent</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Crypto book</div><div class="sub">binance_com</div></div><button type="button" class="switch on" data-sw></button></div>
+            </div>
+            <div class="idx-row card">
+              <div class="idx"><div class="n">Nifty</div><div class="v">24,812</div><div class="c">+0.42%</div></div>
+              <div class="idx"><div class="n">BNF</div><div class="v">52,140</div><div class="c neg">−0.18%</div></div>
+              <div class="idx"><div class="n">BTC</div><div class="v">67,420</div><div class="c">+1.1%</div></div>
+            </div>
+          </div>
+        </div>
+        <!-- AI -->
+        <div class="screen" id="st-ai">
+          <div class="topbar"><h1>AI / Workflow</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="banner-thin">Station hosts workflow chrome; TAI coach stays on Console (never live broker).</div>
+            <div class="card"><h4>Local workflows</h4>
+              <div class="btn-row">
+                <button type="button" class="btn" data-toast="Workflow: morning brief queued">Run morning brief</button>
+                <button type="button" class="btn" data-toast="Workflow: fidelity report queued">Fidelity report</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- JOURNAL (desk pointer) -->
+        <div class="screen" id="st-journal">
+          <div class="topbar"><h1>Journal</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="banner-thin">Desk pointer — durable journal lives on Console. Capture from Notch lands there.</div>
+            <button type="button" class="btn primary" id="st-open-console-journal">Open Console Journal →</button>
+          </div>
+        </div>
+        <!-- ESCROW -->
+        <div class="screen" id="st-escrow">
+          <div class="topbar"><h1>Escrow match</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="card">
+              <div class="escrow-row"><span class="k">Symbol</span><span class="v">NIFTY 24500 CE</span></div>
+              <div class="escrow-row"><span class="k">Fill vs plan</span><span class="v" style="color:var(--teal)">Match</span></div>
+              <div class="escrow-row"><span class="k">Fidelity</span><span class="v">94%</span></div>
+            </div>
+          </div>
+        </div>
+        <!-- PATTERNS -->
+        <div class="screen" id="st-patterns">
+          <div class="topbar"><h1>Patterns</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll"><div class="card"><h4>Patterns</h4><p class="sub">Building — need 50+ trades. Registry truth feeds from Engine → Console Insights.</p></div></div>
+        </div>
+        <!-- FIDELITY -->
+        <div class="screen" id="st-fidelity">
+          <div class="topbar"><h1>Fidelity score</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="card progress"><div class="row"><span>Plan fidelity</span><span class="mono">94%</span></div><div class="bar"><i style="width:94%"></i></div></div>
+            <div class="card progress"><div class="row"><span>Behavioral score</span><span class="mono">0.72</span></div><div class="bar"><i style="width:72%"></i></div></div>
+          </div>
+        </div>
+        <!-- SETTINGS -->
+        <div class="screen" id="st-settings">
+          <div class="topbar"><h1>Settings</h1><div class="spacer"></div><div class="agent-dot"></div></div>
+          <div class="scroll">
+            <div class="card"><h4>Station desk</h4>
+              <div class="toggle-row"><div><div class="lab">Launch agent with Station</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">Show pulse strip</div></div><button type="button" class="switch on" data-sw></button></div>
+              <div class="toggle-row"><div><div class="lab">⌥Space expands Notch</div></div><button type="button" class="switch on" data-sw></button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CONSOLE ===================== -->
+<section class="product" id="product-console">
+  <div class="frame console-app">
+    <div class="toolbar-local" style="justify-content:space-between;flex-wrap:wrap">
+      <span class="banner-thin" style="border:0;background:transparent;padding:4px 0">CONSOLE — thin personal brain · <code>lib/data/sampleTrades.ts</code> (50 trades)</span>
+      <span id="co-trade-count" style="font:11px var(--mono);color:var(--t3)"></span>
+    </div>
+    <div class="body-row">
+      <nav class="sidebar" id="co-sidebar">
+        <div class="sb-section">Main</div>
+        <button type="button" class="nav-item active" data-co="journal">📔 Journal</button>
+        <button type="button" class="nav-item" data-co="trades">↗ Trades</button>
+        <button type="button" class="nav-item" data-co="import">↓ Import</button>
+        <button type="button" class="nav-item" data-co="workspace">⬚ Workspace</button>
+        <button type="button" class="nav-item" data-co="calendar">▦ Calendar</button>
+        <div class="sb-section">Insights</div>
+        <button type="button" class="nav-item" data-co="insights">◉ Insights Hub</button>
+        <button type="button" class="nav-item" data-co="patterns">▮ Pattern Registry</button>
+        <button type="button" class="nav-item" data-co="perf">▤ Performance</button>
+        <div class="sb-section">Manage</div>
+        <button type="button" class="nav-item" data-co="settings">⚙ Settings</button>
+      </nav>
+      <div class="main">
+        <div class="screen active" id="co-journal">
+          <div class="topbar"><h1>Journal</h1><span class="sub">/dashboard/journal</span><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="stat-strip" id="co-j-stats"></div>
+            <div class="filter-row" id="co-j-tabs">
+              <button type="button" class="on" data-jtab="all">All</button>
+              <button type="button" data-jtab="clean">Clean</button>
+              <button type="button" data-jtab="revenge">Revenge</button>
+              <button type="button" data-jtab="review">Review</button>
+            </div>
+            <div class="card"><h4>New note</h4>
+              <textarea class="ta" id="co-note" placeholder="What happened?"></textarea>
+              <button type="button" class="btn primary" id="co-add-note">Add to journal</button>
+            </div>
+            <div class="split-pane">
+              <div class="card" style="padding:0;overflow:auto;max-height:380px" id="co-journal-list"></div>
+              <div class="card" id="co-entry-detail">
+                <h4 id="co-entry-title">Select an entry</h4>
+                <p class="sub" id="co-entry-meta"></p>
+                <p class="sub" id="co-entry-body" style="margin-top:10px;color:var(--t1)"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="screen" id="co-trades">
+          <div class="topbar"><h1>Trades</h1><span class="sub">/dashboard/trades</span><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="stat-strip" id="co-t-stats"></div>
+            <div class="filter-row" style="align-items:center">
+              <input class="field" id="co-search" placeholder="Search symbol / strategy…" style="margin:0;max-width:220px;flex:1" />
+              <button type="button" class="on" data-tfilter="all">All</button>
+              <button type="button" data-tfilter="win">Wins</button>
+              <button type="button" data-tfilter="loss">Losses</button>
+              <button type="button" data-tfilter="revenge">Revenge</button>
+              <button type="button" data-tfilter="options">Options</button>
+            </div>
+            <div class="trades wide" id="co-trades-table"></div>
+          </div>
+        </div>
+        <div class="screen" id="co-import">
+          <div class="topbar"><h1>Import Trades</h1><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="banner-thin">CSV import → Console store. Live brokers stay on Station.</div>
+            <div class="card"><h4>Last import</h4><p class="sub">50 rows · sampleTrades · 2024-12-30</p>
+              <div class="btn-row"><button type="button" class="btn primary" data-toast="Import queued (mock)">Upload CSV</button>
+              <button type="button" class="btn" data-toast="Showing 50 sample rows in Trades">Open Trades</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="screen" id="co-workspace">
+          <div class="topbar"><h1>Workspace</h1><span class="sub">Day trader</span><div class="spacer"></div>
+            <button type="button" class="btn" data-toast="Templates (mock)">Templates</button>
+            <button type="button" class="btn primary" data-toast="Add widget (mock)">+ Add Widget</button>
+          </div>
+          <div class="scroll">
+            <div class="ws-board dense" id="ws-board">
+              <div class="ws-card on" data-ws="nse"><div class="k">NSE Quote</div><div class="ttl">RELIANCE</div><div class="sub mono">₹2,486.40 · +0.62%</div></div>
+              <div class="ws-card" data-ws="chart"><div class="k">Chart 15m</div><div class="ttl">NIFTY</div><div class="sub">ORB marked</div></div>
+              <div class="ws-card" data-ws="kill"><div class="k">Kill switch</div><div class="ttl">ARMED</div><div class="sub">₹15k / ₹40k</div></div>
+              <div class="ws-card" data-ws="brief"><div class="k">Morning brief</div><div class="ttl">score 0.72</div><div class="sub">Half size gate</div></div>
+              <div class="ws-card" data-ws="note"><div class="k">Note</div><div class="ttl">A-setups only</div><div class="sub">No revenge adds</div></div>
+              <div class="ws-card" data-ws="fii"><div class="k">FII / DII</div><div class="ttl">+₹1,842 Cr</div><div class="sub">Net FII buy</div></div>
+              <div class="ws-card" data-ws="beh"><div class="k">Behavioral</div><div class="ttl">0.72</div><div class="sub">2 flags today</div></div>
+              <div class="ws-card" data-ws="tv"><div class="k">TradingView</div><div class="ttl">BANKNIFTY</div><div class="sub">Embed OK</div></div>
+            </div>
+            <div class="card"><h4 id="ws-detail-title">RELIANCE</h4><p class="sub" id="ws-detail-body">NSE quote widget selected.</p></div>
+          </div>
+        </div>
+        <div class="screen" id="co-calendar">
+          <div class="topbar"><h1>Calendar</h1><span class="sub">Dec 2024 sample</span><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="cal-grid" id="co-cal"></div>
+            <div class="card"><h4 id="co-cal-title">Select a day</h4><p class="sub" id="co-cal-body">Day P&amp;L and trades appear here.</p></div>
+          </div>
+        </div>
+        <div class="screen" id="co-insights">
+          <div class="topbar"><h1>Insights Hub</h1><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="filter-row">
+              <button type="button" class="on">Today</button>
+              <button type="button" data-co-jump="patterns">Patterns</button>
+              <button type="button" data-co-jump="perf">Performance</button>
+            </div>
+            <div id="co-insight-cards" class="insight-grid"></div>
+          </div>
+        </div>
+        <div class="screen" id="co-patterns">
+          <div class="topbar"><h1>Pattern Registry</h1><span class="sub" id="co-pat-meta"></span><div class="spacer"></div></div>
+          <div class="scroll"><div id="co-pattern-cards" class="insight-grid"></div></div>
+        </div>
+        <div class="screen" id="co-perf">
+          <div class="topbar"><h1>Performance</h1><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="stat-strip" id="co-p-stats"></div>
+            <div class="card"><h4>By symbol</h4><div id="co-by-sym"></div></div>
+            <div class="card"><h4>By strategy</h4><div id="co-by-strat"></div></div>
+          </div>
+        </div>
+        <div class="screen" id="co-settings">
+          <div class="topbar"><h1>Settings</h1><span class="sub">thin prefs</span><div class="spacer"></div></div>
+          <div class="scroll">
+            <div class="banner-thin">Broker connect → Station Brokers. Console keeps journal/workspace prefs.</div>
+            <div class="settings-grid">
+              <div class="card"><h4>General</h4>
+                <div class="toggle-row"><div><div class="lab">Dark theme</div></div><button type="button" class="switch on" data-sw></button></div>
+                <div class="toggle-row"><div><div class="lab">Currency INR</div></div><button type="button" class="switch on" data-sw></button></div>
+                <div class="toggle-row"><div><div class="lab">Asia/Kolkata</div></div><button type="button" class="switch on" data-sw></button></div>
+              </div>
+              <div class="card"><h4>Journal</h4>
+                <div class="toggle-row"><div><div class="lab">Auto-skeleton</div></div><button type="button" class="switch on" data-sw></button></div>
+                <div class="toggle-row"><div><div class="lab">Autosave</div></div><button type="button" class="switch on" data-sw></button></div>
+              </div>
+              <div class="card"><h4>Notifications</h4>
+                <div class="toggle-row"><div><div class="lab">Email digests</div></div><button type="button" class="switch" data-sw></button></div>
+                <div class="toggle-row"><div><div class="lab">Pattern alerts</div></div><button type="button" class="switch on" data-sw></button></div>
+              </div>
+              <div class="card"><h4>Data &amp; Privacy</h4>
+                <div class="toggle-row"><div><div class="lab">Share anonymized patterns</div></div><button type="button" class="switch on" data-sw></button></div>
+                <button type="button" class="btn danger" data-toast="Export queued (mock)">Export all data</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== NOTCH ===================== -->
+<section class="product" id="product-notch">
+  <div class="notch-wrap">
+    <div class="toolbar-local" style="max-width:1040px;margin:0 auto;width:100%">
+      <button type="button" class="on" id="n-toggle">Expanded</button>
+      <button type="button" class="on" data-pill="intraday">Pill: Intraday</button>
+      <button type="button" data-pill="intervention">Pill: Intervention</button>
+      <button type="button" data-pill="scalper">Pill: Scalper</button>
+      <button type="button" data-pill="swing">Pill: Swing</button>
+    </div>
+    <div class="desktop expanded-on" id="n-desktop">
+      <div class="menubar"><span class="apple"> TradeAutopsy</span><span>Camera / notch strip</span><span class="clock">12:41</span></div>
+      <div class="notch-anchor"><div class="pill" id="n-pill"></div></div>
+      <div class="expanded">
+        <div class="chrome-tap" id="n-chrome" title="Collapse"></div>
+        <div class="plan-shell">
+          <nav class="plan-sb">
+            <div class="plan-brand"><div class="t">TradeAutopsy</div><div class="s">Behavioral trading OS</div></div>
+            <div class="plan-nav-scroll">
+              <div class="plan-sec">Session</div>
+              <button type="button" class="plan-nav on" data-ns="morning"><span>☀</span> Morning brief <span class="badge" id="n-morning-badge">1</span></button>
+              <button type="button" class="plan-nav" data-ns="pretrade"><span>☑</span> Pre-trade</button>
+              <button type="button" class="plan-nav" data-ns="live"><span>⚡</span> Live trade <span class="badge hot">!</span></button>
+              <button type="button" class="plan-nav" data-ns="posttrade"><span>☰</span> Post-trade</button>
+              <div class="plan-sec">Analysis</div>
+              <button type="button" class="plan-nav" data-ns="escrow"><span>🛡</span> Escrow match</button>
+              <button type="button" class="plan-nav" data-ns="patterns"><span>◉</span> Patterns</button>
+              <button type="button" class="plan-nav" data-ns="fidelity"><span>▮</span> Fidelity score</button>
+              <button type="button" class="plan-nav" data-ns="triage"><span>↓</span> Triage</button>
+            </div>
+            <div style="border-top:.5px solid var(--bd);padding:8px">
+              <button type="button" class="plan-nav" id="n-gear" style="width:100%;margin:0">⚙ Settings</button>
+            </div>
+          </nav>
+          <div class="plan-main">
+            <div class="plan-top">
+              <div class="title" id="n-title">Morning brief</div>
+              <span class="score">score 0.72</span>
+              <span class="mult">×0.85</span>
+              <span class="pill-chip"><span class="d"></span>Kotak Neo · live</span>
+              <span class="pill-chip" id="n-state"><span class="d"></span>Intact</span>
+              <button type="button" class="btn-new" id="n-new">+ New trade</button>
+            </div>
+            <div class="plan-body">
+              <div class="screen on" id="ns-morning">
+                <div class="caps">Session</div>
+                <div class="card"><div class="idx-row">
+                  <div class="idx"><div class="n">Nifty</div><div class="v">24,812</div><div class="c">+0.42%</div></div>
+                  <div class="idx"><div class="n">BNF</div><div class="v">52,140</div><div class="c neg">−0.18%</div></div>
+                  <div class="idx"><div class="n">VIX</div><div class="v" style="color:var(--amber)">14.2</div></div>
+                </div></div>
+                <div class="caps">Analysis</div>
+                <div class="card"><p class="sub">Yesterday: two revenge-adjacent adds. Watch size discipline in first 45 minutes.</p></div>
+                <div class="caps">Recommendation</div>
+                <div class="card"><p class="sub">Trade only A-setups. Cap first trade at half size until calm ≤ 2.</p></div>
+                <button type="button" class="big-btn outline" id="n-start">Start trading →</button>
+              </div>
+              <div class="screen" id="ns-pretrade">
+                <div class="tabs-arch">
+                  <button type="button" class="tab-arch on" data-arch="intraday">Intraday</button>
+                  <button type="button" class="tab-arch" data-arch="scalper">Scalper</button>
+                  <button type="button" class="tab-arch" data-arch="swing">Swing</button>
+                </div>
+                <div class="card">
+                  <h4>How are you feeling?</h4>
+                  <div class="feel-row" id="calm-row">
+                    <button type="button" class="feel on" data-v="1"><strong>1</strong>Calm</button>
+                    <button type="button" class="feel" data-v="2"><strong>2</strong>Focused</button>
+                    <button type="button" class="feel" data-v="3"><strong>3</strong>Tense</button>
+                    <button type="button" class="feel" data-v="4"><strong>4</strong>Anxious</button>
+                    <button type="button" class="feel" data-v="5"><strong>5</strong>Angry</button>
+                  </div>
+                  <div class="warn-box" id="calm-warn" hidden></div>
+                  <input class="field" value="NIFTY 24500 CE" />
+                  <input class="field" value="24580 entry · 24520 stop · 24720 target" />
+                  <div class="side-row">
+                    <button type="button" class="side on">BUY</button>
+                    <button type="button" class="side">SELL</button>
+                  </div>
+                  <div class="chips-row" id="setup-chips">
+                    <button type="button" class="chip-btn on">Breakout</button>
+                    <button type="button" class="chip-btn">Pullback</button>
+                    <button type="button" class="chip-btn">Reversal</button>
+                  </div>
+                  <div class="toggle-row"><div><div class="lab">Auto-place SL on fill</div></div><button type="button" class="switch on" data-sw></button></div>
+                  <button type="button" class="big-btn primary" id="n-confirm">Confirm — enter trade →</button>
+                </div>
+              </div>
+              <div class="screen" id="ns-live">
+                <div class="state-banner"><span class="dot"></span><div><div class="lab">Plan intact</div><div class="sent">Thesis known · stop resting.</div></div></div>
+                <div class="metrics">
+                  <div class="metric"><div class="k">Unrealised</div><div class="v pos">+₹1,250</div></div>
+                  <div class="metric"><div class="k">Risk used</div><div class="v teal">42%</div></div>
+                  <div class="metric"><div class="k">Max loss</div><div class="v">₹3,000</div></div>
+                  <div class="metric"><div class="k">Time</div><div class="v amber">18m</div></div>
+                </div>
+                <div class="card" style="border-color:rgba(0,229,192,.25)">
+                  <h4 style="color:var(--teal)">Live capture</h4>
+                  <p class="sub">Pin a journal snapshot to this declaration.</p>
+                  <button type="button" class="btn primary" id="n-capture">Capture to Journal →</button>
+                </div>
+                <div class="footer-bar">
+                  <button type="button" class="footer-pill">Exit trade</button>
+                  <button type="button" class="footer-pill">Move SL to entry</button>
+                  <button type="button" class="footer-pill">Hold and watch</button>
+                </div>
+                <button type="button" class="big-btn danger">Stop me — flatten</button>
+              </div>
+              <div class="screen" id="ns-posttrade">
+                <div class="card"><h4>Moment A — outcome</h4><p class="sub">Did the market prove your thesis wrong, or did you exit early?</p><input class="field" placeholder="Optional note" /><button type="button" class="btn primary" data-toast="Moment A saved (mock)">Continue</button></div>
+                <div class="card"><h4>Moment B — process</h4>
+                  <div class="toggle-row"><div><div class="lab">Stop as declared</div></div><button type="button" class="switch on" data-sw></button></div>
+                  <div class="toggle-row"><div><div class="lab">Size as declared</div></div><button type="button" class="switch on" data-sw></button></div>
+                  <div class="toggle-row"><div><div class="lab">No impulsive add</div></div><button type="button" class="switch" data-sw></button></div>
+                </div>
+                <div class="card"><h4>Moment C — reflection</h4><textarea class="ta" placeholder="What will you do differently?"></textarea><button type="button" class="btn primary" id="n-save-debrief">Save debrief → Journal</button></div>
+              </div>
+              <div class="screen" id="ns-escrow">
+                <div class="card">
+                  <div class="escrow-row"><span class="k">Symbol</span><span class="v">NIFTY 24500 CE</span></div>
+                  <div class="escrow-row"><span class="k">Fill vs plan</span><span class="v" style="color:var(--teal)">Match</span></div>
+                  <div class="escrow-row"><span class="k">Fidelity</span><span class="v">94%</span></div>
+                </div>
+              </div>
+              <div class="screen" id="ns-patterns"><div class="card"><h4>Patterns</h4><p class="sub">Building patterns — need 50+ trades</p></div></div>
+              <div class="screen" id="ns-fidelity">
+                <div class="card progress"><div class="row"><span>Plan fidelity</span><span>94%</span></div><div class="bar"><i style="width:94%"></i></div></div>
+                <div class="card progress"><div class="row"><span>Behavioral score</span><span>0.72</span></div><div class="bar"><i style="width:72%"></i></div></div>
+              </div>
+              <div class="screen" id="ns-triage">
+                <div class="card">
+                  <div class="escrow-row"><span class="k">NIFTY 24500 CE</span><span class="v">BUY</span></div>
+                  <div class="escrow-row"><span class="k">BANKNIFTY 52000 PE</span><span class="v">SELL</span></div>
+                </div>
+              </div>
+              <div class="screen" id="ns-settings">
+                <div class="card">
+                  <div class="settings-row"><div><div>Daemon</div><div class="sub">Connected · polling</div></div><span style="color:var(--teal);font-size:11px">LIVE</span></div>
+                  <div class="settings-row"><div><div>Broker sync</div><div class="sub">Kotak Neo</div></div><span style="color:var(--teal);font-size:11px">GREEN</span></div>
+                </div>
+                <div class="toggle-row"><div><div class="lab">Block new entries when stop-me armed</div></div><button type="button" class="switch on" data-sw></button></div>
+                <div class="toggle-row"><div><div class="lab">Mandatory read gate</div></div><button type="button" class="switch on" data-sw></button></div>
+                <label class="sub">Daily loss limit ₹</label>
+                <input class="field" value="15000" />
+                <label class="sub">Weekly loss limit ₹</label>
+                <input class="field" value="40000" />
+                <button type="button" class="big-btn primary" data-toast="Loss limits saved (mock)">Save limits</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._tm);
+    toast._tm = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  /* Product switcher */
+  function setProduct(id) {
+    document.querySelectorAll('.product').forEach(function (p) {
+      p.classList.toggle('on', p.id === 'product-' + id);
+    });
+    document.querySelectorAll('.sw-btn').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-product') === id);
+    });
+  }
+  document.querySelectorAll('.sw-btn').forEach(function (b) {
+    b.addEventListener('click', function () { setProduct(b.getAttribute('data-product')); });
+  });
+
+  /* Switches */
+  document.querySelectorAll('[data-sw]').forEach(function (sw) {
+    sw.addEventListener('click', function () { sw.classList.toggle('on'); });
+  });
+  document.querySelectorAll('[data-toast]').forEach(function (b) {
+    b.addEventListener('click', function () { toast(b.getAttribute('data-toast')); });
+  });
+
+  /* Station routes */
+  var stTitles = {
+    today:'Today', pretrade:'Pre-trade', live:'Live trade', posttrade:'Post-trade',
+    brokers:'Brokers', market:'Market Data', ai:'AI / Workflow', journal:'Journal',
+    escrow:'Escrow match', patterns:'Patterns', fidelity:'Fidelity score', settings:'Settings'
+  };
+  function setStation(id) {
+    document.querySelectorAll('#st-sidebar .nav-item').forEach(function (n) {
+      n.classList.toggle('active', n.getAttribute('data-st') === id);
+    });
+    document.querySelectorAll('#product-station .screen').forEach(function (s) {
+      s.classList.toggle('active', s.id === 'st-' + id);
+    });
+  }
+  document.querySelectorAll('#st-sidebar .nav-item').forEach(function (n) {
+    n.addEventListener('click', function () { setStation(n.getAttribute('data-st')); });
+  });
+  document.getElementById('st-pulse').addEventListener('click', function () { setStation('live'); });
+
+  var app = document.getElementById('station-app');
+  function toggleApp(btnId, cls) {
+    var btn = document.getElementById(btnId);
+    btn.addEventListener('click', function () {
+      app.classList.toggle(cls);
+      btn.classList.toggle('on', app.classList.contains(cls));
+      if (cls === 'degraded') {
+        document.querySelectorAll('#st-pulse .metric .val').forEach(function (v) {
+          v.textContent = app.classList.contains('degraded') ? v.getAttribute('data-deg') : v.getAttribute('data-live');
+        });
+      }
+    });
+  }
+  toggleApp('st-dual', 'dual');
+  toggleApp('st-degraded', 'degraded');
+  toggleApp('st-breaker', 'breaker');
+  document.getElementById('st-resume').addEventListener('click', function () {
+    app.classList.remove('breaker');
+    document.getElementById('st-breaker').classList.remove('on');
+    toast('Breaker cleared (mock)');
+  });
+  document.getElementById('st-open-notch-pre').addEventListener('click', function () {
+    setProduct('notch'); setNotchScreen('pretrade'); setExpanded(true);
+  });
+  document.getElementById('st-open-console-journal').addEventListener('click', function () {
+    setProduct('console'); setConsole('journal');
+  });
+  document.getElementById('st-stop-me').addEventListener('click', function () { toast('Stop-me armed (mock)'); });
+
+  /* Brokers local state */
+  var brokerState = {
+    kotak: { status: 'needs', label: 'needs TOTP', detail: 'Session vault missing — Start opens remint' },
+    binance: { status: 'ok', label: 'synced', detail: 'HMAC vault OK · sync idle' }
+  };
+  function renderBroker(id) {
+    var s = brokerState[id];
+    var pill = document.getElementById(id + '-pill');
+    var st = document.getElementById(id + '-status');
+    pill.className = 'status-pill ' + (s.status === 'ok' ? 'ok' : s.status === 'live' ? 'ok' : 'warn');
+    pill.querySelector('span').textContent = s.label;
+    st.textContent = s.detail;
+    st.className = 'status ' + (s.status === 'ok' || s.status === 'live' ? 'live' : 'off');
+  }
+  document.querySelectorAll('[data-baction]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var id = b.getAttribute('data-broker');
+      var act = b.getAttribute('data-baction');
+      if (id === 'kotak' && (act === 'start' || act === 'reauth' || act === 'connect')) {
+        if (brokerState.kotak.status !== 'live' && act !== 'connect') {
+          document.getElementById('totp-sheet').classList.remove('hidden');
+          toast('TOTP remint sheet');
+          return;
+        }
+        if (act === 'connect') {
+          document.getElementById('totp-sheet').classList.remove('hidden');
+          return;
+        }
+      }
+      if (act === 'start') {
+        brokerState[id] = { status: 'live', label: 'syncing', detail: 'Sync running (mock)' };
+      } else if (act === 'stop') {
+        brokerState[id] = { status: 'ok', label: 'ready', detail: 'Stopped · vault OK' };
+      } else if (act === 'test') {
+        toast((id === 'kotak' ? 'Kotak' : 'Binance') + ' test OK (mock)');
+      } else if (act === 'connect' && id === 'binance') {
+        brokerState.binance = { status: 'ok', label: 'connected', detail: 'HMAC saved (mock)' };
+      }
+      renderBroker(id);
+    });
+  });
+  document.getElementById('totp-refresh').addEventListener('click', function () {
+    var v = document.getElementById('totp-input').value.trim();
+    if (v.length < 6) { toast('Enter 6-digit TOTP'); return; }
+    brokerState.kotak = { status: 'live', label: 'synced', detail: 'Session minted · vault OK (mock)' };
+    renderBroker('kotak');
+    document.getElementById('totp-sheet').classList.add('hidden');
+    document.getElementById('totp-input').value = '';
+    toast('Kotak session refreshed');
+  });
+  document.getElementById('totp-cancel').addEventListener('click', function () {
+    document.getElementById('totp-sheet').classList.add('hidden');
+  });
+
+
+  /* ===== Console data: tradeautopsy lib/data/sampleTrades.ts ===== */
+  var CO_TRADES = [{"date": "2024-12-01", "symbol": "NIFTY", "qty": 50, "price": 19500.0, "pnl": 2500, "strategy": "intraday", "setup": "Breakout", "notes": "Good entry, held for target", "tags": ["nifty", "breakout"], "behavior": "disciplined"}, {"date": "2024-12-01", "symbol": "RELIANCE", "qty": 100, "price": 2450.0, "pnl": -1200, "strategy": "intraday", "setup": "Reversal", "notes": "Entered too early", "tags": ["reliance"], "behavior": "calm"}, {"date": "2024-12-02", "symbol": "BANKNIFTY", "qty": 25, "price": 45200.0, "pnl": 1800, "strategy": "options", "setup": "Call", "notes": "Bank Nifty call option", "tags": ["banknifty", "options"], "behavior": "disciplined"}, {"date": "2024-12-02", "symbol": "TCS", "qty": 50, "price": 3850.0, "pnl": -800, "strategy": "swing", "setup": "Trend", "notes": "Swing trade, stopped out", "tags": ["tcs", "swing"], "behavior": "calm"}, {"date": "2024-12-03", "symbol": "INFY", "qty": 75, "price": 1520.0, "pnl": 3200, "strategy": "intraday", "setup": "Breakout", "notes": "Strong momentum", "tags": ["infy"], "behavior": "disciplined"}, {"date": "2024-12-03", "symbol": "HDFCBANK", "qty": 50, "price": 1680.0, "pnl": -1500, "strategy": "intraday", "setup": "", "notes": "Revenge trade after INFY win", "tags": ["hdfc", "revenge"], "behavior": "revenge"}, {"date": "2024-12-03", "symbol": "ICICIBANK", "qty": 100, "price": 980.0, "pnl": -2200, "strategy": "intraday", "setup": "", "notes": "Overtrading - 3rd trade of day", "tags": ["icici", "overtrading"], "behavior": "overtrading"}, {"date": "2024-12-04", "symbol": "NIFTY", "qty": 50, "price": 19600.0, "pnl": 1500, "strategy": "intraday", "setup": "Support", "notes": "Bounced from support", "tags": ["nifty"], "behavior": "disciplined"}, {"date": "2024-12-04", "symbol": "WIPRO", "qty": 200, "price": 450.0, "pnl": 1800, "strategy": "swing", "setup": "Trend", "notes": "Swing trade working well", "tags": ["wipro", "swing"], "behavior": "disciplined"}, {"date": "2024-12-05", "symbol": "BANKNIFTY", "qty": 30, "price": 45500.0, "pnl": -2500, "strategy": "options", "setup": "Put", "notes": "Put option, wrong direction", "tags": ["banknifty", "options"], "behavior": "calm"}, {"date": "2024-12-08", "symbol": "RELIANCE", "qty": 100, "price": 2460.0, "pnl": 2200, "strategy": "intraday", "setup": "Breakout", "notes": "Monday morning trade", "tags": ["reliance"], "behavior": "disciplined"}, {"date": "2024-12-08", "symbol": "TCS", "qty": 50, "price": 3860.0, "pnl": 1500, "strategy": "intraday", "setup": "", "notes": "Follow up trade", "tags": ["tcs"], "behavior": "disciplined"}, {"date": "2024-12-08", "symbol": "INFY", "qty": 75, "price": 1530.0, "pnl": -1800, "strategy": "intraday", "setup": "", "notes": "Overtrading - 3rd trade", "tags": ["infy", "overtrading"], "behavior": "overtrading"}, {"date": "2024-12-09", "symbol": "NIFTY", "qty": 50, "price": 19700.0, "pnl": 3000, "strategy": "intraday", "setup": "Momentum", "notes": "Strong trend day", "tags": ["nifty", "momentum"], "behavior": "disciplined"}, {"date": "2024-12-09", "symbol": "HDFCBANK", "qty": 50, "price": 1690.0, "pnl": 1200, "strategy": "intraday", "setup": "", "notes": "Good entry", "tags": ["hdfc"], "behavior": "disciplined"}, {"date": "2024-12-10", "symbol": "BANKNIFTY", "qty": 25, "price": 45800.0, "pnl": -1500, "strategy": "options", "setup": "", "notes": "Options trade, stopped out early", "tags": ["banknifty", "options"], "behavior": "calm"}, {"date": "2024-12-10", "symbol": "RELIANCE", "qty": 150, "price": 2450.0, "pnl": -3500, "strategy": "intraday", "setup": "", "notes": "Revenge sizing after loss", "tags": ["reliance", "revenge-sizing"], "behavior": "revenge"}, {"date": "2024-12-11", "symbol": "WIPRO", "qty": 200, "price": 455.0, "pnl": 2500, "strategy": "swing", "setup": "", "notes": "Swing trade target hit", "tags": ["wipro", "swing"], "behavior": "disciplined"}, {"date": "2024-12-11", "symbol": "TCS", "qty": 50, "price": 3880.0, "pnl": 1800, "strategy": "intraday", "setup": "", "notes": "Intraday scalp", "tags": ["tcs"], "behavior": "disciplined"}, {"date": "2024-12-12", "symbol": "NIFTY", "qty": 50, "price": 19800.0, "pnl": -2000, "strategy": "intraday", "setup": "", "notes": "Friday afternoon trade - weekend warrior", "tags": ["nifty", "weekend-warrior"], "behavior": "weekend"}, {"date": "2024-12-15", "symbol": "INFY", "qty": 75, "price": 1540.0, "pnl": 2800, "strategy": "intraday", "setup": "Breakout", "notes": "Monday breakout", "tags": ["infy"], "behavior": "disciplined"}, {"date": "2024-12-15", "symbol": "HDFCBANK", "qty": 50, "price": 1700.0, "pnl": 1500, "strategy": "intraday", "setup": "", "notes": "Follow up trade", "tags": ["hdfc"], "behavior": "disciplined"}, {"date": "2024-12-16", "symbol": "BANKNIFTY", "qty": 25, "price": 46000.0, "pnl": 2200, "strategy": "options", "setup": "Call", "notes": "Call option profit", "tags": ["banknifty", "options"], "behavior": "disciplined"}, {"date": "2024-12-16", "symbol": "RELIANCE", "qty": 100, "price": 2470.0, "pnl": -1200, "strategy": "intraday", "setup": "", "notes": "Reversal trade failed", "tags": ["reliance"], "behavior": "calm"}, {"date": "2024-12-17", "symbol": "TCS", "qty": 50, "price": 3900.0, "pnl": 3200, "strategy": "swing", "setup": "Trend", "notes": "Swing trade working", "tags": ["tcs", "swing"], "behavior": "disciplined"}, {"date": "2024-12-17", "symbol": "NIFTY", "qty": 50, "price": 19900.0, "pnl": -1800, "strategy": "intraday", "setup": "", "notes": "Intraday loss", "tags": ["nifty"], "behavior": "calm"}, {"date": "2024-12-18", "symbol": "WIPRO", "qty": 200, "price": 460.0, "pnl": 1800, "strategy": "swing", "setup": "", "notes": "Swing trade", "tags": ["wipro", "swing"], "behavior": "disciplined"}, {"date": "2024-12-18", "symbol": "INFY", "qty": 75, "price": 1550.0, "pnl": -2500, "strategy": "intraday", "setup": "", "notes": "FOMO trade - entered late", "tags": ["infy", "fomo"], "behavior": "fomo"}, {"date": "2024-12-19", "symbol": "BANKNIFTY", "qty": 30, "price": 46200.0, "pnl": -3000, "strategy": "options", "setup": "", "notes": "Options loss", "tags": ["banknifty", "options"], "behavior": "calm"}, {"date": "2024-12-19", "symbol": "RELIANCE", "qty": 200, "price": 2460.0, "pnl": -5000, "strategy": "intraday", "setup": "", "notes": "Revenge sizing after big loss", "tags": ["reliance", "revenge-sizing"], "behavior": "revenge"}, {"date": "2024-12-22", "symbol": "NIFTY", "qty": 50, "price": 20000.0, "pnl": 2500, "strategy": "intraday", "setup": "Support", "notes": "Bounce from support", "tags": ["nifty"], "behavior": "disciplined"}, {"date": "2024-12-22", "symbol": "HDFCBANK", "qty": 50, "price": 1710.0, "pnl": 1800, "strategy": "intraday", "setup": "", "notes": "Good entry", "tags": ["hdfc"], "behavior": "disciplined"}, {"date": "2024-12-23", "symbol": "TCS", "qty": 50, "price": 3920.0, "pnl": 2200, "strategy": "intraday", "setup": "", "notes": "Intraday profit", "tags": ["tcs"], "behavior": "disciplined"}, {"date": "2024-12-23", "symbol": "INFY", "qty": 75, "price": 1560.0, "pnl": -1500, "strategy": "intraday", "setup": "", "notes": "Stopped out", "tags": ["infy"], "behavior": "calm"}, {"date": "2024-12-24", "symbol": "BANKNIFTY", "qty": 25, "price": 46400.0, "pnl": 3000, "strategy": "options", "setup": "Call", "notes": "Options profit", "tags": ["banknifty", "options"], "behavior": "disciplined"}, {"date": "2024-12-24", "symbol": "RELIANCE", "qty": 100, "price": 2480.0, "pnl": 2000, "strategy": "intraday", "setup": "", "notes": "Good trade", "tags": ["reliance"], "behavior": "disciplined"}, {"date": "2024-12-24", "symbol": "WIPRO", "qty": 200, "price": 465.0, "pnl": -1200, "strategy": "swing", "setup": "", "notes": "Swing trade stopped out", "tags": ["wipro", "swing"], "behavior": "calm"}, {"date": "2024-12-26", "symbol": "NIFTY", "qty": 50, "price": 20100.0, "pnl": 3500, "strategy": "intraday", "setup": "Momentum", "notes": "Strong momentum day", "tags": ["nifty", "momentum"], "behavior": "disciplined"}, {"date": "2024-12-26", "symbol": "HDFCBANK", "qty": 50, "price": 1720.0, "pnl": 2500, "strategy": "intraday", "setup": "", "notes": "Follow up trade", "tags": ["hdfc"], "behavior": "disciplined"}, {"date": "2024-12-27", "symbol": "TCS", "qty": 50, "price": 3940.0, "pnl": -2000, "strategy": "intraday", "setup": "", "notes": "Friday afternoon - weekend warrior", "tags": ["tcs", "weekend-warrior"], "behavior": "weekend"}, {"date": "2024-12-27", "symbol": "BANKNIFTY", "qty": 30, "price": 46600.0, "pnl": -2500, "strategy": "options", "setup": "", "notes": "Options loss on Friday", "tags": ["banknifty", "options", "weekend-warrior"], "behavior": "weekend"}, {"date": "2024-12-28", "symbol": "RELIANCE", "qty": 100, "price": 2490.0, "pnl": 2800, "strategy": "intraday", "setup": "", "notes": "Good trade", "tags": ["reliance"], "behavior": "disciplined"}, {"date": "2024-12-28", "symbol": "INFY", "qty": 75, "price": 1570.0, "pnl": 2200, "strategy": "intraday", "setup": "", "notes": "Profit taking", "tags": ["infy"], "behavior": "disciplined"}, {"date": "2024-12-29", "symbol": "WIPRO", "qty": 200, "price": 470.0, "pnl": 3000, "strategy": "swing", "setup": "Trend", "notes": "Swing trade target hit", "tags": ["wipro", "swing"], "behavior": "disciplined"}, {"date": "2024-12-29", "symbol": "NIFTY", "qty": 50, "price": 20200.0, "pnl": 4000, "strategy": "intraday", "setup": "Breakout", "notes": "Strong breakout trade", "tags": ["nifty", "breakout"], "behavior": "disciplined"}, {"date": "2024-12-30", "symbol": "HDFCBANK", "qty": 50, "price": 1730.0, "pnl": 1800, "strategy": "intraday", "setup": "", "notes": "Final trade of month", "tags": ["hdfc"], "behavior": "disciplined"}];
+  var CO_JOURNALS = [{"id": "cap1", "when": "2026-07-28", "title": "Notch live capture", "body": "Pinned from Live plan \u00b7 NIFTY 24500 CE \u00b7 intact \u00b7 +\u20b91,250 unrealised", "pnl": 1250, "signal": "clean", "symbol": "NIFTY"}, {"id": "hub1", "when": "2026-07-27", "title": "Morning brief reflection", "body": "Yesterday revenge-adjacent adds. Cap first trade half size until calm \u2264 2.", "pnl": 0, "signal": "review", "symbol": ""}, {"id": "j0", "when": "2024-12-01", "title": "NIFTY \u00b7 Breakout", "body": "Good entry, held for target", "pnl": 2500, "signal": "clean", "symbol": "NIFTY"}, {"id": "j1", "when": "2024-12-01", "title": "RELIANCE \u00b7 Reversal", "body": "Entered too early", "pnl": -1200, "signal": "review", "symbol": "RELIANCE"}, {"id": "j2", "when": "2024-12-02", "title": "BANKNIFTY \u00b7 Call", "body": "Bank Nifty call option", "pnl": 1800, "signal": "clean", "symbol": "BANKNIFTY"}, {"id": "j3", "when": "2024-12-02", "title": "TCS \u00b7 Trend", "body": "Swing trade, stopped out", "pnl": -800, "signal": "review", "symbol": "TCS"}, {"id": "j4", "when": "2024-12-03", "title": "INFY \u00b7 Breakout", "body": "Strong momentum", "pnl": 3200, "signal": "clean", "symbol": "INFY"}, {"id": "j5", "when": "2024-12-03", "title": "HDFCBANK \u00b7 intraday", "body": "Revenge trade after INFY win", "pnl": -1500, "signal": "revenge", "symbol": "HDFCBANK"}, {"id": "j6", "when": "2024-12-03", "title": "ICICIBANK \u00b7 intraday", "body": "Overtrading - 3rd trade of day", "pnl": -2200, "signal": "review", "symbol": "ICICIBANK"}, {"id": "j7", "when": "2024-12-04", "title": "NIFTY \u00b7 Support", "body": "Bounced from support", "pnl": 1500, "signal": "clean", "symbol": "NIFTY"}, {"id": "j8", "when": "2024-12-04", "title": "WIPRO \u00b7 Trend", "body": "Swing trade working well", "pnl": 1800, "signal": "clean", "symbol": "WIPRO"}, {"id": "j9", "when": "2024-12-05", "title": "BANKNIFTY \u00b7 Put", "body": "Put option, wrong direction", "pnl": -2500, "signal": "review", "symbol": "BANKNIFTY"}, {"id": "j10", "when": "2024-12-08", "title": "RELIANCE \u00b7 Breakout", "body": "Monday morning trade", "pnl": 2200, "signal": "clean", "symbol": "RELIANCE"}, {"id": "j11", "when": "2024-12-08", "title": "TCS \u00b7 intraday", "body": "Follow up trade", "pnl": 1500, "signal": "clean", "symbol": "TCS"}, {"id": "j12", "when": "2024-12-08", "title": "INFY \u00b7 intraday", "body": "Overtrading - 3rd trade", "pnl": -1800, "signal": "review", "symbol": "INFY"}, {"id": "j13", "when": "2024-12-09", "title": "NIFTY \u00b7 Momentum", "body": "Strong trend day", "pnl": 3000, "signal": "clean", "symbol": "NIFTY"}, {"id": "j14", "when": "2024-12-09", "title": "HDFCBANK \u00b7 intraday", "body": "Good entry", "pnl": 1200, "signal": "clean", "symbol": "HDFCBANK"}, {"id": "j15", "when": "2024-12-10", "title": "BANKNIFTY \u00b7 options", "body": "Options trade, stopped out early", "pnl": -1500, "signal": "review", "symbol": "BANKNIFTY"}, {"id": "j16", "when": "2024-12-10", "title": "RELIANCE \u00b7 intraday", "body": "Revenge sizing after loss", "pnl": -3500, "signal": "revenge", "symbol": "RELIANCE"}, {"id": "j17", "when": "2024-12-11", "title": "WIPRO \u00b7 swing", "body": "Swing trade target hit", "pnl": 2500, "signal": "clean", "symbol": "WIPRO"}, {"id": "j18", "when": "2024-12-11", "title": "TCS \u00b7 intraday", "body": "Intraday scalp", "pnl": 1800, "signal": "clean", "symbol": "TCS"}, {"id": "j19", "when": "2024-12-12", "title": "NIFTY \u00b7 intraday", "body": "Friday afternoon trade - weekend warrior", "pnl": -2000, "signal": "review", "symbol": "NIFTY"}, {"id": "j20", "when": "2024-12-15", "title": "INFY \u00b7 Breakout", "body": "Monday breakout", "pnl": 2800, "signal": "clean", "symbol": "INFY"}, {"id": "j21", "when": "2024-12-15", "title": "HDFCBANK \u00b7 intraday", "body": "Follow up trade", "pnl": 1500, "signal": "clean", "symbol": "HDFCBANK"}, {"id": "j22", "when": "2024-12-16", "title": "BANKNIFTY \u00b7 Call", "body": "Call option profit", "pnl": 2200, "signal": "clean", "symbol": "BANKNIFTY"}, {"id": "j23", "when": "2024-12-16", "title": "RELIANCE \u00b7 intraday", "body": "Reversal trade failed", "pnl": -1200, "signal": "review", "symbol": "RELIANCE"}, {"id": "j24", "when": "2024-12-17", "title": "TCS \u00b7 Trend", "body": "Swing trade working", "pnl": 3200, "signal": "clean", "symbol": "TCS"}, {"id": "j25", "when": "2024-12-17", "title": "NIFTY \u00b7 intraday", "body": "Intraday loss", "pnl": -1800, "signal": "review", "symbol": "NIFTY"}];
+  var CO_PATTERNS = [{"name": "Revenge Trading", "desc": "Rapid re-entry after a loss within 60\u2013180s", "source": "daemon", "prob": 0.78, "fired": 11, "loss": 18450, "confirmed": true}, {"name": "Overtrading", "desc": "Orders/session above personal baseline", "source": "daemon", "prob": 0.55, "fired": 6, "loss": 9200, "confirmed": false}, {"name": "Tilt Spiral", "desc": "Cascading size increases after two losses", "source": "tai", "prob": 0.62, "fired": 4, "loss": 12100, "confirmed": true}, {"name": "Time of Day Bias", "desc": "Elevated loss rate 14:00\u201315:15 IST", "source": "ml", "prob": 0.71, "fired": 9, "loss": 8600, "confirmed": true}, {"name": "Weekend Warrior", "desc": "Friday PM entries underperform", "source": "journal", "prob": 0.48, "fired": 3, "loss": 4500, "confirmed": false}, {"name": "FOMO Chase", "desc": "Late breakout entries after move is extended", "source": "daemon", "prob": 0.66, "fired": 7, "loss": 7300, "confirmed": true}];
+  var CO_INSIGHTS = [{"title": "Revenge Trading Detected", "desc": "You traded 4 times immediately after losses", "impact": -2640, "badge": "critical", "details": "Wait 15 minutes after a loss before your next trade.", "action": "Set cooldown timer"}, {"title": "Strong Monday open", "desc": "Mon AM win rate 72% vs 41% Fri PM", "impact": 8400, "badge": "success", "details": "Protect Friday afternoon \u2014 flat by 14:30.", "action": "Add time rule"}, {"title": "Size drift on RELIANCE", "desc": "Avg size +38% after a stop-out on same symbol", "impact": -5200, "badge": "warning", "details": "Hard-cap size for 3 bars after a loss.", "action": "Enable size guard"}, {"title": "Bank Nifty options edge", "desc": "Call setups R:R 1.8 with 58% hit", "impact": 6200, "badge": "success", "details": "Keep calls; put fade needs review.", "action": "Tag options A-setups"}];
+  var coTFilter = 'all';
+  var coJTab = 'all';
+  var wsCopy = {
+    nse: ['RELIANCE', 'NSE quote widget — ₹2,486.40 · +0.62% (mock).'],
+    chart: ['NIFTY 15m', 'Lightweight chart with ORB markers.'],
+    kill: ['Kill switch', 'Daily ₹15k / Weekly ₹40k — Station enforces teeth.'],
+    brief: ['Morning brief', 'score 0.72 — half size until calm ≤ 2.'],
+    note: ['A-setups only', 'Canvas note — no revenge adds.'],
+    fii: ['FII / DII', 'Net FII buy +₹1,842 Cr (mock).'],
+    beh: ['Behavioral score', '0.72 calm · 2 flags today.'],
+    tv: ['TradingView', 'BANKNIFTY embed — host allowlisted.']
+  };
+
+  function inr(n) {
+    var sign = n < 0 ? '-' : '';
+    return sign + '₹' + Math.abs(n).toLocaleString('en-IN');
+  }
+  function tradeStats(list) {
+    var net = 0, wins = 0, losses = 0;
+    list.forEach(function (t) { net += t.pnl; if (t.pnl > 0) wins++; else if (t.pnl < 0) losses++; });
+    return { net: net, wins: wins, losses: losses, wr: list.length ? (wins / list.length) * 100 : 0, n: list.length };
+  }
+  function filteredTrades() {
+    var q = ((document.getElementById('co-search') || {}).value || '').toLowerCase();
+    return CO_TRADES.filter(function (t) {
+      if (coTFilter === 'win' && t.pnl <= 0) return false;
+      if (coTFilter === 'loss' && t.pnl >= 0) return false;
+      if (coTFilter === 'revenge' && t.behavior.indexOf('revenge') < 0) return false;
+      if (coTFilter === 'options' && t.strategy !== 'options') return false;
+      if (q && !(t.symbol.toLowerCase().indexOf(q) >= 0 || t.strategy.indexOf(q) >= 0 || (t.setup || '').toLowerCase().indexOf(q) >= 0 || (t.notes || '').toLowerCase().indexOf(q) >= 0)) return false;
+      return true;
+    });
+  }
+  function renderTrades() {
+    var list = filteredTrades();
+    var s = tradeStats(list);
+    var el = document.getElementById('co-t-stats');
+    if (el) el.innerHTML = '<div class="stat-tile"><div class="v '+(s.net>=0?'pos':'neg')+'">'+inr(s.net)+'</div><div class="l">net p&l</div></div><div class="stat-tile"><div class="v">'+s.wr.toFixed(1)+'%</div><div class="l">win rate</div></div><div class="stat-tile"><div class="v">'+s.n+'</div><div class="l">trades</div></div><div class="stat-tile"><div class="v">'+s.wins+'W / '+s.losses+'L</div><div class="l">record</div></div>';
+    var ps = tradeStats(CO_TRADES);
+    var pe = document.getElementById('co-p-stats');
+    if (pe) pe.innerHTML = el.innerHTML.replace(String(s.n), String(ps.n)).replace(s.wr.toFixed(1), ps.wr.toFixed(1)).replace(inr(s.net), inr(ps.net)).replace(s.wins+'W / '+s.losses+'L', ps.wins+'W / '+ps.losses+'L');
+    // simpler: always full book on perf
+    if (pe) pe.innerHTML = '<div class="stat-tile"><div class="v '+(ps.net>=0?'pos':'neg')+'">'+inr(ps.net)+'</div><div class="l">net p&l</div></div><div class="stat-tile"><div class="v">'+ps.wr.toFixed(1)+'%</div><div class="l">win rate</div></div><div class="stat-tile"><div class="v">'+ps.n+'</div><div class="l">trades</div></div><div class="stat-tile"><div class="v">'+ps.wins+'W / '+ps.losses+'L</div><div class="l">record</div></div>';
+    var host = document.getElementById('co-trades-table');
+    var h = '<div class="t-head"><span>Date</span><span>Symbol</span><span>Side</span><span>Qty</span><span>Entry</span><span>Type</span><span>P&amp;L</span><span>Behavior</span><span>Notes</span></div>';
+    list.slice().reverse().forEach(function (t) {
+      var cls = t.pnl >= 0 ? 'pos' : 'neg';
+      h += '<div class="t-row'+(t.behavior.indexOf('revenge')>=0?' flagged':'')+'"><span class="mono">'+t.date.slice(5)+'</span><span class="mono">'+t.symbol+'</span><span class="mono">BUY</span><span class="mono">'+t.qty+'</span><span class="mono">'+t.price.toLocaleString('en-IN')+'</span><span class="mono">'+t.strategy+'</span><span class="mono '+cls+'">'+inr(t.pnl)+'</span><span class="mono">'+t.behavior+'</span><span class="sub" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(t.notes||t.setup||'—')+'</span></div>';
+    });
+    host.innerHTML = h;
+    var c = document.getElementById('co-trade-count');
+    if (c) c.textContent = CO_TRADES.length + ' sample trades · from Console repo';
+    var bySym = {}, bySt = {};
+    CO_TRADES.forEach(function (t) { bySym[t.symbol]=(bySym[t.symbol]||0)+t.pnl; bySt[t.strategy]=(bySt[t.strategy]||0)+t.pnl; });
+    function bars(obj, id) {
+      var el = document.getElementById(id); if (!el) return;
+      el.innerHTML = Object.keys(obj).map(function (k) { return [k, obj[k]]; }).sort(function (a,b) { return b[1]-a[1]; }).map(function (r) {
+        return '<div class="escrow-row"><span class="k">'+r[0]+'</span><span class="v" style="color:'+(r[1]>=0?'var(--today-profit)':'var(--today-loss)')+'">'+inr(r[1])+'</span></div>';
+      }).join('');
+    }
+    bars(bySym, 'co-by-sym'); bars(bySt, 'co-by-strat');
+  }
+  function renderJournals() {
+    var list = CO_JOURNALS.filter(function (j) { return coJTab === 'all' || j.signal === coJTab; });
+    var s = tradeStats(CO_TRADES);
+    var js = document.getElementById('co-j-stats');
+    if (js) js.innerHTML = '<div class="stat-tile"><div class="v '+(s.net>=0?'pos':'neg')+'">'+inr(s.net)+'</div><div class="l">net p&l</div></div><div class="stat-tile"><div class="v">'+s.wr.toFixed(1)+'%</div><div class="l">win rate</div></div><div class="stat-tile"><div class="v">'+Math.min(100, Math.round(CO_JOURNALS.length/Math.max(1,CO_TRADES.length)*100))+'%</div><div class="l">journaled</div></div><div class="stat-tile"><div class="v">'+CO_JOURNALS.length+'</div><div class="l">entries</div></div>';
+    var host = document.getElementById('co-journal-list');
+    host.innerHTML = list.map(function (j, idx) {
+      var cls = j.pnl > 0 ? 'pos' : (j.pnl < 0 ? 'neg' : '');
+      return '<div class="list-item'+(idx===0?' on':'')+'" data-jid="'+j.id+'"><div class="when">'+j.when.slice(5)+'</div><div style="flex:1;min-width:0"><div class="ttl">'+j.title+'</div><div class="snip">'+j.body+'</div></div>'+(j.pnl?'<div class="pnl '+cls+'">'+inr(j.pnl)+'</div>':'')+'</div>';
+    }).join('');
+    host.querySelectorAll('.list-item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        host.querySelectorAll('.list-item').forEach(function (x) { x.classList.remove('on'); });
+        item.classList.add('on');
+        var j = CO_JOURNALS.find(function (x) { return x.id === item.getAttribute('data-jid'); });
+        if (!j) return;
+        document.getElementById('co-entry-title').textContent = j.title;
+        document.getElementById('co-entry-meta').textContent = j.when + (j.symbol ? ' · ' + j.symbol : '') + ' · ' + j.signal;
+        document.getElementById('co-entry-body').textContent = j.body;
+      });
+    });
+    if (list[0]) {
+      document.getElementById('co-entry-title').textContent = list[0].title;
+      document.getElementById('co-entry-meta').textContent = list[0].when + (list[0].symbol ? ' · ' + list[0].symbol : '') + ' · ' + list[0].signal;
+      document.getElementById('co-entry-body').textContent = list[0].body;
+    }
+  }
+  function renderInsights() {
+    document.getElementById('co-insight-cards').innerHTML = CO_INSIGHTS.map(function (i) {
+      var color = i.badge === 'success' ? 'ok' : 'watch';
+      return '<div class="insight-card"><div class="row"><strong>'+i.title+'</strong><span class="badge '+color+'">'+i.badge+'</span></div><div class="impact" style="color:'+(i.impact>=0?'var(--today-profit)':'var(--today-loss)')+'">'+inr(i.impact)+'</div><p class="sub">'+i.desc+'</p><p class="sub" style="margin-top:8px">'+i.details+'</p><button type="button" class="btn" style="margin-top:10px" data-toast="'+i.action+'">'+i.action+'</button></div>';
+    }).join('');
+    document.getElementById('co-insight-cards').querySelectorAll('[data-toast]').forEach(function (b) {
+      b.addEventListener('click', function () { toast(b.getAttribute('data-toast')); });
+    });
+    var conf = CO_PATTERNS.filter(function (p) { return p.confirmed; }).length;
+    document.getElementById('co-pat-meta').textContent = conf + ' confirmed · ' + (CO_PATTERNS.length - conf) + ' pending';
+    document.getElementById('co-pattern-cards').innerHTML = CO_PATTERNS.map(function (p) {
+      return '<div class="insight-card"><div class="row"><strong>'+p.name+'</strong><span class="badge '+(p.confirmed?'ok':'watch')+'">'+(p.confirmed?'confirmed':'pending')+'</span></div><p class="sub">'+p.desc+'</p><div class="bar"><i style="width:'+Math.round(p.prob*100)+'%"></i></div><div class="escrow-row"><span class="k">Probability</span><span class="v">'+Math.round(p.prob*100)+'%</span></div><div class="escrow-row"><span class="k">Fired</span><span class="v">'+p.fired+'×</span></div><div class="escrow-row"><span class="k">Attributed loss</span><span class="v" style="color:var(--today-loss)">'+inr(-p.loss)+'</span></div><div class="escrow-row"><span class="k">Source</span><span class="v">'+p.source+'</span></div></div>';
+    }).join('');
+  }
+  function renderCalendar() {
+    var byDay = {};
+    CO_TRADES.forEach(function (t) { byDay[t.date] = (byDay[t.date]||0) + t.pnl; });
+    var host = document.getElementById('co-cal');
+    host.innerHTML = Object.keys(byDay).sort().map(function (d) {
+      var p = byDay[d];
+      return '<div class="cal-cell '+(p>=0?'pos':'neg')+'" data-day="'+d+'"><div class="d">'+d.slice(8)+'</div><div class="p">'+inr(p)+'</div></div>';
+    }).join('');
+    host.querySelectorAll('.cal-cell').forEach(function (c) {
+      c.addEventListener('click', function () {
+        host.querySelectorAll('.cal-cell').forEach(function (x) { x.classList.remove('on'); });
+        c.classList.add('on');
+        var d = c.getAttribute('data-day');
+        var dayTrades = CO_TRADES.filter(function (t) { return t.date === d; });
+        document.getElementById('co-cal-title').textContent = d + ' · ' + inr(byDay[d]);
+        document.getElementById('co-cal-body').textContent = dayTrades.map(function (t) { return t.symbol + ' ' + inr(t.pnl) + (t.notes ? ' — ' + t.notes : ''); }).join(' · ');
+      });
+    });
+  }
+
+  function setConsole(id) {
+    document.querySelectorAll('#co-sidebar .nav-item').forEach(function (n) {
+      n.classList.toggle('active', n.getAttribute('data-co') === id);
+    });
+    document.querySelectorAll('#product-console .screen').forEach(function (s) {
+      s.classList.toggle('active', s.id === 'co-' + id);
+    });
+  }
+  document.querySelectorAll('#co-sidebar .nav-item').forEach(function (n) {
+    n.addEventListener('click', function () { setConsole(n.getAttribute('data-co')); });
+  });
+  document.querySelectorAll('[data-co-jump]').forEach(function (b) {
+    b.addEventListener('click', function () { setConsole(b.getAttribute('data-co-jump')); });
+  });
+  document.getElementById('co-add-note').addEventListener('click', function () {
+    var text = document.getElementById('co-note').value.trim();
+    if (!text) { toast('Write a note first'); return; }
+    CO_JOURNALS.unshift({ id: 'u' + Date.now(), when: '2026-07-28', title: 'Note', body: text, pnl: 0, signal: 'review', symbol: '' });
+    document.getElementById('co-note').value = '';
+    renderJournals();
+    toast('Journal entry added');
+  });
+  document.querySelectorAll('[data-tfilter]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('[data-tfilter]').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      coTFilter = b.getAttribute('data-tfilter');
+      renderTrades();
+    });
+  });
+  var search = document.getElementById('co-search');
+  if (search) search.addEventListener('input', renderTrades);
+  document.querySelectorAll('[data-jtab]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('[data-jtab]').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      coJTab = b.getAttribute('data-jtab');
+      renderJournals();
+    });
+  });
+  document.querySelectorAll('#ws-board .ws-card').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('#ws-board .ws-card').forEach(function (x) { x.classList.remove('on'); });
+      c.classList.add('on');
+      var k = c.getAttribute('data-ws');
+      var copy = wsCopy[k] || [c.querySelector('.ttl').textContent, ''];
+      document.getElementById('ws-detail-title').textContent = copy[0];
+      document.getElementById('ws-detail-body').textContent = copy[1];
+    });
+  });
+  document.querySelectorAll('#product-console [data-toast]').forEach(function (b) {
+    b.addEventListener('click', function () { toast(b.getAttribute('data-toast')); });
+  });
+  renderTrades();
+  renderJournals();
+  renderInsights();
+  renderCalendar();
+
+  function seedCapture(title, body) {
+    CO_JOURNALS.unshift({ id: 'cap' + Date.now(), when: '2026-07-28', title: title, body: body, pnl: 1250, signal: 'clean', symbol: 'NIFTY' });
+    setProduct('console');
+    setConsole('journal');
+    renderJournals();
+    toast('Captured to Console Journal');
+  }
+
+
+  (function paintStationToday() {
+    var host = document.getElementById('st-today-trades');
+    if (!host || typeof CO_TRADES === 'undefined') return;
+    var day = CO_TRADES.filter(function (t) { return t.date === '2024-12-29' || t.date === '2024-12-30'; });
+    if (!day.length) day = CO_TRADES.slice(-8);
+    var h = '<div class="t-head"><span>Date</span><span>Symbol</span><span>Side</span><span>Qty</span><span>Entry</span><span>Type</span><span>P&amp;L</span><span>Behavior</span><span>Notes</span></div>';
+    day.forEach(function (t) {
+      var cls = t.pnl >= 0 ? 'pos' : 'neg';
+      h += '<div class="t-row"><span class="mono">'+t.date.slice(5)+'</span><span class="mono">'+t.symbol+'</span><span class="mono">BUY</span><span class="mono">'+t.qty+'</span><span class="mono">'+t.price+'</span><span class="mono">'+t.strategy+'</span><span class="mono '+cls+'">'+inr(t.pnl)+'</span><span class="mono">'+t.behavior+'</span><span class="sub">'+(t.notes||'')+'</span></div>';
+    });
+    host.innerHTML = h;
+  })();
+
+  /* Notch */
+  var nDesktop = document.getElementById('n-desktop');
+  var nPill = document.getElementById('n-pill');
+  var nTitles = {
+    morning:'Morning brief', pretrade:'Pre-trade', live:'Live trade', posttrade:'Post-trade',
+    escrow:'Escrow match', patterns:'Patterns', fidelity:'Fidelity score', triage:'Triage', settings:'Settings'
+  };
+  var nState = {
+    morning:'Pre-market', pretrade:'Declaration', live:'Intact', posttrade:'Debrief',
+    escrow:'Match', patterns:'Building', fidelity:'0.72', triage:'2 open', settings:'Config'
+  };
+  var pills = {
+    intraday: '<span class="dot"></span><span>0.72</span><span>CALM</span><span class="sep"></span><span class="pnl">+$1,250</span>',
+    intervention: '<span class="kw">STOP — REVENGE</span><span class="dot bad" style="margin-left:10px"></span>',
+    scalper: '<span>3/8</span><span class="muted">−₹2.1k</span><span class="sep"></span><span class="dot warn"></span>',
+    swing: '<span>Day 4</span><span>INTACT</span><span class="sep"></span><span class="pnl">+₹18.4k</span>'
+  };
+  function setPill(kind) {
+    nPill.className = 'pill' + (kind === 'intervention' ? ' intervention' : '');
+    nPill.innerHTML = pills[kind];
+    document.querySelectorAll('[data-pill]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-pill') === kind);
+    });
+  }
+  setPill('intraday');
+  function setExpanded(on) {
+    nDesktop.classList.toggle('expanded-on', on);
+    var btn = document.getElementById('n-toggle');
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? 'Expanded' : 'Collapsed';
+  }
+  function setNotchScreen(id) {
+    document.querySelectorAll('.plan-nav[data-ns]').forEach(function (n) {
+      n.classList.toggle('on', n.getAttribute('data-ns') === id);
+    });
+    document.querySelectorAll('.plan-body .screen').forEach(function (s) {
+      s.classList.toggle('on', s.id === 'ns-' + id);
+    });
+    document.getElementById('n-title').textContent = nTitles[id] || id;
+    var st = document.getElementById('n-state');
+    st.innerHTML = '<span class="d"></span>' + (nState[id] || '—');
+    if (id === 'morning') {
+      var badge = document.getElementById('n-morning-badge');
+      if (badge) badge.remove();
+    }
+  }
+  document.getElementById('n-toggle').addEventListener('click', function () {
+    setExpanded(!nDesktop.classList.contains('expanded-on'));
+  });
+  nPill.addEventListener('click', function () { setExpanded(!nDesktop.classList.contains('expanded-on')); });
+  document.getElementById('n-chrome').addEventListener('click', function () { setExpanded(false); });
+  document.querySelectorAll('[data-pill]').forEach(function (b) {
+    b.addEventListener('click', function () { setPill(b.getAttribute('data-pill')); setExpanded(false); });
+  });
+  document.querySelectorAll('.plan-nav[data-ns]').forEach(function (n) {
+    n.addEventListener('click', function () { setNotchScreen(n.getAttribute('data-ns')); });
+  });
+  document.getElementById('n-new').addEventListener('click', function () { setNotchScreen('pretrade'); setExpanded(true); });
+  document.getElementById('n-start').addEventListener('click', function () { setNotchScreen('pretrade'); });
+  document.getElementById('n-gear').addEventListener('click', function () { setNotchScreen('settings'); });
+  document.getElementById('n-confirm').addEventListener('click', function () { setNotchScreen('live'); toast('Trade declared (mock)'); });
+  document.getElementById('n-capture').addEventListener('click', function () {
+    seedCapture('Notch live capture', 'Pinned from Live plan · NIFTY 24500 CE · intact · +₹1,250 unrealised');
+  });
+  document.getElementById('n-save-debrief').addEventListener('click', function () {
+    seedCapture('Post-trade debrief', 'Saved from Notch Moment C (mock).');
+  });
+
+  document.querySelectorAll('.tab-arch[data-arch]').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.tab-arch[data-arch]').forEach(function (x) { x.classList.remove('on'); });
+      t.classList.add('on');
+    });
+  });
+  document.querySelectorAll('.side').forEach(function (s) {
+    s.addEventListener('click', function () {
+      s.parentElement.querySelectorAll('.side').forEach(function (x) { x.classList.remove('on'); });
+      s.classList.add('on');
+    });
+  });
+  document.querySelectorAll('#setup-chips .chip-btn').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('#setup-chips .chip-btn').forEach(function (x) { x.classList.remove('on'); });
+      c.classList.add('on');
+    });
+  });
+  document.querySelectorAll('#calm-row .feel').forEach(function (f) {
+    f.addEventListener('click', function () {
+      document.querySelectorAll('#calm-row .feel').forEach(function (x) { x.classList.remove('on'); });
+      f.classList.add('on');
+      var v = Number(f.getAttribute('data-v'));
+      var w = document.getElementById('calm-warn');
+      if (v >= 4) { w.hidden = false; w.className = 'warn-box red'; w.textContent = 'State ' + v + ' — size halved.'; }
+      else if (v === 3) { w.hidden = false; w.className = 'warn-box'; w.textContent = 'State 3 — heightened awareness.'; }
+      else { w.hidden = true; }
+    });
+  });
+
+  setNotchScreen('morning');
+  window.addEventListener('resize', function () {
+  });
+})();
+</script>
+</body>
+</html>

@@ -5,6 +5,8 @@ public enum BrokerCardStatus: String, Equatable, Sendable {
     case notConfigured = "Not configured"
     case validating = "Validating"
     case readyToStart = "Ready to Start"
+    /// Healthy live sync (`syncState == synced`).
+    case connected = "Connected"
     case syncing = "Syncing"
     case degraded = "Degraded"
     case rateLimited = "Rate Limited"
@@ -15,7 +17,7 @@ public enum BrokerCardStatus: String, Equatable, Sendable {
     /// Statuses that imply an active broker sync session reported by the agent.
     public var impliesAgentConnectedSync: Bool {
         switch self {
-        case .syncing, .degraded, .rateLimited:
+        case .connected, .syncing, .degraded, .rateLimited:
             return true
         default:
             return false

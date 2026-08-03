@@ -37,7 +37,25 @@ public enum BrokerSecretGuard {
         if let sid = credentials.sid, !sid.isEmpty, value.contains(sid) {
             return true
         }
+        if let hsServerId = credentials.hsServerId, !hsServerId.isEmpty, value.contains(hsServerId) {
+            return true
+        }
         return false
+    }
+
+    /// Drop long token-like tokens from Kotak error text before UI display.
+    public static func sanitizeKotakMintMessage(_ message: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Kotak login failed." }
+        let parts = trimmed.split(whereSeparator: \.isWhitespace).map { word -> String in
+            let s = String(word)
+            let hexish = s.filter(\.isHexDigit).count > s.count / 2
+            if s.count >= 24 || (s.count >= 8 && hexish) {
+                return "[redacted]"
+            }
+            return s
+        }
+        return parts.joined(separator: " ")
     }
 
     public static func presentationIsSafe(

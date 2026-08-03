@@ -30,6 +30,32 @@ struct AgentBrokerSyncControlTests {
         #expect(runtime.startSyncCallCount == 0)
     }
 
+    @Test func startSyncFallsBackToAgentVaultPresenceWhenLocalKeychainMisses() async throws {
+        let store = FakeBrokerCredentialStore()
+        let runtime = FakeBrokerAgentRuntimeClient()
+        runtime.vaultPresentOverride = true
+        let control = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
+
+        try await control.startSync(for: .binanceComProd)
+
+        #expect(runtime.vaultCredentialsPresentCallCount == 1)
+        #expect(runtime.startSyncCallCount == 1)
+        #expect(runtime.lastStartedIdentity == .binanceComProd)
+    }
+
+    @Test func kotakStartSyncUsesAgentPresenceOnlyWithoutLocalKeychainRead() async throws {
+        let store = FakeBrokerCredentialStore()
+        let runtime = FakeBrokerAgentRuntimeClient()
+        runtime.vaultPresentOverride = true
+        let control = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
+
+        try await control.startSync(for: .kotakNeoProd)
+
+        #expect(store.readCallCount == 0)
+        #expect(runtime.vaultCredentialsPresentCallCount == 1)
+        #expect(runtime.startSyncCallCount == 1)
+    }
+
     @Test func startWirePayloadIsIdentityOnly() throws {
         let data = try BrokerSyncStartPayload.identityOnlyJSON(for: .binanceComProd)
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])

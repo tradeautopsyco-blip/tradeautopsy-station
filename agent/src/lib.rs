@@ -63,6 +63,7 @@ pub use ubi::{
     ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig, UbiHostError, UbiHostState,
     WasmBrokerAdapter, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
     COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, RESPONSE_HEADER_ALLOWLIST,
+    KOTAK_SESSION_KEYCHAIN_SERVICE, keychain_service_for,
 };
 pub use broker_behavioral::{BrokerBehavioralRecorder, BrokerConnectionIdentityFields};
 pub use broker_data_class::{
@@ -172,9 +173,14 @@ pub struct UpstreamClient {
 
 impl UpstreamClient {
     pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
+        // TLS verification must always be on for a real (https) Console. The only
+        // exception is the loopback-http test/bootstrap escape hatch (wiremock,
+        // integration tests) — same gate as `is_loopback_http_bootstrap` elsewhere in
+        // this file, so a stray env var can never weaken a production connection.
+        let insecure_ok_for_tests = config.is_loopback_http_bootstrap();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
-            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_certs(insecure_ok_for_tests)
             .build()?;
         Ok(Self { config, http })
     }

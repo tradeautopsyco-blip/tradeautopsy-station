@@ -16,6 +16,8 @@ public protocol HotkeyRegistering: AnyObject {
     func registerToggleNotch(_ handler: @escaping () -> Void)
     func registerOpenStation(_ handler: @escaping () -> Void)
     func unregisterAll()
+    /// Install global monitor after Input Monitoring is granted mid-session.
+    func refreshGlobalMonitorIfNeeded()
 }
 
 @MainActor
@@ -26,14 +28,25 @@ public protocol StatusItemControlling: AnyObject {
 }
 
 @MainActor
-public protocol NotchHosting: AnyObject {
+public protocol SessionHosting: AnyObject {
     func start() async
     func dismiss()
     func toggle()
 }
 
 @MainActor
-public protocol NotchPollingControlling: AnyObject {
+public protocol FloatingNotchHosting: AnyObject {
+    func configure(secret: String, port: UInt16, webBase: String)
+    func start()
+    func dismiss()
+    func toggle()
+    func setBrokerBridge(onConnect: @escaping (String) -> Void, onReauth: @escaping (String) -> Void)
+    func setDeviceLoginBridge(onOpen: @escaping () -> Void)
+    func reportBrokerBridgeOutcome(result: String?, error: String?)
+}
+
+@MainActor
+public protocol SessionPollingControlling: AnyObject {
     func startPolling()
     func stopPolling()
 }

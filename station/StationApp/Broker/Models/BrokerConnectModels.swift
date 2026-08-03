@@ -7,6 +7,10 @@ public enum BrokerCredentialField: String, Equatable, Sendable, CaseIterable {
     case tradeToken
     case sid
     case baseUrl
+    case mobileNumber
+    case ucc
+    case totp
+    case mpin
 }
 
 public enum BrokerPermissionPosture: Equatable, Sendable {
@@ -26,6 +30,8 @@ public enum BrokerCredentialValidationFailure: Equatable, Sendable {
     case networkUnavailable
     case rateLimited
     case brokerUnavailable
+    /// Kotak venue message already redacted for UI (no secrets).
+    case kotakMintRejected(String)
 }
 
 public enum BrokerCredentialValidationResult: Equatable, Sendable {

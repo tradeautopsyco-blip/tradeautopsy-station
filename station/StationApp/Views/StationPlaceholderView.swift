@@ -1,4 +1,3 @@
-import Notch
 import SwiftUI
 
 public struct StationPlaceholderView: View {
@@ -11,15 +10,14 @@ public struct StationPlaceholderView: View {
     public var body: some View {
         VStack(spacing: 12) {
             Text(route.rawValue)
-                .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
-                .foregroundStyle(BarDS.Text.primary)
+                .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
+                .foregroundStyle(StationDS.Text.primary)
 
             Text("This screen is coming in a future release.")
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
+                .foregroundStyle(StationDS.Text.muted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BarDS.Fill.sidebar)
     }
 }

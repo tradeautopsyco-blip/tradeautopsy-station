@@ -146,7 +146,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\nchmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\n";
+			shellScript = "set -e\nDEST=\"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS\"\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"$DEST/tradeautopsy-agent\"\nchmod +x \"$DEST/tradeautopsy-agent\"\n# First-pair Wasm next to agent (B5 / T2 dogfood)\nCOM_WASM=\"${SRCROOT}/../agent/ubi-binance-com-adapter/target/wasm32-wasip2/release/ubi_binance_com_adapter.wasm\"\nKOTAK_WASM=\"${SRCROOT}/../agent/ubi-kotak-neo-adapter/target/wasm32-wasip2/release/ubi_kotak_neo_adapter.wasm\"\n[ -f \"$COM_WASM\" ] && cp \"$COM_WASM\" \"$DEST/ubi_binance_com_adapter.wasm\"\n[ -f \"$KOTAK_WASM\" ] && cp \"$KOTAK_WASM\" \"$DEST/ubi_kotak_neo_adapter.wasm\"\n# Ad-hoc sign so app codesign accepts nested unsigned wasm\nfor f in tradeautopsy-agent ubi_binance_com_adapter.wasm ubi_kotak_neo_adapter.wasm; do\n  [ -f \"$DEST/$f\" ] && codesign --force --sign - \"$DEST/$f\" || true\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

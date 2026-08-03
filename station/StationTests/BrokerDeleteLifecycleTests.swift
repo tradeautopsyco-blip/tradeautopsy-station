@@ -36,7 +36,8 @@ struct BrokerDeleteLifecycleTests {
             credentialStore: store,
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
-            metadataStore: metadataStore
+            metadataStore: metadataStore,
+            runtimeClient: runtimeClient
         )
         return (client, store, metadataStore, runtimeClient, connectController, supervisor)
     }
@@ -67,16 +68,19 @@ struct BrokerDeleteLifecycleTests {
         try await client.deleteConnection(for: .binanceComProd, connectController: connectController)
 
         #expect(runtime.stopSyncCallCount == 1)
+        #expect(runtime.clearVaultCredentialsCallCount == 1)
         #expect(store.hasCredentials(for: .binanceComProd) == false)
         #expect(store.deleteCallCount == 1)
         #expect(metadataStore.load(for: .binanceComProd) == nil)
         #expect(connectController.permissionWarning == nil)
     }
 
-    @Test func deleteAvailableWhileAgentOffline() async throws {
+    @Test func offlineDeleteClearsKeychainDirectlyEvenWhenAgentClearFails() async throws {
         let runtime = FakeBrokerAgentRuntimeClient()
+        runtime.clearVaultError = BrokerAgentRuntimeError.requestFailed
         let defaults = UserDefaults(suiteName: "StationTests.Delete.Offline.\(UUID().uuidString)")!
         let store = FakeBrokerCredentialStore()
+        let keychain = FakeBrokerKeychainItemStore()
         let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
         let supervisor = FakeAgentSupervisor()
         supervisor.scenario = .launchTimeout
@@ -89,22 +93,53 @@ struct BrokerDeleteLifecycleTests {
             syncControl: syncControl,
             runtimeClient: runtime
         )
+        let identity = BrokerConnectionIdentity.binanceComProd
+        let account =
+            "\(identity.environment).\(identity.brokerSlug).\(identity.brokerConnectionID.uuidString)"
+        keychain.seed(
+            service: BrokerCredentialOrphanCleanup.kotakSessionVaultService,
+            account: account
+        )
+        keychain.seed(
+            service: KeychainBrokerCredentialStore.serviceName,
+            account: account
+        )
         let connectController = BrokerConnectController(
-            identity: .binanceComProd,
+            identity: identity,
             credentialStore: store,
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
-            metadataStore: metadataStore
+            metadataStore: metadataStore,
+            runtimeClient: runtime,
+            keychainItems: keychain
         )
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceComProd
+            for: identity
+        )
+        metadataStore.save(
+            BrokerConnectionMetadata(lastValidatedAt: Date()),
+            for: identity
         )
 
-        try await client.deleteConnection(for: .binanceComProd, connectController: connectController)
+        try await client.deleteConnection(for: identity, connectController: connectController)
 
         #expect(runtime.stopSyncCallCount == 0)
-        #expect(store.hasCredentials(for: .binanceComProd) == false)
+        #expect(runtime.clearVaultCredentialsCallCount == 1)
+        #expect(store.hasCredentials(for: identity) == false)
+        #expect(metadataStore.load(for: identity) == nil)
+        #expect(
+            keychain.hasItem(
+                service: BrokerCredentialOrphanCleanup.kotakSessionVaultService,
+                account: account
+            ) == false
+        )
+        #expect(
+            keychain.hasItem(
+                service: KeychainBrokerCredentialStore.serviceName,
+                account: account
+            ) == false
+        )
     }
 
     @Test func loadSnapshotAfterDeleteShowsNotConfigured() async throws {

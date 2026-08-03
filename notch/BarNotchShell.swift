@@ -90,7 +90,7 @@ struct BarNotchShell: View {
         let next = BarNotchPhaseRouting.screen(for: viewModel.barSurfacePhase)
         guard next != activeScreen.wrappedValue else { return }
         if animated {
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(NotchTheme.contentAnimation) {
                 activeScreen.wrappedValue = next
             }
         } else {
@@ -139,6 +139,29 @@ struct BarNotchShell: View {
 
             Spacer(minLength: 0)
 
+            Button {
+                viewModel.requestHidePill()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundColor(BarDS.Text.muted)
+                    Text("Hide notch")
+                        .font(BarDS.bodyFont(12, weight: .regular))
+                        .foregroundColor(BarDS.Text.muted)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .contentShape(Rectangle())
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+            }
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
+            .accessibilityLabel("Hide notch")
+            .accessibilityHint("Hides the notch pill. Press Option-Space to show it again.")
+            .padding(.bottom, 4)
+
             Rectangle()
                 .fill(BarDS.Border.section)
                 .frame(height: BarDS.borderThin)
@@ -172,7 +195,9 @@ struct BarNotchShell: View {
             if screen == .morning {
                 morningBriefConsumed = true
             }
-            activeScreen.wrappedValue = screen
+            withAnimation(NotchTheme.contentAnimation) {
+                activeScreen.wrappedValue = screen
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: screen.sfSymbol)
@@ -207,7 +232,7 @@ struct BarNotchShell: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
         .onHover { isHover in
             if isHover { hoveredSession = screen }
             else if hoveredSession == screen { hoveredSession = nil }
@@ -222,7 +247,9 @@ struct BarNotchShell: View {
             if screen == .morning {
                 morningBriefConsumed = true
             }
-            activeScreen.wrappedValue = screen
+            withAnimation(NotchTheme.contentAnimation) {
+                activeScreen.wrappedValue = screen
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: screen.sfSymbol)
@@ -257,7 +284,7 @@ struct BarNotchShell: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
         .onHover { isHover in
             if isHover { hoveredSession = screen }
             else if hoveredSession == screen { hoveredSession = nil }
@@ -291,17 +318,21 @@ struct BarNotchShell: View {
 
             Spacer()
 
-            Image(systemName: "gearshape")
-                .font(.system(size: 14))
-                .foregroundColor(
-                    activeScreen.wrappedValue == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
-                )
-                .frame(width: 36, height: 36)
-                .contentShape(Rectangle())
-                .onTapGesture {
+            Button {
+                withAnimation(NotchTheme.contentAnimation) {
                     activeScreen.wrappedValue = .settings
                 }
-                .accessibilityLabel("Settings")
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14))
+                    .foregroundColor(
+                        activeScreen.wrappedValue == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
+                    )
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.94))
+            .accessibilityLabel("Settings")
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 10)
@@ -352,7 +383,9 @@ struct BarNotchShell: View {
 
             Button {
                 viewModel.showingDeclarationForm = true
-                activeScreen.wrappedValue = .pretrade
+                withAnimation(NotchTheme.contentAnimation) {
+                    activeScreen.wrappedValue = .pretrade
+                }
             } label: {
                 Text("+ New trade")
                     .font(BarDS.bodyFont(12, weight: .medium))
@@ -362,7 +395,19 @@ struct BarNotchShell: View {
                     .background(BarDS.Text.primary)
                     .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.97))
+
+            Button {
+                viewModel.collapseExpandedFromChromeTap()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(BarDS.Text.muted)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.94))
+            .accessibilityLabel("Collapse notch")
         }
         .padding(.vertical, 11)
         .padding(.horizontal, 16)
@@ -391,29 +436,17 @@ struct BarNotchShell: View {
     }
 
     private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
-        let sync = viewModel.barLiveState?.syncState.uppercased() ?? ""
-        switch sync {
-        case "GREEN":
-            return (
-                BarDS.Accent.teal,
-                "Kotak Neo · live",
-                BarDS.Accent.teal,
-                BarDS.Accent.teal.opacity(0.10),
-            )
-        case "AMBER":
-            return (
-                BarDS.Accent.amber,
-                "Kotak Neo · degraded",
-                BarDS.Accent.amber,
-                BarDS.Accent.amber.opacity(0.10),
-            )
+        let chrome = NotchViewModel.brokerPillChrome(
+            brokerSyncClass: viewModel.brokerSyncClass,
+            slug: viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+        )
+        switch chrome.dotName {
+        case "teal":
+            return (BarDS.Accent.teal, chrome.label, BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+        case "amber":
+            return (BarDS.Accent.amber, chrome.label, BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
         default:
-            return (
-                BarDS.Accent.red,
-                "No broker · offline",
-                BarDS.Accent.red,
-                BarDS.Accent.red.opacity(0.10),
-            )
+            return (BarDS.Accent.red, chrome.label, BarDS.Accent.red, BarDS.Accent.red.opacity(0.10))
         }
     }
 
@@ -515,11 +548,27 @@ struct BarNotchShell: View {
                 .padding(.vertical, 6)
             }
             if let err = viewModel.barStateError, !err.isEmpty {
-                Text(err)
-                    .font(BarDS.bodyFont(11, weight: .medium))
-                    .foregroundColor(BarDS.Accent.red)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(err)
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .foregroundColor(BarDS.Accent.red)
+                    if viewModel.barStateRequiresDeviceLogin {
+                        Button {
+                            viewModel.requestOpenDeviceLogin()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "macwindow")
+                                    .font(.system(size: 10, weight: .medium))
+                                Text("Open Station")
+                                    .font(BarDS.bodyFont(11, weight: .medium))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(BarDS.Accent.teal)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
             }
         }
     }

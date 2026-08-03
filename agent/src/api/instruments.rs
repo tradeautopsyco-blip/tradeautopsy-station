@@ -1,6 +1,5 @@
 use crate::api::AppState;
 use axum::extract::{Query, State};
-use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde_json::json;
@@ -25,7 +24,6 @@ pub async fn search_instruments(
 
 pub async fn get_ltp(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let symbol = params.get("symbol").cloned().unwrap_or_default();
@@ -48,20 +46,7 @@ pub async fn get_ltp(
         }
     }
 
-    let user_id = headers
-        .get("x-user-id")
-        .and_then(|v| v.to_str().ok())
-        .or_else(|| {
-            headers
-                .get("x-daemon-user-id")
-                .and_then(|v| v.to_str().ok())
-        })
-        .unwrap_or("");
-
-    if user_id.is_empty() {
-        return Json(json!({ "ltp": null, "source": "none" }));
-    }
-
+    // Wire middleware already authenticated the loopback caller; upstream is Bearer only.
     let url = format!("{}/api/bar/v1/broker/ltp", state.upstream.config.base_url);
     let body = json!({
         "trading_symbol": symbol,

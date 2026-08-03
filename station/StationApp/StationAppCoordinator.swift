@@ -1,11 +1,10 @@
 import Foundation
-import Notch
 
 @MainActor
 public final class StationAppCoordinator: ObservableObject {
     @Published public private(set) var activeRoute: StationRoute
     @Published public private(set) var agentHealthWarning: AgentHealthWarning?
-    public let notchViewModel: NotchViewModel
+    public let sessionModel: SessionModel
     public let brokersViewModel: BrokersViewModel
     public let marketDataKeysViewModel: MarketDataKeysViewModel
     public let aiWorkflowKeysViewModel: AIWorkflowKeysViewModel
@@ -19,6 +18,16 @@ public final class StationAppCoordinator: ObservableObject {
     /// Shell navigation stays enabled even when the agent is unhealthy (TRD §6.3).
     public var isShellNavigable: Bool { true }
 
+    /// The single onboarding notification to show, if any (agent health has its own
+    /// permanent home in the toolbar and isn't part of this).
+    public var currentNotification: StationNotification? {
+        StationNotification.current(
+            inputMonitoringWarning: inputMonitoringWarning,
+            inputMonitoringRestartReminder: inputMonitoringRestartReminder,
+            showLoginItemPrompt: showLoginItemPrompt
+        )
+    }
+
     /// Pulse strip shows em-dash placeholders when agent data is unavailable (TRD §11.2).
     public var isPulseStripDegraded: Bool { !agentSupervisor.isHealthy }
 
@@ -26,12 +35,13 @@ public final class StationAppCoordinator: ObservableObject {
     private let statusItemController: StatusItemControlling
     private let hotkeyRegistrar: HotkeyRegistering
     private let inputMonitoringChecker: InputMonitoringChecking
-    private let notchHost: NotchHosting
-    private let notchPolling: NotchPollingControlling
+    private let sessionHost: SessionHosting
+    private let floatingNotch: FloatingNotchHosting
+    private let sessionPolling: SessionPollingControlling
     private let windowController: StationWindowControlling
     private let launchStore: StationLaunchStoring
     private let loginItemService: LoginItemServicing
-    private let phaseProvider: BarSurfacePhaseProviding
+    private let phaseProvider: SessionSurfacePhaseProviding
     private let deskRouteStore: DeskRouteStoring
     private let dateProvider: () -> Date
 
@@ -46,29 +56,31 @@ public final class StationAppCoordinator: ObservableObject {
         agentSupervisor: AgentSupervising,
         statusItemController: StatusItemControlling,
         hotkeyRegistrar: HotkeyRegistering,
-        notchHost: NotchHosting,
-        notchPolling: NotchPollingControlling,
+        sessionHost: SessionHosting,
+        sessionPolling: SessionPollingControlling,
         windowController: StationWindowControlling,
         launchStore: StationLaunchStoring,
-        phaseProvider: BarSurfacePhaseProviding,
+        phaseProvider: SessionSurfacePhaseProviding,
         loginItemService: LoginItemServicing = LoginItemService(),
-        notchViewModel: NotchViewModel? = nil,
+        sessionModel: SessionModel? = nil,
         deskRouteStore: DeskRouteStoring = UserDefaultsDeskRouteStore(),
         dateProvider: @escaping () -> Date = Date.init,
         inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker(),
         brokerControl: BrokerControlling? = nil,
         todayClient: TodayAgentClient? = nil,
         daemonSecret: String? = nil,
-        deviceLoginClient: (any DeviceLoginClient)? = nil
+        deviceLoginClient: (any DeviceLoginClient)? = nil,
+        floatingNotch: FloatingNotchHosting
     ) {
         let resolvedDaemonSecret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
         self.agentSupervisor = agentSupervisor
         self.statusItemController = statusItemController
         self.hotkeyRegistrar = hotkeyRegistrar
         self.inputMonitoringChecker = inputMonitoringChecker
-        self.notchViewModel = notchViewModel ?? NotchViewModel()
-        self.notchHost = notchHost
-        self.notchPolling = notchPolling
+        self.sessionModel = sessionModel ?? SessionModel()
+        self.sessionHost = sessionHost
+        self.floatingNotch = floatingNotch
+        self.sessionPolling = sessionPolling
         self.windowController = windowController
         self.launchStore = launchStore
         self.loginItemService = loginItemService
@@ -94,7 +106,8 @@ public final class StationAppCoordinator: ObservableObject {
             brokerControl: resolvedBrokerControl,
             credentialStore: resolvedCredentialStore,
             metadataStore: resolvedMetadataStore,
-            syncControl: resolvedSyncControl
+            syncControl: resolvedSyncControl,
+            runtimeClient: resolvedRuntimeClient
         )
         self.marketDataKeysViewModel = MarketDataKeysViewModel()
         self.aiWorkflowKeysViewModel = AIWorkflowKeysViewModel()
@@ -103,12 +116,12 @@ public final class StationAppCoordinator: ObservableObject {
             daemonSecret: resolvedDaemonSecret,
             isAgentHealthy: { agentSupervisor.isHealthy }
         )
-        let notchVM = self.notchViewModel
+        let session = self.sessionModel
         self.todayViewModel = TodayViewModel(
             client: resolvedTodayClient,
-            notchViewModel: notchVM,
+            sessionModel: session,
             agentHealthy: { agentSupervisor.isHealthy },
-            isBrokerSyncActive: { notchVM.isBrokerSyncActiveForTodayMirror }
+            isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror }
         )
         let resolvedDeviceLoginClient = deviceLoginClient ?? LocalDeviceLoginAgentClient(
             daemonSecret: resolvedDaemonSecret,
@@ -118,7 +131,7 @@ public final class StationAppCoordinator: ObservableObject {
 
         self.activeRoute = NavigationPolicy.launchRoute(
             saved: deskRouteStore.savedDeskRoute,
-            phase: phaseProvider.barSurfacePhase
+            phase: phaseProvider.sessionSurfacePhase
         )
 
         phaseProvider.onPhaseChange = { [weak self] phase in
@@ -177,7 +190,7 @@ public final class StationAppCoordinator: ObservableObject {
     public func recheckInputMonitoringAccess() {
         if inputMonitoringChecker.isInputMonitoringGranted() {
             inputMonitoringWarning = nil
-            showInputMonitoringRestartReminderIfNeeded()
+            hotkeyRegistrar.refreshGlobalMonitorIfNeeded()
             stopInputMonitoringPollingIfNeeded()
             return
         }
@@ -232,7 +245,7 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func toggleNotch() {
-        notchHost.toggle()
+        floatingNotch.toggle()
     }
 
     public func closeWindow() {
@@ -257,11 +270,12 @@ public final class StationAppCoordinator: ObservableObject {
         hotkeyRegistrar.unregisterAll()
         todayViewModel.stopSessionMirrorPolling()
         await agentSupervisor.shutdown()
-        notchPolling.stopPolling()
-        notchHost.dismiss()
+        sessionPolling.stopPolling()
+        floatingNotch.dismiss()
+        sessionHost.dismiss()
     }
 
-    private func handlePhaseChange(_ phase: BarSurfacePhase) {
+    private func handlePhaseChange(_ phase: SessionSurfacePhase) {
         guard let nextRoute = NavigationPolicy.shouldAutoFollowPhase(
             active: activeRoute,
             phase: phase,
@@ -275,9 +289,10 @@ public final class StationAppCoordinator: ObservableObject {
 
     private func startNotchAndPolling() async {
         guard !notchAndPollingStarted else { return }
-        await notchHost.start()
-        notchPolling.startPolling()
-        notchViewModel.startPolling()
+        await sessionHost.start()
+        floatingNotch.start()
+        sessionPolling.startPolling()
+        sessionModel.startPolling()
         notchAndPollingStarted = true
         pollingStoppedForUnhealthyAgent = false
         await todayViewModel.load()
@@ -298,14 +313,14 @@ public final class StationAppCoordinator: ObservableObject {
             if !notchAndPollingStarted {
                 Task { await startNotchAndPolling() }
             } else if pollingStoppedForUnhealthyAgent {
-                notchPolling.startPolling()
-                notchViewModel.startPolling()
+                sessionPolling.startPolling()
+                sessionModel.startPolling()
                 todayViewModel.startSessionMirrorPolling()
                 pollingStoppedForUnhealthyAgent = false
             }
         } else if notchAndPollingStarted {
-            notchPolling.stopPolling()
-            notchViewModel.stopPolling()
+            sessionPolling.stopPolling()
+            sessionModel.stopPolling()
             todayViewModel.stopSessionMirrorPolling()
             pollingStoppedForUnhealthyAgent = true
         }
@@ -315,7 +330,7 @@ public final class StationAppCoordinator: ObservableObject {
 
     private func registerHotkeys() {
         hotkeyRegistrar.registerToggleNotch { [weak self] in
-            self?.notchHost.toggle()
+            self?.floatingNotch.toggle()
         }
         hotkeyRegistrar.registerOpenStation { [weak self] in
             self?.openStation()
@@ -323,17 +338,11 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     private func syncInputMonitoringWarning() {
-        if !inputMonitoringChecker.isInputMonitoringGranted() {
-            inputMonitoringWarning = InputMonitoringWarning()
-            if inputMonitoringWarningShownAt == nil {
-                inputMonitoringWarningShownAt = dateProvider()
-            }
-            startInputMonitoringPollingIfNeeded()
-        } else {
-            inputMonitoringWarning = nil
-            inputMonitoringWarningShownAt = nil
-            stopInputMonitoringPollingIfNeeded()
-        }
+        // ⌥Space / ⌥⇧Space use Carbon RegisterEventHotKey — no Input Monitoring required.
+        // Do not block traders with a yellow banner for a permission hotkeys no longer need.
+        inputMonitoringWarning = nil
+        inputMonitoringWarningShownAt = nil
+        stopInputMonitoringPollingIfNeeded()
     }
 
     private func showInputMonitoringRestartReminderIfNeeded() {

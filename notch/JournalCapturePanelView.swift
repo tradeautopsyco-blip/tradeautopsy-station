@@ -218,7 +218,7 @@ struct JournalCapturePanelView: View {
                     Spacer()
 
                     Button {
-                        withAnimation(NotchTheme.springExpand) {
+                        withAnimation(NotchTheme.expandCollapseAnimation) {
                             viewModel.isExpanded = false
                         }
                     } label: {

@@ -191,6 +191,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var taiMode: TaiMode = .ambient
     @Published var isLoading: Bool = false
     @Published var activeTab: NotchTab = .pulse
+    /// When true (Station-hosted), expanded surface stays on PLAN / `BarNotchShell` only.
+    private(set) var planSurfaceOnly: Bool = false
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
     @Published public var brokerSessionActive: Bool = false
@@ -219,6 +221,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var daemonConnectionState: DaemonConnectionState = .idle
     @Published var daemonProtocolError: DaemonProtocolErrorClass?
     @Published var brokerSyncClass: String = "not_connected"
+    /// Last successful `/api/daemon/broker/sync-state` poll (`lastPollAtMs` or now).
+    @Published var brokerSyncLastPollAtMs: Int?
     @Published var sessionState: String = "active"
     @Published var isAuthenticated: Bool = true
     @Published var authProvider: String?
@@ -252,6 +256,10 @@ public final class NotchViewModel: ObservableObject {
     /// Live-state GET in flight (`/api/daemon/bar/live-state`).
     @Published var barStateLoading: Bool = false
     @Published var barStateError: String?
+    /// True when `barStateError` is specifically "device login never completed" — lets the UI
+    /// offer an "Open Station" CTA instead of a generic dead-end error, and keeps it visually
+    /// distinct from the broker sync pill (unrelated subsystem, see `BarLiveStateErrorPresentation`).
+    @Published var barStateRequiresDeviceLogin: Bool = false
     @Published var barLastFetched: Date?
     @Published var barSurfacePhase: BarSurfacePhase = .declaration
     @Published var barDebriefPending: Bool = false
@@ -280,8 +288,8 @@ public final class NotchViewModel: ObservableObject {
     /// #4 — swing daily check-in POST via agent.
     @Published var barSwingCheckInBusy: Bool = false
     @Published var barSwingCheckInLastError: String?
-    /// Broker slug for `place_sl` — must match server `resolveBrokerOrderPort` (e.g. `kotak_neo` when live Kotak is wired).
-    @Published var barProtectiveBrokerSlug: String = "mockbroker"
+    /// Broker slug for `place_sl` — must match server `resolveBrokerOrderPort`. Empty = no broker selected.
+    @Published var barProtectiveBrokerSlug: String = ""
     @Published var barDeclarationLastError: String?
     @Published private(set) var barOptimisticArmedDisplay: BarOptimisticArmedSnapshot?
     /// Server `declaration_id` after successful declare; cleared when optimistic armed is cleared (#119).
@@ -320,6 +328,57 @@ public final class NotchViewModel: ObservableObject {
 
     /// Called from `NotchPanelController` to front the panel when expanding explicitly.
     var onRequestOrderFront: (() -> Void)?
+    /// Hide the whole Notch HUD (pill gone) until ⌥Space / show brings it back.
+    var onRequestHidePill: (() -> Void)?
+    /// Station bridge: open desk Brokers + Connect sheet.
+    public var onRequestOpenBrokerConnect: ((String) -> Void)?
+    /// Station bridge: open desk Brokers + Edit/remint sheet.
+    public var onRequestOpenBrokerReauth: ((String) -> Void)?
+    /// Station bridge: open Settings (device login) — distinct from broker Connect/Reauth above.
+    public var onRequestOpenDeviceLogin: (() -> Void)?
+
+    @Published public var brokerActionBusy: Bool = false
+    @Published public var brokerActionResultMessage: String?
+    @Published public var brokerActionError: String?
+
+    /// Station bridge reports Connect Start/remint outcome into Settings.
+    public func reportBrokerBridgeOutcome(result: String?, error: String?) {
+        brokerActionBusy = false
+        brokerActionResultMessage = result
+        brokerActionError = error
+    }
+
+    /// Collapse + hide the floating pill/panel (sidebar “Hide notch”).
+    public func requestHidePill() {
+        if isExpanded {
+            isExpanded = false
+        }
+        onRequestHidePill?()
+    }
+
+    private var resolvedBrokerSlugForBridge: String {
+        let slug = (activeBrokerSlug ?? barProtectiveBrokerSlug)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        // Empty protective slug still bridges Connect to first-pair dogfood default.
+        if slug.isEmpty { return "kotak_neo" }
+        return slug
+    }
+
+    public func requestOpenBrokerConnect() {
+        collapseExpandedFromChromeTap()
+        onRequestOpenBrokerConnect?(resolvedBrokerSlugForBridge)
+    }
+
+    public func requestOpenBrokerReauth() {
+        collapseExpandedFromChromeTap()
+        onRequestOpenBrokerReauth?(resolvedBrokerSlugForBridge)
+    }
+
+    public func requestOpenDeviceLogin() {
+        collapseExpandedFromChromeTap()
+        onRequestOpenDeviceLogin?()
+    }
 
     private var symbolSearchTask: Task<Void, Never>?
     private var ignoreSymbolSearchUntilEdit = false
@@ -385,14 +444,14 @@ public final class NotchViewModel: ObservableObject {
             case .rateLimited:
                 return "Rate Limited"
             case .unknown:
-                return "Agent Error"
+                return "Agent error"
             }
         }
         switch daemonConnectionState {
         case .idle, .connecting:
             return "Connecting"
         case .connected:
-            return "Connected"
+            return "Agent connected"
         case .reconnecting:
             return "Reconnecting"
         case .disconnected:
@@ -437,6 +496,7 @@ public final class NotchViewModel: ObservableObject {
     private var pollWorkflows: Timer?
     private var pollBrief: Timer?
     private var pollTrades: Timer?
+    private var pollBrokerSync: Timer?
     private var connectionTick: Timer?
     private var lastBriefFetchDay: String?
     private var killSwitchCountdownTimer: Timer?
@@ -483,21 +543,35 @@ public final class NotchViewModel: ObservableObject {
         self.init(
             barArchetypeStore: UserDefaultsBarArchetypeStore(),
             barDeclareHTTPExecutor: URLSessionBarDeclareHTTPExecutor(),
-            barDeclareSuccessFollowUp: nil
+            barDeclareSuccessFollowUp: nil,
+            planSurfaceOnly: false
         )
     }
 
     init(
         barArchetypeStore: BarArchetypeStore = UserDefaultsBarArchetypeStore(),
         barDeclareHTTPExecutor: BarDeclareHTTPExecuting = URLSessionBarDeclareHTTPExecutor(),
-        barDeclareSuccessFollowUp: (@MainActor () async -> Void)? = nil
+        barDeclareSuccessFollowUp: (@MainActor () async -> Void)? = nil,
+        planSurfaceOnly: Bool = false
     ) {
         self.barArchetypeStore = barArchetypeStore
         self.barDeclareHTTPExecutor = barDeclareHTTPExecutor
         self.barDeclareSuccessFollowUp = barDeclareSuccessFollowUp
+        self.planSurfaceOnly = planSurfaceOnly
+        if planSurfaceOnly {
+            activeTab = .plan
+        }
         restoreOptimisticArmedFromDefaults()
         refreshActiveArchetype()
         recomputeBarSurfacePhase()
+    }
+
+    /// Station-hosted Notch: clamp navigation to PLAN (matches approved PLAN-only mock).
+    func enablePlanSurfaceOnly() {
+        planSurfaceOnly = true
+        activeTab = .plan
+        dictationUsesCaptureDraft = false
+        syncBarLiveStatePollingForVisibility()
     }
 
     private func refreshActiveArchetype() {
@@ -615,11 +689,12 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func selectTab(_ tab: NotchTab) {
-        activeTab = tab
-        if tab != .plan {
+        let resolved = planSurfaceOnly ? NotchTab.plan : tab
+        activeTab = resolved
+        if resolved != .plan {
             showingDeclarationForm = false
         }
-        dictationUsesCaptureDraft = (tab == .capture)
+        dictationUsesCaptureDraft = planSurfaceOnly ? false : (resolved == .capture)
         syncBarLiveStatePollingForVisibility()
     }
 
@@ -710,7 +785,8 @@ public final class NotchViewModel: ObservableObject {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else {
                 recordOptimisticPollFailure()
-                barStateError = "Live state failed (\(code))"
+                barStateError = BarLiveStateErrorPresentation.message(httpStatus: code, body: data)
+                barStateRequiresDeviceLogin = BarLiveStateErrorPresentation.requiresDeviceLogin(body: data)
                 recomputeBarSurfacePhase()
                 return
             }
@@ -767,12 +843,16 @@ public final class NotchViewModel: ObservableObject {
                     if self.barStateError != nil {
                         self.barStateError = nil
                     }
+                    if self.barStateRequiresDeviceLogin {
+                        self.barStateRequiresDeviceLogin = false
+                    }
                 }
                 self.resetOptimisticPollFailures()
             }
         } catch {
             recordOptimisticPollFailure()
             barStateError = error.localizedDescription
+            barStateRequiresDeviceLogin = false
             recomputeBarSurfacePhase()
         }
     }
@@ -1198,8 +1278,7 @@ public final class NotchViewModel: ObservableObject {
             )
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard (200...299).contains(code) else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-                barDeclarationLastError = "Live interference failed (\(code)) \(hint)"
+                barDeclarationLastError = AgentHTTPErrorPresentation.message(httpStatus: code, body: data)
                 return
             }
             daemonProtocolError = nil
@@ -1281,8 +1360,7 @@ public final class NotchViewModel: ObservableObject {
             )
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard (200...299).contains(code) else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-                barDeclarationLastError = "Protective order failed (\(code)) \(hint)"
+                barDeclarationLastError = AgentHTTPErrorPresentation.message(httpStatus: code, body: data)
                 return
             }
             daemonProtocolError = nil
@@ -1305,8 +1383,7 @@ public final class NotchViewModel: ObservableObject {
             )
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard (200...299).contains(code) else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-                barPostTradeDebriefLastError = "Debrief save failed (\(code)) \(hint)"
+                barPostTradeDebriefLastError = AgentHTTPErrorPresentation.message(httpStatus: code, body: data)
                 return
             }
             daemonProtocolError = nil
@@ -1329,8 +1406,7 @@ public final class NotchViewModel: ObservableObject {
             )
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard (200...299).contains(code) else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-                barSwingCheckInLastError = "Swing check-in failed (\(code)) \(hint)"
+                barSwingCheckInLastError = AgentHTTPErrorPresentation.message(httpStatus: code, body: data)
                 return
             }
             daemonProtocolError = nil
@@ -1620,7 +1696,15 @@ public final class NotchViewModel: ObservableObject {
             }
         }
 
+        // Always poll sync-state (not market-hours gated) so Settings mirrors Station Start.
+        pollBrokerSync = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.refreshBrokerSyncState()
+            }
+        }
+
         Task {
+            await refreshBrokerSyncState()
             await fetchWorkflowStatus()
             await fetchMorningBriefIfNeeded()
             await fetchRecentTrades()
@@ -1645,6 +1729,8 @@ public final class NotchViewModel: ObservableObject {
         pollBrief = nil
         pollTrades?.invalidate()
         pollTrades = nil
+        pollBrokerSync?.invalidate()
+        pollBrokerSync = nil
         connectionTick?.invalidate()
         connectionTick = nil
         stopKillSwitchCountdownTimer()
@@ -1663,7 +1749,8 @@ public final class NotchViewModel: ObservableObject {
 
     func expandFromCollapsedChromeTap() {
         guard !isExpanded else { return }
-        withAnimation(NotchTheme.springExpand) {
+        NotchHaptics.play(.light)
+        withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = true
         }
         onRequestOrderFront?()
@@ -1673,7 +1760,7 @@ public final class NotchViewModel: ObservableObject {
     /// Global monitor only receives clicks from *other* apps — use for dismiss-outside-expanded-panel.
     func collapseExpandedFromOutsideClick() {
         guard isExpanded else { return }
-        withAnimation(NotchTheme.springExpand) {
+        withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = false
         }
         syncBarLiveStatePollingForVisibility()
@@ -1681,7 +1768,8 @@ public final class NotchViewModel: ObservableObject {
 
     public func collapseExpandedFromChromeTap() {
         guard isExpanded else { return }
-        withAnimation(NotchTheme.springExpand) {
+        NotchHaptics.play(.light)
+        withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = false
         }
         syncBarLiveStatePollingForVisibility()
@@ -1926,6 +2014,9 @@ public final class NotchViewModel: ObservableObject {
             brokerSyncClass = c
             brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             applyDeskHonesty(from: payload)
+            if brokerSyncClass == "synced" || brokerSyncClass == "syncing" || brokerSyncClass == "stale" {
+                brokerSyncLastPollAtMs = Int(Date().timeIntervalSince1970 * 1000)
+            }
             return true
 
         case "toolbar_show":
@@ -2386,9 +2477,6 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func activateKillSwitch() async {
-        if barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "mockbroker" {
-            await fetchBarLiveState()
-        }
         switch KillSwitchFirePayloadBuilder.build(protectiveBrokerSlug: barProtectiveBrokerSlug) {
         case let .failure(error):
             lastAlert = error.localizedDescription
@@ -2773,6 +2861,134 @@ extension NotchViewModel {
         if brokerSyncClass == "not_connected" || brokerSyncClass == "disconnected" {
             // Keep last known currency for display honesty; clear slug so dual logic stays accurate.
             activeBrokerSlug = nil
+        }
+    }
+
+    /// Apply `GET /api/daemon/broker/sync-state` JSON (testable without network).
+    func applyBrokerSyncStatePayload(_ json: [String: Any]) {
+        if let sc = json["syncState"] as? String, !sc.isEmpty {
+            brokerSyncClass = sc.lowercased()
+            brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
+        }
+        if let ms = json["lastPollAtMs"] as? Int {
+            brokerSyncLastPollAtMs = ms
+        } else if let ms = json["lastPollAtMs"] as? Double {
+            brokerSyncLastPollAtMs = Int(ms)
+        } else if let ms = json["lastSuccessAtMs"] as? Int {
+            brokerSyncLastPollAtMs = ms
+        } else if brokerSyncClass == "synced" || brokerSyncClass == "syncing" || brokerSyncClass == "stale" {
+            brokerSyncLastPollAtMs = Int(Date().timeIntervalSince1970 * 1000)
+        }
+        applyDeskHonesty(from: json)
+    }
+
+    /// Poll Enforcer sync-state so Notch mirrors Station Brokers Start (SSE alone is not enough).
+    func refreshBrokerSyncState() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/broker/sync-state") else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                // Leave last known sync class — do not invent connected.
+                return
+            }
+            applyBrokerSyncStatePayload(json)
+        } catch {
+            // Agent down: keep last known; UI already has daemon FSM / live-state strips.
+        }
+    }
+
+    static func brokerDisplayName(forSlug slug: String?) -> String {
+        switch slug?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "kotak_neo", "kotak": return "Kotak Neo"
+        case "binance_com": return "Binance.com"
+        case nil, "": return "No broker"
+        case let other?: return other.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// Pure pill chrome mapping (testable).
+    static func brokerPillChrome(
+        brokerSyncClass: String,
+        slug: String?
+    ) -> (dotName: String, label: String) {
+        let name = brokerDisplayName(forSlug: slug)
+        switch brokerSyncClass.lowercased() {
+        case "synced":
+            return ("teal", "\(name) · live")
+        case "syncing":
+            return ("amber", "\(name) · connecting")
+        case "stale":
+            return ("amber", "\(name) · degraded")
+        default:
+            return ("red", "No broker · offline")
+        }
+    }
+
+    /// Settings primary CTA: open Station Brokers only when sync is offline.
+    static func showsOpenStationBrokersCta(brokerSyncClass: String) -> Bool {
+        switch brokerSyncClass.lowercased() {
+        case "synced", "syncing", "stale":
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Settings connection badge title (mirrors BarSettingsView SyncPosture).
+    static func brokerSettingsConnectionBadge(brokerSyncClass: String) -> String {
+        switch brokerSyncClass.lowercased() {
+        case "synced": return "Connected"
+        case "syncing": return "Connecting"
+        case "stale": return "Degraded"
+        default: return "Not connected"
+        }
+    }
+
+    func testBrokerConnection() async {
+        brokerActionError = nil
+        brokerActionResultMessage = nil
+        guard let url = URL(string: baseURL() + "/api/daemon/broker/sync-state") else { return }
+        brokerActionBusy = true
+        defer { brokerActionBusy = false }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = json["runtimeStatus"] as? String
+            else {
+                brokerActionError = "Agent offline — Retry in Station"
+                return
+            }
+            applyBrokerSyncStatePayload(json)
+            brokerActionResultMessage = "Agent reports: \(status.replacingOccurrences(of: "_", with: " "))"
+        } catch {
+            brokerActionError = "Agent offline — Retry in Station"
+        }
+    }
+
+    func disconnectBrokerSync() async {
+        brokerActionError = nil
+        brokerActionResultMessage = nil
+        guard let url = URL(string: baseURL() + "/api/daemon/broker/sync/stop") else { return }
+        brokerActionBusy = true
+        defer { brokerActionBusy = false }
+        do {
+            let (_, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: Data())
+            )
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                brokerActionError = "Disconnect failed — Retry in Station"
+                return
+            }
+            brokerSyncClass = "not_connected"
+            activeBrokerSlug = nil
+            brokerSessionActive = false
+            brokerSyncLastPollAtMs = nil
+            brokerActionResultMessage = "Disconnected"
+        } catch {
+            brokerActionError = "Agent offline — Retry in Station"
         }
     }
 }

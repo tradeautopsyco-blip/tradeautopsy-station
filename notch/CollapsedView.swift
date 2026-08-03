@@ -270,32 +270,33 @@ struct CollapsedNotchView: View {
 
     var body: some View {
         let p = presentation
-        Group {
-            if viewModel.hasPhysicalNotch {
-                coreStrip(p)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.black.opacity(0.0))
-                    )
-            } else {
-                coreStrip(p)
-                    .padding(.horizontal, 4)
-                    .background(capsuleBackground(p))
-                    .overlay(tiltPulseRing(p))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay {
-            if viewModel.hasPhysicalNotch {
-                tiltPulseRing(p)
-            }
-        }
-        .opacity(pillHoverFeedback ? 1.0 : 0.94)
-        .onHover { hovering in pillHoverFeedback = hovering }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        Button {
             viewModel.expandFromCollapsedChromeTap()
+        } label: {
+            Group {
+                if viewModel.hasPhysicalNotch {
+                    coreStrip(p)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.black.opacity(0.0))
+                        )
+                } else {
+                    coreStrip(p)
+                        .padding(.horizontal, 4)
+                        .background(capsuleBackground(p))
+                        .overlay(tiltPulseRing(p))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                if viewModel.hasPhysicalNotch {
+                    tiltPulseRing(p)
+                }
+            }
+            .opacity(pillHoverFeedback ? 1.0 : 0.94)
         }
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.96))
+        .onHover { hovering in pillHoverFeedback = hovering }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), score \(String(format: "%.2f", viewModel.compositeScore))"

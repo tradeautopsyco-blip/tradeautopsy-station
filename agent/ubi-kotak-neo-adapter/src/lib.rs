@@ -155,10 +155,16 @@ fn strip_equity_suffix(symbol: &str) -> String {
     trimmed.to_string()
 }
 
-/// `exTm` / `flDt` are `dd-MM-yyyy HH:mm:ss` in IST with no zone marker.
+/// `exTm` / `flDt`(+`flTm`) are IST with no zone marker.
+/// SDK samples use month names: `22-Jan-2025 14:28:01` / `flDt=22-Jan-2025` + `flTm=14:28:16`.
+/// Also accept numeric `dd-MM-yyyy HH:mm:ss` if a gateway emits it.
 fn parse_trade_time(row: &serde_json::Value) -> Result<i64, String> {
-    if let Some(raw) = string_field(row, "exTm").or_else(|| string_field(row, "flDt")) {
+    if let Some(raw) = string_field(row, "exTm") {
         return parse_ist_timestamp(&raw);
+    }
+    if let Some(date) = string_field(row, "flDt") {
+        let time = string_field(row, "flTm").unwrap_or_else(|| "00:00:00".into());
+        return parse_ist_timestamp(&format!("{date} {time}"));
     }
     Err("trade book row missing exTm/flDt".to_string())
 }
@@ -168,10 +174,7 @@ fn parse_ist_timestamp(raw: &str) -> Result<i64, String> {
     let date = parts.next().ok_or("empty timestamp")?;
     let time = parts.next().unwrap_or("00:00:00");
 
-    let mut date_parts = date.split('-');
-    let day: i64 = next_num(&mut date_parts, "day")?;
-    let month: i64 = next_num(&mut date_parts, "month")?;
-    let year: i64 = next_num(&mut date_parts, "year")?;
+    let (day, month, year) = parse_date_parts(date)?;
 
     let mut time_parts = time.split(':');
     let hour: i64 = next_num(&mut time_parts, "hour")?;
@@ -188,6 +191,40 @@ fn parse_ist_timestamp(raw: &str) -> Result<i64, String> {
     let days = days_from_civil(year, month, day);
     let seconds = days * 86_400 + hour * 3600 + minute * 60 + second - IST_OFFSET_SECONDS;
     Ok(seconds * 1000)
+}
+
+fn parse_date_parts(date: &str) -> Result<(i64, i64, i64), String> {
+    let mut date_parts = date.split('-');
+    let day: i64 = next_num(&mut date_parts, "day")?;
+    let month_raw = date_parts
+        .next()
+        .ok_or_else(|| "timestamp missing month".to_string())?
+        .trim();
+    let year: i64 = next_num(&mut date_parts, "year")?;
+    let month = parse_month(month_raw)?;
+    Ok((day, month, year))
+}
+
+fn parse_month(raw: &str) -> Result<i64, String> {
+    if let Ok(n) = raw.parse::<i64>() {
+        return Ok(n);
+    }
+    let month = match raw.to_ascii_lowercase().as_str() {
+        "jan" => 1,
+        "feb" => 2,
+        "mar" => 3,
+        "apr" => 4,
+        "may" => 5,
+        "jun" => 6,
+        "jul" => 7,
+        "aug" => 8,
+        "sep" => 9,
+        "oct" => 10,
+        "nov" => 11,
+        "dec" => 12,
+        other => return Err(format!("bad month '{other}'")),
+    };
+    Ok(month)
 }
 
 fn next_num<'a>(

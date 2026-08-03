@@ -30,12 +30,14 @@ Freeze Notch → `/api/daemon/bar/*` → brain `/api/bar/v1/*` hop table; docume
 
 ## Issue 2 — Live Binance.US spot client + BrokerAdapter
 
-**Phase:** 1  
+**Status:** `SUPERSEDED` as next product slice (founder course correction 2026-07-24).  
+**Replacement next:** Brokers SYSTEM research → FINALIZE — `docs/research/BROKERS-SYSTEM.md` (mirrors `/Users/bishnu/issues/brokers/research/BROKERS-SYSTEM.md`). Multi-integration shape (asset class / currency / calc / compliance) + B6 sheet gate; temporary Binance only if dogfood fills needed.  
+**Phase:** 1 (stale ordering)  
 **Repos:** `agent/`  
 **PRD stories:** B8–B20  
 
-**What to build:**  
-Binance.US spot client + `BrokerAdapter` mirroring Binance.com layering. `build_runtime_adapter("binance_us")` uses live adapter for real keys; CountingPoll only for `TA_TEST_*` / `TA_FAKE_*`. Cite `docs/reference/crypto/binance-us/spot/`. Poll fills, balances, open orders into existing broker_sync loop. No secrets in logs.
+**What to build (parked / temporary scaffold only if B4 picks US):**  
+Binance.US spot client + `BrokerAdapter` mirroring Binance.com layering. `build_runtime_adapter("binance_us")` uses live adapter for real keys; CountingPoll only for `TA_TEST_*` / `TA_FAKE_*`. Cite `docs/reference/crypto/binance-us/spot/`. Poll fills, balances, open orders into existing broker_sync loop. No secrets in logs. **Requires B6 capability sheet before any ship.**
 
 **Acceptance criteria:**
 - [ ] Real-key path does not use CountingPoll

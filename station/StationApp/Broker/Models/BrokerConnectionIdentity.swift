@@ -28,6 +28,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
     public let tradeToken: String?
     public let sid: String?
     public let baseUrl: String?
+    public let hsServerId: String?
     public let expiresAt: Date?
 
     public init(apiKey: String, apiSecret: String) {
@@ -38,6 +39,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.tradeToken = nil
         self.sid = nil
         self.baseUrl = nil
+        self.hsServerId = nil
         self.expiresAt = nil
     }
 
@@ -46,6 +48,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         tradeToken: String,
         sid: String,
         baseUrl: String,
+        hsServerId: String = "",
         expiresAt: Date? = nil
     ) {
         self.authScheme = .kotakNeoTotpSession
@@ -55,6 +58,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.tradeToken = tradeToken
         self.sid = sid
         self.baseUrl = baseUrl
+        self.hsServerId = hsServerId
         self.expiresAt = expiresAt
     }
 
@@ -66,6 +70,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         case tradeToken
         case sid
         case baseUrl
+        case hsServerId
         case expiresAt
     }
 
@@ -80,6 +85,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         tradeToken = try container.decodeIfPresent(String.self, forKey: .tradeToken)
         sid = try container.decodeIfPresent(String.self, forKey: .sid)
         baseUrl = try container.decodeIfPresent(String.self, forKey: .baseUrl)
+        hsServerId = try container.decodeIfPresent(String.self, forKey: .hsServerId)
         expiresAt = try container.decodeIfPresent(Date.self, forKey: .expiresAt)
     }
 
@@ -95,6 +101,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
             try container.encodeIfPresent(tradeToken, forKey: .tradeToken)
             try container.encodeIfPresent(sid, forKey: .sid)
             try container.encodeIfPresent(baseUrl, forKey: .baseUrl)
+            try container.encodeIfPresent(hsServerId, forKey: .hsServerId)
             try container.encodeIfPresent(expiresAt, forKey: .expiresAt)
         }
     }

@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 import Testing
 @testable import Station
 
@@ -12,7 +11,7 @@ struct SessionPulseStripTests {
     // T_healthy_data: viewModel has realizedPnL + positions → strip shows values
     @Test func healthyDataShowsLiveValues() {
         let positions = [
-            NotchPosition(symbol: "RELIANCE", qty: 10, unrealizedPnL: 500, direction: "LONG"),
+            DeskPosition(symbol: "RELIANCE", qty: 10, unrealizedPnL: 500, direction: "LONG"),
         ]
         let presentation = SessionPulseStripPresentation.build(
             sessionPnLUsd: 1_250,
@@ -35,7 +34,7 @@ struct SessionPulseStripTests {
         let presentation = SessionPulseStripPresentation.build(
             sessionPnLUsd: 9_999,
             unrealizedTotal: 4_000,
-            positions: [NotchPosition(symbol: "TCS", qty: 5, unrealizedPnL: 100, direction: "LONG")],
+            positions: [DeskPosition(symbol: "TCS", qty: 5, unrealizedPnL: 100, direction: "LONG")],
             isDegraded: true,
             formatUSD: formatUSD
         )
@@ -58,7 +57,7 @@ struct SessionPulseStripTests {
         let presentation = SessionPulseStripPresentation.build(
             sessionPnLUsd: 2_500,
             unrealizedTotal: 800,
-            positions: [NotchPosition(symbol: "INFY", qty: 20, unrealizedPnL: 800, direction: "LONG")],
+            positions: [DeskPosition(symbol: "INFY", qty: 20, unrealizedPnL: 800, direction: "LONG")],
             isDegraded: isDegraded,
             formatUSD: formatUSD
         )
@@ -75,7 +74,7 @@ struct SessionPulseStripTests {
         let presentation = SessionPulseStripPresentation.build(
             sessionPnLUsd: 0,
             unrealizedTotal: 100,
-            positions: [NotchPosition(symbol: "HDFCBANK", qty: 1, unrealizedPnL: 100, direction: "LONG")],
+            positions: [DeskPosition(symbol: "HDFCBANK", qty: 1, unrealizedPnL: 100, direction: "LONG")],
             isDegraded: false,
             formatUSD: formatUSD
         )
@@ -90,8 +89,8 @@ struct SessionPulseStripTests {
             sessionPnLUsd: 0,
             unrealizedTotal: 300,
             positions: [
-                NotchPosition(symbol: "A", qty: 1, unrealizedPnL: 100, direction: "LONG"),
-                NotchPosition(symbol: "B", qty: 2, unrealizedPnL: 200, direction: "SHORT"),
+                DeskPosition(symbol: "A", qty: 1, unrealizedPnL: 100, direction: "LONG"),
+                DeskPosition(symbol: "B", qty: 2, unrealizedPnL: 200, direction: "SHORT"),
             ],
             isDegraded: false,
             formatUSD: formatUSD
@@ -116,6 +115,34 @@ struct SessionPulseStripTests {
         #expect(presentation.sessionPnLText == SessionPulseStripPresentation.degradedPlaceholder)
     }
 
+    @Test func dualNoBlendBuildsSideBySideChipsWithoutBlendingMoney() {
+        let resolution = DeskHonesty.resolve(activeSlugs: ["binance_com", "kotak_neo"])
+        guard case let .dualNoBlend(profiles) = resolution else {
+            Issue.record("expected dualNoBlend")
+            return
+        }
+        let chips = SessionPulseStripPresentation.dualChips(
+            profiles: profiles,
+            activeSlug: "binance_com"
+        )
+        #expect(chips.count == 2)
+        #expect(chips.contains { $0.label.contains("USD") && $0.isActive })
+        #expect(chips.contains { $0.label.contains("INR") && !$0.isActive })
+
+        let presentation = SessionPulseStripPresentation.build(
+            sessionPnLUsd: 100,
+            unrealizedTotal: 50,
+            positions: [],
+            isDegraded: false,
+            formatUSD: formatUSD,
+            dualChips: chips,
+            showActiveMoney: false
+        )
+        #expect(presentation.dualChips?.count == 2)
+        #expect(presentation.sessionPnLText == SessionPulseStripPresentation.degradedPlaceholder)
+        #expect(presentation.unrealizedPnLText == SessionPulseStripPresentation.degradedPlaceholder)
+    }
+
     // T_pulse_tap: tap strip → coordinator.navigateTo(.liveTrade) called
     @Test func pulseStripTapNavigatesToLiveTradeAndActivatesWindow() {
         let windowController = FakeStationWindowController()
@@ -123,11 +150,12 @@ struct SessionPulseStripTests {
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: windowController,
             launchStore: FakeLaunchStore(),
-            phaseProvider: FakeBarSurfacePhaseProvider()
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         coordinator.openLiveTradeFromPulseStrip()

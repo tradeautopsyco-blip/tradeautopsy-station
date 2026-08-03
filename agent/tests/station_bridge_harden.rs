@@ -139,6 +139,58 @@ async fn upstream_broker_ltp(
     )
 }
 
+async fn assert_wire_401_sig_invalid(resp: reqwest::Response) {
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let v: Value = resp.json().await.expect("json error body");
+    assert_eq!(v["error_class"].as_str(), Some("SIG_INVALID"));
+}
+
+/// Slice A — `/instruments/ltp` must reject unsigned callers (wire-v1 HMAC only).
+#[tokio::test]
+#[serial]
+async fn unsigned_instruments_ltp_returns_401_sig_invalid() {
+    const AGENT_PORT: u16 = 39_705;
+
+    let agent_handle = spawn_test_agent_with_options(AGENT_PORT, TestAgentOptions::default());
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/instruments/ltp?symbol=RELIANCE&exchange=NSE&segment=NSE";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    // Proto present but no HMAC / daemon secret — unsigned caller.
+    let resp = client()
+        .get(&url)
+        .header("x-proto-version", "1")
+        .send()
+        .await
+        .expect("agent request");
+
+    assert_wire_401_sig_invalid(resp).await;
+
+    agent_handle.abort();
+}
+
+/// Slice A — `/instruments/search` must reject unsigned callers (wire-v1 HMAC only).
+#[tokio::test]
+#[serial]
+async fn unsigned_instruments_search_returns_401_sig_invalid() {
+    const AGENT_PORT: u16 = 39_706;
+
+    let agent_handle = spawn_test_agent_with_options(AGENT_PORT, TestAgentOptions::default());
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let url = format!("http://127.0.0.1:{AGENT_PORT}/instruments/search?q=RE");
+    let resp = client()
+        .get(&url)
+        .header("x-proto-version", "1")
+        .send()
+        .await
+        .expect("agent request");
+
+    assert_wire_401_sig_invalid(resp).await;
+
+    agent_handle.abort();
+}
+
 #[tokio::test]
 #[serial]
 async fn instruments_ltp_proxy_never_forwards_daemon_identity_upstream() {
@@ -161,17 +213,21 @@ async fn instruments_ltp_proxy_never_forwards_daemon_identity_upstream() {
     let agent_handle = spawn_test_agent_with_options(AGENT_PORT, opts);
     tokio::time::sleep(Duration::from_millis(320)).await;
 
-    // `/instruments/*` is not behind wire verification — `x-user-id` here is only the
-    // same loopback wire hint UUID a real Notch/StationApp client would send, never a
-    // Console identity. The proxy must still authorize upstream via Bearer only.
-    let path = "/instruments/ltp?symbol=RELIANCE&exchange=NSE&segment=NSE";
-    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
-    let resp = client()
-        .get(&url)
-        .header("x-user-id", common::TEST_USER_ID)
-        .send()
-        .await
-        .expect("agent request");
+    // Wire signs path without query; upstream still Bearer-only (no wire identity leak).
+    let wire_path = "/instruments/ltp";
+    let url = format!(
+        "http://127.0.0.1:{AGENT_PORT}{wire_path}?symbol=RELIANCE&exchange=NSE&segment=NSE"
+    );
+    let resp = apply_wire_v1(
+        client().get(&url),
+        "GET",
+        wire_path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent request");
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.expect("json");

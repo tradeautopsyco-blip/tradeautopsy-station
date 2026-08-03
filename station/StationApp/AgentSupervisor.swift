@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 
 /// Spawns, health-checks, supervises, and tears down `tradeautopsy-agent` on loopback.
 @MainActor
@@ -13,9 +12,11 @@ public final class AgentSupervisor: AgentSupervising {
 
     public private(set) var isHealthy = false
     public private(set) var currentWarning: AgentHealthWarning?
-    public var ownsSpawnedAgent: Bool { spawnedPID != nil }
+    public var ownsSpawnedAgent: Bool { spawnedProcess != nil || spawnedPID != nil }
 
     private var spawnedPID: Int32?
+    /// Retained so we can terminate the child on quit (PID alone is easy to lose ownership of).
+    private var spawnedProcess: Process?
     private var restartTracker = AgentRestartTracker()
     private var supervisionTask: Task<Void, Never>?
     private let port: UInt16
@@ -55,13 +56,75 @@ public final class AgentSupervisor: AgentSupervising {
         supervisionTask?.cancel()
         supervisionTask = nil
 
-        guard let pid = spawnedPID else { return }
+        if let process = spawnedProcess {
+            await terminateOwnedProcess(process)
+            spawnedProcess = nil
+            spawnedPID = nil
+        } else if let pid = spawnedPID {
+            forceKillPID(pid)
+            spawnedPID = nil
+        }
+
+        // Reap orphans from this app bundle (attach / unclean Stop). Skip in DEV attach mode.
+        if ProcessInfo.processInfo.environment["STATION_DEV_ATTACH"] != "1" {
+            killBundledAgentOrphans()
+        }
+        isHealthy = false
+    }
+
+    private func terminateOwnedProcess(_ process: Process) async {
+        guard process.isRunning else { return }
+        process.terminate() // SIGTERM
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if process.isRunning {
+            forceKillPID(process.processIdentifier)
+        }
+    }
+
+    private func forceKillPID(_ pid: Int32) {
+        guard pid > 1 else { return }
         kill(pid, SIGTERM)
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        usleep(200_000)
         if kill(pid, 0) == 0 {
             kill(pid, SIGKILL)
         }
-        spawnedPID = nil
+    }
+
+    /// Kill `tradeautopsy-agent` processes whose path is our bundled binary.
+    private func killBundledAgentOrphans() {
+        guard let expectedPath = bundledAgentPath() else { return }
+        for pid in pidsMatchingExecutablePath(expectedPath) {
+            if let owned = spawnedPID, pid == owned { continue }
+            forceKillPID(pid)
+        }
+    }
+
+    private func bundledAgentPath() -> String? {
+        let url = Bundle.main.url(forAuxiliaryExecutable: "tradeautopsy-agent")
+            ?? Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("tradeautopsy-agent")
+        guard let url, FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+        return url.path
+    }
+
+    private func pidsMatchingExecutablePath(_ expectedPath: String) -> [Int32] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-f", expectedPath]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return []
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return [] }
+        return text.split(whereSeparator: \.isNewline).compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
     }
 
     private func launchWithAutoRestart() async {
@@ -72,6 +135,7 @@ public final class AgentSupervisor: AgentSupervising {
             }
 
             spawnedPID = nil
+            spawnedProcess = nil
             do {
                 try spawnAgent()
             } catch {
@@ -86,7 +150,7 @@ public final class AgentSupervisor: AgentSupervising {
                 return
             }
 
-            if spawnedPID != nil {
+            if spawnedProcess != nil || spawnedPID != nil {
                 await shutdown()
             }
             await handleFailure(message: "Agent did not respond on loopback within \(Int(Self.launchTimeout)) seconds.")
@@ -162,13 +226,26 @@ public final class AgentSupervisor: AgentSupervising {
             throw AgentSupervisorError.binaryNotFound
         }
 
+        // Reap any leftover agent from a previous Station that didn't shut down cleanly.
+        killBundledAgentOrphans()
+
         let process = Process()
         process.executableURL = binaryURL
         var environment = ProcessInfo.processInfo.environment
         environment[AgentDaemonSecret.envKey] = daemonSecret
         process.environment = environment
+        process.terminationHandler = { [weak self] proc in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.spawnedPID == proc.processIdentifier {
+                    self.spawnedProcess = nil
+                    self.spawnedPID = nil
+                }
+            }
+        }
 
         try process.run()
+        spawnedProcess = process
         spawnedPID = process.processIdentifier
     }
 

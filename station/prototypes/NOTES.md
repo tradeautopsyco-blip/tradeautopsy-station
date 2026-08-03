@@ -1,5 +1,9 @@
 # PROTOTYPE — TradeAutopsy Station
 
+**Current plan twin (phone + desktop):**  
+[`CONSOLE-STATION-SHARE.html`](./CONSOLE-STATION-SHARE.html) + [`CONSOLE-STATION-SHARE.md`](./CONSOLE-STATION-SHARE.md)  
+Station desk · thin Console · PLAN Notch — fully clickable offline.
+
 **Question:** What should Today v1 + Stats look like, fully interactive?
 
 **UI run:**

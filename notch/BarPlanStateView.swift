@@ -257,8 +257,8 @@ struct BarPlanStateView: View {
         let unreal = payload?.unrealizedPnL
         let worst = comp?.worstCase
         let unrealDisplay =
-            unreal.map { formatSignedINR($0) }
-            ?? worst.map { formatSignedINR($0) }
+            unreal.map { formatSignedDeskMoney($0) }
+            ?? worst.map { formatSignedDeskMoney($0) }
             ?? "—"
         let unrealColor: Color = {
             let raw = unreal ?? worst ?? 0
@@ -270,7 +270,7 @@ struct BarPlanStateView: View {
         let maxLossDisplay = BarLivePlanMetricStripFormatting.maxLossDeclaredDisplayText(
             declaredMaxLossInr: maxLossDeclared,
             compositeWorstCaseFallback: worst,
-            formatWholeInrAbs: { formatINRAmount($0) },
+            formatWholeAbs: { formatDeskWhole($0) },
         )
         let maxLossColor: Color = BarLivePlanMetricStripFormatting.maxLossUsesDeclaredOnly(declaredMaxLossInr: maxLossDeclared)
             ? BarDS.Text.primary
@@ -338,9 +338,16 @@ struct BarPlanStateView: View {
         .accessibilityLabel(ax)
     }
 
-    private func formatSignedINR(_ value: Double) -> String {
-        let sign = value < 0 ? "−" : ""
-        return sign + "₹\(formatINRAmount(abs(value)))"
+    /// Desk-honest money (R7 / T2.5) — follows active connection currency; never hardcode INR when COM is active.
+    private func formatSignedDeskMoney(_ value: Double) -> String {
+        viewModel.formatDeskMoney(value)
+    }
+
+    private func formatDeskWhole(_ value: Double) -> String {
+        DeskMoneyFormatting.formatWhole(
+            value,
+            quoteCurrency: viewModel.deskQuoteCurrency ?? "INR"
+        )
     }
 
     @ViewBuilder
@@ -626,8 +633,8 @@ struct BarPlanStateView: View {
                 scalperMetricTile(
                     title: "SESSION LOSS",
                     value: lossLimit > 0
-                        ? "\(formatSignedINR(loss)) · cap ₹\(formatINRAmount(lossLimit))"
-                        : formatSignedINR(loss),
+                        ? "\(formatSignedDeskMoney(loss)) · cap \(formatDeskWhole(lossLimit))"
+                        : formatSignedDeskMoney(loss),
                     valueColor: lossLimit > 0 ? planStressColor(fraction: lossFrac) : Color.white.opacity(0.85),
                 )
                 scalperMetricTile(
@@ -796,7 +803,7 @@ struct BarPlanStateView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let pnl = payload?.weeklyPnL {
-                Text("Weekly P&L \(formatSignedINR(pnl))")
+                Text("Weekly P&L \(formatSignedDeskMoney(pnl))")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(Color.white.opacity(0.72))
             }
@@ -1096,7 +1103,7 @@ struct BarPlanStateView: View {
         }
         if st == "missing", let px = payload?.slPrice {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Set SL at ₹\(formatINRAmount(px)) — not placed at broker yet.")
+                Text("Set SL at \(formatDeskWhole(px)) — not placed at broker yet.")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(Color.orange.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
@@ -1278,8 +1285,7 @@ struct BarPlanStateView: View {
     private func compositeRiskLine(_ composite: CompositeRisk, showStaleSuffix: Bool) -> some View {
         let pct = composite.budgetPct
         let pctInt = Int(min(1, max(0, pct)) * 100)
-        let amount = formatINRAmount(composite.worstCase)
-        let left = "₹\(amount) at risk across open positions"
+        let left = "\(formatDeskWhole(composite.worstCase)) at risk across open positions"
         var right = "\(pctInt)% of daily limit"
         if showStaleSuffix {
             right += " · may be stale"
@@ -1577,13 +1583,6 @@ struct BarPlanStateView: View {
         }
     }
 
-    private func formatINRAmount(_ value: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.groupingSeparator = ","
-        f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "\(Int(value))"
-    }
 }
 
 // MARK: - Naked-window pulse (#122)

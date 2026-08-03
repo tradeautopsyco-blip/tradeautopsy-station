@@ -54,9 +54,7 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
 }
 
 public enum BrokerCatalog {
-    /// First pair enabled; binance_us parked; v1 origin = first_party only (R7).
-    /// Named next broker (T2.1): `zerodha_kite` — B6 sheet stub only; stays `.planned`
-    /// until `/Users/bishnu/issues/brokers/sheets/zerodha_kite.md` is SIGNED.
+    /// Live first pair only (dogfood). Next brokers live in issues B6 sheets until SIGNED — not in this catalog.
     public static let v1: [PlannedBrokerDescriptor] = [
         PlannedBrokerDescriptor(
             slug: "binance_com",
@@ -77,36 +75,6 @@ public enum BrokerCatalog {
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "kotak_neo_compliance",
             availability: .enabled
-        ),
-        PlannedBrokerDescriptor(
-            slug: "binance_us",
-            displayName: "Binance.US",
-            assetClass: "crypto_spot",
-            quoteCurrency: "USD",
-            authScheme: .hmacApiKeySecret,
-            calcProfileId: "crypto_spot_usd",
-            complianceProfileId: "binance_us_compliance",
-            availability: .parked
-        ),
-        PlannedBrokerDescriptor(
-            slug: "interactive_brokers",
-            displayName: "Interactive Brokers",
-            assetClass: "equities",
-            quoteCurrency: "USD",
-            authScheme: .hmacApiKeySecret,
-            calcProfileId: "equities_usd",
-            complianceProfileId: "",
-            availability: .planned
-        ),
-        PlannedBrokerDescriptor(
-            slug: "zerodha_kite",
-            displayName: "Zerodha Kite",
-            assetClass: "equities",
-            quoteCurrency: "INR",
-            authScheme: .hmacApiKeySecret,
-            calcProfileId: "equities_inr_cash",
-            complianceProfileId: "",
-            availability: .planned
         ),
     ]
 

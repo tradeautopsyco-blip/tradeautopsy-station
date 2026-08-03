@@ -2,7 +2,7 @@ import Foundation
 @testable import Station
 
 @MainActor
-final class FakeNotchPolling: NotchPollingControlling {
+final class FakeSessionPolling: SessionPollingControlling {
     private(set) var startPollingCallCount = 0
     private(set) var stopPollingCallCount = 0
 

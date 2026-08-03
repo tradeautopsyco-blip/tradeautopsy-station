@@ -96,3 +96,19 @@ No hop paths, header names, or the wire v1 canonical string changed — see `v1.
 | Proof | `ubi_runtime_start` `b5_live_start_factory_*` · `b5_enforcer_sot_tests` |
 
 **Next:** T2 step 5 — **Dogfood leftovers** (live-key dual dogfood · dual side-by-side UI · BarPlanStateView INR leftovers).
+
+## T2.5 — Dogfood leftovers (code)
+
+**Date:** 2026-07-27  
+**Station tip:** working tree on `chore/commit-landed-work` (Kotak mint Connect + dual honesty UI — uncommitted until founder asks to commit)  
+**Audit:** `/Users/bishnu/issues/brokers/sheets/T2.5-DOGFOOD.md`
+
+| Concern | Lock |
+|---------|------|
+| Kotak Connect | TOTP+MPIN → agent mint → Keychain vault; Start identity-only |
+| Dual UI | Brokers `quoteCurrency` chips · SessionPulse dualNoBlend chips · never FX-blend |
+| Bar plan money | `BarPlanStateView` → `formatDeskMoney` / `deskQuoteCurrency` |
+| Live dogfood | **Founder** Connect COM+Kotak — checklist in T2.5-DOGFOOD.md |
+| Proof | `ubi::kotak_session` · `KotakTotpConnectLifecycleTests` · SessionPulse dual · DeskHonesty |
+
+**Next:** Founder live Connect pass/fail → then **T3** (Today + S2) in a new thread.

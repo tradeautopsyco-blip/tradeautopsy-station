@@ -12,7 +12,7 @@ public struct InputMonitoringWarning: Equatable {
     public var systemSettingsURL: URL
 
     public init(
-        message: String = "Global ⌥Space requires Input Monitoring permission",
+        message: String = "Input Monitoring is optional — used only for some advanced capture features",
         systemSettingsURL: URL = InputMonitoringWarning.systemSettingsURL
     ) {
         self.message = message

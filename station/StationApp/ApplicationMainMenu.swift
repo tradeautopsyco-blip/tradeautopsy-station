@@ -32,6 +32,22 @@ public enum ApplicationMainMenu {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
+        let windowMenuItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        mainMenu.addItem(windowMenuItem)
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+        windowMenu.addItem(
+            withTitle: "Minimize",
+            action: #selector(NSWindow.miniaturize(_:)),
+            keyEquivalent: "m"
+        )
+        windowMenu.addItem(
+            withTitle: "Zoom",
+            action: #selector(NSWindow.zoom(_:)),
+            keyEquivalent: ""
+        )
+
         return mainMenu
     }
 

@@ -330,3 +330,63 @@ pub async fn post_trade_debrief_handler(
             .into_response(),
     }
 }
+
+/// GET loss limits + bar activation gate — forward to Console `/api/bar/v1/profile/loss-limits`.
+pub async fn loss_limits_get_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+
+    match forward_daemon_json_with_optional_429_retry(
+        &state.upstream,
+        reqwest::Method::GET,
+        "/api/bar/v1/profile/loss-limits",
+        request_id,
+        None,
+        false,
+    )
+    .await
+    {
+        Ok((st, text)) => upstream_json_response(st, text),
+        Err(msg) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error_class": "SERVER_DOWN",
+                "message": msg,
+                "retry_after_ms": Value::Null,
+                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// POST loss limits acknowledgement — forward to Console `/api/bar/v1/profile/loss-limits`.
+pub async fn loss_limits_post_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+
+    match forward_daemon_json_with_optional_429_retry(
+        &state.upstream,
+        reqwest::Method::POST,
+        "/api/bar/v1/profile/loss-limits",
+        request_id,
+        Some(&body),
+        false,
+    )
+    .await
+    {
+        Ok((st, text)) => upstream_json_response(st, text),
+        Err(msg) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error_class": "SERVER_DOWN",
+                "message": msg,
+                "retry_after_ms": Value::Null,
+                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
+            })),
+        )
+            .into_response(),
+    }
+}

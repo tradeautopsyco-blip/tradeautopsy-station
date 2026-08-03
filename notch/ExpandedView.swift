@@ -48,13 +48,17 @@ struct ExpandedNotchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Color.clear
-                .frame(height: chromeTapStripHeight(viewModel))
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.collapseExpandedFromChromeTap()
-                }
+            Button {
+                viewModel.collapseExpandedFromChromeTap()
+            } label: {
+                Color.clear
+                    .frame(minHeight: BarNotchChrome.collapsedStripHeight)
+                    .frame(height: chromeTapStripHeight(viewModel))
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
+            .accessibilityLabel("Collapse notch")
 
             // `NotchPanelController` sizes the panel to nearly fill `visibleFrame`; fill that space here too.
             VStack(alignment: .leading, spacing: 0) {
@@ -86,7 +90,9 @@ struct ExpandedNotchView: View {
                     .padding(.top, 8)
                 }
 
-                if viewModel.activeTab != .capture, viewModel.activeTab != .plan {
+                if !viewModel.planSurfaceOnly,
+                   viewModel.activeTab != .capture,
+                   viewModel.activeTab != .plan {
                     Text("Daemon connection: \(viewModel.daemonConnectionLabel)")
                         .font(.system(size: 9, weight: .medium, design: .rounded))
                         .foregroundColor(Color.white.opacity(0.5))
@@ -118,11 +124,19 @@ struct ExpandedNotchView: View {
                             startRadius: 0,
                             endRadius: 200
                         )
-                        .opacity(viewModel.activeTab == .capture || viewModel.activeTab == .plan ? 0.35 : 0.6)
+                        .opacity(
+                            viewModel.planSurfaceOnly || viewModel.activeTab == .capture || viewModel.activeTab == .plan
+                                ? 0.35
+                                : 0.6
+                        )
                         .allowsHitTesting(false)
                     }
 
-                    if viewModel.activeTab == .capture {
+                    // Station-hosted: always PLAN shell — never multi-tab CenterZone chrome.
+                    if viewModel.planSurfaceOnly {
+                        BarCircuitPanelView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if viewModel.activeTab == .capture {
                         JournalCapturePanelView(viewModel: viewModel)
                     } else if viewModel.activeTab == .plan {
                         BarCircuitPanelView(viewModel: viewModel)

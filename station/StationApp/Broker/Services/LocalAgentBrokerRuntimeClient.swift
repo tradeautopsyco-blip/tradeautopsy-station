@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 
 @MainActor
 public protocol BrokerAgentRuntimeClient {
@@ -7,6 +6,106 @@ public protocol BrokerAgentRuntimeClient {
     func startSync(for identity: BrokerConnectionIdentity) async throws
     func stopSync(for identity: BrokerConnectionIdentity) async throws
     func fetchRuntimeStatus(for identity: BrokerConnectionIdentity) async -> BrokerCardStatus?
+    /// Mint Kotak Neo TOTP session on the agent; vault write happens host-side (no secrets in response).
+    func mintKotakSession(
+        for identity: BrokerConnectionIdentity,
+        consumerKey: String,
+        mobileNumber: String,
+        ucc: String,
+        totp: String,
+        mpin: String
+    ) async throws
+    /// Clear host vault entry for identity (Connect rollback / Delete). Identity-only body.
+    func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws
+    /// Whether the agent can see a vault blob for this identity (Start presence fallback).
+    func vaultCredentialsPresent(for identity: BrokerConnectionIdentity) async -> Bool
+    /// Post-Start honesty for Connect — syncState / lastError (kill switch, auth, etc.).
+    func fetchSyncHealth(for identity: BrokerConnectionIdentity) async -> BrokerSyncHealthSnapshot?
+}
+
+/// Agent `/api/daemon/broker/sync-state` slice used after Connect Start and Brokers load.
+public struct BrokerSyncHealthSnapshot: Equatable, Sendable {
+    public let syncState: String
+    public let runtimeStatus: String
+    public let lastError: String?
+    /// True only when `/etc/hosts` Kill DNS sinkhole is active (not UBI allowlist `host_blocked`).
+    public let killDnsActive: Bool
+    public let brokerSlug: String?
+    public let lastSuccessAtMs: Int64?
+    public let lastPollAtMs: Int64?
+
+    public init(
+        syncState: String,
+        runtimeStatus: String,
+        lastError: String?,
+        killDnsActive: Bool = false,
+        brokerSlug: String? = nil,
+        lastSuccessAtMs: Int64? = nil,
+        lastPollAtMs: Int64? = nil
+    ) {
+        self.syncState = syncState
+        self.runtimeStatus = runtimeStatus
+        self.lastError = lastError
+        self.killDnsActive = killDnsActive
+        self.brokerSlug = brokerSlug
+        self.lastSuccessAtMs = lastSuccessAtMs
+        self.lastPollAtMs = lastPollAtMs
+    }
+
+    /// Prefer last successful poll; fall back to last poll attempt.
+    public var lastSyncedAtMs: Int64? {
+        lastSuccessAtMs ?? lastPollAtMs
+    }
+
+    /// Card status from sync-state (prefer `syncState` over agent `runtimeStatus`).
+    public var cardStatus: BrokerCardStatus? {
+        BrokerAgentSyncStateMapping.cardStatus(syncState: syncState, runtimeStatus: runtimeStatus)
+    }
+
+    /// UBI adapter rejected the request host (`error_class=host_blocked`) — often allowlist/baseUrl, not Kill DNS.
+    public var isUbiHostBlocked: Bool {
+        (lastError ?? "").localizedCaseInsensitiveContains("host_blocked")
+    }
+
+    public var isDisconnected: Bool {
+        let s = syncState.lowercased()
+        return s == "disconnected" || s == "not_connected" || s.isEmpty
+    }
+
+    /// Connect may only claim success when the agent reports an active sync class.
+    /// Transitional `stale` right after Start is not success.
+    public var isLiveEnoughForConnectSuccess: Bool {
+        switch syncState.lowercased() {
+        case "synced", "syncing":
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// Maps agent sync-state JSON → Brokers card status (Notch-aligned).
+public enum BrokerAgentSyncStateMapping {
+    public static func cardStatus(syncState: String?, runtimeStatus: String) -> BrokerCardStatus? {
+        switch (syncState ?? "").lowercased() {
+        case "synced":
+            return .connected
+        case "syncing":
+            return .syncing
+        case "stale":
+            return .degraded
+        default:
+            break
+        }
+        switch runtimeStatus.lowercased() {
+        case "ready_to_start": return .readyToStart
+        case "syncing": return .syncing
+        case "degraded": return .degraded
+        case "rate_limited": return .rateLimited
+        case "paused": return .paused
+        default: return nil
+        }
+    }
 }
 
 /// Loopback wire-v1 client for broker runtime control (#13/#14).
@@ -65,6 +164,81 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
     }
 
     public func fetchRuntimeStatus(for identity: BrokerConnectionIdentity) async -> BrokerCardStatus? {
+        await fetchSyncHealth(for: identity)?.cardStatus
+    }
+
+    public func mintKotakSession(
+        for identity: BrokerConnectionIdentity,
+        consumerKey: String,
+        mobileNumber: String,
+        ucc: String,
+        totp: String,
+        mpin: String
+    ) async throws {
+        let path = "/api/daemon/broker/kotak/session/mint"
+        let payload = KotakSessionMintPayload(
+            identity: identity,
+            consumerKey: consumerKey,
+            mobileNumber: mobileNumber,
+            ucc: ucc,
+            totp: totp,
+            mpin: mpin
+        )
+        let body = try JSONEncoder().encode(payload)
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BrokerAgentRuntimeError.requestFailed
+        }
+        if http.statusCode == 200 {
+            return
+        }
+        if let decoded = try? JSONDecoder().decode(KotakSessionMintErrorBody.self, from: data) {
+            throw BrokerAgentRuntimeError.kotakMintFailed(
+                errorClass: decoded.errorClass ?? "upstream",
+                message: decoded.message ?? "kotak session mint failed"
+            )
+        }
+        throw BrokerAgentRuntimeError.requestFailed
+    }
+
+    public func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws {
+        let path = "/api/daemon/broker/credentials/clear"
+        let payload = BrokerCredentialIdentityPayload(identity: identity)
+        let body = try JSONEncoder().encode(payload)
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw BrokerAgentRuntimeError.requestFailed
+        }
+    }
+
+    public func vaultCredentialsPresent(for identity: BrokerConnectionIdentity) async -> Bool {
+        let path = "/api/daemon/broker/credentials/present"
+        guard let body = try? JSONEncoder().encode(BrokerCredentialIdentityPayload(identity: identity)) else {
+            return false
+        }
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse,
+              http.statusCode == 200,
+              let decoded = try? JSONDecoder().decode(VaultPresentResponse.self, from: data)
+        else {
+            return false
+        }
+        return decoded.present
+    }
+
+    public func fetchSyncHealth(for identity: BrokerConnectionIdentity) async -> BrokerSyncHealthSnapshot? {
         _ = identity
         let path = "/api/daemon/broker/sync-state"
         var request = signRequest("GET", path, Data())
@@ -76,12 +250,21 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         else {
             return nil
         }
-        return decoded.cardStatus
+        return BrokerSyncHealthSnapshot(
+            syncState: decoded.syncState ?? "",
+            runtimeStatus: decoded.runtimeStatus,
+            lastError: decoded.lastError,
+            killDnsActive: decoded.killDnsActive ?? false,
+            brokerSlug: decoded.brokerSlug,
+            lastSuccessAtMs: decoded.lastSuccessAtMs,
+            lastPollAtMs: decoded.lastPollAtMs
+        )
     }
 }
 
 public enum BrokerAgentRuntimeError: Error, Equatable {
     case requestFailed
+    case kotakMintFailed(errorClass: String, message: String)
 }
 
 /// Identity-only Start body (B2). Secrets stay in Keychain; never encoded here.
@@ -104,19 +287,69 @@ struct BrokerSyncStartPayload: Encodable {
     }
 }
 
+struct KotakSessionMintPayload: Encodable {
+    let brokerSlug: String
+    let brokerConnectionId: String
+    let environment: String
+    let consumerKey: String
+    let mobileNumber: String
+    let ucc: String
+    let totp: String
+    let mpin: String
+
+    init(
+        identity: BrokerConnectionIdentity,
+        consumerKey: String,
+        mobileNumber: String,
+        ucc: String,
+        totp: String,
+        mpin: String
+    ) {
+        brokerSlug = identity.brokerSlug
+        brokerConnectionId = identity.brokerConnectionID.uuidString
+        environment = identity.environment
+        self.consumerKey = consumerKey
+        self.mobileNumber = mobileNumber
+        self.ucc = ucc
+        self.totp = totp
+        self.mpin = mpin
+    }
+}
+
+struct BrokerCredentialIdentityPayload: Encodable {
+    let brokerSlug: String
+    let brokerConnectionId: String
+    let environment: String
+
+    init(identity: BrokerConnectionIdentity) {
+        brokerSlug = identity.brokerSlug
+        brokerConnectionId = identity.brokerConnectionID.uuidString
+        environment = identity.environment
+    }
+}
+
+private struct VaultPresentResponse: Decodable {
+    let present: Bool
+}
+
+private struct KotakSessionMintErrorBody: Decodable {
+    let errorClass: String?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case errorClass = "error_class"
+        case message
+    }
+}
+
 private struct BrokerAgentSyncStateResponse: Decodable {
     let runtimeStatus: String
-
-    var cardStatus: BrokerCardStatus? {
-        switch runtimeStatus {
-        case "ready_to_start": return .readyToStart
-        case "syncing": return .syncing
-        case "degraded": return .degraded
-        case "rate_limited": return .rateLimited
-        case "paused": return .paused
-        default: return nil
-        }
-    }
+    let syncState: String?
+    let lastError: String?
+    let killDnsActive: Bool?
+    let brokerSlug: String?
+    let lastSuccessAtMs: Int64?
+    let lastPollAtMs: Int64?
 }
 
 public enum AgentLoopback {

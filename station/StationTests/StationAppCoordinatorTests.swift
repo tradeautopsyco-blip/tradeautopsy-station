@@ -1,7 +1,5 @@
 import Foundation
-import Notch
 import Testing
-@testable import Notch
 @testable import Station
 
 @MainActor
@@ -15,11 +13,12 @@ struct StationAppCoordinatorTests {
         agentSupervisor: FakeAgentSupervisor,
         statusItemController: FakeStatusItemController,
         hotkeyRegistrar: FakeHotkeyRegistrar,
-        notchHost: FakeNotchHost,
-        notchPolling: FakeNotchPolling,
+        sessionHost: FakeSessionHost,
+        floatingNotch: FakeFloatingNotchHost,
+        sessionPolling: FakeSessionPolling,
         windowController: FakeStationWindowController,
         launchStore: FakeLaunchStore,
-        phaseProvider: FakeBarSurfacePhaseProvider,
+        phaseProvider: FakeSessionSurfacePhaseProvider,
         deskRouteStore: FakeDeskRouteStore,
         loginItemService: FakeLoginItemService
     ) {
@@ -27,11 +26,12 @@ struct StationAppCoordinatorTests {
         agentSupervisor.scenario = scenario
         let statusItemController = FakeStatusItemController()
         let hotkeyRegistrar = FakeHotkeyRegistrar()
-        let notchHost = FakeNotchHost()
-        let notchPolling = FakeNotchPolling()
+        let sessionHost = FakeSessionHost()
+        let floatingNotch = FakeFloatingNotchHost()
+        let sessionPolling = FakeSessionPolling()
         let windowController = FakeStationWindowController()
         let launchStore = FakeLaunchStore()
-        let phaseProvider = FakeBarSurfacePhaseProvider()
+        let phaseProvider = FakeSessionSurfacePhaseProvider()
         let loginItemService = FakeLoginItemService()
         launchStore.isFirstLaunchCompleted = true
         let brokerControl = FakeBrokerControlClient()
@@ -39,23 +39,25 @@ struct StationAppCoordinatorTests {
             agentSupervisor: agentSupervisor,
             statusItemController: statusItemController,
             hotkeyRegistrar: hotkeyRegistrar,
-            notchHost: notchHost,
-            notchPolling: notchPolling,
+            sessionHost: sessionHost,
+            sessionPolling: sessionPolling,
             windowController: windowController,
             launchStore: launchStore,
             phaseProvider: phaseProvider,
             loginItemService: loginItemService,
             deskRouteStore: deskRouteStore,
             dateProvider: dateProvider,
-            brokerControl: brokerControl
+            brokerControl: brokerControl,
+            floatingNotch: floatingNotch
         )
         return (
             coordinator,
             agentSupervisor,
             statusItemController,
             hotkeyRegistrar,
-            notchHost,
-            notchPolling,
+            sessionHost,
+            floatingNotch,
+            sessionPolling,
             windowController,
             launchStore,
             phaseProvider,
@@ -96,17 +98,18 @@ struct StationAppCoordinatorTests {
     // T6: Desk route persistence → save/load round-trip
     @Test func deskRoutePersistsAcrossCoordinatorInstances() {
         let deskRouteStore = FakeDeskRouteStore()
-        let phaseProvider = FakeBarSurfacePhaseProvider()
+        let phaseProvider = FakeSessionSurfacePhaseProvider()
         let coordinator = StationAppCoordinator(
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
             phaseProvider: phaseProvider,
-            deskRouteStore: deskRouteStore
+            deskRouteStore: deskRouteStore,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         coordinator.navigateTo(.brokers)
@@ -118,12 +121,13 @@ struct StationAppCoordinatorTests {
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
             phaseProvider: phaseProvider,
-            deskRouteStore: deskRouteStore
+            deskRouteStore: deskRouteStore,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         #expect(relaunched.activeRoute == .brokers)
@@ -151,17 +155,18 @@ struct StationAppCoordinatorTests {
 
         deskRouteStore.saveDeskRoute(.today)
         let sessionHarness = makeHarness(deskRouteStore: deskRouteStore)
-        sessionHarness.phaseProvider.barSurfacePhase = .armed
+        sessionHarness.phaseProvider.sessionSurfacePhase = .armed
         let relaunched = StationAppCoordinator(
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
             phaseProvider: sessionHarness.phaseProvider,
-            deskRouteStore: deskRouteStore
+            deskRouteStore: deskRouteStore,
+            floatingNotch: FakeFloatingNotchHost()
         )
         #expect(relaunched.activeRoute == .liveTrade)
     }
@@ -175,73 +180,74 @@ struct StationAppCoordinatorTests {
         #expect(harness.coordinator.activeRoute == .settings)
     }
 
-    // T_single_viewmodel: coordinator has exactly one NotchViewModel; NotchLauncher receives same instance
-    @Test func coordinatorOwnsSingleNotchViewModelSharedWithNotchHost() {
-        let viewModel = NotchViewModel()
-        let notchHost = TrackingNotchHost(viewModel: viewModel)
+    // T_single_session_model: coordinator has exactly one SessionModel shared with TrackingSessionHost
+    @Test func coordinatorOwnsSingleSessionModelSharedWithNotchHost() {
+        let sessionModel = SessionModel()
+        let sessionHost = TrackingSessionHost(sessionModel: sessionModel)
         let coordinator = StationAppCoordinator(
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: notchHost,
-            notchPolling: FakeNotchPolling(),
+            sessionHost: sessionHost,
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
-            phaseProvider: FakeBarSurfacePhaseProvider(),
-            notchViewModel: viewModel
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            sessionModel: sessionModel,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
-        #expect(coordinator.notchViewModel === viewModel)
-        #expect(notchHost.injectedViewModel === viewModel)
-        #expect(notchHost.injectedViewModel === coordinator.notchViewModel)
+        #expect(coordinator.sessionModel === sessionModel)
+        #expect(sessionHost.injectedSessionModel === sessionModel)
+        #expect(sessionHost.injectedSessionModel === coordinator.sessionModel)
     }
 
-    @Test func changingActiveRouteDoesNotExpandNotch() {
-        let viewModel = NotchViewModel()
-        viewModel.isExpanded = false
+    @Test func changingActiveRouteDoesNotAffectSessionModelIdentity() {
+        let sessionModel = SessionModel()
         let coordinator = StationAppCoordinator(
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
-            phaseProvider: FakeBarSurfacePhaseProvider(),
-            notchViewModel: viewModel
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            sessionModel: sessionModel,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         coordinator.navigateTo(.brokers)
         #expect(coordinator.activeRoute == .brokers)
-        #expect(viewModel.isExpanded == false)
+        #expect(coordinator.sessionModel === sessionModel)
 
         coordinator.navigateTo(.liveTrade)
         #expect(coordinator.activeRoute == .liveTrade)
-        #expect(viewModel.isExpanded == false)
+        #expect(coordinator.sessionModel === sessionModel)
     }
 
-    @Test func phaseTransitionUpdatesActiveRouteWithoutExpandingNotch() {
-        let viewModel = NotchViewModel()
-        viewModel.isExpanded = false
-        let phaseProvider = FakeBarSurfacePhaseProvider()
+    @Test func phaseTransitionUpdatesActiveRouteWithoutTouchingSessionModel() {
+        let sessionModel = SessionModel()
+        let phaseProvider = FakeSessionSurfacePhaseProvider()
         let coordinator = StationAppCoordinator(
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
             phaseProvider: phaseProvider,
-            notchViewModel: viewModel,
-            deskRouteStore: FakeDeskRouteStore()
+            sessionModel: sessionModel,
+            deskRouteStore: FakeDeskRouteStore(),
+            floatingNotch: FakeFloatingNotchHost()
         )
         #expect(coordinator.activeRoute == .preTrade)
 
         phaseProvider.setPhase(.armed)
 
         #expect(coordinator.activeRoute == .liveTrade)
-        #expect(viewModel.isExpanded == false)
+        #expect(coordinator.sessionModel === sessionModel)
     }
 
     // T1: Launch with healthy agent fake → no warning; notch start called; polling started
@@ -251,8 +257,9 @@ struct StationAppCoordinatorTests {
         await harness.coordinator.launch()
 
         #expect(harness.coordinator.agentHealthWarning == nil)
-        #expect(harness.notchHost.startCallCount == 1)
-        #expect(harness.notchPolling.startPollingCallCount == 1)
+        #expect(harness.sessionHost.startCallCount == 1)
+        #expect(harness.floatingNotch.startCallCount == 1)
+        #expect(harness.sessionPolling.startPollingCallCount == 1)
         #expect(harness.statusItemController.lastReportedHealthy == true)
     }
 
@@ -264,8 +271,9 @@ struct StationAppCoordinatorTests {
 
         #expect(harness.coordinator.agentHealthWarning?.reason == .launchTimeout)
         #expect(harness.coordinator.isShellNavigable)
-        #expect(harness.notchHost.startCallCount == 0)
-        #expect(harness.notchPolling.startPollingCallCount == 0)
+        #expect(harness.sessionHost.startCallCount == 0)
+        #expect(harness.floatingNotch.startCallCount == 0)
+        #expect(harness.sessionPolling.startPollingCallCount == 0)
     }
 
     // T3: Port collision non-agent → blocking warning with canRetry
@@ -289,8 +297,8 @@ struct StationAppCoordinatorTests {
 
         #expect(harness.agentSupervisor.retryCallCount == 1)
         #expect(harness.coordinator.agentHealthWarning == nil)
-        #expect(harness.notchHost.startCallCount == 1)
-        #expect(harness.notchPolling.startPollingCallCount == 1)
+        #expect(harness.sessionHost.startCallCount == 1)
+        #expect(harness.sessionPolling.startPollingCallCount == 1)
     }
 
     // T9: Quit → shutdown sequence: hotkeys unregistered, agent shutdown, notch dismiss
@@ -302,8 +310,29 @@ struct StationAppCoordinatorTests {
 
         #expect(harness.hotkeyRegistrar.unregisterAllCallCount == 1)
         #expect(harness.agentSupervisor.shutdownCallCount == 1)
-        #expect(harness.notchHost.dismissCallCount == 1)
-        #expect(harness.notchPolling.stopPollingCallCount == 1)
+        #expect(harness.floatingNotch.dismissCallCount == 1)
+        #expect(harness.sessionHost.dismissCallCount == 1)
+        #expect(harness.sessionPolling.stopPollingCallCount == 1)
+    }
+
+    @Test func toggleNotchForwardsToFloatingNotchHost() async {
+        let harness = makeHarness(scenario: .healthy)
+        await harness.coordinator.launch()
+
+        harness.coordinator.toggleNotch()
+
+        #expect(harness.floatingNotch.toggleCallCount == 1)
+        #expect(harness.sessionHost.toggleCallCount == 0)
+    }
+
+    @Test func altSpaceHotkeyTogglesFloatingNotchNotStation() async {
+        let harness = makeHarness(scenario: .healthy)
+        await harness.coordinator.launch()
+
+        harness.hotkeyRegistrar.toggleNotchHandler?()
+
+        #expect(harness.floatingNotch.toggleCallCount == 1)
+        #expect(harness.sessionHost.toggleCallCount == 0)
     }
 
     // T_crash_loop: 3 crashes in 60s → crashLoopExceeded warning, canRetry=true, auto-restart stops
@@ -330,27 +359,27 @@ struct StationAppCoordinatorTests {
         #expect(harness.coordinator.agentHealthWarning?.reason == .runtimeDisconnected)
         #expect(harness.coordinator.isPulseStripDegraded)
         #expect(harness.statusItemController.lastReportedHealthy == false)
-        #expect(harness.notchPolling.stopPollingCallCount == 1)
+        #expect(harness.sessionPolling.stopPollingCallCount == 1)
     }
 
     @Test func agentRecoveryRestartsPolling() async {
         let harness = makeHarness(scenario: .healthy)
         await harness.coordinator.launch()
         #expect(harness.coordinator.isPulseStripDegraded == false)
-        #expect(harness.notchPolling.startPollingCallCount == 1)
+        #expect(harness.sessionPolling.startPollingCallCount == 1)
 
         harness.agentSupervisor.simulateRuntimeDisconnect()
         await Task.yield()
 
         #expect(harness.coordinator.isPulseStripDegraded)
-        #expect(harness.notchPolling.stopPollingCallCount == 1)
+        #expect(harness.sessionPolling.stopPollingCallCount == 1)
 
         harness.agentSupervisor.simulateRuntimeRecovery()
         await Task.yield()
 
         #expect(harness.coordinator.isPulseStripDegraded == false)
         #expect(harness.coordinator.agentHealthWarning == nil)
-        #expect(harness.notchPolling.startPollingCallCount == 2)
+        #expect(harness.sessionPolling.startPollingCallCount == 2)
         #expect(harness.statusItemController.lastReportedHealthy == true)
     }
 
@@ -365,7 +394,7 @@ struct StationAppCoordinatorTests {
         #expect(harness.agentSupervisor.retryCallCount == 1)
         #expect(harness.coordinator.agentHealthWarning == nil)
         #expect(harness.agentSupervisor.startCallCount == 1)
-        #expect(harness.notchHost.startCallCount == 1)
+        #expect(harness.sessionHost.startCallCount == 1)
     }
 
     // T_port_collision: non-agent on 9137 → portCollisionNonAgent warning, message includes port guidance
@@ -387,7 +416,7 @@ struct StationAppCoordinatorTests {
 
         #expect(harness.coordinator.agentHealthWarning == nil)
         #expect(harness.agentSupervisor.ownsSpawnedAgent == false)
-        #expect(harness.notchHost.startCallCount == 1)
+        #expect(harness.sessionHost.startCallCount == 1)
 
         await harness.coordinator.quit()
 
@@ -403,12 +432,13 @@ struct StationAppCoordinatorTests {
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: statusItemController,
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: FakeLaunchStore(),
-            phaseProvider: FakeBarSurfacePhaseProvider(),
-            loginItemService: loginItemService
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            loginItemService: loginItemService,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         await coordinator.launch()
@@ -432,12 +462,13 @@ struct StationAppCoordinatorTests {
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: launchStore,
-            phaseProvider: FakeBarSurfacePhaseProvider(),
-            loginItemService: loginItemService
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            loginItemService: loginItemService,
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         await coordinator.launch()
@@ -449,5 +480,68 @@ struct StationAppCoordinatorTests {
 
         await coordinator.launch()
         #expect(coordinator.showLoginItemPrompt == false)
+    }
+
+    @Test func brokerBridgeConnectNavigatesAndBeginsConnect() async {
+        let harness = makeHarness()
+        let coordinator = harness.coordinator
+        let floating = harness.floatingNotch
+        floating.setBrokerBridge(
+            onConnect: { slug in
+                coordinator.navigateTo(.brokers)
+                coordinator.openStation()
+                Task { @MainActor in
+                    await coordinator.brokersViewModel.beginConnect(for: slug)
+                }
+            },
+            onReauth: { slug in
+                coordinator.navigateTo(.brokers)
+                coordinator.openStation()
+                coordinator.brokersViewModel.presentKotakTotpRemint(for: slug)
+            }
+        )
+
+        floating.brokerConnectHandler?("kotak_neo")
+        #expect(coordinator.activeRoute == .brokers)
+        #expect(harness.windowController.showAndActivateCallCount >= 1)
+        // Sheet vs Start is covered by BrokersViewModel beginConnect unit tests
+        // (real Keychain profile on the host can take either path here).
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(50))
+    }
+
+    @Test func brokerBridgeReauthOpensBrokersEditPath() {
+        let harness = makeHarness()
+        let coordinator = harness.coordinator
+        let floating = harness.floatingNotch
+        floating.setBrokerBridge(
+            onConnect: { _ in },
+            onReauth: { slug in
+                coordinator.navigateTo(.brokers)
+                coordinator.openStation()
+                coordinator.brokersViewModel.presentKotakTotpRemint(for: slug)
+            }
+        )
+
+        floating.brokerReauthHandler?("kotak_neo")
+        #expect(coordinator.activeRoute == .brokers)
+        // Remint may present TOTP-only or full sheet depending on Keychain/profile; slug must be set.
+        #expect(coordinator.brokersViewModel.connectBrokerSlug == "kotak_neo")
+    }
+
+    /// Device login is a distinct bridge from broker Connect/Reauth (#4 grill fix) — it must
+    /// route to Settings, never to Brokers, so the two failure modes stay visually separate.
+    @Test func deviceLoginBridgeOpensSettingsNotBrokers() {
+        let harness = makeHarness()
+        let coordinator = harness.coordinator
+        let floating = harness.floatingNotch
+        floating.setDeviceLoginBridge(onOpen: { [weak coordinator] in
+            coordinator?.navigateTo(.settings)
+            coordinator?.openStation()
+        })
+
+        floating.deviceLoginHandler?()
+        #expect(coordinator.activeRoute == .settings)
+        #expect(harness.windowController.showAndActivateCallCount >= 1)
     }
 }

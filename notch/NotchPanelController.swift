@@ -48,6 +48,52 @@ final class TradeAutopsyNotchPanel: NSPanel {
     }
 }
 
+/// Transparent click-catcher under the expanded notch — no Input Monitoring required.
+@MainActor
+private final class NotchCollapseBackdropPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+
+    override init(
+        contentRect: NSRect,
+        styleMask style: NSWindow.StyleMask,
+        backing backingStoreType: NSWindow.BackingStoreType,
+        defer flag: Bool
+    ) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+        isFloatingPanel = true
+        // Just below the notch panel (`.floating`).
+        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        isReleasedWhenClosed = false
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = false
+        ignoresMouseEvents = false
+        isMovable = false
+        hidesOnDeactivate = false
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
+private final class NotchBackdropClickView: NSView {
+    var onClick: (() -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// Hosts the notch UI in a borderless `NSPanel` (DynamicNotchKit-free for portable `swift build`).
 @MainActor
 final class NotchPanelController {
@@ -64,8 +110,9 @@ final class NotchPanelController {
     private var moveObserver: NSObjectProtocol?
     private var saveWorkItem: DispatchWorkItem?
     private var isApplyingSnappedFrame = false
-    /// Tracks off-app mouse downs to collapse expanded panel (global monitor ignores same-app clicks).
-    private var outsideCollapseMouseMonitor: Any?
+    /// Full-screen click-away layer under the expanded notch (primary outside-dismiss; no IM).
+    private var backdropPanel: NotchCollapseBackdropPanel?
+    private var escCollapseMonitor: Any?
     /// Expanded panel body size — locked for session to avoid resize flicker on content changes.
     private var sessionLockedExpandedContentSize: CGSize?
 
@@ -88,11 +135,19 @@ final class NotchPanelController {
         panel.contentViewController = host
         self.panel = panel
 
-        viewModel.onRequestOrderFront = { [weak panel] in
-            panel?.orderFrontRegardless()
-            if let view = panel?.contentView {
-                _ = panel?.makeFirstResponder(view)
+        viewModel.onRequestOrderFront = { [weak self] in
+            guard let self else { return }
+            if self.viewModel.isExpanded {
+                self.showCollapseBackdropIfNeeded()
             }
+            self.panel.orderFrontRegardless()
+            if let view = self.panel.contentView {
+                _ = self.panel.makeFirstResponder(view)
+            }
+        }
+
+        viewModel.onRequestHidePill = { [weak self] in
+            self?.hide()
         }
 
         viewModel.$isExpanded
@@ -101,9 +156,11 @@ final class NotchPanelController {
                 guard let self else { return }
                 self.layoutPanel(animated: true)
                 if expanded {
-                    self.installOutsideCollapseMouseMonitorIfNeeded()
+                    self.showCollapseBackdropIfNeeded()
+                    self.installEscCollapseMonitorIfNeeded()
                 } else {
-                    self.removeOutsideCollapseMouseMonitor()
+                    self.hideCollapseBackdrop()
+                    self.removeEscCollapseMonitor()
                 }
             }
             .store(in: &subs)
@@ -116,6 +173,9 @@ final class NotchPanelController {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.layoutPanel(animated: false)
+                if self?.viewModel.isExpanded == true {
+                    self?.layoutCollapseBackdrop()
+                }
             }
         }
 
@@ -131,9 +191,10 @@ final class NotchPanelController {
     }
 
     deinit {
-        if let m = outsideCollapseMouseMonitor {
+        if let m = escCollapseMonitor {
             NSEvent.removeMonitor(m)
         }
+        backdropPanel?.orderOut(nil)
         if let o = displayObserver {
             NotificationCenter.default.removeObserver(o)
         }
@@ -155,35 +216,101 @@ final class NotchPanelController {
         }
     }
 
+    /// Keep the HUD above the focused app without stealing activation.
+    func bringToFront() {
+        if !panel.isVisible {
+            show()
+        } else {
+            if viewModel.isExpanded {
+                showCollapseBackdropIfNeeded()
+            }
+            panel.orderFrontRegardless()
+        }
+    }
+
     func hide() {
-        removeOutsideCollapseMouseMonitor()
+        hideCollapseBackdrop()
+        removeEscCollapseMonitor()
         panel.orderOut(nil)
     }
 
-    /// `addGlobalMonitorForEvents` only delivers mouse downs from processes other than this app —
-    /// equivalent to clicking "outside" the notch surface for dismiss.
-    private func installOutsideCollapseMouseMonitorIfNeeded() {
-        guard outsideCollapseMouseMonitor == nil else { return }
-        outsideCollapseMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+    private func showCollapseBackdropIfNeeded() {
+        let backdrop = backdropPanel ?? makeCollapseBackdropPanel()
+        backdropPanel = backdrop
+        layoutCollapseBackdrop()
+        backdrop.orderFrontRegardless()
+        panel.orderFrontRegardless()
+    }
+
+    private func makeCollapseBackdropPanel() -> NotchCollapseBackdropPanel {
+        let backdrop = NotchCollapseBackdropPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let clickView = NotchBackdropClickView(frame: .zero)
+        clickView.wantsLayer = true
+        clickView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        clickView.autoresizingMask = [.width, .height]
+        clickView.onClick = { [weak self] in
+            self?.viewModel.collapseExpandedFromOutsideClick()
+        }
+        backdrop.contentView = clickView
+        return backdrop
+    }
+
+    private func layoutCollapseBackdrop() {
+        guard let backdrop = backdropPanel else { return }
+        let screen = panel.screen ?? NSScreen.main
+        let frame = screen?.frame ?? .zero
+        backdrop.setFrame(frame, display: true)
+    }
+
+    private func hideCollapseBackdrop() {
+        backdropPanel?.orderOut(nil)
+    }
+
+    private func installEscCollapseMonitorIfNeeded() {
+        guard escCollapseMonitor == nil else { return }
+        escCollapseMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, self.viewModel.isExpanded, event.keyCode == 53 else { return event }
             DispatchQueue.main.async {
-                self?.viewModel.collapseExpandedFromOutsideClick()
+                self.viewModel.collapseExpandedFromOutsideClick()
             }
+            return nil
         }
     }
 
-    private func removeOutsideCollapseMouseMonitor() {
-        if let monitor = outsideCollapseMouseMonitor {
+    private func removeEscCollapseMonitor() {
+        if let monitor = escCollapseMonitor {
             NSEvent.removeMonitor(monitor)
-            outsideCollapseMouseMonitor = nil
+            escCollapseMonitor = nil
         }
     }
 
-    func toggle() {
+    /// Standalone Notch: show/hide the whole HUD.
+    func toggleVisibility() {
         if panel.isVisible {
             hide()
         } else {
             show()
         }
+    }
+
+    /// Station-hosted: expand/collapse PLAN surface while keeping the pill above other apps.
+    func toggleExpandedSurface() {
+        bringToFront()
+        if viewModel.isExpanded {
+            viewModel.collapseExpandedFromChromeTap()
+        } else {
+            viewModel.expandFromCollapsedChromeTap()
+        }
+    }
+
+    /// Legacy name — visibility toggle (standalone hotkey path).
+    func toggle() {
+        toggleVisibility()
     }
 
     private func handlePanelMoved() {
@@ -199,6 +326,9 @@ final class NotchPanelController {
             isApplyingSnappedFrame = false
         }
         schedulePersist(origin: f.origin)
+        if viewModel.isExpanded {
+            layoutCollapseBackdrop()
+        }
     }
 
     private func schedulePersist(origin: NSPoint) {
@@ -355,13 +485,20 @@ final class NotchPanelController {
         viewModel.notchTopInset = hasNotch ? notchTopInset : 0
 
         if animated {
+            // Keep AppKit frame motion in sync with SwiftUI `NotchTheme.springExpand`
+            // (critically damped settle). easeInEaseOut fought the spring and felt laggy.
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.4
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                ctx.duration = NotchTheme.panelFrameAnimationDuration
+                ctx.timingFunction = NotchTheme.panelFrameTimingFunction
+                ctx.allowsImplicitAnimation = true
                 panel.animator().setFrame(appliedRect, display: true)
             }
         } else {
             panel.setFrame(appliedRect, display: true)
+        }
+
+        if expanded {
+            layoutCollapseBackdrop()
         }
     }
 }

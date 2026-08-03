@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<!--
+  CURRENT — TradeAutopsy Station shell mock (post–Notch severance)
+  Mirrors StationShellView + SessionPulseStrip + StationSidebarList + TodayView
+  using StationDS tokens. No floating notch panel.
+  Run: open station/prototypes/CURRENT-station.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CURRENT — TradeAutopsy Station</title>
+  <style>
+    :root {
+      /* StationDS */
+      --fill-panel: #0d0d0d;
+      --fill-sidebar: #0a0a0a;
+      --fill-card: #111111;
+      --fill-input: rgba(255, 255, 255, 0.03);
+      --text-primary: #ededed;
+      --text-secondary: #666666;
+      --text-muted: #444444;
+      --accent-teal: #00e5c0;
+      --accent-amber: #eab308;
+      --accent-red: #ef4444;
+      --accent-green: #22c55e;
+      --accent-blue: #60a5fa;
+      --border-divider: rgba(255, 255, 255, 0.05);
+      --border-card: rgba(255, 255, 255, 0.07);
+      --radius-card: 8px;
+      --radius-small: 6px;
+      --border-thin: 0.5px;
+      --font-body: 13px;
+      --font-small: 12px;
+      --font-xs: 11px;
+      --font-brief: 16px;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      /* Today palette (TodayPalette) */
+      --today-profit: #0ECB81;
+      --today-loss: #F6465D;
+      --today-watch: #FF7A6B;
+      --sidebar-w: 220px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: #050505;
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .tag {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 40;
+      font: 600 10px/1 var(--mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent-teal);
+      background: rgba(0, 229, 192, 0.08);
+      border: 1px solid rgba(0, 229, 192, 0.25);
+      padding: 6px 10px;
+      border-radius: 999px;
+    }
+    .controls {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 40;
+      display: flex;
+      gap: 8px;
+    }
+    .controls button {
+      font: 600 10px/1 var(--mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      background: var(--fill-card);
+      border: 1px solid var(--border-card);
+      padding: 6px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .controls button.on {
+      color: var(--text-primary);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .app {
+      width: 1100px;
+      height: 700px;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+    }
+
+    /* SessionPulseStrip — 38px */
+    .pulse {
+      height: 38px;
+      flex-shrink: 0;
+      background: var(--fill-panel);
+      border-bottom: var(--border-thin) solid var(--border-divider);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      cursor: pointer;
+    }
+    .pulse .dot-warn {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-amber);
+      flex-shrink: 0;
+    }
+    .pulse .chips { display: none; gap: 8px; align-items: center; }
+    .app.dual .pulse .chips { display: flex; }
+    .chip {
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: var(--radius-small);
+      background: var(--fill-input);
+      color: var(--text-muted);
+    }
+    .chip.active { color: var(--text-primary); }
+    .metric {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: var(--font-xs);
+    }
+    .metric .lbl { color: var(--text-secondary); font-size: var(--font-xs); }
+    .metric .val {
+      font-family: var(--mono);
+      font-size: var(--font-small);
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .metric .val.pos { color: var(--accent-green); }
+    .metric .val.neg { color: var(--accent-red); }
+    .metric .val.degraded { color: var(--text-muted); }
+    .sym-chip {
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      font-weight: 500;
+      color: var(--text-primary);
+      padding: 3px 8px;
+      border-radius: var(--radius-small);
+      background: var(--fill-input);
+    }
+    .pulse .spacer { flex: 1; }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--fill-sidebar);
+      border-right: 1px solid var(--border-divider);
+      overflow-y: auto;
+      padding: 8px 0 16px;
+    }
+    .sb-section {
+      padding: 14px 16px 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 1px 8px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+    }
+    .nav-item:hover { background: rgba(255, 255, 255, 0.04); color: var(--text-primary); }
+    .nav-item.active {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-primary);
+    }
+    .nav-item .ico {
+      width: 16px;
+      text-align: center;
+      opacity: 0.7;
+      font-size: 12px;
+    }
+    .nav-item.active .ico { opacity: 1; }
+
+    /* Detail */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--fill-panel);
+      position: relative;
+    }
+    .topbar {
+      height: 44px;
+      flex-shrink: 0;
+      border-bottom: var(--border-thin) solid var(--border-divider);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 10px;
+    }
+    .topbar h1 {
+      font-size: var(--font-brief);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .topbar .sub {
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+    }
+    .topbar .spacer { flex: 1; }
+    .agent-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #30d158; /* systemGreen stand-in */
+      box-shadow: 0 0 0 7px transparent;
+    }
+    .agent-dot.bad { background: #ff453a; }
+
+    .scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
+
+    .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .screen.active { display: flex; }
+
+    .placeholder {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: var(--fill-panel);
+    }
+    .placeholder h2 {
+      font-size: var(--font-brief);
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .placeholder p {
+      font-size: var(--font-body);
+      color: var(--text-muted);
+    }
+
+    /* Today */
+    .cb {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(246, 70, 93, 0.1);
+      border: 1px solid rgba(246, 70, 93, 0.28);
+    }
+    .app.breaker .cb { display: flex; }
+    .cb-ico { color: var(--today-loss); }
+    .cb-h { font-size: var(--font-small); font-weight: 600; color: var(--today-loss); }
+    .cb-sub { font-size: var(--font-xs); color: var(--text-muted); margin-top: 2px; }
+    .cb-btn {
+      margin-left: auto;
+      flex-shrink: 0;
+      border: 1px solid rgba(246, 70, 93, 0.35);
+      background: transparent;
+      color: var(--today-loss);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: var(--font-xs);
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    .hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .tile {
+      background: var(--fill-input);
+      border-radius: 16px;
+      padding: 16px;
+      border: 1px solid var(--border-divider);
+      min-height: 104px;
+    }
+    .tile.pos {
+      background: rgba(14, 203, 129, 0.08);
+      border-color: rgba(14, 203, 129, 0.22);
+    }
+    .tile .lbl {
+      font-size: var(--font-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    .tile .val {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .tile .val.pos { color: var(--today-profit); }
+    .tile .val.neutral { color: var(--text-primary); }
+    .tile .cap {
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .sec-h {
+      font-size: var(--font-body);
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .sec-h .meta {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .signals { display: flex; gap: 10px; }
+    .signal {
+      flex: 1;
+      padding: 14px;
+      background: var(--fill-input);
+      border-radius: 16px;
+      border: 1px solid var(--border-divider);
+    }
+    .signal .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .signal .name { font-size: var(--font-small); font-weight: 600; flex: 1; }
+    .badge {
+      font-family: var(--mono);
+      font-size: var(--font-xs);
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+    .badge.watch {
+      background: rgba(255, 122, 107, 0.12);
+      color: var(--today-watch);
+    }
+    .badge.ok {
+      background: rgba(14, 203, 129, 0.12);
+      color: var(--today-profit);
+    }
+    .signal .desc {
+      font-size: var(--font-xs);
+      color: var(--text-secondary);
+      line-height: 1.45;
+    }
+
+    .trades {
+      background: var(--fill-input);
+      border-radius: 16px;
+      border: 1px solid var(--border-divider);
+      overflow: hidden;
+    }
+    .t-head, .t-row {
+      display: grid;
+      grid-template-columns: 52px 1fr 76px 76px 88px 92px;
+      gap: 0;
+      padding: 0 14px;
+      align-items: center;
+    }
+    .t-head {
+      height: 30px;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: var(--font-xs);
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .t-row {
+      height: 36px;
+      font-size: var(--font-small);
+      border-bottom: 0.5px solid var(--border-divider);
+    }
+    .t-row:last-child { border-bottom: none; }
+    .t-row .mono { font-family: var(--mono); font-size: var(--font-xs); }
+    .t-row .pos { color: var(--today-profit); }
+    .t-row .neg { color: var(--today-loss); }
+    .t-row .flag { color: var(--today-loss); }
+    .t-row.flagged { background: rgba(246, 70, 93, 0.04); }
+    .t-head span:nth-child(n+3),
+    .t-row span:nth-child(n+3) { text-align: right; }
+
+    .app.degraded .pulse .val:not(.chip),
+    .app.degraded .metric .val { color: var(--text-muted) !important; }
+    .app.degraded .dot-warn { display: block; }
+    .dot-warn { display: none; }
+    .app.degraded .dot-warn { display: block; }
+    .app.degraded .sym-chip { display: none; }
+  </style>
+</head>
+<body>
+  <div class="tag">CURRENT — mirrors StationApp shell (post–Notch severance)</div>
+  <div class="controls">
+    <button type="button" id="btn-dual" title="Dual-desk chips on pulse strip">Dual desk</button>
+    <button type="button" id="btn-degraded" title="Pulse degraded / em-dash">Degraded</button>
+    <button type="button" id="btn-breaker" title="Circuit breaker banner on Today">Breaker</button>
+  </div>
+
+  <div class="app" id="app">
+    <!-- SessionPulseStrip -->
+    <div class="pulse" id="pulse" title="Opens Live trade">
+      <div class="dot-warn" aria-label="Data unavailable"></div>
+      <div class="chips" aria-label="Dual desk chips">
+        <span class="chip active">USD</span>
+        <span class="chip">INR</span>
+      </div>
+      <div class="metric">
+        <span class="lbl">Session P&amp;L</span>
+        <span class="val pos" data-live="+$1,250.00" data-deg="—">+$1,250.00</span>
+      </div>
+      <div class="metric">
+        <span class="lbl">Unrealized</span>
+        <span class="val pos" data-live="+$420.50" data-deg="—">+$420.50</span>
+      </div>
+      <div class="metric">
+        <span class="lbl">Positions</span>
+        <span class="val" data-live="1" data-deg="—">1</span>
+      </div>
+      <span class="sym-chip">RELIANCE</span>
+      <div class="spacer"></div>
+    </div>
+
+    <div class="body">
+      <!-- StationSidebarList -->
+      <nav class="sidebar" aria-label="Station sidebar">
+        <div class="sb-section">Session</div>
+        <div class="nav-item active" data-route="Today"><span class="ico">☀</span> Today</div>
+        <div class="nav-item" data-route="Pre-trade"><span class="ico">☑</span> Pre-trade</div>
+        <div class="nav-item" data-route="Live trade"><span class="ico">⚡</span> Live trade</div>
+        <div class="nav-item" data-route="Post-trade"><span class="ico">☰</span> Post-trade</div>
+
+        <div class="sb-section">Backend Box</div>
+        <div class="nav-item" data-route="Brokers"><span class="ico">⛓</span> Brokers</div>
+        <div class="nav-item" data-route="Market Data"><span class="ico">↗</span> Market Data</div>
+        <div class="nav-item" data-route="AI / Workflow"><span class="ico">✦</span> AI / Workflow</div>
+
+        <div class="sb-section">Desk</div>
+        <div class="nav-item" data-route="Journal"><span class="ico">📔</span> Journal</div>
+        <div class="nav-item" data-route="Escrow match"><span class="ico">🛡</span> Escrow match</div>
+        <div class="nav-item" data-route="Patterns"><span class="ico">◉</span> Patterns</div>
+        <div class="nav-item" data-route="Fidelity score"><span class="ico">▮</span> Fidelity score</div>
+        <div class="nav-item" data-route="Settings"><span class="ico">⚙</span> Settings</div>
+      </nav>
+
+      <div class="main">
+        <!-- Today -->
+        <section class="screen active" id="screen-today" data-title="Today">
+          <div class="topbar">
+            <h1>Today</h1>
+            <span class="sub">2026-07-27 · performance basis (not tax)</span>
+            <div class="spacer"></div>
+            <div class="agent-dot" title="Agent healthy" aria-label="Agent healthy"></div>
+          </div>
+          <div class="scroll">
+            <div class="cb">
+              <span class="cb-ico">⬡</span>
+              <div>
+                <div class="cb-h">Circuit breaker active</div>
+                <div class="cb-sub">Review behavior before resuming.</div>
+              </div>
+              <button type="button" class="cb-btn">Review &amp; resume · 1:12</button>
+            </div>
+
+            <div class="hero">
+              <div class="tile pos">
+                <div class="lbl">P&amp;L today</div>
+                <div class="val pos">+$1,250</div>
+                <div class="cap">USD · binance_com</div>
+              </div>
+              <div class="tile">
+                <div class="lbl">Trades</div>
+                <div class="val neutral">4</div>
+                <div class="cap">2 closed · 1 open</div>
+              </div>
+              <div class="tile">
+                <div class="lbl">Win rate</div>
+                <div class="val neutral">75%</div>
+                <div class="cap">3W / 1L</div>
+              </div>
+            </div>
+
+            <div>
+              <div class="sec-h">Behavior signals <span class="meta">top 2</span></div>
+              <div class="signals">
+                <div class="signal">
+                  <div class="row">
+                    <span class="name">Revenge entry</span>
+                    <span class="badge watch">WATCH</span>
+                  </div>
+                  <div class="desc">Second entry within 8m of a loss on the same symbol.</div>
+                </div>
+                <div class="signal">
+                  <div class="row">
+                    <span class="name">Size discipline</span>
+                    <span class="badge ok">OK</span>
+                  </div>
+                  <div class="desc">Average size within plan band for the session.</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="sec-h">Trades today <span class="meta">2 closed</span></div>
+              <div class="trades">
+                <div class="t-head">
+                  <span>Time</span><span>Symbol</span><span>Entry</span><span>Exit</span><span>Net P&amp;L</span><span>Flag</span>
+                </div>
+                <div class="t-row">
+                  <span class="mono">09:42</span>
+                  <span class="mono">RELIANCE</span>
+                  <span class="mono">2,841.0</span>
+                  <span class="mono">2,868.5</span>
+                  <span class="mono pos">+$275.00</span>
+                  <span>—</span>
+                </div>
+                <div class="t-row flagged">
+                  <span class="mono">11:05</span>
+                  <span class="mono">NIFTY</span>
+                  <span class="mono">24,210</span>
+                  <span class="mono">24,180</span>
+                  <span class="mono neg">−$180.00</span>
+                  <span class="flag">revenge</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Placeholder for other routes (StationPlaceholderView) -->
+        <section class="screen" id="screen-placeholder">
+          <div class="topbar">
+            <h1 id="ph-title">Pre-trade</h1>
+            <div class="spacer"></div>
+            <div class="agent-dot" title="Agent healthy"></div>
+          </div>
+          <div class="placeholder">
+            <h2 id="ph-heading">Pre-trade</h2>
+            <p>This screen is coming in a future release.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var app = document.getElementById("app");
+      var today = document.getElementById("screen-today");
+      var placeholder = document.getElementById("screen-placeholder");
+      var phTitle = document.getElementById("ph-title");
+      var phHeading = document.getElementById("ph-heading");
+
+      function setRoute(name) {
+        document.querySelectorAll(".nav-item").forEach(function (el) {
+          el.classList.toggle("active", el.getAttribute("data-route") === name);
+        });
+        if (name === "Today") {
+          today.classList.add("active");
+          placeholder.classList.remove("active");
+        } else {
+          today.classList.remove("active");
+          placeholder.classList.add("active");
+          phTitle.textContent = name;
+          phHeading.textContent = name;
+        }
+      }
+
+      document.querySelectorAll(".nav-item").forEach(function (el) {
+        el.addEventListener("click", function () {
+          setRoute(el.getAttribute("data-route"));
+        });
+      });
+
+      document.getElementById("pulse").addEventListener("click", function () {
+        setRoute("Live trade");
+      });
+
+      function toggle(btnId, className) {
+        var btn = document.getElementById(btnId);
+        btn.addEventListener("click", function () {
+          app.classList.toggle(className);
+          btn.classList.toggle("on", app.classList.contains(className));
+          if (className === "degraded") {
+            document.querySelectorAll(".metric .val").forEach(function (v) {
+              var live = v.getAttribute("data-live");
+              var deg = v.getAttribute("data-deg");
+              v.textContent = app.classList.contains("degraded") ? deg : live;
+            });
+          }
+        });
+      }
+      toggle("btn-dual", "dual");
+      toggle("btn-degraded", "degraded");
+      toggle("btn-breaker", "breaker");
+    })();
+  </script>
+</body>
+</html>

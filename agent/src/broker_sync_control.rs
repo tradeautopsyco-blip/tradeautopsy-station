@@ -115,6 +115,10 @@ impl BrokerSyncController {
         }
     }
 
+    pub fn credential_vault(&self) -> Arc<dyn BrokerCredentialVault> {
+        self.credential_vault.clone()
+    }
+
     pub fn card_status(&self) -> BrokerRuntimeCardStatus {
         if self.user_paused.load(Ordering::Relaxed) {
             return BrokerRuntimeCardStatus::Paused;
@@ -342,7 +346,7 @@ fn wire_credentials_present(request: &BrokerSyncStartRequest) -> bool {
 
 /// Default vault for production: Keychain-backed.
 pub fn default_credential_vault() -> Arc<dyn BrokerCredentialVault> {
-    Arc::new(crate::ubi::KeyringBrokerCredentialVault)
+    Arc::new(crate::ubi::KeyringBrokerCredentialVault::new())
 }
 
 pub fn memory_credential_vault() -> Arc<dyn BrokerCredentialVault> {

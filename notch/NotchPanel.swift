@@ -62,6 +62,7 @@ struct NotchRootView: View {
     @ObservedObject var vm: NotchViewModel
     let hostedExpandedContent: (() -> AnyView)?
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(vm: NotchViewModel, hostedExpandedContent: (() -> AnyView)? = nil) {
         self.vm = vm
@@ -70,6 +71,13 @@ struct NotchRootView: View {
 
     private var expansion: CGFloat {
         vm.isExpanded ? 1.0 : 0.0
+    }
+
+    /// Spatial: expand/collapse along the notch axis (top). Reduce Motion → opacity only.
+    private var expandedTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .move(edge: .top))
     }
 
     var body: some View {
@@ -96,10 +104,10 @@ struct NotchRootView: View {
                 if vm.isExpanded {
                     if let hostedExpandedContent {
                         hostedExpandedContent()
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(expandedTransition)
                     } else {
                         ExpandedNotchView(viewModel: vm)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(expandedTransition)
                     }
                 } else {
                     CollapsedNotchView(viewModel: vm)
@@ -113,16 +121,27 @@ struct NotchRootView: View {
         .overlay {
             if vm.isExpanded, !vm.hasPhysicalNotch {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.22),
+                                Color.white.opacity(0.08),
+                                Color.white.opacity(0.04),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             }
         }
         .shadow(
-            color: vm.isExpanded && !vm.hasPhysicalNotch ? Color.black.opacity(0.6) : .clear,
-            radius: 24,
-            y: 8
+            color: vm.isExpanded && !vm.hasPhysicalNotch ? Color.black.opacity(0.55) : .clear,
+            radius: vm.isExpanded ? 28 : 0,
+            y: vm.isExpanded ? 10 : 0
         )
-        .animation(NotchTheme.springExpand, value: vm.isExpanded)
-        .animation(NotchTheme.springExpand, value: expansion)
+        .animation(NotchTheme.expandCollapseAnimation, value: vm.isExpanded)
+        .animation(NotchTheme.expandCollapseAnimation, value: expansion)
         .onChange(of: vm.isExpanded) { _, _ in
             vm.syncBarLiveStatePollingForVisibility()
         }

@@ -18,6 +18,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 mod bar;
+mod broker_credentials;
 mod broker_sync;
 mod broker_sync_state;
 mod capture;
@@ -25,6 +26,7 @@ pub mod daemon_commands;
 mod health;
 mod instruments;
 mod kill_switch;
+mod kotak_session;
 mod outbox_status;
 mod phase8;
 mod recent_trades;
@@ -85,6 +87,18 @@ pub fn router(state: AppState) -> Router {
             "/api/daemon/broker/sync/retry",
             post(broker_sync::retry_handler),
         )
+        .route(
+            "/api/daemon/broker/kotak/session/mint",
+            post(kotak_session::mint_handler),
+        )
+        .route(
+            "/api/daemon/broker/credentials/clear",
+            post(broker_credentials::clear_handler),
+        )
+        .route(
+            "/api/daemon/broker/credentials/present",
+            post(broker_credentials::present_handler),
+        )
         .route("/api/daemon/today", get(today::handler))
         .route(
             "/api/daemon/journal/toolbar-capture/accept",
@@ -127,6 +141,10 @@ pub fn router(state: AppState) -> Router {
             patch(bar::post_trade_debrief_handler),
         )
         .route(
+            "/api/daemon/bar/profile/loss-limits",
+            get(bar::loss_limits_get_handler).post(bar::loss_limits_post_handler),
+        )
+        .route(
             "/api/daemon/kill-switch",
             post(kill_switch::kill_switch_handler),
         )
@@ -160,14 +178,12 @@ pub fn router(state: AppState) -> Router {
             "/api/daemon/auth/station/sign-out",
             post(station_auth::station_auth_sign_out_handler),
         )
+        .route("/instruments/search", get(instruments::search_instruments))
+        .route("/instruments/ltp", get(instruments::get_ltp))
         .route_layer(middleware::from_fn_with_state(
             state_for_layer,
             wire::verify_middleware,
         ));
 
-    Router::new()
-        .route("/instruments/search", get(instruments::search_instruments))
-        .route("/instruments/ltp", get(instruments::get_ltp))
-        .merge(protected)
-        .with_state(state)
+    Router::new().merge(protected).with_state(state)
 }

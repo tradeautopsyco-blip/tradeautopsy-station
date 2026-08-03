@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Foundation
 import IOKit.hid
 import os
@@ -25,15 +26,29 @@ public struct DefaultInputMonitoringChecker: InputMonitoringChecking {
     }
 }
 
+/// Registers ⌥Space / ⌥⇧Space via Carbon `RegisterEventHotKey`.
+/// System hotkeys work over other apps without Input Monitoring (unlike `NSEvent` global monitors).
 @MainActor
 public final class HotkeyRegistrar: HotkeyRegistering {
     private static let logger = Logger(subsystem: "in.tradeautopsy.station", category: "hotkeys")
+    private static let hotKeySignature: OSType = 0x5441_5348 // 'TASH'
+
+    private enum HotKeyID: UInt32 {
+        case toggleNotch = 1
+        case openStation = 2
+    }
+
+    /// Ignore Caps Lock / Fn / numeric pad so matching isn't brittle.
+    private static let significantModifiers: NSEvent.ModifierFlags = [
+        .shift, .control, .option, .command,
+    ]
 
     private var toggleNotchHandler: (() -> Void)?
     private var openStationHandler: (() -> Void)?
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-    private var didLogInputMonitoringRequirement = false
+    private var eventHandlerRef: EventHandlerRef?
+    private var toggleHotKeyRef: EventHotKeyRef?
+    private var openHotKeyRef: EventHotKeyRef?
+    private var carbonInstalled = false
     private let inputMonitoringChecker: InputMonitoringChecking
 
     public init(inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker()) {
@@ -42,78 +57,146 @@ public final class HotkeyRegistrar: HotkeyRegistering {
 
     public func registerToggleNotch(_ handler: @escaping () -> Void) {
         toggleNotchHandler = handler
-        installMonitorsIfNeeded()
+        installCarbonHotKeysIfNeeded()
     }
 
     public func registerOpenStation(_ handler: @escaping () -> Void) {
         openStationHandler = handler
-        installMonitorsIfNeeded()
+        installCarbonHotKeysIfNeeded()
     }
 
     public func unregisterAll() {
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
-        }
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-            localMonitor = nil
-        }
+        tearDownCarbonHotKeys()
         toggleNotchHandler = nil
         openStationHandler = nil
     }
 
+    /// Re-install Carbon hotkeys if handlers exist (no Input Monitoring required).
+    public func refreshGlobalMonitorIfNeeded() {
+        installCarbonHotKeysIfNeeded()
+    }
+
+    /// Carbon hotkeys do not require Input Monitoring — never surface that banner for ⌥Space.
     public func inputMonitoringWarningIfNeeded() -> InputMonitoringWarning? {
-        guard !inputMonitoringChecker.isInputMonitoringGranted() else { return nil }
-        return InputMonitoringWarning()
+        nil
     }
 
     func dispatchKeyDownForTesting(_ event: NSEvent) {
         handleKeyDown(event)
     }
 
-    private func installMonitorsIfNeeded() {
-        guard globalMonitor == nil, localMonitor == nil else { return }
+    func dispatchCarbonHotKeyForTesting(id: UInt32) {
+        handleCarbonHotKey(id: id)
+    }
+
+    private func installCarbonHotKeysIfNeeded() {
         guard toggleNotchHandler != nil || openStationHandler != nil else { return }
+        guard !carbonInstalled else { return }
 
-        inputMonitoringChecker.requestInputMonitoringAccess()
-        logGlobalHotkeyAvailabilityIfNeeded()
+        let status = installEventHandlerIfNeeded()
+        guard status == noErr else {
+            Self.logger.error("Carbon hotkey event handler failed to install (OSStatus \(status))")
+            return
+        }
 
-        if inputMonitoringChecker.isInputMonitoringGranted() {
-            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                DispatchQueue.main.async {
-                    self?.handleKeyDown(event)
-                }
-            }
-            if globalMonitor == nil {
-                Self.logger.error(
-                    "Global hotkey monitor failed to install; Option+Space and Option+Shift+Space will not work system-wide."
-                )
+        if toggleNotchHandler != nil {
+            let id = EventHotKeyID(signature: Self.hotKeySignature, id: HotKeyID.toggleNotch.rawValue)
+            let err = RegisterEventHotKey(
+                UInt32(kVK_Space),
+                UInt32(optionKey),
+                id,
+                GetApplicationEventTarget(),
+                0,
+                &toggleHotKeyRef
+            )
+            if err != noErr {
+                Self.logger.error("RegisterEventHotKey ⌥Space failed (OSStatus \(err))")
             }
         }
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, Self.matchesAnyShortcut(event) else { return event }
-            self.handleKeyDown(event)
-            return nil
+        if openStationHandler != nil {
+            let id = EventHotKeyID(signature: Self.hotKeySignature, id: HotKeyID.openStation.rawValue)
+            let err = RegisterEventHotKey(
+                UInt32(kVK_Space),
+                UInt32(optionKey | shiftKey),
+                id,
+                GetApplicationEventTarget(),
+                0,
+                &openHotKeyRef
+            )
+            if err != noErr {
+                Self.logger.error("RegisterEventHotKey ⌥⇧Space failed (OSStatus \(err))")
+            }
+        }
+
+        carbonInstalled = toggleHotKeyRef != nil || openHotKeyRef != nil
+        if carbonInstalled {
+            Self.logger.info("Carbon system hotkeys registered (⌥Space / ⌥⇧Space) — Input Monitoring not required")
         }
     }
 
-    private func logGlobalHotkeyAvailabilityIfNeeded() {
-        guard !didLogInputMonitoringRequirement else { return }
-        didLogInputMonitoringRequirement = true
+    private func installEventHandlerIfNeeded() -> OSStatus {
+        if eventHandlerRef != nil { return noErr }
 
-        guard !inputMonitoringChecker.isInputMonitoringGranted() else { return }
-
-        Self.logger.warning(
-            """
-            Input Monitoring permission is not granted. Global hotkeys are disabled until \
-            permission is granted in System Settings > Privacy & Security > Input Monitoring \
-            and TradeAutopsy Station is quit and reopened. \
-            Option+Shift+Space (Open Station) and Option+Space (Toggle Notch) only work \
-            while this app is the active (key) application without that permission.
-            """
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
         )
+        let userData = Unmanaged.passUnretained(self).toOpaque()
+        return InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, userData -> OSStatus in
+                guard let userData, let event else { return noErr }
+                var hotKeyID = EventHotKeyID()
+                let size = MemoryLayout<EventHotKeyID>.size
+                let paramStatus = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    size,
+                    nil,
+                    &hotKeyID
+                )
+                guard paramStatus == noErr else { return paramStatus }
+                let registrar = Unmanaged<HotkeyRegistrar>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    registrar.handleCarbonHotKey(id: hotKeyID.id)
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            userData,
+            &eventHandlerRef
+        )
+    }
+
+    private func tearDownCarbonHotKeys() {
+        if let ref = toggleHotKeyRef {
+            UnregisterEventHotKey(ref)
+            toggleHotKeyRef = nil
+        }
+        if let ref = openHotKeyRef {
+            UnregisterEventHotKey(ref)
+            openHotKeyRef = nil
+        }
+        if let handler = eventHandlerRef {
+            RemoveEventHandler(handler)
+            eventHandlerRef = nil
+        }
+        carbonInstalled = false
+    }
+
+    private func handleCarbonHotKey(id: UInt32) {
+        switch HotKeyID(rawValue: id) {
+        case .openStation:
+            openStationHandler?()
+        case .toggleNotch:
+            toggleNotchHandler?()
+        case nil:
+            break
+        }
     }
 
     private func handleKeyDown(_ event: NSEvent) {
@@ -127,18 +210,14 @@ public final class HotkeyRegistrar: HotkeyRegistering {
     }
 
     static func isToggleNotchShortcut(_ event: NSEvent) -> Bool {
-        event.keyCode == 49
-            && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .option
+        guard event.keyCode == 49 else { return false }
+        let flags = event.modifierFlags.intersection(significantModifiers)
+        return flags == .option
     }
 
     static func isOpenStationShortcut(_ event: NSEvent) -> Bool {
         guard event.keyCode == 49 else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        return flags.contains(.option) && flags.contains(.shift)
-            && !flags.contains(.command) && !flags.contains(.control)
-    }
-
-    private static func matchesAnyShortcut(_ event: NSEvent) -> Bool {
-        isToggleNotchShortcut(event) || isOpenStationShortcut(event)
+        let flags = event.modifierFlags.intersection(significantModifiers)
+        return flags == [.option, .shift]
     }
 }

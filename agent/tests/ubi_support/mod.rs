@@ -62,6 +62,7 @@ pub fn sentinel_kotak_session() -> HostCredentialBlob {
         trade_token: "TEST_TRADE_TOKEN_NEVER_IN_COMPONENT".into(),
         sid: "TEST_SID_NEVER_IN_COMPONENT".into(),
         base_url: "https://cis.kotaksecurities.com/trading".into(),
+        hs_server_id: "TEST_HS_SERVER_NEVER_IN_COMPONENT".into(),
     }
 }
 

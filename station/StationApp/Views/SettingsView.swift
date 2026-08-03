@@ -1,4 +1,3 @@
-import Notch
 import SwiftUI
 
 public struct SettingsView: View {
@@ -12,8 +11,8 @@ public struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Settings")
-                    .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
-                    .foregroundStyle(BarDS.Text.primary)
+                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
+                    .foregroundStyle(StationDS.Text.primary)
 
                 DeviceLoginView(viewModel: coordinator.deviceLoginViewModel)
 
@@ -21,13 +20,12 @@ public struct SettingsView: View {
                     get: { coordinator.launchAtLoginEnabled },
                     set: { _ in coordinator.toggleLaunchAtLogin() }
                 ))
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                .foregroundStyle(BarDS.Text.primary)
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
+                .foregroundStyle(StationDS.Text.primary)
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BarDS.Fill.sidebar)
     }
 }

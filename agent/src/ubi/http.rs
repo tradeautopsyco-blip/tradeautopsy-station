@@ -23,6 +23,7 @@ pub enum HostCredentialBlob {
         trade_token: String,
         sid: String,
         base_url: String,
+        hs_server_id: String,
     },
 }
 
@@ -45,8 +46,14 @@ impl HostCredentialBlob {
                 consumer_key,
                 trade_token,
                 sid,
+                hs_server_id,
                 ..
-            } => vec![consumer_key.as_str(), trade_token.as_str(), sid.as_str()],
+            } => vec![
+                consumer_key.as_str(),
+                trade_token.as_str(),
+                sid.as_str(),
+                hs_server_id.as_str(),
+            ],
         }
     }
 
@@ -70,12 +77,14 @@ impl From<&CredentialBlob> for HostCredentialBlob {
                 trade_token,
                 sid,
                 base_url,
+                hs_server_id,
                 ..
             } => Self::KotakSession {
                 consumer_key: consumer_key.clone(),
                 trade_token: trade_token.clone(),
                 sid: sid.clone(),
                 base_url: base_url.clone(),
+                hs_server_id: hs_server_id.clone(),
             },
         }
     }
@@ -209,9 +218,16 @@ pub fn prepare_request(
             trade_token,
             sid,
             base_url,
+            hs_server_id,
             ..
         } => {
-            let canonical = query
+            // SDK TradeReportAPI always sends `sId` = hsServerId (docs/reference/equities/kotak-neo).
+            let mut pairs: Vec<(String, String)> = query.to_vec();
+            let has_sid = pairs.iter().any(|(k, _)| k.eq_ignore_ascii_case("sId"));
+            if !has_sid && !hs_server_id.trim().is_empty() {
+                pairs.push(("sId".to_string(), hs_server_id.clone()));
+            }
+            let canonical = pairs
                 .iter()
                 .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
                 .collect::<Vec<_>>()
@@ -432,6 +448,7 @@ mod tests {
             trade_token: "tt-token".into(),
             sid: "sid-1".into(),
             base_url: "https://cis.kotaksecurities.com/trading".into(),
+            hs_server_id: "server4".into(),
         }
     }
 
@@ -497,7 +514,7 @@ mod tests {
         );
         assert_eq!(
             prepared.url,
-            "https://cis.kotaksecurities.com/trading/quick/user/trades"
+            "https://cis.kotaksecurities.com/trading/quick/user/trades?sId=server4"
         );
         assert!(prepared
             .headers
@@ -508,12 +525,32 @@ mod tests {
     }
 
     #[test]
+    fn kotak_does_not_duplicate_s_id_when_query_already_has_it() {
+        let prepared = prepare_request(
+            "GET",
+            "cis.kotaksecurities.com",
+            "/quick/user/trades",
+            &[("sId".into(), "existing".into())],
+            &[],
+            None,
+            &kotak_creds(),
+            0,
+        );
+        assert_eq!(
+            prepared.url,
+            "https://cis.kotaksecurities.com/trading/quick/user/trades?sId=existing"
+        );
+        assert!(!prepared.url.contains("server4"));
+    }
+
+    #[test]
     fn kotak_base_url_host_overrides_component_supplied_host() {
         let creds = HostCredentialBlob::KotakSession {
             consumer_key: "ck".into(),
             trade_token: "tt".into(),
             sid: "sid".into(),
             base_url: "https://neo.kotaksecurities.com".into(),
+            hs_server_id: "server4".into(),
         };
         assert_eq!(
             effective_host("cis.kotaksecurities.com", &creds),
@@ -553,6 +590,7 @@ mod tests {
             trade_token: "tt".into(),
             sid: "sid".into(),
             base_url: "https://cis.kotaksecurities.com".into(),
+            hs_server_id: "server4".into(),
             expires_at: None,
         })
             .into();

@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 
 @MainActor
 public final class TodayViewModel: ObservableObject {
@@ -12,19 +11,19 @@ public final class TodayViewModel: ObservableObject {
     private let client: TodayAgentClient
     private let agentHealthy: () -> Bool
     private let isBrokerSyncActive: () -> Bool
-    private let notchViewModel: NotchViewModel
+    private let sessionModel: SessionModel
     private let sessionMirrorPollIntervalSeconds: TimeInterval
     private var sessionMirrorPollTask: Task<Void, Never>?
 
     public init(
         client: TodayAgentClient,
-        notchViewModel: NotchViewModel,
+        sessionModel: SessionModel,
         agentHealthy: @escaping () -> Bool,
         isBrokerSyncActive: @escaping () -> Bool = { false },
         sessionMirrorPollIntervalSeconds: TimeInterval = 15
     ) {
         self.client = client
-        self.notchViewModel = notchViewModel
+        self.sessionModel = sessionModel
         self.agentHealthy = agentHealthy
         self.isBrokerSyncActive = isBrokerSyncActive
         self.sessionMirrorPollIntervalSeconds = sessionMirrorPollIntervalSeconds
@@ -35,18 +34,18 @@ public final class TodayViewModel: ObservableObject {
         case .agentDown:
             return false
         case .syncUnavailable:
-            return notchViewModel.killSwitchActive && notchViewModel.killSwitchStateAgeSecs < 60
+            return sessionModel.killSwitchActive && sessionModel.killSwitchStateAgeSecs < 60
         case .healthyEmpty, .healthyActive:
-            return notchViewModel.killSwitchActive
+            return sessionModel.killSwitchActive
         }
     }
 
     public var circuitBreakerCountdownSecs: Int {
-        notchViewModel.killSwitchCountdownSecs ?? 0
+        sessionModel.killSwitchCountdownSecs ?? 0
     }
 
     public var circuitBreakerResumeEnabled: Bool {
-        (notchViewModel.killSwitchCountdownSecs ?? 0) <= 0 && !notchViewModel.killSwitchDismissBusy
+        (sessionModel.killSwitchCountdownSecs ?? 0) <= 0 && !sessionModel.killSwitchDismissBusy
     }
 
     public var sessionPnLUsd: Double? {
@@ -91,6 +90,6 @@ public final class TodayViewModel: ObservableObject {
     }
 
     public func resumeCircuitBreaker() {
-        Task { await notchViewModel.dismissKillSwitchFromOverlay() }
+        Task { await sessionModel.dismissKillSwitchFromOverlay() }
     }
 }

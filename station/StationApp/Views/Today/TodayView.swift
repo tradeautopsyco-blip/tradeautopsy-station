@@ -1,4 +1,3 @@
-import Notch
 import SwiftUI
 
 public struct TodayView: View {
@@ -28,7 +27,6 @@ public struct TodayView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
         .task {
             await viewModel.load()
         }
@@ -40,17 +38,17 @@ public struct TodayView: View {
     private var header: some View {
         HStack {
             Text("Today")
-                .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .semibold))
-                .foregroundStyle(BarDS.Text.primary)
+                .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
+                .foregroundStyle(StationDS.Text.primary)
             Text(viewModel.presentation.subtitle)
-                .font(BarDS.monoFont(BarDS.FontSize.bodyXS))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
             Spacer()
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(BarDS.Border.divider).frame(height: BarDS.borderThin)
+            Rectangle().fill(StationDS.Border.divider).frame(height: StationDS.borderThin)
         }
     }
 
@@ -65,14 +63,14 @@ public struct TodayView: View {
     private func heroTile(_ tile: TodayHeroTilePresentation) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tile.label.uppercased())
-                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .semibold))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                .foregroundStyle(StationDS.Text.muted)
             Text(tile.value)
-                .font(BarDS.bodyFont(28, weight: .bold))
+                .font(StationDS.bodyFont(28, weight: .bold))
                 .foregroundStyle(color(for: tile.tone))
             Text(tile.caption)
-                .font(BarDS.monoFont(BarDS.FontSize.bodyXS))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,12 +87,12 @@ public struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Behavior signals")
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .semibold))
-                    .foregroundStyle(BarDS.Text.secondary)
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.secondary)
                 Spacer()
                 Text(viewModel.presentation.signalsMeta)
-                    .font(BarDS.monoFont(BarDS.FontSize.bodyXS))
-                    .foregroundStyle(BarDS.Text.muted)
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
             }
             HStack(spacing: 10) {
                 if viewModel.presentation.showSignalsUnavailableMessage {
@@ -111,20 +109,20 @@ public struct TodayView: View {
     private var signalsUnavailableMessage: some View {
         HStack(spacing: 10) {
             Text(TodayScreenPresentation.emDash)
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .semibold))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                .foregroundStyle(StationDS.Text.muted)
             Text("Signals unavailable")
-                .font(BarDS.bodyFont(BarDS.FontSize.bodySmall))
-                .foregroundStyle(BarDS.Text.secondary)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
+                .foregroundStyle(StationDS.Text.secondary)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(BarDS.Fill.input)
+        .background(StationDS.Fill.input)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(BarDS.Border.divider, lineWidth: 1)
+                .stroke(StationDS.Border.divider, lineWidth: 1)
         )
     }
 
@@ -132,23 +130,23 @@ public struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(signal.name)
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .semibold))
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .semibold))
                 Spacer()
                 Text(signal.severity)
-                    .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(signalBadgeBackground(signal.tone))
                     .clipShape(Capsule())
             }
             Text(signal.description)
-                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS))
-                .foregroundStyle(BarDS.Text.secondary)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(BarDS.Fill.input)
+        .background(StationDS.Fill.input)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -160,13 +158,13 @@ public struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Trades today")
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .semibold))
-                    .foregroundStyle(BarDS.Text.secondary)
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.secondary)
                 Spacer()
                 if !viewModel.presentation.tradesMeta.isEmpty {
                     Text(viewModel.presentation.tradesMeta)
-                        .font(BarDS.monoFont(BarDS.FontSize.bodyXS))
-                        .foregroundStyle(BarDS.Text.muted)
+                        .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                        .foregroundStyle(StationDS.Text.muted)
                 }
             }
             if viewModel.presentation.showEmptyTable {
@@ -181,22 +179,22 @@ public struct TodayView: View {
         VStack(spacing: 10) {
             Text(TodayScreenPresentation.emDash)
                 .font(.system(size: 28))
-                .foregroundStyle(BarDS.Text.muted)
+                .foregroundStyle(StationDS.Text.muted)
             Text("No closed trades yet today")
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .semibold))
-                .foregroundStyle(BarDS.Text.secondary)
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                .foregroundStyle(StationDS.Text.secondary)
             Text("Round-trips appear after a buy→sell cycle completes.")
-                .font(BarDS.monoFont(BarDS.FontSize.bodyXS))
-                .foregroundStyle(BarDS.Text.muted)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-        .background(BarDS.Fill.input)
+        .background(StationDS.Fill.input)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(BarDS.Border.divider, style: StrokeStyle(lineWidth: 1, dash: [6]))
+                .stroke(StationDS.Border.divider, style: StrokeStyle(lineWidth: 1, dash: [6]))
         )
     }
 
@@ -207,9 +205,9 @@ public struct TodayView: View {
                 tableRow(row)
             }
         }
-        .background(BarDS.Fill.input)
+        .background(StationDS.Fill.input)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(BarDS.Border.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StationDS.Border.divider, lineWidth: 1))
     }
 
     private var tableHeader: some View {
@@ -239,7 +237,7 @@ public struct TodayView: View {
         .frame(height: 36)
         .background(row.isFlagged ? Color(red: 0.96, green: 0.27, blue: 0.36, opacity: 0.04) : .clear)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(BarDS.Border.divider).frame(height: 0.5)
+            Rectangle().fill(StationDS.Border.divider).frame(height: 0.5)
         }
     }
 
@@ -259,18 +257,18 @@ public struct TodayView: View {
                 Text(text).frame(width: width, alignment: align)
             }
         }
-        .font(mono ? BarDS.monoFont(BarDS.FontSize.bodyXS) : BarDS.bodyFont(header ? BarDS.FontSize.bodyXS : BarDS.FontSize.bodySmall, weight: header ? .semibold : .regular))
-        .foregroundStyle(header ? BarDS.Text.muted : color(for: tone))
+        .font(mono ? StationDS.monoFont(StationDS.FontSize.bodyXS) : StationDS.bodyFont(header ? StationDS.FontSize.bodyXS : StationDS.FontSize.bodySmall, weight: header ? .semibold : .regular))
+        .foregroundStyle(header ? StationDS.Text.muted : color(for: tone))
         .frame(maxWidth: flex ? .infinity : nil, alignment: align)
     }
 
     private func degradedBanner(_ text: String) -> some View {
         Text(text)
-            .font(BarDS.bodyFont(BarDS.FontSize.bodySmall))
-            .foregroundStyle(BarDS.Text.secondary)
+            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
+            .foregroundStyle(StationDS.Text.secondary)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(BarDS.Fill.input)
+            .background(StationDS.Fill.input)
             .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -280,11 +278,11 @@ public struct TodayView: View {
                 .foregroundStyle(todayColor(.loss))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Circuit breaker active")
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .semibold))
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .semibold))
                     .foregroundStyle(todayColor(.loss))
                 Text("Review behavior before resuming.")
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS))
-                    .foregroundStyle(BarDS.Text.muted)
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
             }
             Spacer()
             Button(viewModel.circuitBreakerResumeEnabled ? "Review & resume" : resumeCountdownLabel) {
@@ -292,7 +290,7 @@ public struct TodayView: View {
             }
             .disabled(!viewModel.circuitBreakerResumeEnabled)
             .buttonStyle(.plain)
-            .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .semibold))
+            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
             .foregroundStyle(todayColor(.loss))
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
@@ -318,7 +316,7 @@ public struct TodayView: View {
         switch tone {
         case .profit: return todayColor(.profit)
         case .loss: return todayColor(.loss)
-        case .empty, .neutral: return BarDS.Text.secondary
+        case .empty, .neutral: return StationDS.Text.secondary
         }
     }
 
@@ -327,7 +325,7 @@ public struct TodayView: View {
         case .profit: return Color(hex: TodayPalette.profit)
         case .loss: return Color(hex: TodayPalette.loss)
         case .neutral: return Color(hex: TodayPalette.neutral)
-        case .empty: return BarDS.Text.muted
+        case .empty: return StationDS.Text.muted
         }
     }
 
@@ -335,7 +333,7 @@ public struct TodayView: View {
         switch tone {
         case .profit: return Color(hex: TodayPalette.profit).opacity(0.08)
         case .loss: return Color(hex: TodayPalette.loss).opacity(0.1)
-        default: return BarDS.Fill.input
+        default: return StationDS.Fill.input
         }
     }
 
@@ -343,7 +341,7 @@ public struct TodayView: View {
         switch tone {
         case .profit: return Color(hex: TodayPalette.profit).opacity(0.22)
         case .loss: return Color(hex: TodayPalette.loss).opacity(0.28)
-        default: return BarDS.Border.divider
+        default: return StationDS.Border.divider
         }
     }
 
@@ -351,7 +349,7 @@ public struct TodayView: View {
         switch tone {
         case .firing: return Color(hex: TodayPalette.loss).opacity(0.28)
         case .watch: return Color(hex: TodayPalette.watch).opacity(0.28)
-        default: return BarDS.Border.divider
+        default: return StationDS.Border.divider
         }
     }
 
@@ -359,19 +357,7 @@ public struct TodayView: View {
         switch tone {
         case .firing: return Color(hex: TodayPalette.loss).opacity(0.12)
         case .watch: return Color(hex: TodayPalette.watch).opacity(0.12)
-        default: return BarDS.Fill.appPanel
+        default: return StationDS.Fill.appPanel
         }
-    }
-}
-
-private extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = Double((int >> 16) & 0xFF) / 255
-        let g = Double((int >> 8) & 0xFF) / 255
-        let b = Double(int & 0xFF) / 255
-        self.init(red: r, green: g, blue: b)
     }
 }

@@ -18,17 +18,18 @@ struct StationWindowControllerTests {
         let windowController = FakeStationWindowController()
         let statusItemController = FakeStatusItemController()
         let hotkeyRegistrar = FakeHotkeyRegistrar()
-        let notchHost = FakeNotchHost()
-        let notchPolling = FakeNotchPolling()
+        let sessionHost = FakeSessionHost()
+        let sessionPolling = FakeSessionPolling()
         let coordinator = StationAppCoordinator(
             agentSupervisor: agentSupervisor,
             statusItemController: statusItemController,
             hotkeyRegistrar: hotkeyRegistrar,
-            notchHost: notchHost,
-            notchPolling: notchPolling,
+            sessionHost: sessionHost,
+            sessionPolling: sessionPolling,
             windowController: windowController,
             launchStore: launchStore,
-            phaseProvider: FakeBarSurfacePhaseProvider()
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            floatingNotch: FakeFloatingNotchHost()
         )
         return (coordinator, agentSupervisor, windowController, launchStore)
     }
@@ -128,5 +129,41 @@ struct StationWindowControllerTests {
         #expect(harness.windowController.showAndActivateCallCount == 1)
         #expect(harness.windowController.isVisible == true)
         #expect(harness.launchStore.wasWindowVisibleBeforeQuit == true)
+    }
+
+    @Test func defaultFrameUsesMostOfVisibleScreenClampedToMinimum() {
+        let visible = CGRect(x: 0, y: 0, width: 2000, height: 1200)
+        let frame = StationWindowController.defaultFrame(in: visible)
+
+        #expect(frame.width == 1800) // 90% of 2000
+        #expect(frame.height == 1080) // 90% of 1200
+        #expect(abs(frame.midX - visible.midX) < 0.5)
+        #expect(abs(frame.midY - visible.midY) < 0.5)
+    }
+
+    @Test func defaultFrameOnTinyScreenStillRespectsMinimumWhenPossible() {
+        let visible = CGRect(x: 10, y: 20, width: 900, height: 600)
+        let frame = StationWindowController.defaultFrame(in: visible)
+
+        #expect(frame.width == 820) // max(min, 90% of 900) → 820
+        #expect(frame.height == 560) // max(min, 90% of 600) → 560
+        #expect(frame.width <= visible.width)
+        #expect(frame.height <= visible.height)
+    }
+
+    @Test func restoredFrameRejectedWhenTooSmallOrOffscreen() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let tiny = CGRect(x: 100, y: 100, width: 400, height: 300)
+        #expect(
+            StationWindowController.isFrameUsable(tiny, onScreenFrames: [screen]) == false
+        )
+
+        let offscreen = CGRect(x: 5000, y: 5000, width: 1100, height: 700)
+        #expect(
+            StationWindowController.isFrameUsable(offscreen, onScreenFrames: [screen]) == false
+        )
+
+        let ok = CGRect(x: 100, y: 80, width: 1100, height: 700)
+        #expect(StationWindowController.isFrameUsable(ok, onScreenFrames: [screen]))
     }
 }

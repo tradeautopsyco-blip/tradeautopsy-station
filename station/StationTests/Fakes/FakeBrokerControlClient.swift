@@ -11,6 +11,8 @@ final class FakeBrokerControlClient: BrokerControlling {
     }
 
     var scenario: Scenario = .notConfigured
+    /// When set, `startSync` throws this instead of succeeding.
+    var startSyncError: Error?
 
     private(set) var loadSnapshotCallCount = 0
     private(set) var startSyncCallCount = 0
@@ -73,6 +75,9 @@ final class FakeBrokerControlClient: BrokerControlling {
     func startSync(for identity: BrokerConnectionIdentity) async throws {
         startSyncCallCount += 1
         lastStartedIdentity = identity
+        if let startSyncError {
+            throw startSyncError
+        }
     }
 
     func stopSync(for identity: BrokerConnectionIdentity) async throws {
@@ -81,12 +86,18 @@ final class FakeBrokerControlClient: BrokerControlling {
     }
 
     private(set) var deleteConnectionCallCount = 0
+    /// When set, `deleteConnection` throws (simulates fail-closed Keychain teardown).
+    var deleteConnectionError: Error?
 
     func deleteConnection(
         for identity: BrokerConnectionIdentity,
         connectController: BrokerConnectController
     ) async throws {
         deleteConnectionCallCount += 1
+        if let deleteConnectionError {
+            throw deleteConnectionError
+        }
         try connectController.deleteSavedCredentials()
+        _ = identity
     }
 }

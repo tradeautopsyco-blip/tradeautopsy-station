@@ -41,10 +41,6 @@ public final class StatusItemController: StatusItemControlling {
         openItem.target = self
         menu.addItem(openItem)
 
-        let toggleItem = NSMenuItem(title: "Toggle Notch", action: #selector(toggleNotch(_:)), keyEquivalent: "")
-        toggleItem.target = self
-        menu.addItem(toggleItem)
-
         menu.addItem(.separator())
 
         let launchAtLogin = NSMenuItem(
@@ -69,18 +65,12 @@ public final class StatusItemController: StatusItemControlling {
         coordinator?.openStation()
     }
 
-    @objc private func toggleNotch(_ sender: Any?) {
-        coordinator?.toggleNotch()
-    }
-
     @objc private func toggleLaunchAtLogin(_ sender: Any?) {
         coordinator?.toggleLaunchAtLogin()
     }
 
     @objc private func quit(_ sender: Any?) {
-        Task { @MainActor in
-            await coordinator?.quit()
-            NSApp.terminate(nil)
-        }
+        // Goes through applicationShouldTerminate so agent shutdown completes before exit.
+        NSApp.terminate(nil)
     }
 }

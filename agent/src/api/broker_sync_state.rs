@@ -32,6 +32,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         "circuitOpen": snap.circuit_open,
         "consecutiveFailures": snap.consecutive_failures,
         "lastError": snap.last_error,
+        "killDnsActive": crate::dns_block::is_block_active(),
         "dataClasses": snap.data_classes,
         "requiresManualRetry": snap.data_classes.any_requires_manual_retry(),
         "rateLimitRetryAtMs": snap.data_classes.earliest_rate_limit_retry_ms(now_ms),

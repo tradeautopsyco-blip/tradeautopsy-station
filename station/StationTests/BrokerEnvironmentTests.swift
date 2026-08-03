@@ -56,7 +56,7 @@ struct BrokerEnvironmentTests {
             environmentStore: environmentStore
         )
         let connectController = BrokerConnectController(
-            identity: .binanceUSProd,
+            identity: .binanceComProd,
             credentialStore: store,
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
@@ -64,7 +64,7 @@ struct BrokerEnvironmentTests {
         )
         metadataStore.save(
             BrokerConnectionMetadata(lastValidatedAt: Date(), syncPaused: false),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
         let controller = BrokerEnvironmentController(
@@ -82,7 +82,7 @@ struct BrokerEnvironmentTests {
         )
 
         #expect(runtime.stopSyncCallCount == 1)
-        #expect(metadataStore.load(for: .binanceUSProd) == nil)
+        #expect(metadataStore.load(for: .binanceComProd) == nil)
         #expect(controller.activeEnvironment == .staging)
         #expect(environmentStore.loadActiveEnvironment() == .staging)
     }

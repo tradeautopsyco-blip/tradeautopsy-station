@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import Testing
-@testable import Notch
 @testable import Station
 
 private final class FakeInputMonitoringChecker: InputMonitoringChecking, @unchecked Sendable {
@@ -36,22 +35,22 @@ struct HotkeyRegistrarTests {
         )!
     }
 
-    @Test func registrarRequestsInputMonitoringAccessBeforeMonitors() {
-        let checker = FakeInputMonitoringChecker(granted: true)
+    @Test func registrarDoesNotRequestInputMonitoringForCarbonHotkeys() {
+        let checker = FakeInputMonitoringChecker(granted: false)
         let registrar = HotkeyRegistrar(inputMonitoringChecker: checker)
         registrar.registerToggleNotch {}
 
-        #expect(checker.requestAccessCallCount == 1)
+        #expect(checker.requestAccessCallCount == 0)
     }
 
-    @Test func altSpaceTogglesNotch() {
-        let notchHost = FakeNotchHost()
+    @Test func altSpaceTogglesFloatingNotch() {
+        let floatingNotch = FakeFloatingNotchHost()
         let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: true))
-        registrar.registerToggleNotch { notchHost.toggle() }
+        registrar.registerToggleNotch { floatingNotch.toggle() }
 
         registrar.dispatchKeyDownForTesting(makeKeyEvent(modifierFlags: .option))
 
-        #expect(notchHost.toggleCallCount == 1)
+        #expect(floatingNotch.toggleCallCount == 1)
     }
 
     @Test func altShiftSpaceOpensStation() {
@@ -74,13 +73,12 @@ struct HotkeyRegistrarTests {
         #expect(windowController.showAndActivateCallCount == 1)
     }
 
-    @Test func noDuplicateHotkeysWhenNotchLauncherHosted() {
-        let launcher = NotchLauncher(isHostedByStation: true)
-        launcher.start()
-
-        #expect(launcher.hasInstalledToggleHotkeyMonitors == false)
-
-        launcher.dismiss()
+    @Test func sessionPollingHostToggleRaisesCallbackWithoutInstallingHotkeys() {
+        let host = SessionPollingHost(sessionModel: SessionModel())
+        var toggleCount = 0
+        host.onToggle = { toggleCount += 1 }
+        host.toggle()
+        #expect(toggleCount == 1)
     }
 
     @Test func unregisterOnQuit() async {
@@ -93,11 +91,12 @@ struct HotkeyRegistrarTests {
             agentSupervisor: agentSupervisor,
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: hotkeyRegistrar,
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: launchStore,
-            phaseProvider: FakeBarSurfacePhaseProvider()
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            floatingNotch: FakeFloatingNotchHost()
         )
 
         await coordinator.launch()
@@ -106,14 +105,14 @@ struct HotkeyRegistrarTests {
         #expect(hotkeyRegistrar.unregisterAllCallCount == 1)
     }
 
-    @Test func inputMonitoringMissing() async {
+    @Test func inputMonitoringMissingDoesNotBlockHotkeysOrBanner() async {
         let checker = FakeInputMonitoringChecker(granted: false)
         let coordinator = makeCoordinator(inputMonitoringChecker: checker)
 
         await coordinator.launch()
 
-        #expect(coordinator.inputMonitoringWarning != nil)
-        #expect(coordinator.inputMonitoringWarning?.message.contains("Input Monitoring") == true)
+        // Carbon hotkeys do not require Input Monitoring — no banner.
+        #expect(coordinator.inputMonitoringWarning == nil)
     }
 
     @Test func inputMonitoringGranted() async {
@@ -125,6 +124,26 @@ struct HotkeyRegistrarTests {
         #expect(coordinator.inputMonitoringWarning == nil)
     }
 
+    @Test func altSpaceMatchesWithCapsLockOn() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+
+        registrar.dispatchKeyDownForTesting(makeKeyEvent(modifierFlags: [.option, .capsLock]))
+
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
+    @Test func carbonHotKeyIdTogglesNotch() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 1)
+
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
     @Test func systemSettingsDeepLinkUsesInputMonitoringPane() {
         #expect(
             InputMonitoringWarning.systemSettingsURL.absoluteString
@@ -132,22 +151,35 @@ struct HotkeyRegistrarTests {
         )
     }
 
-    @Test func recheckShowsRestartReminderWhenPermissionGranted() async {
+    @Test func recheckDoesNotSurfaceInputMonitoringBannerForHotkeys() async {
         let checker = FakeInputMonitoringChecker(granted: false)
-        let coordinator = makeCoordinator(inputMonitoringChecker: checker)
+        let hotkeyRegistrar = FakeHotkeyRegistrar()
+        let launchStore = FakeLaunchStore()
+        launchStore.isFirstLaunchCompleted = true
+        let coordinator = StationAppCoordinator(
+            agentSupervisor: FakeAgentSupervisor(),
+            statusItemController: FakeStatusItemController(),
+            hotkeyRegistrar: hotkeyRegistrar,
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
+            windowController: FakeStationWindowController(),
+            launchStore: launchStore,
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
+            inputMonitoringChecker: checker,
+            floatingNotch: FakeFloatingNotchHost()
+        )
 
         await coordinator.launch()
-        #expect(coordinator.inputMonitoringWarning != nil)
-        #expect(coordinator.inputMonitoringRestartReminder == nil)
+        #expect(coordinator.inputMonitoringWarning == nil)
 
         checker.granted = true
         coordinator.recheckInputMonitoringAccess()
 
         #expect(coordinator.inputMonitoringWarning == nil)
-        #expect(coordinator.inputMonitoringRestartReminder?.contains("quit and reopen") == true)
+        #expect(coordinator.inputMonitoringRestartReminder == nil)
     }
 
-    @Test func recheckShowsRestartReminderAfterDelayWhenStillDenied() async {
+    @Test func recheckDoesNotShowRestartReminderWhenHotkeysNeedNoPermission() async {
         var now = Date(timeIntervalSince1970: 0)
         let checker = FakeInputMonitoringChecker(granted: false)
         let coordinator = makeCoordinator(
@@ -156,12 +188,10 @@ struct HotkeyRegistrarTests {
         )
 
         await coordinator.launch()
-        #expect(coordinator.inputMonitoringRestartReminder == nil)
-
         now = now.addingTimeInterval(4)
         coordinator.recheckInputMonitoringAccess()
 
-        #expect(coordinator.inputMonitoringRestartReminder?.contains("quit and reopen") == true)
+        #expect(coordinator.inputMonitoringRestartReminder == nil)
     }
 
     private func makeCoordinator(
@@ -174,13 +204,14 @@ struct HotkeyRegistrarTests {
             agentSupervisor: FakeAgentSupervisor(),
             statusItemController: FakeStatusItemController(),
             hotkeyRegistrar: FakeHotkeyRegistrar(),
-            notchHost: FakeNotchHost(),
-            notchPolling: FakeNotchPolling(),
+            sessionHost: FakeSessionHost(),
+            sessionPolling: FakeSessionPolling(),
             windowController: FakeStationWindowController(),
             launchStore: launchStore,
-            phaseProvider: FakeBarSurfacePhaseProvider(),
+            phaseProvider: FakeSessionSurfacePhaseProvider(),
             dateProvider: dateProvider,
-            inputMonitoringChecker: inputMonitoringChecker
+            inputMonitoringChecker: inputMonitoringChecker,
+            floatingNotch: FakeFloatingNotchHost()
         )
     }
 }

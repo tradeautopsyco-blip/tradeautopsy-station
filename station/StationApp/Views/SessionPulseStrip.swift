@@ -1,11 +1,10 @@
-import Notch
 import SwiftUI
 
 public struct SessionPulseStrip: View {
-    @ObservedObject private var viewModel: NotchViewModel
+    @ObservedObject private var viewModel: SessionModel
     @ObservedObject private var coordinator: StationAppCoordinator
 
-    public init(viewModel: NotchViewModel, coordinator: StationAppCoordinator) {
+    public init(viewModel: SessionModel, coordinator: StationAppCoordinator) {
         self.viewModel = viewModel
         self.coordinator = coordinator
     }
@@ -18,15 +17,53 @@ public struct SessionPulseStrip: View {
             brokerSessionActive: viewModel.brokerSessionActive,
             todayDegraded: todayDegraded
         )
-        let quote = viewModel.deskQuoteCurrency
-            ?? coordinator.todayViewModel.lastDeskQuoteCurrency
-            ?? "USD"
+
+        let configuredSlugs = coordinator.brokersViewModel.configuredBrokerSlugs
+        let honesty = DeskHonesty.resolve(activeSlugs: configuredSlugs)
+        let dualChips: [SessionPulseStripPresentation.DualDeskChip]?
+        let showActiveMoney: Bool
+        let quote: String
+
+        switch honesty {
+        case let .dualNoBlend(profiles):
+            dualChips = SessionPulseStripPresentation.dualChips(
+                profiles: profiles,
+                activeSlug: viewModel.activeBrokerSlug
+            )
+            if let hero = DeskHonesty.heroQuoteCurrency(
+                activeSlugs: viewModel.activeBrokerSlug.map { [$0] } ?? []
+            ) {
+                quote = hero
+                showActiveMoney = true
+            } else if let mapped = DeskMoneyFormatting.quoteCurrency(
+                forBrokerSlug: viewModel.activeBrokerSlug
+            ) {
+                quote = mapped
+                showActiveMoney = true
+            } else {
+                quote = "USD"
+                showActiveMoney = false
+            }
+        case let .single(quoteCurrency, _, _):
+            dualChips = nil
+            quote = quoteCurrency
+            showActiveMoney = true
+        case .none:
+            dualChips = nil
+            quote = viewModel.deskQuoteCurrency
+                ?? coordinator.todayViewModel.lastDeskQuoteCurrency
+                ?? "USD"
+            showActiveMoney = true
+        }
+
         return SessionPulseStripPresentation.build(
             sessionPnLUsd: coordinator.todayViewModel.sessionPnLUsd,
             unrealizedTotal: viewModel.totalUnrealizedPnL,
             positions: viewModel.positions,
             isDegraded: isDegraded,
-            formatUSD: { DeskMoneyFormatting.formatSigned($0, quoteCurrency: quote) }
+            formatUSD: { DeskMoneyFormatting.formatSigned($0, quoteCurrency: quote) },
+            dualChips: dualChips,
+            showActiveMoney: showActiveMoney
         )
     }
 
@@ -35,9 +72,31 @@ public struct SessionPulseStrip: View {
             HStack(spacing: 16) {
                 if presentation.showsDegradedIndicator {
                     Circle()
-                        .fill(BarDS.Accent.amber)
+                        .fill(StationDS.Accent.amber)
                         .frame(width: 6, height: 6)
                         .accessibilityLabel("Data unavailable")
+                }
+
+                if let chips = presentation.dualChips, !chips.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(chips) { chip in
+                            Text(chip.label)
+                                .font(StationDS.monoFont(StationDS.FontSize.chip, weight: .medium))
+                                .foregroundStyle(
+                                    chip.isActive ? StationDS.Text.primary : StationDS.Text.muted
+                                )
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(StationDS.Fill.input)
+                                .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
+                                .accessibilityLabel(
+                                    chip.isActive
+                                        ? "Active desk \(chip.label)"
+                                        : "Desk \(chip.label)"
+                                )
+                        }
+                    }
+                    .accessibilityIdentifier("sessionPulseDualChips")
                 }
 
                 metric(label: "Session P&L", value: presentation.sessionPnLText, style: presentation.sessionPnLStyle)
@@ -49,12 +108,12 @@ public struct SessionPulseStrip: View {
 
                 if let symbol = presentation.singlePositionSymbol {
                     Text(symbol)
-                        .font(BarDS.monoFont(BarDS.FontSize.chip, weight: .medium))
-                        .foregroundStyle(BarDS.Text.primary)
+                        .font(StationDS.monoFont(StationDS.FontSize.chip, weight: .medium))
+                        .foregroundStyle(StationDS.Text.primary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(BarDS.Fill.input)
-                        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small))
+                        .background(StationDS.Fill.input)
+                        .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
                         .accessibilityLabel("Open position symbol \(symbol)")
                 }
 
@@ -63,11 +122,11 @@ public struct SessionPulseStrip: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
-            .background(BarDS.Fill.appPanel)
+            .background(StationDS.Fill.appPanel)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(BarDS.Border.divider)
-                    .frame(height: BarDS.borderThin)
+                    .fill(StationDS.Border.divider)
+                    .frame(height: StationDS.borderThin)
             }
         }
         .buttonStyle(.plain)
@@ -78,10 +137,10 @@ public struct SessionPulseStrip: View {
     private func metric(label: String, value: String, style: SessionPulseStripPresentation.PnLStyle) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS))
-                .foregroundStyle(BarDS.Text.secondary)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.secondary)
             Text(value)
-                .font(BarDS.monoFont(BarDS.FontSize.bodySmall, weight: .medium))
+                .font(StationDS.monoFont(StationDS.FontSize.bodySmall, weight: .medium))
                 .foregroundStyle(color(for: style))
         }
         .accessibilityElement(children: .combine)
@@ -91,11 +150,11 @@ public struct SessionPulseStrip: View {
     private func color(for style: SessionPulseStripPresentation.PnLStyle) -> Color {
         switch style {
         case .positive:
-            return BarDS.Accent.green
+            return StationDS.Accent.green
         case .negative:
-            return BarDS.Accent.red
+            return StationDS.Accent.red
         case .neutral:
-            return BarDS.Text.primary
+            return StationDS.Text.primary
         }
     }
 }

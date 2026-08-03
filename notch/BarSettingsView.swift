@@ -23,12 +23,13 @@ struct BarSettingsView: View {
     }
 
     private enum SyncPosture {
-        case connected, degraded, offline
+        case connected, connecting, degraded, offline
 
-        init(syncState: String?) {
-            switch syncState?.uppercased() ?? "" {
-            case "GREEN": self = .connected
-            case "AMBER": self = .degraded
+        init(brokerSyncClass: String?) {
+            switch brokerSyncClass?.lowercased() ?? "" {
+            case "synced": self = .connected
+            case "syncing": self = .connecting
+            case "stale": self = .degraded
             default: self = .offline
             }
         }
@@ -127,7 +128,7 @@ struct BarSettingsView: View {
     }
 
     private var syncPosture: SyncPosture {
-        SyncPosture(syncState: viewModel.barLiveState?.syncState)
+        SyncPosture(brokerSyncClass: viewModel.brokerSyncClass)
     }
 
     private var syncStatusBar: some View {
@@ -167,7 +168,7 @@ struct BarSettingsView: View {
             Circle()
                 .fill(BarDS.Accent.teal)
                 .frame(width: 8, height: 8)
-        case .degraded:
+        case .connecting, .degraded:
             SettingsPulsingDot(color: BarDS.Accent.amber, duration: 1.8)
         case .offline:
             SettingsPulsingDot(color: BarDS.Accent.red, duration: 0.9)
@@ -176,41 +177,43 @@ struct BarSettingsView: View {
 
     private var syncPrimaryLabel: String {
         switch syncPosture {
-        case .connected: return "WebSocket · streaming"
-        case .degraded: return "REST fallback · polling 10s"
-        case .offline: return "No connection"
+        case .connected: return "Broker sync · live"
+        case .connecting: return "Broker sync · connecting"
+        case .degraded: return "Broker sync · degraded"
+        case .offline: return "No broker sync"
         }
     }
 
     private var syncSecondaryLabel: String {
         switch syncPosture {
         case .connected:
-            let tick = lastSyncSecondsAgo.map { "\($0)s" } ?? "—"
-            let n = symbolTrackCount
-            return "Last tick \(tick) ago · \(n) symbols tracked"
+            let tick = brokerPollSecondsAgo.map { "\($0)s" } ?? "—"
+            return "\(brokerDisplayName) · last poll \(tick) ago · mirrors Station Brokers"
+        case .connecting:
+            return "\(brokerDisplayName) · Start in progress on Enforcer"
         case .degraded:
-            let ago = lastSyncMinutesAgo.map { "\($0)m" } ?? "—"
-            return "WebSocket disconnected \(ago) ago"
+            let ago = brokerPollMinutesAgo.map { "\($0)m" } ?? "—"
+            return "\(brokerDisplayName) · last good poll \(ago) ago — re-auth in Station if needed"
         case .offline:
-            return "Reconnecting..."
+            return "Not connected — Connect / Start broker once in Station Brokers"
         }
     }
 
-    private var symbolTrackCount: Int {
-        let breakdown = viewModel.barLiveState?.composite?.breakdown.count ?? 0
-        if breakdown > 0 { return breakdown }
-        return viewModel.positions.count
+    private var brokerPollSecondsAgo: Int? {
+        guard let ms = viewModel.brokerSyncLastPollAtMs else { return lastSyncSecondsAgo }
+        let date = Date(timeIntervalSince1970: Double(ms) / 1000.0)
+        return max(0, Int(clock.timeIntervalSince(date).rounded(.down)))
+    }
+
+    private var brokerPollMinutesAgo: Int? {
+        guard let secs = brokerPollSecondsAgo else { return nil }
+        return max(0, secs / 60)
     }
 
     private var lastSyncSecondsAgo: Int? {
         guard let iso = viewModel.barLiveState?.lastSyncAt else { return nil }
         guard let date = parseISO8601(iso) else { return nil }
         return max(0, Int(clock.timeIntervalSince(date).rounded(.down)))
-    }
-
-    private var lastSyncMinutesAgo: Int? {
-        guard let secs = lastSyncSecondsAgo else { return nil }
-        return max(0, secs / 60)
     }
 
     private var currentTimeText: String {
@@ -278,12 +281,9 @@ struct BarSettingsView: View {
     }
 
     private var brokerDisplayName: String {
-        switch viewModel.barProtectiveBrokerSlug.lowercased() {
-        case "kotak_neo", "kotak": return "Kotak Neo"
-        case "zerodha", "kite": return "Zerodha Kite"
-        case "upstox": return "Upstox"
-        default: return "Kotak Neo"
-        }
+        NotchViewModel.brokerDisplayName(
+            forSlug: viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+        )
     }
 
     private var brokerInitials: String {
@@ -296,9 +296,10 @@ struct BarSettingsView: View {
 
     private var brokerMetaLine: String {
         let sync = viewModel.brokerSyncClass.lowercased()
-        if sync == "synced" { return "Session active · order port wired" }
-        if sync == "stale" { return "Session stale · re-auth may be required" }
-        return "Not connected"
+        if sync == "synced" { return "Connected via Station · sync live" }
+        if sync == "syncing" { return "Connecting via Station Enforcer" }
+        if sync == "stale" { return "Session stale · re-auth may be required in Station" }
+        return "Connect once in Station Brokers — Notch only mirrors status"
     }
 
     private var brokerConnectionBadge: some View {
@@ -306,10 +307,12 @@ struct BarSettingsView: View {
             switch syncPosture {
             case .connected:
                 return ("Connected", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.12))
+            case .connecting:
+                return ("Connecting", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.12))
             case .degraded:
                 return ("Degraded", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.12))
             case .offline:
-                return ("Disconnected", BarDS.Accent.red, BarDS.Accent.red.opacity(0.12))
+                return ("Not connected", BarDS.Accent.red, BarDS.Accent.red.opacity(0.12))
             }
         }()
         return Text(title)
@@ -322,15 +325,45 @@ struct BarSettingsView: View {
     }
 
     private var brokerActionRow: some View {
-        HStack(spacing: 6) {
-            brokerActionButton(title: "Re-auth token", icon: "arrow.triangle.2.circlepath", danger: false) {
-                print("[BarSettings] Re-auth token tapped")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                if NotchViewModel.showsOpenStationBrokersCta(brokerSyncClass: viewModel.brokerSyncClass) {
+                    brokerActionButton(title: "Open Station Brokers", icon: "macwindow", danger: false) {
+                        viewModel.requestOpenBrokerConnect()
+                    }
+                } else {
+                    brokerActionButton(title: "Re-auth token", icon: "arrow.triangle.2.circlepath", danger: false) {
+                        viewModel.requestOpenBrokerReauth()
+                    }
+                    brokerActionButton(title: "Test connection", icon: "antenna.radiowaves.left.and.right", danger: false) {
+                        Task { await viewModel.testBrokerConnection() }
+                    }
+                    brokerActionButton(title: "Disconnect", icon: nil, danger: true) {
+                        Task { await viewModel.disconnectBrokerSync() }
+                    }
+                }
             }
-            brokerActionButton(title: "Test connection", icon: "antenna.radiowaves.left.and.right", danger: false) {
-                print("[BarSettings] Test connection tapped")
+
+            if NotchViewModel.showsOpenStationBrokersCta(brokerSyncClass: viewModel.brokerSyncClass) {
+                Text("One Connect in Station. Notch never logs into the broker itself.")
+                    .font(BarDS.bodyFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.hint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            brokerActionButton(title: "Disconnect", icon: nil, danger: true) {
-                print("[BarSettings] Disconnect tapped")
+
+            if viewModel.brokerActionBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if let msg = viewModel.brokerActionResultMessage, !msg.isEmpty {
+                Text(msg)
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.teal)
+            }
+            if let err = viewModel.brokerActionError, !err.isEmpty {
+                Text(err)
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.red)
             }
         }
         .padding(.bottom, 4)
@@ -686,8 +719,7 @@ struct BarSettingsView: View {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard (200 ... 299).contains(code) else {
-                let hint = String(data: data, encoding: .utf8)?.prefix(120) ?? ""
-                limitsSaveError = "Save failed (\(code)) \(hint)"
+                limitsSaveError = AgentHTTPErrorPresentation.message(httpStatus: code, body: data)
                 return
             }
             limitsSaveMessage = "Saved"
@@ -698,19 +730,20 @@ struct BarSettingsView: View {
     }
 
     private func lossLimitsURL() -> URL? {
-        var base = viewModel.webBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.hasSuffix("/") { base.removeLast() }
-        return URL(string: base + "/api/bar/v1/profile/loss-limits")
+        // Station-hosted Notch: webBase is agent loopback — use daemon bar proxy → Console.
+        return URL(string: "http://127.0.0.1:\(viewModel.daemonPort)/api/daemon/bar/profile/loss-limits")
     }
 
     private func daemonBarRequest(url: URL, method: String, body: Data?) -> URLRequest {
-        var r = URLRequest(url: url)
-        r.httpMethod = method
         let payload = body ?? Data()
-        // Console brain identity = Station Caller Bearer (A8). Never secret + x-user-id.
-        if let bearer = StationCallerKeychain.bearerAuthorization() {
-            r.setValue(bearer, forHTTPHeaderField: "Authorization")
-        }
+        let path = url.path.isEmpty ? "/" : url.path
+        var r = StationWireClient.signedRequest(
+            method: method,
+            path: path,
+            body: payload,
+            daemonSecret: viewModel.daemonSecret
+        )
+        r.url = url
         r.setValue("notch-settings", forHTTPHeaderField: "x-daemon-source")
         if body != nil {
             r.setValue("application/json", forHTTPHeaderField: "Content-Type")

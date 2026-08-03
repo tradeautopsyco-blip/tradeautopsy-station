@@ -64,6 +64,7 @@ fn kotak_neo_start_no_longer_bails() {
         trade_token: "tt".into(),
         sid: "sid".into(),
         base_url: "https://cis.kotaksecurities.com".into(),
+        hs_server_id: "server4".into(),
         expires_at: None,
     };
     let adapter = build_wasm_runtime_adapter("kotak_neo", "conn-kotak-001", &blob)
@@ -80,6 +81,7 @@ fn b5_live_start_factory_selects_wasm_for_kotak_neo() {
         trade_token: "tt".into(),
         sid: "sid".into(),
         base_url: "https://cis.kotaksecurities.com".into(),
+        hs_server_id: "server4".into(),
         expires_at: None,
     };
     let adapter = build_runtime_adapter("kotak_neo", "conn-kotak-live-001", &blob)

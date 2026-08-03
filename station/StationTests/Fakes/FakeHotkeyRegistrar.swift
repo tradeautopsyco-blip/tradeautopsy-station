@@ -9,6 +9,8 @@ final class FakeHotkeyRegistrar: HotkeyRegistering {
     private(set) var toggleNotchHandler: (() -> Void)?
     private(set) var openStationHandler: (() -> Void)?
 
+    private(set) var refreshGlobalMonitorCallCount = 0
+
     func registerToggleNotch(_ handler: @escaping () -> Void) {
         registerToggleNotchCallCount += 1
         toggleNotchHandler = handler
@@ -23,5 +25,9 @@ final class FakeHotkeyRegistrar: HotkeyRegistering {
         unregisterAllCallCount += 1
         toggleNotchHandler = nil
         openStationHandler = nil
+    }
+
+    func refreshGlobalMonitorIfNeeded() {
+        refreshGlobalMonitorCallCount += 1
     }
 }

@@ -12,8 +12,11 @@ const KOTAK_HOSTS: &[&str] = &[
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
     "mis.kotaksecurities.com",
-    // Trading-API gateway named by the login response (B6 kotak_neo §0).
+    // Trading-API gateways from SDK login `baseUrl` (keep aligned with ALLOWED_BROKER_HOSTS).
     "gw-napi.kotaksecurities.com",
+    "mnapi.kotaksecurities.com",
+    "cnapi.kotaksecurities.com",
+    "napi.kotaksecurities.com",
 ];
 
 /// R8 gap closed: COM was reachable during an L3 block because it had no host set here.

@@ -1,11 +1,10 @@
 import Foundation
 
-public enum BrokerSyncStartError: Error, Equatable {
-    case missingCredentials
-}
-
-/// Confirms Keychain has credentials, then starts sync by connection identity only (R6).
+/// Confirms credentials exist, then starts sync by connection identity only (R6).
 /// Secrets stay in Keychain; agent loads them via host vault — never posted on the wire.
+///
+/// Kotak: never Station-read `broker-credentials` (cross-process ACL prompts). Presence is
+/// agent-side (cached after mint). COM/HMAC: Station Keychain presence first, else agent.
 @MainActor
 public final class AgentBrokerSyncControl: BrokerSyncControlling {
     private let credentialStore: BrokerCredentialStoring
@@ -20,9 +19,21 @@ public final class AgentBrokerSyncControl: BrokerSyncControlling {
     }
 
     public func startSync(for identity: BrokerConnectionIdentity) async throws {
-        guard try credentialStore.read(for: identity) != nil else {
+        let present: Bool
+        if identity.brokerSlug == "kotak_neo" {
+            present = await runtimeClient.vaultCredentialsPresent(for: identity)
+        } else if (try? credentialStore.read(for: identity)) != nil {
+            present = true
+        } else {
+            present = await runtimeClient.vaultCredentialsPresent(for: identity)
+        }
+        guard present else {
             throw BrokerSyncStartError.missingCredentials
         }
         try await runtimeClient.startSync(for: identity)
     }
+}
+
+public enum BrokerSyncStartError: Error, Equatable {
+    case missingCredentials
 }

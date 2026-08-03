@@ -27,8 +27,12 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
 
     public init(isHostedByStation: Bool = false, injectedViewModel: NotchViewModel? = nil) {
         self.isHostedByStation = isHostedByStation
-        self.viewModel = injectedViewModel ?? NotchViewModel()
+        let vm = injectedViewModel ?? NotchViewModel(planSurfaceOnly: isHostedByStation)
+        self.viewModel = vm
         super.init()
+        if isHostedByStation {
+            vm.enablePlanSurfaceOnly()
+        }
     }
 
     var hasInstalledToggleHotkeyMonitors: Bool {
@@ -36,7 +40,12 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     }
 
     public func toggle() {
-        panelController?.toggle()
+        if isHostedByStation {
+            // Station ⌥Space: expand/collapse PLAN over the focused app (not show/hide the pill).
+            panelController?.toggleExpandedSurface()
+        } else {
+            panelController?.toggleVisibility()
+        }
     }
 
     public func setHostedExpandedContent(_ content: @escaping () -> AnyView) {
@@ -91,12 +100,12 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard Self.isToggleShortcut(event) else { return }
             DispatchQueue.main.async {
-                self?.panelController?.toggle()
+                self?.panelController?.toggleVisibility()
             }
         }
         localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard Self.isToggleShortcut(event) else { return event }
-            self?.panelController?.toggle()
+            self?.panelController?.toggleVisibility()
             return nil
         }
     }
@@ -191,37 +200,31 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     }
 
     func expandToPulse() async {
-        viewModel.selectTab(.pulse)
-        viewModel.isExpanded = true
-        viewModel.onRequestOrderFront?()
+        await expandToTab(isHostedByStation ? .plan : .pulse)
     }
 
     func expandToBrief() async {
-        viewModel.selectTab(.brief)
-        viewModel.isExpanded = true
-        viewModel.onRequestOrderFront?()
+        await expandToTab(isHostedByStation ? .plan : .brief)
     }
 
     func expandToTAI() async {
-        viewModel.selectTab(.tai)
-        viewModel.isExpanded = true
-        viewModel.onRequestOrderFront?()
+        await expandToTab(isHostedByStation ? .plan : .tai)
     }
 
     func expandToPositions() async {
-        viewModel.selectTab(.positions)
-        viewModel.isExpanded = true
-        viewModel.onRequestOrderFront?()
+        await expandToTab(isHostedByStation ? .plan : .positions)
     }
 
     func expandToPlan() async {
-        viewModel.selectTab(.plan)
-        viewModel.isExpanded = true
-        viewModel.onRequestOrderFront?()
+        await expandToTab(.plan)
     }
 
     func expandToCapture() async {
-        viewModel.selectTab(.capture)
+        await expandToTab(isHostedByStation ? .plan : .capture)
+    }
+
+    private func expandToTab(_ tab: NotchTab) async {
+        viewModel.selectTab(tab)
         viewModel.isExpanded = true
         viewModel.onRequestOrderFront?()
     }

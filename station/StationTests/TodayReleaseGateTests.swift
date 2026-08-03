@@ -1,5 +1,4 @@
 import Foundation
-import Notch
 import Testing
 @testable import Station
 
@@ -48,7 +47,7 @@ struct TodayReleaseGateTests {
         )
         let viewModel = TodayViewModel(
             client: client,
-            notchViewModel: NotchViewModel(),
+            sessionModel: SessionModel(),
             agentHealthy: { true }
         )
         await viewModel.load()
@@ -82,21 +81,21 @@ struct TodayReleaseGateTests {
     }
 
     @Test @MainActor func breakerHiddenWhenAgentDown() {
-        let notchVM = NotchViewModel()
-        notchVM.killSwitchActive = true
-        notchVM.setKillSwitchStateReceivedAt(Date())
+        let session = SessionModel()
+        session.killSwitchActive = true
+        session.setKillSwitchStateReceivedAt(Date())
         let viewModel = TodayViewModel(
             client: FakeTodayAgentClient(),
-            notchViewModel: notchVM,
+            sessionModel: session,
             agentHealthy: { false }
         )
         #expect(viewModel.showCircuitBreakerBanner == false)
     }
 
     @Test @MainActor func breakerHiddenWhenSyncUnavailableAndStale() async {
-        let notchVM = NotchViewModel()
-        notchVM.killSwitchActive = true
-        notchVM.setKillSwitchStateReceivedAt(Date().addingTimeInterval(-61))
+        let session = SessionModel()
+        session.killSwitchActive = true
+        session.setKillSwitchStateReceivedAt(Date().addingTimeInterval(-61))
         let viewModel = TodayViewModel(
             client: FakeTodayAgentClient(
                 payload: TodayAgentPayload(
@@ -110,7 +109,7 @@ struct TodayReleaseGateTests {
                     openPositionCount: 0
                 )
             ),
-            notchViewModel: notchVM,
+            sessionModel: session,
             agentHealthy: { true }
         )
         await viewModel.load()

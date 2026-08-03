@@ -20,13 +20,11 @@ enum BarDeclareHTTPErrorPresentation {
                 return fallbackForCode(code, keys: errObj["keys"] as? [String])
             }
         }
-        let snippet = String(data: body, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .prefix(200) ?? ""
-        if snippet.isEmpty {
-            return "Declaration failed (\(httpStatus)) — try again or check web Bar."
+        // Shared seam: allow-listed fields only — never paste raw agent body bytes.
+        if let detail = AgentHTTPErrorPresentation.allowListedDetail(from: body) {
+            return "Declaration failed (\(httpStatus)) — \(detail)"
         }
-        return "Declaration failed (\(httpStatus)) — \(snippet)"
+        return "Declaration failed (\(httpStatus)) — try again or check web Bar."
     }
 
     private static func parseJSON(_ body: Data) -> [String: Any]? {

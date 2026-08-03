@@ -55,7 +55,7 @@ struct BrokerScreenPresentationTests {
         #expect(binance?.identity == binanceIdentity)
     }
 
-    @Test func futureBrokersArePlannedAndNotConnectable() {
+    @Test func catalogShowsExactlyFirstPairCards() {
         let snapshot = BrokerControlSnapshot(
             configuredConnections: [],
             agentAvailable: true,
@@ -63,18 +63,13 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        let planned = cards.filter { $0.plannedLabel == "Planned" }
-
-        #expect(planned.count == 2)
-        for card in planned {
-            #expect(card.isConnectable == false)
-            #expect(card.isStartEnabled == false)
-            #expect(card.isStopEnabled == false)
-        }
-
-        let parked = cards.filter { $0.plannedLabel == "Parked" }
-        #expect(parked.map(\.id).contains("binance_us"))
+        #expect(cards.count == 2)
+        #expect(cards.map(\.id) == ["binance_com", "kotak_neo"])
+        #expect(cards.allSatisfy { $0.plannedLabel == nil })
         #expect(cards.first { $0.id == "kotak_neo" }?.isConnectable == true)
+        #expect(cards.first { $0.id == "binance_com" }?.isConnectable == true)
+        #expect(cards.first { $0.id == "binance_com" }?.quoteCurrency == "USD")
+        #expect(cards.first { $0.id == "kotak_neo" }?.quoteCurrency == "INR")
     }
 
     @Test func connectionMetadataCarriesIdentityFields() {
@@ -108,6 +103,104 @@ struct BrokerScreenPresentationTests {
         #expect(binance?.status.impliesAgentConnectedSync == false)
     }
 
+    @Test func showsAgentReportedConnectedWithLastSynced() {
+        let connectionID = binanceIdentity.brokerConnectionID.uuidString
+        let now = Date(timeIntervalSince1970: 1_700_000_012)
+        let snapshot = BrokerControlSnapshot(
+            configuredConnections: [
+                BrokerConfiguredConnection(
+                    identity: binanceIdentity,
+                    displayName: "Binance.com",
+                    lastValidatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                    lastSyncedAtMs: 1_700_000_000_000
+                )
+            ],
+            agentAvailable: true,
+            runtimeStatusByConnectionID: [connectionID: .connected]
+        )
+
+        let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1, now: now)
+        let binance = cards.first { $0.id == "binance_com" }
+        let kotak = cards.first { $0.id == "kotak_neo" }
+
+        #expect(binance?.status == .connected)
+        #expect(binance?.statusLabel == "Connected")
+        #expect(binance?.status.impliesAgentConnectedSync == true)
+        #expect(binance?.isStopEnabled == true)
+        #expect(binance?.lastSyncedAtText == "12s ago")
+        #expect(kotak?.status == .notConfigured)
+        #expect(kotak?.lastSyncedAtText == nil)
+    }
+
+    @Test func idleConfiguredBrokerHasNoLastSyncedOrConnected() {
+        let snapshot = BrokerControlSnapshot(
+            configuredConnections: [binanceConnection()],
+            agentAvailable: true,
+            runtimeStatusByConnectionID: [:]
+        )
+
+        let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
+        let binance = cards.first { $0.id == "binance_com" }
+
+        #expect(binance?.status == .readyToStart)
+        #expect(binance?.lastSyncedAtText == nil)
+        #expect(binance?.isStopEnabled == false)
+    }
+
+    @Test func degradedKeepsLastSyncedWhenMsPresent() {
+        let connectionID = binanceIdentity.brokerConnectionID.uuidString
+        let now = Date(timeIntervalSince1970: 1_700_000_180)
+        let snapshot = BrokerControlSnapshot(
+            configuredConnections: [
+                BrokerConfiguredConnection(
+                    identity: binanceIdentity,
+                    displayName: "Binance.com",
+                    lastSyncedAtMs: 1_700_000_000_000
+                )
+            ],
+            agentAvailable: true,
+            runtimeStatusByConnectionID: [connectionID: .degraded]
+        )
+
+        let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1, now: now)
+        let binance = cards.first { $0.id == "binance_com" }
+
+        #expect(binance?.status == .degraded)
+        #expect(binance?.lastSyncedAtText == "3m ago")
+        #expect(binance?.isStopEnabled == true)
+    }
+
+    @Test func syncStateMappingPrefersSyncedOverRuntimeSyncing() {
+        #expect(
+            BrokerAgentSyncStateMapping.cardStatus(syncState: "synced", runtimeStatus: "syncing")
+                == .connected
+        )
+        #expect(
+            BrokerAgentSyncStateMapping.cardStatus(syncState: "syncing", runtimeStatus: "syncing")
+                == .syncing
+        )
+        #expect(
+            BrokerAgentSyncStateMapping.cardStatus(syncState: "stale", runtimeStatus: "syncing")
+                == .degraded
+        )
+        #expect(
+            BrokerAgentSyncStateMapping.cardStatus(syncState: "disconnected", runtimeStatus: "paused")
+                == .paused
+        )
+        #expect(
+            BrokerAgentSyncStateMapping.cardStatus(syncState: nil, runtimeStatus: "ready_to_start")
+                == .readyToStart
+        )
+    }
+
+    @Test func formatRelativeSyncedAtBuckets() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        #expect(BrokerScreenPresentation.formatRelativeSyncedAt(999_000, now: now) == "just now")
+        #expect(BrokerScreenPresentation.formatRelativeSyncedAt(970_000, now: now) == "30s ago")
+        #expect(BrokerScreenPresentation.formatRelativeSyncedAt(820_000, now: now) == "3m ago")
+        #expect(BrokerScreenPresentation.formatRelativeSyncedAt(nil, now: now) == nil)
+    }
+
     @Test func showsAgentReportedSyncingStatus() {
         let connectionID = binanceIdentity.brokerConnectionID.uuidString
         let snapshot = BrokerControlSnapshot(
@@ -121,7 +214,24 @@ struct BrokerScreenPresentationTests {
 
         #expect(binance?.status == .syncing)
         #expect(binance?.isStopEnabled == true)
-        #expect(binance?.isStartEnabled == false)
+        #expect(binance?.isStartEnabled == true)
+        #expect(binance?.isEditEnabled == true)
+    }
+
+    @Test func degradedKeepsStopEnabledBecauseSyncIsActive() {
+        let connectionID = binanceIdentity.brokerConnectionID.uuidString
+        let snapshot = BrokerControlSnapshot(
+            configuredConnections: [binanceConnection()],
+            agentAvailable: true,
+            runtimeStatusByConnectionID: [connectionID: .degraded]
+        )
+
+        let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
+        let binance = cards.first { $0.id == "binance_com" }
+
+        #expect(binance?.status == .degraded)
+        #expect(binance?.isStartEnabled == true)
+        #expect(binance?.isStopEnabled == true)
     }
 
     @Test func brokerCardPresentationNeverContainsSecretMaterial() {
@@ -150,6 +260,7 @@ struct BrokerScreenPresentationTests {
                 card.statusLabel,
                 card.lastValidatedAtText,
                 card.lastSyncSummary,
+                card.lastSyncedAtText,
                 card.plannedLabel,
             ].compactMap { $0 }
             for value in values {

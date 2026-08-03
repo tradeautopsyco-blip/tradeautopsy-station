@@ -1,4 +1,3 @@
-import Notch
 import SwiftUI
 
 public struct BrokersView: View {
@@ -12,17 +11,26 @@ public struct BrokersView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Brokers")
-                    .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
-                    .foregroundStyle(BarDS.Text.primary)
+                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
+                    .foregroundStyle(StationDS.Text.primary)
 
                 Text("Connect a broker to sync fills, balances, and open orders.")
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(BarDS.Text.muted)
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
+                    .foregroundStyle(StationDS.Text.muted)
+
+                if let syncActionMessage = viewModel.syncActionMessage {
+                    Text(syncActionMessage)
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                        .foregroundStyle(StationDS.Accent.amber)
+                }
 
                 ForEach(viewModel.cards) { card in
                     BrokerCardView(
                         card: card,
-                        onConnect: { viewModel.presentConnectSheet(for: card.id) },
+                        onConnect: {
+                            Task { await viewModel.beginConnect(for: card.id) }
+                        },
+                        onEdit: { viewModel.presentEditSheet(for: card.id) },
                         onStart: {
                         guard let identity = card.identity else { return }
                         Task { await viewModel.startSync(for: identity) }
@@ -42,9 +50,13 @@ public struct BrokersView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(BarDS.Fill.sidebar)
         .task {
             await viewModel.load()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { break }
+                await viewModel.load()
+            }
         }
         .sheet(isPresented: $viewModel.isConnectSheetPresented) {
             BrokerConnectSheetView(viewModel: viewModel)

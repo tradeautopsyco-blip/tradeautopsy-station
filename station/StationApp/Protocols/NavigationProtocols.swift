@@ -1,10 +1,9 @@
 import Foundation
-import Notch
 
 @MainActor
-public protocol BarSurfacePhaseProviding: AnyObject {
-    var barSurfacePhase: BarSurfacePhase { get }
-    var onPhaseChange: ((BarSurfacePhase) -> Void)? { get set }
+public protocol SessionSurfacePhaseProviding: AnyObject {
+    var sessionSurfacePhase: SessionSurfacePhase { get }
+    var onPhaseChange: ((SessionSurfacePhase) -> Void)? { get set }
 }
 
 @MainActor

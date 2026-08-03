@@ -500,6 +500,7 @@ mod tests {
                     trade_token: "tt".into(),
                     sid: "sid".into(),
                     base_url: "https://cis.kotaksecurities.com".into(),
+                    hs_server_id: "server4".into(),
                 },
             },
             transport,

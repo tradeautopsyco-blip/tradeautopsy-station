@@ -1,5 +1,4 @@
 import AppKit
-import Notch
 import SwiftUI
 
 public struct DeviceLoginView: View {
@@ -12,12 +11,12 @@ public struct DeviceLoginView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Station sign-in")
-                .font(BarDS.bodyFont(BarDS.FontSize.brief, weight: .medium))
-                .foregroundStyle(BarDS.Text.primary)
+                .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
+                .foregroundStyle(StationDS.Text.primary)
 
             Text("Sign in with WorkOS device login. Station shows your user code only — never paste a device code.")
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                .foregroundStyle(BarDS.Text.secondary)
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
+                .foregroundStyle(StationDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             switch viewModel.phase {
@@ -34,13 +33,13 @@ public struct DeviceLoginView: View {
                 if let userCode = viewModel.userCode {
                     Text(userCode)
                         .font(.system(.title2, design: .monospaced).weight(.semibold))
-                        .foregroundStyle(BarDS.Text.primary)
+                        .foregroundStyle(StationDS.Text.primary)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("deviceLoginUserCode")
                 }
                 Text("Confirm this code in the browser, then continue.")
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(BarDS.Text.secondary)
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
+                    .foregroundStyle(StationDS.Text.secondary)
                 HStack(spacing: 8) {
                     Button("I've confirmed") {
                         Task { await viewModel.completeLogin() }
@@ -61,8 +60,8 @@ public struct DeviceLoginView: View {
             case .signedIn:
                 if let email = viewModel.signedInEmail {
                     Text("Signed in as \(email)")
-                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
-                        .foregroundStyle(BarDS.Text.primary)
+                        .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
+                        .foregroundStyle(StationDS.Text.primary)
                         .accessibilityIdentifier("deviceLoginSignedInEmail")
                 }
                 Button("Sign out") {
@@ -73,14 +72,14 @@ public struct DeviceLoginView: View {
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
-                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(BarDS.Fill.sidebar)
+        .background(StationDS.Fill.sidebar)
         .task {
             await viewModel.refreshSession()
         }

@@ -4,6 +4,7 @@ import Security
 public enum BrokerCredentialStoreError: Error, Equatable {
     case encodingFailed
     case keychainError(OSStatus)
+    case accessControlUnavailable
 }
 
 public final class KeychainBrokerCredentialStore: BrokerCredentialStoring, @unchecked Sendable {
@@ -15,9 +16,17 @@ public final class KeychainBrokerCredentialStore: BrokerCredentialStoring, @unch
         let data = try encode(credentials)
         let query = baseQuery(for: identity)
         SecItemDelete(query as CFDictionary)
+
         var addQuery = query
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+        // Prefer ACL that trusts Station + bundled agent so Start does not prompt for login password.
+        if let access = try? makeTrustedAccessIncludingAgent() {
+            addQuery[kSecAttrAccess as String] = access
+        } else {
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
+
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw BrokerCredentialStoreError.keychainError(status)
@@ -48,6 +57,48 @@ public final class KeychainBrokerCredentialStore: BrokerCredentialStoring, @unch
 
     public func hasCredentials(for identity: BrokerConnectionIdentity) -> Bool {
         (try? read(for: identity)) != nil
+    }
+
+    /// Best-effort SecAccess trusting this app + `tradeautopsy-agent` next to the executable.
+    private func makeTrustedAccessIncludingAgent() throws -> SecAccess {
+        var trusted: [SecTrustedApplication] = []
+
+        var selfApp: SecTrustedApplication?
+        let selfStatus = SecTrustedApplicationCreateFromPath(nil, &selfApp)
+        if selfStatus == errSecSuccess, let selfApp {
+            trusted.append(selfApp)
+        }
+
+        if let agentPath = Self.bundledAgentPath() {
+            var agentApp: SecTrustedApplication?
+            let agentStatus = SecTrustedApplicationCreateFromPath(agentPath, &agentApp)
+            if agentStatus == errSecSuccess, let agentApp {
+                trusted.append(agentApp)
+            }
+        }
+
+        guard !trusted.isEmpty else {
+            throw BrokerCredentialStoreError.accessControlUnavailable
+        }
+
+        var access: SecAccess?
+        let status = SecAccessCreate(
+            "TradeAutopsy broker credentials" as CFString,
+            trusted as CFArray,
+            &access
+        )
+        guard status == errSecSuccess, let access else {
+            throw BrokerCredentialStoreError.accessControlUnavailable
+        }
+        return access
+    }
+
+    private static func bundledAgentPath() -> String? {
+        guard let exe = Bundle.main.executableURL?.deletingLastPathComponent() else {
+            return nil
+        }
+        let agent = exe.appendingPathComponent("tradeautopsy-agent")
+        return FileManager.default.isExecutableFile(atPath: agent.path) ? agent.path : nil
     }
 
     private func baseQuery(for identity: BrokerConnectionIdentity) -> [String: Any] {

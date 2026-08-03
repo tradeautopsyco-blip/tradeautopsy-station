@@ -50,18 +50,42 @@ public final class LocalBrokerControlClient: BrokerControlling {
         var runtimeStatusByConnectionID: [String: BrokerCardStatus] = [:]
         let environment = environmentStore.loadActiveEnvironment()
 
+        // Sync-state is global (one active brokerSlug) — fetch once, apply only to matching card.
+        let health: BrokerSyncHealthSnapshot? = agentAvailable
+            ? await runtimeClient.fetchSyncHealth(for: BrokerConnectionIdentity.binanceCom(environment))
+            : nil
+        let activeSlug = health?.brokerSlug?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let activeStatus = health?.cardStatus
+        let lastSyncedAtMs = health?.lastSyncedAtMs
+
         for entry in Self.v1Brokers {
             let identity = entry.identity(environment)
-            guard credentialStore.hasCredentials(for: identity) else { continue }
-
             let metadata = metadataStore.load(for: identity)
+            let isConfigured: Bool
+            if entry.slug == "kotak_neo" {
+                // Metadata marks Connect success. Avoid Station SecItem reads on every Brokers refresh
+                // (each cross-process read can re-prompt Keychain ACL).
+                if metadata?.lastValidatedAt != nil {
+                    isConfigured = true
+                } else if agentAvailable {
+                    isConfigured = await runtimeClient.vaultCredentialsPresent(for: identity)
+                } else {
+                    isConfigured = false
+                }
+            } else {
+                isConfigured = credentialStore.hasCredentials(for: identity)
+            }
+            guard isConfigured else { continue }
+
+            let slugMatchesActive = activeSlug == entry.slug.lowercased()
             configured.append(
                 BrokerConfiguredConnection(
                     identity: identity,
                     displayName: entry.displayName,
                     permissionWarning: metadata?.permissionWarning,
                     lastValidatedAt: metadata?.lastValidatedAt,
-                    lastSyncSummary: nil
+                    lastSyncSummary: nil,
+                    lastSyncedAtMs: slugMatchesActive ? lastSyncedAtMs : nil
                 )
             )
 
@@ -70,10 +94,10 @@ public final class LocalBrokerControlClient: BrokerControlling {
                     runtimeStatusByConnectionID[
                         identity.brokerConnectionID.uuidString
                     ] = .paused
-                } else if let agentStatus = await runtimeClient.fetchRuntimeStatus(for: identity) {
+                } else if slugMatchesActive, let activeStatus {
                     runtimeStatusByConnectionID[
                         identity.brokerConnectionID.uuidString
-                    ] = agentStatus
+                    ] = activeStatus
                 }
             }
         }
@@ -107,6 +131,6 @@ public final class LocalBrokerControlClient: BrokerControlling {
         if agentSupervisor?.isHealthy == true {
             try await runtimeClient.stopSync(for: identity)
         }
-        try connectController.deleteSavedCredentials()
+        try await connectController.deleteSavedCredentialsFully()
     }
 }

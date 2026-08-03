@@ -19,7 +19,7 @@ let package = Package(
         .target(
             name: "Station",
             dependencies: [
-                .product(name: "Notch", package: "Notch"),
+                .product(name: "Notch", package: "notch"),
             ],
             path: "StationApp",
             exclude: ["StationApp.swift", "Info.plist"],
@@ -28,16 +28,17 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
+                .linkedFramework("Carbon"),
                 .linkedFramework("IOKit"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("Security"),
+                .linkedFramework("LocalAuthentication"),
             ]
         ),
         .executableTarget(
             name: "StationApp",
             dependencies: [
                 "Station",
-                .product(name: "Notch", package: "Notch"),
             ],
             path: "StationApp",
             exclude: [
@@ -62,7 +63,6 @@ let package = Package(
             name: "StationTests",
             dependencies: [
                 "Station",
-                .product(name: "Notch", package: "Notch"),
                 .product(name: "Testing", package: "swift-testing"),
             ],
             path: "StationTests"

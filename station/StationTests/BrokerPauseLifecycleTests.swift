@@ -40,17 +40,17 @@ struct BrokerPauseLifecycleTests {
         _ = supervisor
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         metadataStore.save(
             BrokerConnectionMetadata(lastValidatedAt: Date()),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
-        try await client.stopSync(for: .binanceUSProd)
+        try await client.stopSync(for: .binanceComProd)
 
         #expect(runtime.stopSyncCallCount == 1)
-        #expect(metadataStore.load(for: .binanceUSProd)?.syncPaused == true)
+        #expect(metadataStore.load(for: .binanceComProd)?.syncPaused == true)
     }
 
     @Test func loadSnapshotShowsPausedWhenMetadataAndAgentAgree() async throws {
@@ -60,19 +60,20 @@ struct BrokerPauseLifecycleTests {
         _ = supervisor
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         metadataStore.save(
             BrokerConnectionMetadata(lastValidatedAt: Date(), syncPaused: true),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
         let snapshot = await client.loadSnapshot()
         let status = snapshot.runtimeStatusByConnectionID[
-            BrokerConnectionIdentity.binanceUSProd.brokerConnectionID.uuidString
+            BrokerConnectionIdentity.binanceComProd.brokerConnectionID.uuidString
         ]
 
         #expect(status == .paused)
+        #expect(runtime.fetchSyncHealthCallCount == 1)
     }
 
     @Test func connectAfterManualPauseDoesNotAutoStart() async throws {
@@ -80,19 +81,19 @@ struct BrokerPauseLifecycleTests {
         let store = FakeBrokerCredentialStore()
         try store.save(
             credentials: BrokerCredentials(apiKey: "existing", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         let defaults = UserDefaults(suiteName: "StationTests.Pause.Connect.\(UUID().uuidString)")!
         let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
         metadataStore.save(
             BrokerConnectionMetadata(lastValidatedAt: Date(), syncPaused: true),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         let sync = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
         let validator = FakeBrokerCredentialValidator()
         validator.nextResult = .success(permissionPosture: .readOnlyConfirmed)
         let controller = BrokerConnectController(
-            identity: .binanceUSProd,
+            identity: .binanceComProd,
             credentialStore: store,
             validator: validator,
             syncControl: sync,
@@ -112,16 +113,16 @@ struct BrokerPauseLifecycleTests {
         _ = supervisor
         try store.save(
             credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
         metadataStore.save(
             BrokerConnectionMetadata(lastValidatedAt: Date(), syncPaused: true),
-            for: .binanceUSProd
+            for: .binanceComProd
         )
 
-        try await client.startSync(for: .binanceUSProd)
+        try await client.startSync(for: .binanceComProd)
 
         #expect(runtime.startSyncCallCount == 1)
-        #expect(metadataStore.load(for: .binanceUSProd)?.syncPaused == false)
+        #expect(metadataStore.load(for: .binanceComProd)?.syncPaused == false)
     }
 }
