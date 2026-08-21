@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<!--
+  TODAY — Station T3 content lock (session mirror)
+  Locked: P&L · trades · win rate · top-2 local signals · closed RTs · firing-only breaker
+          honest empty (— not 0) · COM=USD / Kotak=INR · no FX blend
+  Not on this screen: remaining risk · market cap · weekly gauges · Stats charts · Console todayTrades
+  Variants: A COM · B empty · C degraded · D kill firing · E Kotak INR · F dual no-active
+  Open: open station/prototypes/TODAY-T3.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Today — Station T3</title>
+  <style>
+    :root {
+      --void: #050505;
+      --panel: #0a0a0a;
+      --elevated: #111111;
+      --fill: #1c1c1e;
+      --accent: #63E6E2;
+      --gain: #30D158;
+      --loss: #FF453A;
+      --caution: #FF9F0A;
+      --label: #ffffff;
+      --secondary: rgba(255,255,255,.60);
+      --tertiary: rgba(255,255,255,.32);
+      --hairline: rgba(255,255,255,.08);
+      --glass: rgba(8,8,8,.72);
+      --gain-bg: rgba(48,209,88,.10);
+      --gain-bd: rgba(48,209,88,.28);
+      --loss-bg: rgba(255,69,58,.10);
+      --loss-bd: rgba(255,69,58,.28);
+      --caution-bg: rgba(255,159,10,.10);
+      --caution-bd: rgba(255,159,10,.28);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --spring: cubic-bezier(0.32, 0.72, 0, 1);
+      --sidebar: 212px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--sans);
+      background: #1a1a1c;
+      color: var(--label);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 24px 72px;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; }
+    .press { transition: transform 100ms ease-out, background 120ms ease; }
+    .press:active { transform: scale(0.97); }
+
+    .shell {
+      width: min(1120px, 100%);
+      height: 720px;
+      background: var(--void);
+      border-radius: 18px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.06);
+    }
+
+    .pulse {
+      height: 40px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 16px;
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--hairline);
+      font-family: var(--mono); font-size: 11px;
+    }
+    .pulse .lbl {
+      color: var(--tertiary); font-size: 10px;
+      letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+    }
+    .pulse .val { color: var(--label); font-variant-numeric: tabular-nums; }
+    .pulse .val.pos { color: var(--gain); }
+    .pulse .val.neg { color: var(--loss); }
+    .pulse .val.muted { color: var(--secondary); }
+    .pulse .sep { width: 1px; height: 14px; background: var(--hairline); }
+    .pulse .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .chip {
+      font-size: 10px; font-weight: 600; letter-spacing: .04em;
+      padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--hairline); color: var(--secondary);
+    }
+    .chip.on { color: var(--accent); border-color: rgba(99,230,226,.35); background: rgba(99,230,226,.08); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gain); box-shadow: 0 0 8px rgba(48,209,88,.5); }
+    .dot.warn { background: var(--caution); box-shadow: 0 0 8px rgba(255,159,10,.45); }
+    .dot.kill { background: var(--loss); box-shadow: 0 0 8px rgba(255,69,58,.5); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sidebar {
+      width: var(--sidebar); flex-shrink: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--hairline);
+      display: flex; flex-direction: column;
+    }
+    .sb-label {
+      padding: 16px 16px 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--tertiary);
+    }
+    .nav {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 8px 10px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; color: var(--secondary);
+    }
+    .nav.active { background: var(--fill); color: var(--label); }
+    .nav .ico { width: 16px; text-align: center; opacity: .7; font-size: 13px; }
+    .nav.active .ico { opacity: 1; }
+    .sb-spacer { flex: 1; }
+    .sb-foot {
+      padding: 12px 16px; border-top: 1px solid var(--hairline);
+      font-family: var(--mono); font-size: 10px; color: var(--tertiary);
+    }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--gain); }
+    .bad { color: var(--caution); }
+
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar {
+      height: 48px; flex-shrink: 0;
+      display: flex; align-items: baseline; gap: 10px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .topbar h1 {
+      font-size: 17px; font-weight: 600; letter-spacing: -0.026em; line-height: 1.1;
+    }
+    .topbar .sub {
+      font-family: var(--mono); font-size: 11px; color: var(--tertiary); letter-spacing: .02em;
+    }
+
+    .scroll {
+      flex: 1; overflow-y: auto;
+      padding: 16px 20px 24px;
+      display: flex; flex-direction: column; gap: 18px;
+    }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+
+    .takeaway {
+      font-size: 13px; font-weight: 500; letter-spacing: -0.006em;
+      color: var(--secondary); line-height: 1.45;
+    }
+    .takeaway b { color: var(--label); font-weight: 600; }
+
+    .warn {
+      display: none; padding: 10px 14px; border-radius: 12px;
+      background: var(--caution-bg); border: 1px solid var(--caution-bd);
+      font-size: 12px; color: var(--secondary); line-height: 1.45;
+    }
+    .warn.show { display: block; }
+    .warn b { color: var(--caution); }
+
+    .cb {
+      display: none; align-items: center; gap: 12px;
+      padding: 12px 16px; border-radius: 14px;
+      background: var(--loss-bg); border: 1px solid var(--loss-bd);
+      border-left: 3px solid var(--loss);
+    }
+    .cb.show { display: flex; }
+    .cb h2 { font-size: 13px; font-weight: 600; color: var(--loss); letter-spacing: -0.006em; }
+    .cb p { font-size: 11px; color: rgba(255,69,58,.72); margin-top: 3px; line-height: 1.45; }
+    .cb-btn {
+      margin-left: auto; flex-shrink: 0;
+      border: 1px solid var(--loss-bd); background: transparent;
+      color: var(--loss); padding: 7px 14px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .cb-btn:disabled { opacity: .45; cursor: default; }
+
+    .hero { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px; }
+    .tile {
+      background: var(--elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 16px; padding: 16px 16px 14px;
+      min-height: 108px;
+    }
+    .tile.pos { background: var(--gain-bg); border-color: var(--gain-bd); }
+    .tile.neg { background: var(--loss-bg); border-color: var(--loss-bd); }
+    .tile .lbl {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--tertiary); margin-bottom: 10px;
+    }
+    .tile .val {
+      font-size: 28px; font-weight: 700; letter-spacing: -0.03em;
+      line-height: 1; font-variant-numeric: tabular-nums;
+    }
+    .tile:first-child .val { font-size: 32px; }
+    .tile .val.pos { color: var(--gain); }
+    .tile .val.neg { color: var(--loss); }
+    .tile .val.empty { color: var(--secondary); font-size: 26px; font-weight: 600; }
+    .tile .sub {
+      margin-top: 8px; font-family: var(--mono); font-size: 11px;
+      color: var(--tertiary); line-height: 1.4;
+    }
+
+    .sec {
+      display: flex; align-items: baseline; gap: 8px;
+      font-size: 13px; font-weight: 600; color: var(--secondary);
+      letter-spacing: -0.006em; margin-bottom: 10px;
+    }
+    .sec .meta { margin-left: auto; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--tertiary); }
+
+    .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sig {
+      background: var(--elevated); border: 1px solid var(--hairline);
+      border-radius: 14px; padding: 14px;
+    }
+    .sig.fire { background: var(--loss-bg); border-color: var(--loss-bd); }
+    .sig.watch { background: var(--caution-bg); border-color: var(--caution-bd); }
+    .sig-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .sig-name { font-size: 13px; font-weight: 600; letter-spacing: -0.006em; }
+    .badge {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px; border: 1px solid;
+    }
+    .badge.fire { color: var(--loss); background: var(--loss-bg); border-color: var(--loss-bd); }
+    .badge.watch { color: var(--caution); background: var(--caution-bg); border-color: var(--caution-bd); }
+    .badge.ok { color: var(--gain); background: var(--gain-bg); border-color: var(--gain-bd); }
+    .badge.learn { color: var(--secondary); background: var(--fill); border-color: var(--hairline); }
+    .sig-desc { font-size: 12px; color: var(--secondary); line-height: 1.5; }
+
+    .tbl {
+      background: var(--elevated); border: 1px solid var(--hairline);
+      border-radius: 14px; overflow: hidden;
+    }
+    .tbl-row {
+      display: flex; align-items: center; padding: 0 14px; height: 38px;
+      font-size: 12px; border-bottom: 1px solid var(--hairline);
+    }
+    .tbl-row:last-child { border-bottom: 0; }
+    .tbl-row.head {
+      height: 32px; background: rgba(255,255,255,.03);
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--tertiary);
+    }
+    .tbl-row.flagged { background: rgba(255,69,58,.05); }
+    .c-time { width: 52px; font-family: var(--mono); font-size: 11px; color: var(--tertiary); }
+    .c-sym { flex: 1; font-family: var(--mono); font-size: 12px; }
+    .c-num { width: 88px; font-family: var(--mono); font-size: 11px; text-align: right; color: var(--secondary); }
+    .c-pnl { width: 92px; font-family: var(--mono); font-size: 12px; text-align: right; font-weight: 600; }
+    .c-pnl.pos { color: var(--gain); }
+    .c-pnl.neg { color: var(--loss); }
+    .c-pnl.empty { color: var(--secondary); font-weight: 500; }
+    .c-flag { width: 108px; text-align: right; }
+
+    .empty {
+      display: none; flex-direction: column; align-items: center;
+      gap: 8px; padding: 40px 20px; text-align: center;
+      border: 1px dashed var(--hairline); border-radius: 14px; background: var(--elevated);
+    }
+    .empty.show { display: flex; }
+    .empty .p { font-size: 13px; font-weight: 600; color: var(--secondary); }
+    .empty .s { font-size: 11px; font-family: var(--mono); color: var(--tertiary); max-width: 380px; line-height: 1.5; }
+
+    .caption {
+      font-size: 11px; color: var(--tertiary); letter-spacing: .01em;
+    }
+
+    .proto {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 20; display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: 999px;
+      background: var(--glass); backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid var(--hairline);
+      box-shadow: 0 10px 40px rgba(0,0,0,.45);
+    }
+    .proto button {
+      min-width: 32px; height: 32px; border: 0; border-radius: 999px;
+      background: var(--fill); font-size: 12px; font-weight: 600;
+    }
+    .proto button.on { background: #fff; color: #111; }
+    .proto .note {
+      padding: 0 10px; font-family: var(--mono); font-size: 11px;
+      color: var(--secondary); white-space: nowrap;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+      .press:active { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .pulse, .proto { background: #0a0a0a; backdrop-filter: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="pulse" id="pulse"></div>
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sb-label">Desk</div>
+        <div class="nav active"><span class="ico">☀</span> Today</div>
+        <div class="nav"><span class="ico">🔗</span> Brokers</div>
+        <div class="nav"><span class="ico">📖</span> Journal</div>
+        <div class="nav"><span class="ico">⚙</span> Settings</div>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span id="sb-desk">Binance.com</span><span class="ok" id="sb-sync">syncing</span></div>
+          <div><span>Agent</span><span class="ok" id="sb-agent">running</span></div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <h1>Today</h1>
+          <span class="sub" id="sub"></span>
+        </header>
+        <div class="scroll">
+          <p class="takeaway" id="takeaway"></p>
+          <div class="warn" id="warn"></div>
+          <div class="cb" id="cb">
+            <div>
+              <h2 id="cb-h">Circuit breaker active</h2>
+              <p id="cb-sub"></p>
+            </div>
+            <button class="cb-btn press" id="cb-btn" type="button">Review &amp; resume</button>
+          </div>
+          <div class="hero" id="hero"></div>
+          <div>
+            <div class="sec">Behavior signals <span class="meta" id="sig-meta"></span></div>
+            <div class="sig-grid" id="sigs"></div>
+          </div>
+          <div>
+            <div class="sec">Closed round-trips <span class="meta" id="tbl-meta"></span></div>
+            <div class="tbl" id="tbl"></div>
+            <div class="empty" id="empty">
+              <div class="p">No closed trades yet today</div>
+              <div class="s">Round-trips appear after a buy→sell cycle completes. Open positions stay off this table.</div>
+            </div>
+          </div>
+          <p class="caption" id="caption">Performance basis, not tax. Local calendar day. One owner per number.</p>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <nav class="proto" aria-label="Today states">
+    <button type="button" data-v="A">A</button>
+    <button type="button" data-v="B">B</button>
+    <button type="button" data-v="C">C</button>
+    <button type="button" data-v="D">D</button>
+    <button type="button" data-v="E">E</button>
+    <button type="button" data-v="F">F</button>
+    <span class="note" id="vnote"></span>
+  </nav>
+
+  <script>
+    const V = {
+      A: {
+        note: 'COM desk · USD · healthy',
+        desk: 'Binance.com', sync: 'syncing', agent: 'running',
+        pulse: { pnl: '−$842.10', cls: 'neg', unreal: '−$124.00', ucls: 'neg', pos: '1 open', chips: [['COM USD', true]], dot: 'live' },
+        sub: 'Wednesday 19 Aug · Mac local day · COM · USD',
+        takeaway: 'Closed round-trips today <b>lost $842.10</b> net of fees. 1 win, 3 losses.',
+        warn: null,
+        cb: null,
+        hero: [
+          { lbl: 'P&L today', val: '−$842.10', cls: 'neg', sub: 'Net of fees · 4 closed round-trips' },
+          { lbl: 'Trades today', val: '4', cls: '', sub: 'Closed round-trips only' },
+          { lbl: 'Win rate', val: '25%', cls: 'neg', sub: '1 win · 3 losses' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Loss chasing', tier: 'fire', desc: 'Three round-trips within 18 minutes of a loss. Each notional larger than the last.' },
+          { name: 'Overtrading', tier: 'watch', desc: 'Four closed trips today versus your local median of two.' },
+        ],
+        tblMeta: '4 closed · 2 firing',
+        trades: [
+          { t: '09:18', s: 'BTC/USDT', en: '97,240', ex: '97,880', pnl: '+$312.40', flag: 'Clean' },
+          { t: '10:42', s: 'ETH/USDT', en: '3,412', ex: '3,298', pnl: '−$418.20', flag: 'Firing' },
+          { t: '10:51', s: 'ETH/USDT', en: '3,318', ex: '3,244', pnl: '−$296.80', flag: 'Firing' },
+          { t: '11:14', s: 'SOL/USDT', en: '142.10', ex: '138.40', pnl: '—', flag: 'Unknown basis' },
+        ],
+        caption: 'Performance basis, not tax. Unknown-basis row excluded from hero. Not remaining risk.',
+      },
+      B: {
+        note: 'Honest empty · — not 0',
+        desk: 'Binance.com', sync: 'syncing', agent: 'running',
+        pulse: { pnl: '—', cls: 'muted', unreal: '—', ucls: 'muted', pos: '0 open', chips: [['COM USD', true]], dot: 'live' },
+        sub: 'Wednesday 19 Aug · Mac local day · COM · USD',
+        takeaway: '<b>No closed round-trips yet today.</b> Hero stays dash, not zero.',
+        warn: null, cb: null,
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'No trades yet today' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+        ],
+        sigMeta: 'learning baseline',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Still learning your baseline. Local hints wait until about 10 round-trips.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Still learning your baseline. No fire until enough history exists.' },
+        ],
+        tblMeta: '', trades: [],
+        caption: 'Quiet day and stub-empty still look the same here (Y5 open). Remaining risk is not a Today number.',
+      },
+      C: {
+        note: 'Sync paused · degraded',
+        desk: 'Binance.com', sync: 'paused', agent: 'running',
+        pulse: { pnl: '—', cls: 'muted', unreal: '—', ucls: 'muted', pos: '—', chips: [['COM USD', true]], dot: 'warn' },
+        sub: 'Wednesday 19 Aug · Mac local day',
+        takeaway: 'Desk numbers are <b>unavailable</b> while broker sync is paused.',
+        warn: '<b>Broker sync paused</b> — P&L, trades, and signals are placeholders. Not zero. Kill may still apply.',
+        cb: null,
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'Unavailable · sync paused' },
+        ],
+        sigMeta: 'unavailable',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Signals unavailable while broker sync is paused.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Signals unavailable while broker sync is paused.' },
+        ],
+        tblMeta: '', trades: [],
+        caption: 'Degraded contract: null, not zero. Do not keep stale hosted INR on this path.',
+      },
+      D: {
+        note: 'Kill firing · banner only then',
+        desk: 'Binance.com', sync: 'syncing', agent: 'running',
+        pulse: { pnl: '−$842.10', cls: 'neg', unreal: '−$124.00', ucls: 'neg', pos: '1 open', chips: [['COM USD', true]], dot: 'kill' },
+        sub: 'Wednesday 19 Aug · Mac local day · COM · USD',
+        takeaway: 'Kill is <b>firing</b>. Today still shows the session mirror underneath — it does not invent remaining risk.',
+        warn: null,
+        cb: { sub: 'Venue hosts blocked. Resume uses the existing kill path. Banner is display-only on Today.', btn: 'Review & resume · 1:12', disabled: true },
+        hero: [
+          { lbl: 'P&L today', val: '−$842.10', cls: 'neg', sub: 'Same number as pulse session P&L' },
+          { lbl: 'Trades today', val: '4', cls: '', sub: 'Closed round-trips only' },
+          { lbl: 'Win rate', val: '25%', cls: 'neg', sub: '1 win · 3 losses' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Loss chasing', tier: 'fire', desc: 'Three round-trips within 18 minutes of a loss.' },
+          { name: 'Overtrading', tier: 'watch', desc: 'Four closed trips versus local median of two.' },
+        ],
+        tblMeta: '4 closed',
+        trades: [
+          { t: '09:18', s: 'BTC/USDT', en: '97,240', ex: '97,880', pnl: '+$312.40', flag: 'Clean' },
+          { t: '10:42', s: 'ETH/USDT', en: '3,412', ex: '3,298', pnl: '−$418.20', flag: 'Firing' },
+          { t: '10:51', s: 'ETH/USDT', en: '3,318', ex: '3,244', pnl: '−$296.80', flag: 'Firing' },
+          { t: '11:14', s: 'SOL/USDT', en: '142.10', ex: '138.40', pnl: '−$439.50', flag: 'Watch' },
+        ],
+        caption: 'Breaker is not a four-state strip. Armed / warning / tripped / degraded is not locked for Today.',
+      },
+      E: {
+        note: 'Kotak desk · INR · no blend',
+        desk: 'Kotak Neo', sync: 'syncing', agent: 'running',
+        pulse: { pnl: '−₹13,374', cls: 'neg', unreal: '—', ucls: 'muted', pos: '0 open', chips: [['Kotak INR', true]], dot: 'live' },
+        sub: 'Wednesday 19 Aug · Mac local day · Kotak · INR',
+        takeaway: 'This desk is <b>INR</b>. Do not add COM USD into the same figure.',
+        warn: null, cb: null,
+        hero: [
+          { lbl: 'P&L today', val: '−₹13,374', cls: 'neg', sub: 'Net of fees · Kotak cash · INR' },
+          { lbl: 'Trades today', val: '7', cls: '', sub: 'Closed round-trips only' },
+          { lbl: 'Win rate', val: '29%', cls: 'neg', sub: '2 wins · 5 losses' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Revenge', tier: 'fire', desc: 'Re-entry after a loss inside the local gap baseline.' },
+          { name: 'Position sizing', tier: 'watch', desc: 'Size above your local σ on two of seven trips.' },
+        ],
+        tblMeta: '7 closed · newest first',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Firing' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Watch' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,120', flag: 'Clean' },
+        ],
+        caption: 'JSON may still say pnlTodayUsd. Display currency is the active desk quote. No FX blend.',
+      },
+      F: {
+        note: 'Both desks · no active · money —',
+        desk: 'COM + Kotak', sync: 'syncing', agent: 'running',
+        pulse: { pnl: '—', cls: 'muted', unreal: '—', ucls: 'muted', pos: '—', chips: [['COM USD', false], ['Kotak INR', false]], dot: 'warn' },
+        sub: 'Wednesday 19 Aug · Mac local day · two desks configured',
+        takeaway: 'Two desks are live. <b>There is no blended P&L.</b> Pick a desk or keep money as dash.',
+        warn: '<b>No active desk</b> — COM is USD, Kotak is INR. Pulse shows both chips. Hero does not add them.',
+        cb: null,
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'No single desk currency' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'Choose COM or Kotak' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'Not a blended rate' },
+        ],
+        sigMeta: 'unavailable until a desk is active',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Signals follow the active desk engine, not a merged book.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Signals follow the active desk engine, not a merged book.' },
+        ],
+        tblMeta: '', trades: [],
+        caption: 'T2 honesty. Market cap, weekly gauges, and remaining risk stay off this screen.',
+      },
+    };
+
+    const badge = { fire: ['Firing', 'fire'], watch: ['Watch', 'watch'], ok: ['Clean', 'ok'], learn: ['Learning', 'learn'] };
+    const flagClass = (f) => f === 'Clean' ? 'ok' : f === 'Watch' ? 'watch' : f === 'Unknown basis' ? 'learn' : 'fire';
+
+    function render(key) {
+      const d = V[key];
+      document.getElementById('vnote').textContent = d.note;
+      document.querySelectorAll('.proto button').forEach((b) => b.classList.toggle('on', b.dataset.v === key));
+
+      const chips = d.pulse.chips.map(([n, on]) => `<span class="chip ${on ? 'on' : ''}">${n}</span>`).join('');
+      document.getElementById('pulse').innerHTML = `
+        <span class="lbl">Session P&amp;L</span><span class="val ${d.pulse.cls}">${d.pulse.pnl}</span>
+        <span class="sep"></span>
+        <span class="lbl">Unrealized</span><span class="val ${d.pulse.ucls}">${d.pulse.unreal}</span>
+        <span class="sep"></span>
+        <span class="lbl">Positions</span><span class="val ${d.pulse.ucls}">${d.pulse.pos}</span>
+        <div class="right">
+          ${chips}
+          <span class="dot ${d.pulse.dot === 'warn' ? 'warn' : d.pulse.dot === 'kill' ? 'kill' : ''}"></span>
+        </div>`;
+
+      document.getElementById('sub').textContent = d.sub;
+      document.getElementById('takeaway').innerHTML = d.takeaway;
+      document.getElementById('caption').textContent = d.caption;
+
+      const warn = document.getElementById('warn');
+      if (d.warn) { warn.innerHTML = d.warn; warn.classList.add('show'); }
+      else warn.classList.remove('show');
+
+      const cb = document.getElementById('cb');
+      if (d.cb) {
+        cb.classList.add('show');
+        document.getElementById('cb-sub').textContent = d.cb.sub;
+        const btn = document.getElementById('cb-btn');
+        btn.textContent = d.cb.btn;
+        btn.disabled = !!d.cb.disabled;
+      } else cb.classList.remove('show');
+
+      document.getElementById('hero').innerHTML = d.hero.map((t) => `
+        <div class="tile ${t.cls === 'neg' ? 'neg' : t.cls === 'pos' ? 'pos' : ''}">
+          <div class="lbl">${t.lbl}</div>
+          <div class="val ${t.cls}">${t.val}</div>
+          <div class="sub">${t.sub}</div>
+        </div>`).join('');
+
+      document.getElementById('sig-meta').textContent = d.sigMeta;
+      document.getElementById('sigs').innerHTML = d.sigs.map((s) => {
+        const [lbl, cls] = badge[s.tier];
+        return `<div class="sig ${s.tier}">
+          <div class="sig-head"><span class="sig-name">${s.name}</span><span class="badge ${cls}">${lbl}</span></div>
+          <div class="sig-desc">${s.desc}</div>
+        </div>`;
+      }).join('');
+
+      const tbl = document.getElementById('tbl');
+      const empty = document.getElementById('empty');
+      document.getElementById('tbl-meta').textContent = d.tblMeta;
+      if (!d.trades.length) {
+        tbl.style.display = 'none';
+        empty.classList.add('show');
+      } else {
+        tbl.style.display = 'block';
+        empty.classList.remove('show');
+        tbl.innerHTML = `<div class="tbl-row head">
+            <span class="c-time">Time</span><span class="c-sym">Symbol</span>
+            <span class="c-num">Avg entry</span><span class="c-num">Avg exit</span>
+            <span class="c-pnl">Net P&amp;L</span><span class="c-flag">Flag</span>
+          </div>` + d.trades.map((r) => {
+            const pcls = r.pnl.startsWith('+') ? 'pos' : (r.pnl === '—' ? 'empty' : 'neg');
+            return `<div class="tbl-row ${r.flag === 'Firing' ? 'flagged' : ''}">
+              <span class="c-time">${r.t}</span><span class="c-sym">${r.s}</span>
+              <span class="c-num">${r.en}</span><span class="c-num">${r.ex}</span>
+              <span class="c-pnl ${pcls}">${r.pnl}</span>
+              <span class="c-flag"><span class="badge ${flagClass(r.flag)}">${r.flag}</span></span>
+            </div>`;
+          }).join('');
+      }
+
+      document.getElementById('sb-desk').textContent = d.desk;
+      const sync = document.getElementById('sb-sync');
+      sync.textContent = d.sync;
+      sync.className = d.sync === 'syncing' ? 'ok' : 'bad';
+      document.getElementById('sb-agent').textContent = d.agent;
+    }
+
+    document.querySelectorAll('.proto button').forEach((b) => {
+      b.addEventListener('click', () => {
+        const url = new URL(location.href);
+        url.searchParams.set('v', b.dataset.v);
+        history.replaceState(null, '', url);
+        render(b.dataset.v);
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.target.matches('input,textarea')) return;
+      const keys = ['A','B','C','D','E','F'];
+      const k = e.key.toUpperCase();
+      if (keys.includes(k)) {
+        const url = new URL(location.href);
+        url.searchParams.set('v', k);
+        history.replaceState(null, '', url);
+        render(k);
+      }
+    });
+
+    const start = new URLSearchParams(location.search).get('v')?.toUpperCase();
+    render(V[start] ? start : 'A');
+  </script>
+</body>
+</html>

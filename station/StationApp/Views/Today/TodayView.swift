@@ -12,6 +12,9 @@ public struct TodayView: View {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    Text(viewModel.presentation.takeaway)
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
+                        .foregroundStyle(StationDS.Text.secondary)
                     if viewModel.presentation.showDegradedBanner,
                        let text = viewModel.presentation.degradedBannerText {
                         degradedBanner(text)
@@ -21,7 +24,11 @@ public struct TodayView: View {
                     }
                     heroGrid
                     signalsSection
+                    openBookSection
                     tradesSection
+                    Text(viewModel.presentation.caption)
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                        .foregroundStyle(StationDS.Text.muted)
                 }
                 .padding(16)
             }
@@ -146,7 +153,7 @@ public struct TodayView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(StationDS.Fill.input)
+        .background(signalBackground(signal.tone))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -154,10 +161,79 @@ public struct TodayView: View {
         )
     }
 
+    private var openBookSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Open now")
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.secondary)
+                Spacer()
+                Text("Same book as Pulse · overnight carries stay here")
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
+            }
+            if viewModel.presentation.showShallowImpact,
+               !viewModel.presentation.shallowImpactCaption.isEmpty {
+                Text(viewModel.presentation.shallowImpactCaption)
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
+            }
+            if viewModel.presentation.showEmptyOpenBook {
+                Text("No open positions")
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
+                    .foregroundStyle(StationDS.Text.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(StationDS.Fill.input)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(StationDS.Border.divider, lineWidth: 1)
+                    )
+            } else {
+                VStack(spacing: 0) {
+                    HStack {
+                        cell("Symbol", flex: true, header: true)
+                        cell("Side", width: 56, header: true)
+                        cell("Qty", width: 48, header: true, align: .trailing)
+                        cell("MTM", width: 88, header: true, align: .trailing)
+                        if viewModel.presentation.showShallowImpact {
+                            cell("Account", width: 64, header: true, align: .trailing)
+                            cell("Goal", width: 56, header: true, align: .trailing)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 30)
+                    .background(Color(white: 0.08))
+                    ForEach(viewModel.presentation.openRows) { row in
+                        HStack {
+                            cell(row.symbol, flex: true, mono: true)
+                            cell(row.sideText, width: 56, mono: true)
+                            cell(row.qtyText, width: 48, align: .trailing, mono: true)
+                            cell(row.mtmText, width: 88, align: .trailing, mono: true, tone: row.mtmTone)
+                            if viewModel.presentation.showShallowImpact {
+                                cell(row.accountShareText, width: 64, align: .trailing, mono: true, tone: .empty)
+                                cell(row.goalText, width: 56, align: .trailing, mono: true, tone: .empty)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(StationDS.Border.divider).frame(height: 0.5)
+                        }
+                    }
+                }
+                .background(StationDS.Fill.input)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(StationDS.Border.divider, lineWidth: 1))
+            }
+        }
+    }
+
     private var tradesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Trades today")
+                Text("Closed round-trips")
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
                     .foregroundStyle(StationDS.Text.secondary)
                 Spacer()
@@ -218,6 +294,10 @@ public struct TodayView: View {
             cell("Exit", width: 76, header: true, align: .trailing)
             cell("Net P&L", width: 88, header: true, align: .trailing)
             cell("Flag", width: 92, header: true, align: .trailing)
+            if viewModel.presentation.showShallowImpact {
+                cell("Account", width: 64, header: true, align: .trailing)
+                cell("Goal", width: 56, header: true, align: .trailing)
+            }
         }
         .padding(.horizontal, 14)
         .frame(height: 30)
@@ -232,6 +312,10 @@ public struct TodayView: View {
             cell(row.avgExitText, width: 76, align: .trailing, mono: true)
             cell(row.pnlText, width: 88, align: .trailing, mono: true, tone: row.pnlTone)
             cell(row.flagText, width: 92, align: .trailing, tone: row.isFlagged ? .loss : .neutral)
+            if viewModel.presentation.showShallowImpact {
+                cell(row.accountShareText, width: 64, align: .trailing, mono: true, tone: .empty)
+                cell(row.goalText, width: 56, align: .trailing, mono: true, tone: .empty)
+            }
         }
         .padding(.horizontal, 14)
         .frame(height: 36)
@@ -268,8 +352,12 @@ public struct TodayView: View {
             .foregroundStyle(StationDS.Text.secondary)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(StationDS.Fill.input)
+            .background(StationDS.Accent.amber.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(StationDS.Accent.amber.opacity(0.28), lineWidth: 1)
+            )
     }
 
     private var circuitBreakerBanner: some View {
@@ -342,6 +430,14 @@ public struct TodayView: View {
         case .profit: return Color(hex: TodayPalette.profit).opacity(0.22)
         case .loss: return Color(hex: TodayPalette.loss).opacity(0.28)
         default: return StationDS.Border.divider
+        }
+    }
+
+    private func signalBackground(_ tone: TodaySignalTone) -> Color {
+        switch tone {
+        case .firing: return Color(hex: TodayPalette.loss).opacity(0.10)
+        case .watch: return Color(hex: TodayPalette.watch).opacity(0.10)
+        default: return StationDS.Fill.input
         }
     }
 

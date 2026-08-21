@@ -25,6 +25,12 @@ Now:
 2. **Station never reads Kotak `broker-credentials`** — verify via agent `present`; Brokers “configured” via metadata.
 3. **COM** — Station writes with trusted-app ACL for Station + bundled agent; still use **Always Allow** the first time if macOS asks.
 
-## Dogfood rule
+## How to tell Always Allow stuck (you change it; Station does not)
 
-If the password dialog appears: enter Mac login password → **Always Allow** (not Allow). After that it should not repeat for that item until the app binary path changes or the item is recreated by the other process.
+Station **never** writes Keychain Access Control for you. After you click **Always Allow** (or edit ACL in Keychain Access):
+
+1. **In Station Brokers** — muted line: “Mac Keychain access is granted…” (silent probe, no password sheet).
+2. **No more login-password dialogs** while Brokers stays open. If dialogs return, Always Allow did not stick (Xcode Debug rebuild = new app path).
+3. **Keychain Access (manual):** Login keychain → Passwords → `TradeAutopsy broker credentials` → **Access Control**. TradeAutopsy Station (and `tradeautopsy-agent` if listed) should be allowed, or “Allow all applications to access this item.”
+
+Brokers refresh no longer reads the secret blob. Presence is attributes-only with UI disabled (`kSecUseAuthenticationUIFail`). Click **Allow** instead of Always Allow used to re-prompt every 10s — that loop is closed.

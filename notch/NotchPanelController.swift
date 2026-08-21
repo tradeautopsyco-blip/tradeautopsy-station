@@ -115,6 +115,10 @@ final class NotchPanelController {
     private var escCollapseMonitor: Any?
     /// Expanded panel body size — locked for session to avoid resize flicker on content changes.
     private var sessionLockedExpandedContentSize: CGSize?
+    /// Screen-space grab for collapsed-pill drag (not SwiftUI translation — window would fight itself).
+    private var pillDragStartMouse: NSPoint?
+    private var pillDragStartOrigin: NSPoint?
+    private var isDraggingCollapsedPill = false
 
     private let hostedExpandedContent: (() -> AnyView)?
 
@@ -148,6 +152,14 @@ final class NotchPanelController {
 
         viewModel.onRequestHidePill = { [weak self] in
             self?.hide()
+        }
+
+        viewModel.onCollapsedPillDragFromScreen = { [weak self] in
+            self?.applyCollapsedPillDragFromScreen()
+        }
+
+        viewModel.onCollapsedPillDragEnded = { [weak self] in
+            self?.endCollapsedPillDrag()
         }
 
         viewModel.$isExpanded
@@ -314,7 +326,8 @@ final class NotchPanelController {
     }
 
     private func handlePanelMoved() {
-        guard !isApplyingSnappedFrame else { return }
+        guard !isApplyingSnappedFrame, !isDraggingCollapsedPill else { return }
+        guard !viewModel.isExpanded else { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
         let vf = screen.visibleFrame
         var f = panel.frame
@@ -326,9 +339,42 @@ final class NotchPanelController {
             isApplyingSnappedFrame = false
         }
         schedulePersist(origin: f.origin)
-        if viewModel.isExpanded {
-            layoutCollapseBackdrop()
+    }
+
+    private func applyCollapsedPillDragFromScreen() {
+        guard !viewModel.isExpanded else { return }
+        let mouse = NSEvent.mouseLocation
+        if pillDragStartMouse == nil {
+            pillDragStartMouse = mouse
+            pillDragStartOrigin = panel.frame.origin
+            isDraggingCollapsedPill = true
         }
+        guard let startMouse = pillDragStartMouse, let startOrigin = pillDragStartOrigin else { return }
+        var f = panel.frame
+        f.origin = NSPoint(
+            x: startOrigin.x + (mouse.x - startMouse.x),
+            y: startOrigin.y + (mouse.y - startMouse.y)
+        )
+        if let screen = panel.screen ?? NSScreen.main {
+            f = clampFrame(f, to: screen.visibleFrame)
+        }
+        isApplyingSnappedFrame = true
+        panel.setFrame(f, display: true)
+        isApplyingSnappedFrame = false
+    }
+
+    private func endCollapsedPillDrag() {
+        isDraggingCollapsedPill = false
+        pillDragStartMouse = nil
+        pillDragStartOrigin = nil
+        handlePanelMoved()
+        persistOriginNow(panel.frame.origin)
+    }
+
+    private func persistOriginNow(_ origin: NSPoint) {
+        saveWorkItem?.cancel()
+        UserDefaults.standard.set(origin.x, forKey: Persistence.originX)
+        UserDefaults.standard.set(origin.y, forKey: Persistence.originY)
     }
 
     private func schedulePersist(origin: NSPoint) {
@@ -412,6 +458,7 @@ final class NotchPanelController {
     }
 
     private func layoutPanel(animated: Bool) {
+        guard !isDraggingCollapsedPill else { return }
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
         let vf = screen.visibleFrame
@@ -440,15 +487,14 @@ final class NotchPanelController {
         let collapsedX: CGFloat
         let collapsedY: CGFloat
         if hasNotch {
-            collapsedH = max(notchTopInset, 26)
-            collapsedW = max(notchWidth + 16, 120)
-            // Align with safe-area “notch strip”; clamp X so we never sit off-screen after inset math.
-            collapsedX = max(vf.minX, min(frame.minX + inset.left - 8, vf.maxX - collapsedW))
-            // Use visible top so the pill stays in the live menu-bar region (avoids sitting under camera housing math drift).
+            collapsedH = max(notchTopInset, BarNotchChrome.collapsedStripHeight)
+            collapsedW = BarNotchChrome.collapsedPillWidth
+            let notchLeft = frame.minX + inset.left
+            collapsedX = notchLeft + (notchWidth - collapsedW) / 2
             collapsedY = min(vf.maxY, frame.maxY) - collapsedH
         } else {
-            collapsedH = 34
-            collapsedW = max(200, 280)
+            collapsedH = BarNotchChrome.collapsedStripHeight
+            collapsedW = BarNotchChrome.collapsedPillWidth
             collapsedX = vf.midX - collapsedW / 2
             collapsedY = vf.maxY - 8 - collapsedH
         }
@@ -469,17 +515,15 @@ final class NotchPanelController {
         } else {
             rect = NSRect(x: collapsedX, y: collapsedY, width: collapsedW, height: collapsedH)
         }
-        var appliedRect = rect
-        if let saved = savedOrigin() {
+        var appliedRect = clampFrame(rect, to: vf)
+        // Pill remembers where the user put it. Expanded sheet still fills visibleFrame.
+        if !expanded, let saved = savedOrigin() {
             var candidate = appliedRect
             candidate.origin = snapOrigin(saved, in: vf)
             candidate = clampFrame(candidate, to: vf)
             if frameReasonablyOnScreen(candidate) {
                 appliedRect = candidate
             }
-            // else: stale save (e.g. unplugged monitor) — use default `rect` above
-        } else {
-            appliedRect = clampFrame(appliedRect, to: vf)
         }
 
         viewModel.notchTopInset = hasNotch ? notchTopInset : 0

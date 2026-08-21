@@ -46,5 +46,8 @@ public struct StationSidebarList: View {
             .collapsible(false)
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(StationDS.Fill.sidebar)
+        .tint(StationDS.Accent.teal)
     }
 }

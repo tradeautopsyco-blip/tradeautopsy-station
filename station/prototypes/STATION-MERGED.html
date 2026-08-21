@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<!--
+  STATION MERGED IA
+  Pre / Live / Post are not Station tabs. They are save-status on Journal.
+  Capture stays on Notch. Cards land in Console.
+  Backend Box = Brokers + Market Data + Workflow (not an AI overview).
+  Open: open station/prototypes/STATION-MERGED.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Station — merged IA</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --sidebar-bg: rgba(8,8,8,.88);
+      --card: #111111;
+      --elevated: #1c1c1e;
+      --accent: #63E6E2;
+      --accent-rgb: 99, 230, 226;
+      --gain: #30D158;
+      --gain-rgb: 48, 209, 88;
+      --loss: #FF453A;
+      --loss-rgb: 255, 69, 58;
+      --caution: #FF9F0A;
+      --caution-rgb: 255, 159, 10;
+      --t1: #fff;
+      --t2: rgba(255,255,255,.60);
+      --t3: rgba(255,255,255,.30);
+      --bd: rgba(255,255,255,.06);
+      --bd-card: rgba(255,255,255,.07);
+      --bd-input: rgba(255,255,255,.10);
+      --glass: rgba(8,8,8,.74);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --type-chrome: 10px;
+      --type-caption: 11px;
+      --type-body: 13px;
+      --type-title: 14px;
+      --track-10: 0.012em;
+      --track-11: 0.006em;
+      --track-13: -0.006em;
+      --track-14: -0.011em;
+      --track-17: -0.026em;
+      --r: 8px;
+      --sidebar-w: 212px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font: 400 var(--type-body)/1.45 var(--sans);
+      letter-spacing: var(--track-13);
+      background: #1a1a1c; color: var(--t1);
+      -webkit-font-smoothing: antialiased;
+      padding: 24px 20px 72px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    .press { transition: transform 100ms ease-out; }
+    .press.is-down { transform: scale(0.97); }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .tag {
+      position: fixed; top: 12px; left: 12px; z-index: 40;
+      font: 500 var(--type-chrome)/1 var(--mono); letter-spacing: var(--track-10);
+      text-transform: uppercase; color: var(--accent);
+      background: rgba(var(--accent-rgb), .08);
+      border: 0.5px solid rgba(var(--accent-rgb), .25);
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .legend { max-width: 1100px; margin: 0 auto 16px; }
+    .legend h1 { font-size: 17px; font-weight: 500; letter-spacing: var(--track-17); margin-bottom: 6px; }
+    .legend p { color: var(--t2); max-width: 76ch; }
+    .legend code { font-family: var(--mono); font-size: var(--type-caption); color: var(--t1); }
+
+    .app {
+      width: 1100px; height: 740px; margin: 0 auto;
+      background: var(--bg); border-radius: 12px; overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 0.5px rgba(255,255,255,.06);
+    }
+    .pulse {
+      height: 40px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px; padding: 0 14px 0 12px;
+      background: var(--glass); backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 0.5px solid var(--bd);
+      font-family: var(--mono); font-size: var(--type-caption);
+    }
+    .traffic { display: flex; gap: 6px; }
+    .traffic i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .pulse .lbl { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+    .pulse .val { font-weight: 600; }
+    .pulse .val.neg { color: var(--loss); }
+    .pulse .sep { width: 1px; height: 14px; background: var(--bd); }
+    .pulse .right { margin-left: auto; }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0;
+      background: var(--sidebar-bg); backdrop-filter: blur(28px);
+      border-right: 0.5px solid var(--bd);
+      display: flex; flex-direction: column; padding: 8px 0 12px;
+    }
+    .sb-section {
+      padding: 14px 16px 6px;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: var(--t3);
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 7px 10px; border-radius: 8px;
+      font-size: var(--type-body); color: var(--t2); width: calc(100% - 16px); text-align: left;
+    }
+    .nav-item:hover { background: rgba(255,255,255,.04); color: var(--t1); }
+    .nav-item.on { background: rgba(255,255,255,.08); color: #fff; font-weight: 500; }
+    .ico { width: 18px; height: 18px; position: relative; flex-shrink: 0; color: var(--t2); }
+    .ico svg { position: absolute; inset: 0; width: 18px; height: 18px; }
+    .ico .fill { display: none; }
+    .nav-item.on .ico .line { display: none; }
+    .nav-item.on .ico .fill { display: block; color: #fff; }
+    .nav-item.on .ico { color: #fff; }
+    .nav-item .hint {
+      margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--t3);
+    }
+    .nav-item.on .hint { color: var(--caution); }
+    .sb-spacer { flex: 1; }
+    .sb-foot {
+      padding: 12px 16px; border-top: 0.5px solid var(--bd);
+      font-family: var(--mono); font-size: 10px; color: var(--t3);
+    }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--gain); }
+
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--panel); }
+    .topbar {
+      height: 48px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 10px; padding: 0 18px;
+      background: var(--glass); backdrop-filter: blur(22px) saturate(180%);
+    }
+    .topbar h1 { font-size: var(--type-title); font-weight: 500; letter-spacing: var(--track-14); }
+    .topbar .sub { font-family: var(--mono); font-size: var(--type-caption); color: var(--t3); flex: 1; }
+    .scroll { flex: 1; overflow-y: auto; padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
+    .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .screen.on { display: flex; }
+
+    .takeaway { color: var(--t2); }
+    .takeaway b { color: var(--t1); font-weight: 600; }
+
+    .status-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    }
+    .st-card {
+      padding: 12px 14px; border-radius: var(--r);
+      background: var(--card); border: 0.5px solid var(--bd-card); text-align: left;
+    }
+    .st-card .ph {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3);
+    }
+    .st-card .nm { margin-top: 6px; font-size: 13px; font-weight: 600; }
+    .st-card .sv { margin-top: 4px; font-family: var(--mono); font-size: 11px; color: var(--t2); }
+    .st-card.saved { border-color: rgba(var(--gain-rgb),.28); }
+    .st-card.due { border-color: rgba(var(--caution-rgb),.28); background: rgba(var(--caution-rgb),.08); }
+    .st-card.empty .nm { color: var(--t2); }
+    .st-card.blocked { opacity: .45; }
+
+    .cta-row { display: flex; gap: 8px; }
+    .cta {
+      padding: 9px 16px; border-radius: 6px; background: #fff; color: #111;
+      font-size: 13px; font-weight: 600;
+    }
+    .ghost {
+      padding: 8px 14px; border-radius: 6px; border: 0.5px solid var(--bd); color: var(--t2); font-size: 12px;
+    }
+
+    .sec { font-size: 13px; font-weight: 600; color: var(--t2); display: flex; align-items: baseline; }
+    .sec .meta { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--t3); font-weight: 500; }
+
+    .cards { display: flex; flex-direction: column; gap: 8px; }
+    .trip {
+      display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
+      padding: 12px 14px; border-radius: var(--r);
+      background: var(--card); border: 0.5px solid var(--bd-card); text-align: left;
+    }
+    .trip .t { font-family: var(--mono); font-size: 11px; color: var(--t3); }
+    .trip .sym { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+    .trip .sub { font-size: 11px; color: var(--t2); margin-top: 3px; }
+    .chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+    .chip {
+      font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .04em;
+      padding: 2px 7px; border-radius: 999px; border: 0.5px solid var(--bd); color: var(--t3);
+    }
+    .chip.ok { color: var(--gain); border-color: rgba(var(--gain-rgb),.28); background: rgba(var(--gain-rgb),.10); }
+    .chip.due { color: var(--caution); border-color: rgba(var(--caution-rgb),.28); background: rgba(var(--caution-rgb),.10); }
+    .chip.miss { color: var(--t3); }
+    .trip .pnl { font-family: var(--mono); font-size: 13px; font-weight: 600; text-align: right; }
+    .trip .pnl.pos { color: var(--gain); } .trip .pnl.neg { color: var(--loss); }
+    .trip .go { display: block; margin-top: 4px; font-size: 10px; color: var(--t3); font-weight: 400; }
+
+    .group { margin-top: 4px; }
+    .group h2 {
+      font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--t3); margin-bottom: 8px;
+    }
+    .card { background: var(--card); border: 0.5px solid var(--bd-card); border-radius: var(--r); padding: 16px; }
+    .card + .card { margin-top: 8px; }
+    .card-h { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .ttl { font-size: 13px; font-weight: 500; }
+    .sub { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .badge {
+      margin-left: auto; font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px; border: 0.5px solid;
+    }
+    .badge.live { color: var(--gain); border-color: rgba(var(--gain-rgb),.28); background: rgba(var(--gain-rgb),.10); }
+    .badge.off { color: var(--t2); border-color: var(--bd); }
+    .meta-row {
+      display: flex; justify-content: space-between; padding: 6px 0;
+      font-size: 13px; border-bottom: 0.5px solid rgba(255,255,255,.05);
+    }
+    .meta-row:last-of-type { border-bottom: 0; }
+    .meta-row .k { color: var(--t3); }
+    .meta-row .v { font-family: var(--mono); }
+    .row-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .btn {
+      padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 500;
+      border: 0.5px solid rgba(255,255,255,.15);
+    }
+    .btn.primary { background: var(--accent); color: #052e2c; border-color: transparent; }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+    .btn.danger { color: var(--loss); border-color: rgba(var(--loss-rgb),.25); }
+
+    .ctl { margin-bottom: 10px; }
+    .ctl-label { display: block; font-size: 11px; font-weight: 500; color: var(--t2); margin-bottom: 6px; }
+    .combo {
+      display: flex; align-items: stretch; position: relative;
+      background: rgba(255,255,255,.03); border: 0.5px solid var(--bd-input); border-radius: 6px;
+    }
+    .combo-value { flex: 1; padding: 9px 11px; text-align: left; }
+    .combo-chev { width: 32px; display: grid; place-items: center; border-left: 0.5px solid var(--bd-input); color: var(--t2); }
+    .combo-list {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+      list-style: none; padding: 4px 0;
+      background: rgba(10,10,10,.92); border: 0.5px solid var(--bd); border-radius: 6px;
+    }
+    .combo-list[hidden] { display: none; }
+    .combo-list li { padding: 8px 11px; color: var(--t2); cursor: pointer; }
+    .combo-list li:hover, .combo-list li.sel { background: rgba(255,255,255,.08); color: #fff; }
+
+    .toggle-row {
+      display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px;
+      background: var(--card); border: 0.5px solid var(--bd-card); border-radius: var(--r);
+    }
+    .toggle-row .txt { flex: 1; }
+    .toggle-row .lab { font-size: 13px; font-weight: 500; }
+    .switch {
+      width: 36px; height: 20px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; flex-shrink: 0;
+    }
+    .switch.on { background: var(--accent); }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+      border-radius: 50%; background: #fff; transition: left 0.32s cubic-bezier(.22,1,.36,1);
+    }
+    .switch.on::after { left: 18px; }
+
+    .note {
+      font-size: 11px; color: var(--t2); padding: 10px 12px; border-radius: var(--r);
+      background: rgba(255,255,255,.03); border: 0.5px solid var(--bd);
+    }
+
+    .toast {
+      position: absolute; top: 56px; right: 16px; z-index: 8;
+      padding: 10px 14px; border-radius: 12px; background: var(--elevated);
+      border: 0.5px solid var(--bd); font-size: 12px; opacity: 0; pointer-events: none;
+    }
+    .stub { color: var(--t2); max-width: 52ch; padding: 8px 0; }
+
+    .proto {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 20; display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px; border-radius: 999px;
+      background: rgba(20,20,22,.72); backdrop-filter: blur(20px);
+      border: 0.5px solid var(--bd);
+    }
+    .proto button { min-width: 28px; height: 28px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--t3); }
+    .proto button.on { background: var(--elevated); color: #fff; }
+    .proto .note { padding: 0 8px; font-family: var(--mono); font-size: 10px; color: var(--t3); background: none; border: 0; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .press, .switch::after { transition: none; }
+      .press.is-down { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1"/></symbol>
+    <symbol id="i-sun-fill" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 5.2A2.4 2.4 0 0 1 8.4 3H19v16.4H8.6A2.6 2.6 0 0 0 6 21.9V5.2z"/></symbol>
+    <symbol id="i-book-fill" viewBox="0 0 24 24" fill="currentColor"><path d="M8.3 2.6A3.2 3.2 0 0 0 5.1 5.8v15.3c0 .7.7 1.15 1.3.85A3.4 3.4 0 0 1 8.6 21H19.4a.9.9 0 0 0 .9-.9V3.5a.9.9 0 0 0-.9-.9H8.3Z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 13.2a4.2 4.2 0 0 0 6.1.3l1.7-1.7a4.2 4.2 0 1 0-5.9-5.9l-1 1"/><path d="M14 10.8a4.2 4.2 0 0 0-6.1-.3L6.2 12.2a4.2 4.2 0 1 0 5.9 5.9l1-1"/></symbol>
+    <symbol id="i-link-fill" viewBox="0 0 24 24" fill="currentColor"><path d="M9.2 13.8a3.4 3.4 0 0 0 4.8.3l1.8-1.8a3.4 3.4 0 1 0-4.8-4.8l-.7.7a.9.9 0 1 1-1.27-1.27l.7-.7a5.2 5.2 0 1 1 7.35 7.35l-1.8 1.8a5.2 5.2 0 0 1-7.4-.4.9.9 0 1 1 1.32-1.23Z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 4.2 13.1 6l1.8.4 1.2-1.4 1.6 1.6-1.4 1.2.4 1.8 1.8 1.1v2.2L17.3 13.9l-.4 1.8 1.4 1.2-1.6 1.6-1.2-1.4-1.8.4L12 19.8 10.9 18l-1.8-.4-1.2 1.4-1.6-1.6 1.4-1.2-.4-1.8L5.5 13.1v-2.2L7.3 10.1l.4-1.8L6.3 7.1 7.9 5.5l1.2 1.4 1.8-.4L12 4.2z"/></symbol>
+    <symbol id="i-gear-fill" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3.5"/><path d="M10.4 3.4h3.2l.6 1.9 1.6.5 1.4-1.3 2.2 2.2-1.3 1.4.5 1.6 1.9.6v3.2l-1.9.6-.5 1.6 1.3 1.4-2.2 2.2-1.4-1.3-1.6.5-.6 1.9h-3.2l-.6-1.9-1.6-.5-1.4 1.3-2.2-2.2 1.3-1.4-.5-1.6-1.9-.6v-3.2l1.9-.6.5-1.6L4.9 6.5 7.1 4.3l1.4 1.3 1.6-.5.6-1.7Z" opacity=".35"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 10l5 5 5-5"/></symbol>
+  </svg>
+
+  <div class="tag">Merged IA · Journal + Backend Box</div>
+  <div class="legend">
+    <h1>Pre / Live / Post are not Station destinations</h1>
+    <p>
+      Capture still happens on the Notch. Journal on Station is the <b>save state</b> for today —
+      a small card per trip, then Console. Backend Box is one page: brokers, the feed, and workflow toggles.
+      Not an AI overview.
+    </p>
+  </div>
+
+  <div class="app">
+    <div class="pulse">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="lbl">P&amp;L today</span><span class="val neg" id="pulse-pnl">−₹6,840</span>
+      <span class="sep"></span>
+      <span class="lbl">Journal</span><span class="val" id="pulse-j">Post due</span>
+      <div class="right"><span style="font-size:10px;color:var(--t3)">Kotak INR</span></div>
+    </div>
+    <div class="body">
+      <nav class="sidebar">
+        <div class="sb-section">Desk</div>
+        <button type="button" class="nav-item" data-route="Today">
+          <span class="ico"><svg class="line"><use href="#i-sun"/></svg><svg class="fill"><use href="#i-sun-fill"/></svg></span>
+          Today
+        </button>
+        <button type="button" class="nav-item on" data-route="Journal">
+          <span class="ico"><svg class="line"><use href="#i-book"/></svg><svg class="fill"><use href="#i-book-fill"/></svg></span>
+          Journal
+          <span class="hint" id="j-hint">Due</span>
+        </button>
+
+        <div class="sb-section">This Mac</div>
+        <button type="button" class="nav-item" data-route="Backend Box">
+          <span class="ico"><svg class="line"><use href="#i-link"/></svg><svg class="fill"><use href="#i-link-fill"/></svg></span>
+          Backend Box
+        </button>
+        <button type="button" class="nav-item" data-route="Settings">
+          <span class="ico"><svg class="line"><use href="#i-gear"/></svg><svg class="fill"><use href="#i-gear-fill"/></svg></span>
+          Settings
+        </button>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span>Kotak Neo</span><span class="ok">syncing</span></div>
+          <div><span>History</span><span>Console</span></div>
+        </div>
+      </nav>
+
+      <div class="main">
+        <div class="toast" id="toast"></div>
+
+        <section class="screen" id="screen-Today">
+          <header class="topbar"><h1>Today</h1><span class="sub">Session mirror · next action on the Notch</span></header>
+          <div class="scroll">
+            <p class="stub">Today stays the mirror (P&amp;L, trips, hints). Process save-state lives on Journal now — not as Pre / Live / Post in the sidebar.</p>
+          </div>
+        </section>
+
+        <section class="screen on" id="screen-Journal">
+          <header class="topbar">
+            <h1>Journal</h1>
+            <span class="sub" id="j-sub">Wednesday · Mac local day · cards land in Console</span>
+          </header>
+          <div class="scroll">
+            <p class="takeaway" id="j-take"></p>
+            <div class="status-row" id="phases"></div>
+            <div class="cta-row">
+              <button type="button" class="cta press" id="j-cta"></button>
+              <button type="button" class="ghost press" data-say="Opens Console day sheet. Station keeps today’s cards.">Open in Console</button>
+            </div>
+            <div>
+              <div class="sec">Today’s trips <span class="meta" id="card-meta"></span></div>
+              <div class="cards" id="cards"></div>
+            </div>
+            <p class="note">Pre, live, and post are captured on the Notch. This page only answers: was it saved? The card is the handoff to Console — not a second form.</p>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-Backend Box">
+          <header class="topbar">
+            <h1>Backend Box</h1>
+            <span class="sub">Brokers · feed · workflow · credentials sit next to what they affect</span>
+          </header>
+          <div class="scroll">
+            <div class="group">
+              <h2>Brokers</h2>
+              <div class="card">
+                <div class="card-h">
+                  <div>
+                    <div class="ttl">Kotak Neo</div>
+                    <div class="sub">Equities · INR · this desk’s money</div>
+                  </div>
+                  <span class="badge live">LIVE</span>
+                </div>
+                <div class="meta-row"><span class="k">Last validated</span><span class="v">20 Aug · 09:12</span></div>
+                <div class="meta-row"><span class="k">API key</span><span class="v">•••• 4471</span></div>
+                <div class="row-actions">
+                  <button type="button" class="btn ghost press" data-say="Edit stays on this card.">Edit</button>
+                  <button type="button" class="btn ghost press" data-say="Stop paused sync. The venue is still on. That is not Kill.">Stop</button>
+                  <button type="button" class="btn danger press" data-say="Delete would confirm. This is not Kill.">Delete</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-h">
+                  <div>
+                    <div class="ttl">Binance.US</div>
+                    <div class="sub">Crypto · USD · not blended into Kotak P&amp;L</div>
+                  </div>
+                  <span class="badge off">Not connected</span>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="btn primary press" data-say="Connect lives on the card. Not a tab.">Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="group">
+              <h2>Market Data</h2>
+              <div class="card">
+                <div class="ctl">
+                  <label class="ctl-label">Primary Feed:</label>
+                  <div class="combo" id="feed">
+                    <button type="button" class="combo-value">NSE F&amp;O</button>
+                    <button type="button" class="combo-chev press" aria-label="Show feeds"><svg width="14" height="14"><use href="#i-chevron"/></svg></button>
+                    <ul class="combo-list" hidden>
+                      <li>NSE cash</li>
+                      <li class="sel">NSE F&amp;O</li>
+                      <li>Binance spot</li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="meta-row"><span class="k">Status</span><span class="v" style="color:var(--gain)">LIVE</span></div>
+                <div class="meta-row"><span class="k">Last tick</span><span class="v">14:41:08</span></div>
+              </div>
+            </div>
+
+            <div class="group">
+              <h2>Workflow</h2>
+              <div class="toggle-row">
+                <div class="txt">
+                  <div class="lab">Capture Screenshots</div>
+                  <div class="sub">Saves chart context with each fill</div>
+                </div>
+                <div class="switch on" role="switch" aria-checked="true"></div>
+              </div>
+              <div class="toggle-row">
+                <div class="txt">
+                  <div class="lab">Auto Debrief Draft</div>
+                  <div class="sub">Writes a first pass after flatten. You still save on the Notch.</div>
+                </div>
+                <div class="switch" role="switch" aria-checked="false"></div>
+              </div>
+              <p class="note">No AI overview. No second product. These switches only change what gets attached to a journal card.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-Settings">
+          <header class="topbar"><h1>Settings</h1><span class="sub">This Mac · limits sync to the Notch</span></header>
+          <div class="scroll">
+            <p class="stub">Launch at login, hide Notch, daily/weekly loss limits. Stop ≠ Kill. Patterns, escrow, and fidelity stay Console — they are not Backend Box.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <nav class="proto">
+    <button type="button" class="press" data-v="A">A</button>
+    <button type="button" class="press on" data-v="D">D</button>
+    <button type="button" class="press" data-v="E">E</button>
+    <button type="button" class="press" data-v="F">F</button>
+    <span class="note" id="vnote">Post due · 4 cards</span>
+  </nav>
+
+  <script>
+    const V = {
+      A: {
+        note: 'All saved · between trades',
+        hint: 'Saved',
+        pulseJ: 'Saved',
+        take: 'Today’s process is <b>saved</b>. The next click still needs a new declaration on the Notch.',
+        cta: 'Open Notch · Pre-trade',
+        phases: [
+          { ph: 'Pre', nm: 'Declared', sv: 'Saved 10:02', cls: 'saved' },
+          { ph: 'Live', nm: 'Held', sv: 'Saved 13:58', cls: 'saved' },
+          { ph: 'Post', nm: 'Debrief', sv: 'Saved 14:06', cls: 'saved' },
+        ],
+        meta: '3 closed · all posted',
+        cards: [
+          { t: '10:05', s: 'RELIANCE', sub: 'BUY 10 · breakout', pnl: '−₹1,840', cls: 'neg', pre: 'ok', live: 'ok', post: 'ok' },
+          { t: '11:22', s: 'NIFTY 19AUG', sub: 'BUY 50 · chase', pnl: '−₹4,200', cls: 'neg', pre: 'ok', live: 'ok', post: 'ok' },
+          { t: '13:40', s: 'HDFCBANK', sub: 'BUY 8 · pullback', pnl: '+₹1,200', cls: 'pos', pre: 'ok', live: 'ok', post: 'ok' },
+        ],
+      },
+      D: {
+        note: 'Post due · 4 cards',
+        hint: 'Due',
+        pulseJ: 'Post due',
+        take: 'The last trip is closed. <b>Post is not saved.</b> That is the only hole on today’s sheet.',
+        cta: 'Open Notch · Post-trade',
+        phases: [
+          { ph: 'Pre', nm: 'Declared', sv: 'Saved 13:44', cls: 'saved' },
+          { ph: 'Live', nm: 'Closed', sv: 'Saved 14:02', cls: 'saved' },
+          { ph: 'Post', nm: 'Debrief due', sv: 'Not saved', cls: 'due' },
+        ],
+        meta: '4 closed · 1 card incomplete',
+        cards: [
+          { t: '10:05', s: 'RELIANCE', sub: 'Posted to Console', pnl: '−₹1,840', cls: 'neg', pre: 'ok', live: 'ok', post: 'ok' },
+          { t: '11:22', s: 'NIFTY 19AUG', sub: 'Posted to Console', pnl: '−₹4,200', cls: 'neg', pre: 'ok', live: 'ok', post: 'ok' },
+          { t: '13:40', s: 'HDFCBANK', sub: 'Posted to Console', pnl: '+₹1,200', cls: 'pos', pre: 'ok', live: 'ok', post: 'ok' },
+          { t: '14:02', s: 'NIFTY 24500 CE', sub: 'Waiting on post', pnl: '−₹1,250', cls: 'neg', pre: 'ok', live: 'ok', post: 'due' },
+        ],
+      },
+      E: {
+        note: 'Kill · journal already saved',
+        hint: 'Blocked',
+        pulseJ: 'Saved',
+        take: 'Kill is firing. The day sheet is already saved. Resume is on the Notch — not a new journal card.',
+        cta: 'Review kill',
+        phases: [
+          { ph: 'Pre', nm: 'Declared', sv: 'Saved', cls: 'saved blocked' },
+          { ph: 'Live', nm: 'Flat', sv: 'Saved', cls: 'saved blocked' },
+          { ph: 'Post', nm: 'Debrief', sv: 'Saved', cls: 'saved blocked' },
+        ],
+        meta: '4 closed · posted',
+        cards: [
+          { t: '14:02', s: 'NIFTY 24500 CE', sub: 'On the day sheet · kill still latched', pnl: '−₹1,250', cls: 'neg', pre: 'ok', live: 'ok', post: 'ok' },
+        ],
+      },
+      F: {
+        note: 'Morning empty',
+        hint: '',
+        pulseJ: 'Empty',
+        take: '<b>No cards yet.</b> Empty is a dash, not a skip. Start on the Notch.',
+        cta: 'Open Notch · Pre-trade',
+        phases: [
+          { ph: 'Pre', nm: 'Empty', sv: 'Not saved', cls: 'empty' },
+          { ph: 'Live', nm: 'Empty', sv: 'Not saved', cls: 'empty' },
+          { ph: 'Post', nm: 'Empty', sv: 'Not due', cls: 'empty' },
+        ],
+        meta: '0 cards',
+        cards: [],
+      },
+    };
+
+    const chip = { ok: ['Pre saved', 'ok'], due: ['Post due', 'due'], miss: ['—', 'miss'] };
+
+    function say(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.opacity = '1';
+      clearTimeout(say.t);
+      say.t = setTimeout(() => { t.style.opacity = '0'; }, 2200);
+    }
+
+    function render(key) {
+      const d = V[key];
+      document.getElementById('vnote').textContent = d.note;
+      document.querySelectorAll('.proto button').forEach((b) => b.classList.toggle('on', b.dataset.v === key));
+      document.getElementById('j-hint').textContent = d.hint;
+      document.getElementById('pulse-j').textContent = d.pulseJ;
+      document.getElementById('j-take').innerHTML = d.take;
+      document.getElementById('j-cta').textContent = d.cta;
+      document.getElementById('card-meta').textContent = d.meta;
+      document.getElementById('phases').innerHTML = d.phases.map((p) =>
+        `<div class="st-card ${p.cls}"><div class="ph">${p.ph}</div><div class="nm">${p.nm}</div><div class="sv">${p.sv}</div></div>`
+      ).join('');
+      const box = document.getElementById('cards');
+      if (!d.cards.length) {
+        box.innerHTML = `<div class="trip"><span class="t">—</span><div><div class="sym">No trip yet</div><div class="sub">A card appears after a close. Live trades stay on the Notch until flatten.</div></div><div class="pnl">—</div></div>`;
+        return;
+      }
+      box.innerHTML = d.cards.map((c) => {
+        const pre = c.pre === 'ok' ? chip.ok : chip.miss;
+        const live = c.live === 'ok' ? ['Live saved', 'ok'] : chip.miss;
+        const post = c.post === 'ok' ? ['Post saved', 'ok'] : c.post === 'due' ? chip.due : chip.miss;
+        return `<button type="button" class="trip press" data-say="This card is the handoff. Full write-up opens in Console.">
+          <span class="t">${c.t}</span>
+          <div>
+            <div class="sym">${c.s}</div>
+            <div class="sub">${c.sub}</div>
+            <div class="chips">
+              <span class="chip ${pre[1]}">${pre[0]}</span>
+              <span class="chip ${live[1]}">${live[0]}</span>
+              <span class="chip ${post[1]}">${post[0]}</span>
+            </div>
+          </div>
+          <div><div class="pnl ${c.cls}">${c.pnl}</div><span class="go">Console ›</span></div>
+        </button>`;
+      }).join('');
+      box.querySelectorAll('[data-say]').forEach((el) => el.addEventListener('click', () => say(el.dataset.say)));
+    }
+
+    document.querySelectorAll('.nav-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const name = el.dataset.route;
+        document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('on', n === el));
+        document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + name));
+      });
+    });
+    document.getElementById('j-cta').addEventListener('click', () => {
+      const t = document.getElementById('j-cta').textContent;
+      say(t.includes('kill') || t.includes('Kill') ? 'Kill overlay on the Notch.' : 'Opens Notch. Journal stays the save-state.');
+    });
+    document.querySelectorAll('[data-say]').forEach((el) => el.addEventListener('click', () => say(el.getAttribute('data-say'))));
+    document.querySelectorAll('.switch').forEach((sw) => {
+      sw.addEventListener('click', () => {
+        const on = sw.classList.toggle('on');
+        sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+    });
+    const feed = document.getElementById('feed');
+    const list = feed.querySelector('.combo-list');
+    feed.querySelector('.combo-value').addEventListener('click', () => { list.hidden = !list.hidden; });
+    feed.querySelector('.combo-chev').addEventListener('click', (e) => { e.stopPropagation(); list.hidden = !list.hidden; });
+    list.querySelectorAll('li').forEach((li) => {
+      li.addEventListener('click', () => {
+        feed.querySelector('.combo-value').textContent = li.textContent;
+        list.querySelectorAll('li').forEach((n) => n.classList.toggle('sel', n === li));
+        list.hidden = true;
+      });
+    });
+    document.addEventListener('click', (e) => { if (!feed.contains(e.target)) list.hidden = true; });
+
+    let pressEl, x, y;
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.press');
+      if (!el) return;
+      pressEl = el; x = e.clientX; y = e.clientY; el.classList.add('is-down');
+    }, true);
+    document.addEventListener('pointerup', () => { if (pressEl) pressEl.classList.remove('is-down'); pressEl = null; }, true);
+
+    document.querySelectorAll('.proto button').forEach((b) => b.addEventListener('click', () => render(b.dataset.v)));
+    render('D');
+  </script>
+</body>
+</html>

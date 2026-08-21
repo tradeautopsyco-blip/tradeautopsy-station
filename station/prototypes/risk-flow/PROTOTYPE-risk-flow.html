@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. The FLOW, not three desks.
+  Question: does this capital-preservation path help — detect card → Today shallow → Console deep;
+  Notch OHLCV+form then box becomes equity-if-SL; circle is live exit + plan-vs-actual.
+  Fog parked: Notch workspace / hotkey widgets.
+  Run: ./station/prototypes/serve-prototype.sh
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — risk flow</title>
+  <style>
+    :root {
+      --void:#050505; --panel:#0a0a0a; --elev:#111; --fill:#1c1c1e;
+      --accent:#63E6E2; --gain:#30D158; --loss:#FF453A; --caution:#FF9F0A;
+      --label:#fff; --s:rgba(255,255,255,.62); --t:rgba(255,255,255,.34);
+      --line:rgba(255,255,255,.08);
+      --mono:ui-monospace,"SF Mono",Menlo,monospace;
+      --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      font-family:var(--sans);font-size:13px;background:#1a1a1c;color:var(--label);
+      -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;
+      align-items:center;padding:16px 16px 96px;
+    }
+    button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+    .q{width:min(1120px,100%);font-size:12px;color:var(--s);margin-bottom:10px;line-height:1.45}
+    .q b{color:var(--label)}
+    .mac{
+      width:min(1120px,100%);height:700px;background:var(--void);border-radius:16px;
+      overflow:hidden;position:relative;
+      box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 0 .5px rgba(255,255,255,.06);
+      display:flex;flex-direction:column;
+    }
+    .pulse{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;
+      border-bottom:.5px solid var(--line);font-size:11px;color:var(--s);flex-shrink:0}
+    .dot{width:7px;height:7px;border-radius:50%;background:var(--gain)}
+    .stage{flex:1;min-height:0;overflow:auto;padding:16px 18px}
+    .gain{color:var(--gain)}.loss{color:var(--loss)}.caut{color:var(--caution)}.muted{color:var(--t)}
+    .pill{font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;
+      border-radius:999px;border:.5px solid var(--line);color:var(--s)}
+    .pill.bad{border-color:rgba(255,69,58,.4);color:var(--loss)}
+    .pill.ok{border-color:rgba(48,209,88,.4);color:var(--gain)}
+    .pill.warn{border-color:rgba(255,159,10,.4);color:var(--caution)}
+    .pill.teal{border-color:rgba(99,230,226,.4);color:var(--accent)}
+    .card{
+      background:var(--elev);border:.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;
+    }
+    .card.hero{border-color:rgba(99,230,226,.28)}
+    h2{font-size:16px;font-weight:600;margin:4px 0 6px}
+    .hint{font-size:12px;color:var(--s);line-height:1.45}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+    .box{background:#070708;border:.5px solid var(--line);border-radius:8px;padding:8px 10px}
+    .box.better{border-color:rgba(48,209,88,.35)}
+    .box.worse{border-color:rgba(255,69,58,.35)}
+    .k{font-size:10px;color:var(--t);letter-spacing:.08em;text-transform:uppercase}
+    .v{font-family:var(--mono);font-size:18px;letter-spacing:-.03em;margin-top:2px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .btn{padding:6px 10px;border-radius:8px;background:var(--fill);border:.5px solid var(--line);font-size:12px}
+    .btn.pri{background:var(--accent);color:#042;border:0;font-weight:600}
+    .split{display:grid;grid-template-columns:1.2fr .9fr;gap:12px;min-height:420px}
+    .ohlcv{background:#070708;border:.5px solid var(--line);border-radius:12px;padding:14px;min-height:380px}
+    .ohlcv.risk{background:#0b1010}
+    .bars{height:200px;display:flex;align-items:flex-end;gap:3px;margin-top:12px}
+    .bars i{width:8px;background:#3a3a3c;border-radius:1px;display:block}
+    .bars i.up{background:var(--gain)}.bars i.dn{background:var(--loss)}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;padding:8px;border-bottom:.5px solid var(--line);vertical-align:top}
+    th{font-size:10px;color:var(--t);letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+    .circle{
+      position:absolute;right:22px;bottom:22px;width:56px;height:56px;border-radius:50%;
+      background:var(--accent);color:#042;font-weight:700;font-size:12px;
+      box-shadow:0 8px 24px rgba(99,230,226,.28);z-index:6;
+    }
+    .circle.many{width:auto;padding:0 14px;border-radius:999px}
+    .circle-card{
+      position:absolute;right:22px;bottom:88px;width:300px;background:rgba(12,12,14,.94);
+      border:.5px solid var(--line);border-radius:14px;padding:12px;z-index:6;
+    }
+    .fog{opacity:.45;pointer-events:none}
+    .state{
+      width:min(1120px,100%);margin-top:8px;background:#000;color:#8bffce;
+      font-family:var(--mono);font-size:10px;border-radius:8px;padding:8px 10px;
+      white-space:pre-wrap;max-height:90px;overflow:auto;
+    }
+    .switcher{
+      position:fixed;left:50%;bottom:16px;transform:translateX(-50%);
+      display:flex;align-items:center;gap:8px;z-index:50;
+      background:#f4f4f5;color:#111;padding:7px 10px;border-radius:999px;
+      box-shadow:0 8px 32px rgba(0,0,0,.4);font-size:12px;font-weight:600;
+    }
+    .switcher button{width:30px;height:30px;border-radius:50%;background:#111;color:#fff}
+    .switcher .lab{min-width:240px;text-align:center}
+    .switcher .lab span{display:block;font-size:10px;color:#666;font-weight:500}
+    svg.eq{width:100%;height:110px;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="q"><b>Capital preservation · risk management.</b> One flow: when a trade is detected, show max downside and upside now. Today stays small. Depth is the journal. Notch plans, then the box becomes equity-if-SL. The circle stays live.</div>
+  <div class="mac" id="mac"></div>
+  <pre class="state" id="state"></pre>
+  <div class="switcher" id="switcher"></div>
+<script type="module">
+import { ACCOUNT, ENTRY, QTY, reduce, derived, initialState } from "./risk-flow-logic.mjs";
+
+const SCENES = [
+  { key: "detect", name: "Detect card", blurb: "Fill just happened" },
+  { key: "today", name: "Today shallow", blurb: "Impact + goal + deeper" },
+  { key: "console", name: "Journal deep", blurb: "That trade’s equity" },
+  { key: "notch", name: "Notch plan→risk", blurb: "OHLCV flips to account" },
+  { key: "circle", name: "Live circle", blurb: "Exit criteria · 1 vs many" },
+];
+
+let S = { ...initialState };
+const u = new URL(location.href);
+const boot = u.searchParams.get("variant");
+if (SCENES.some(s => s.key === boot)) S.scene = boot;
+
+const inr = n => {
+  if (n == null) return "—";
+  const a = Math.abs(Math.round(n));
+  return (n < 0 ? "−" : n > 0 ? "+" : "") + "₹" + a.toLocaleString("en-IN");
+};
+const pct = n => n == null ? "—" : n.toFixed(2) + "%";
+
+function dispatch(action) {
+  S = reduce(S, action);
+  paint();
+}
+
+function equitySvg(label) {
+  const d = derived(S);
+  const hit = d.actualR ?? d.plannedR ?? 0;
+  return `<svg class="eq" viewBox="0 0 320 110">
+    <polyline fill="none" stroke="#3a3a3c" stroke-width="1.5" points="0,36 80,34 160,32 200,30"/>
+    <polyline fill="none" stroke="#FF453A" stroke-width="2" points="200,30 250,70 320,92"/>
+    <text x="6" y="14" fill="#888" font-size="10">equity before this trade</text>
+    <text x="148" y="106" fill="#FF453A" font-size="10">${label} → ${inr(ACCOUNT - hit)}</text>
+  </svg>`;
+}
+
+function detectCard() {
+  const d = derived(S);
+  if (S.form === "none") {
+    return `<div class="card hero">
+      <span class="pill warn">No form</span>
+      <h2>A trade is on the book with no plan</h2>
+      <p class="hint">Not a nag. Help them see the risk, then plan. Max downside is unknown until a stop exists — we do not invent one.</p>
+      <div class="row">
+        <button class="btn pri" data-a='{"type":"OPEN_NOTCH"}'>Open Notch and plan</button>
+        <button class="btn" data-a='{"type":"HAS_FORM"}'>Fill a small form here</button>
+      </div>
+    </div>`;
+  }
+  const worse = d.delta.kind === "worse";
+  const better = d.delta.kind === "better";
+  return `<div class="card hero">
+    <span class="pill ${worse?"bad":better?"ok":"teal"}">${worse ? "Risk increased" : better ? "Risk tightened" : "Plan matched"}</span>
+    <h2>RELIANCE detected · ${ENTRY}</h2>
+    <p class="hint">Maximum downside and upside for <b>this</b> trade, as a share of the account. Both directions get a response.</p>
+    <div class="grid2">
+      <div class="box"><div class="k">Max downside (live SL)</div><div class="v loss">${inr(-(d.actualR||0))} · ${pct(d.actualPct)} of account</div></div>
+      <div class="box"><div class="k">Max upside (target)</div><div class="v gain">${inr(d.rewardR)} · ${pct(d.rewardPct)}</div></div>
+    </div>
+    <div class="grid2">
+      <div class="box"><div class="k">Planned SL ${S.plannedSl}</div><div class="v">${pct(d.plannedPct)}</div></div>
+      <div class="box ${worse?"worse":"better"}"><div class="k">Actual SL ${S.actualSl}</div><div class="v">${pct(d.actualPct)} · ${worse ? pct(d.plannedPct)+" → "+pct(d.actualPct)+" worse" : pct(d.plannedPct)+" → "+pct(d.actualPct)+" better"}</div></div>
+    </div>
+    <p class="hint caut">If this is already ~13% of the account at the stop, the problem is the size — not only the mismatch. Survival first.</p>
+    <div class="row">
+      <button class="btn" data-a='{"type":"SL_WIDER"}'>Widen SL (13% → more)</button>
+      <button class="btn" data-a='{"type":"SL_TIGHTER"}'>Tighten SL (vice versa)</button>
+      <button class="btn" data-a='{"type":"NO_FORM"}'>No form</button>
+    </div>
+  </div>`;
+}
+
+function sceneDetect() {
+  return `<div class="pulse"><span class="dot"></span> Detection layer · Kotak INR · account ${inr(ACCOUNT).replace("+","")}</div>
+    <div class="stage">
+      ${detectCard()}
+      <p class="hint">This card is the atomic unit. Today and the journal only repeat a smaller piece of it.</p>
+    </div>`;
+}
+
+function sceneToday() {
+  const d = derived(S);
+  const row = S.todayToggle ? `
+    <table>
+      <thead><tr><th>Today’s trade</th><th>Account</th><th>Goal</th><th></th></tr></thead>
+      <tbody><tr>
+        <td><b>RELIANCE</b><div class="hint">open · ${S.form==="none"?"no plan":"SL "+S.actualSl}</div></td>
+        <td class="gain">${inr(S.tradePnlToday)}<div class="hint">${pct(d.accountPctToday)} of account</div></td>
+        <td>${d.goal === "toward" ? "<span class='gain'>toward goal</span>" : "<span class='loss'>away from goal</span>"}<div class="hint">goal ${inr(S.goalRupees)} today</div></td>
+        <td><button class="btn pri" data-a='{"type":"SCENE","scene":"console"}'>Advanced statistics</button></td>
+      </tr></tbody>
+    </table>` : `<p class="hint muted">Toggle off — Today hides the small impact chips. Detection and Notch still run.</p>`;
+  return `<div class="pulse"><span class="dot"></span> Station Today · shallow by default
+    <span style="margin-left:auto"><button class="btn" data-a='{"type":"TOGGLE_TODAY"}'>Toggle ${S.todayToggle?"on":"off"}</button></span></div>
+    <div class="stage">
+      <div class="grid2">
+        <div class="box"><div class="k">P&amp;L today (closed RTs — unchanged hero)</div><div class="v">${inr(1240)}</div></div>
+        <div class="box"><div class="k">Same chip also on Console Trades</div><div class="v" style="font-size:13px;font-family:var(--sans);font-weight:600">dashboard / trades · same toggle</div></div>
+      </div>
+      <p class="hint" style="margin:10px 0">Small information only: how much this trade moved the account, and whether it moved them toward the goal. Depth is a button — Console shell window, or the web journal for that trade.</p>
+      ${row}
+    </div>
+    <button class="circle" data-a='{"type":"SCENE","scene":"circle"}'>i</button>`;
+}
+
+function sceneConsole() {
+  const d = derived(S);
+  return `<div class="pulse"><span class="dot"></span> Console · Advanced statistics · this trade
+    <span style="margin-left:auto" class="muted">shell window from Station, or link to web journal</span></div>
+    <div class="stage">
+      <div class="split">
+        <div>
+          <span class="pill teal">Pre · live · post</span>
+          <h2>RELIANCE 21 Aug</h2>
+          <p class="hint">Declaration, live state, fill. Journal note. What this trade did to equity — max risk of <b>this</b> trade, not a live remaining-risk floor.</p>
+          <div class="card">
+            <div class="k">Pre</div><div class="hint">Long 130 · entry 1300 · planned SL ${S.form==="filled"?S.plannedSl:"—"} · target ${S.target}</div>
+            <div class="k" style="margin-top:8px">Live</div><div class="hint">Actual SL ${S.actualSl ?? "—"} · ${S.form==="none"?"no form":d.delta.kind}</div>
+            <div class="k" style="margin-top:8px">Post / journal</div><div class="hint">“Check-in tomorrow. Gap can print through the stop.”</div>
+          </div>
+          ${equitySvg("if SL hits")}
+        </div>
+        <div class="card">
+          <div class="k">Impact</div>
+          <p class="v ${S.tradePnlToday>=0?"gain":"loss"}">${inr(S.tradePnlToday)}</p>
+          <p class="hint">${pct(d.accountPctToday)} of account · ${derived(S).goal} goal</p>
+          <p class="hint" style="margin-top:10px">Max drawdown of this trade at live SL: <b class="loss">${pct(d.actualPct)}</b></p>
+          <p class="hint caut" style="margin-top:8px">Simple and data-dense. No Sharpe on this page. Weekly review lives here, not on Today.</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+function sceneNotch() {
+  const d = derived(S);
+  const box = !S.declared
+    ? (S.notchView === "direct"
+      ? `<div class="ohlcv"><span class="pill">Direct · no chart</span>
+          <h2>RELIANCE</h2>
+          <p class="hint">O ${ENTRY} · H 1312 · L 1288 · C 1300 · V 2.1M — broker after Connect.</p>
+          <p class="hint muted" style="margin-top:12px">Same facts, no candles. Less friction.</p></div>`
+      : `<div class="ohlcv"><span class="pill">Charted</span>
+          <h2>RELIANCE <span class="muted" style="font-size:13px">${ENTRY}</span></h2>
+          <div class="bars">${[44,58,50,66,72,60,80,74,90,62,54,70,88,80,76,94,68,60,82,90].map((h,i)=>`<i class="${i%3?"up":"dn"}" style="height:${h}%"></i>`).join("")}</div>
+        </div>`)
+    : `<div class="ohlcv risk">
+        <span class="pill teal">Account · after declare</span>
+        <h2>If the stop is hit</h2>
+        <p class="hint">Margin and capital from the connected book. This trade’s max drawdown and max risk — the graph of equity going to the SL, not a market chart.</p>
+        ${equitySvg("max risk of this plan")}
+        <div class="grid2">
+          <div class="box worse"><div class="k">Max drawdown of this trade</div><div class="v loss">${pct(d.plannedPct ?? d.actualPct)}</div></div>
+          <div class="box"><div class="k">Max upside if target</div><div class="v gain">${pct(d.rewardPct)}</div></div>
+        </div>
+      </div>`;
+  return `<div class="pulse"><span class="dot"></span> Notch · pre-trade
+    <span style="margin-left:auto">
+      <button class="btn" data-a='{"type":"NOTCH_VIEW","view":"direct"}'>Direct</button>
+      <button class="btn" data-a='{"type":"NOTCH_VIEW","view":"chart"}'>Charted</button>
+    </span></div>
+    <div class="stage">
+      <div class="split">
+        ${box}
+        <div class="card">
+          <span class="pill">Pre-declaration · least friction</span>
+          <p class="hint" style="margin:8px 0">Side, entry, stop, target. Overnight accept is extra for swing.</p>
+          <p class="hint">Long · 1300 · SL ${S.plannedSl} · target ${S.target}</p>
+          ${S.declared
+            ? `<p class="hint ok" style="margin-top:10px">Declared. The big box is now the risk box.</p>`
+            : `<button class="btn pri" style="margin-top:12px" data-a='{"type":"DECLARE"}'>Declare — box becomes risk</button>`}
+          <div class="card fog" style="margin-top:16px">
+            <div class="k">Fog · parked</div>
+            <p class="hint">Hotkey workspace, Workflow Labs widgets, custom order-flow / FII-DII in the Notch. Not this flow. Check later whether it helps a trader in the moment, or it is a second terminal.</p>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function sceneCircle() {
+  const d = derived(S);
+  const many = S.circleMode === "many";
+  return `<div class="pulse"><span class="dot"></span> Circle is live · floating
+    <span style="margin-left:auto">
+      <button class="btn" data-a='{"type":"CIRCLE_MODE","mode":"one"}'>One trade</button>
+      <button class="btn" data-a='{"type":"CIRCLE_MODE","mode":"many"}'>Multiple</button>
+    </span></div>
+    <div class="stage">
+      <p class="hint">Purpose: exit earlier. It shows how much of the <b>declared exit</b> is filled — not a new strategy. Info on the circle is plan vs live SL.</p>
+      <div class="card" style="max-width:420px">
+        <div class="k">Exit criteria (this trade)</div>
+        <p class="v">${many ? "3 open — UI not decided" : "SL 42% of the way · target 18%"}</p>
+        <p class="hint">${many ? "One circle with a count, a stack, or the nearest risk only. That is still a design question." : "Single trade: one live ring. Tap info for planned vs actual max loss."}</p>
+      </div>
+    </div>
+    <div class="circle-card">
+      <span class="pill ${d.delta.kind==="worse"?"bad":"ok"}">Info</span>
+      <p class="hint" style="margin-top:6px">Form SL ${S.plannedSl ?? "—"} · live SL ${S.actualSl ?? "—"}</p>
+      <p class="hint">Max loss now ${pct(d.actualPct)} of account vs planned ${pct(d.plannedPct)}.</p>
+    </div>
+    <button class="circle ${many?"many":""}">${many ? "3" : "i"}</button>`;
+}
+
+function paint() {
+  const d = derived(S);
+  const body =
+    S.scene === "today" ? sceneToday() :
+    S.scene === "console" ? sceneConsole() :
+    S.scene === "notch" ? sceneNotch() :
+    S.scene === "circle" ? sceneCircle() :
+    sceneDetect();
+  document.getElementById("mac").innerHTML = body;
+  document.getElementById("state").textContent = "STATE " + JSON.stringify({ ...S, derived: d, remainingRisk: "not this flow — T8" }, null, 2);
+  const i = SCENES.findIndex(s => s.key === S.scene);
+  const sc = SCENES[i];
+  document.getElementById("switcher").innerHTML = `
+    <button type="button" data-nav="-1">←</button>
+    <div class="lab">${sc.name}<span>${sc.blurb}</span></div>
+    <button type="button" data-nav="1">→</button>`;
+  const url = new URL(location.href);
+  url.searchParams.set("variant", S.scene);
+  history.replaceState(null, "", url);
+}
+
+document.addEventListener("click", (e) => {
+  const nav = e.target.closest("[data-nav]");
+  if (nav) {
+    const i = SCENES.findIndex(s => s.key === S.scene);
+    const n = (i + Number(nav.getAttribute("data-nav")) + SCENES.length) % SCENES.length;
+    dispatch({ type: "SCENE", scene: SCENES[n].key });
+    return;
+  }
+  const t = e.target.closest("[data-a]");
+  if (!t) return;
+  dispatch(JSON.parse(t.getAttribute("data-a")));
+});
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target.tagName || "");
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+  const i = SCENES.findIndex(s => s.key === S.scene);
+  if (e.key === "ArrowLeft") dispatch({ type: "SCENE", scene: SCENES[(i - 1 + SCENES.length) % SCENES.length].key });
+  if (e.key === "ArrowRight") dispatch({ type: "SCENE", scene: SCENES[(i + 1) % SCENES.length].key });
+});
+paint();
+</script>
+</body>
+</html>

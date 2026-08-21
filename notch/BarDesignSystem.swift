@@ -7,27 +7,33 @@ public enum BarDS {
         public static let appPanel = Color(hex: "#0d0d0d")
         public static let sidebar = Color(hex: "#0a0a0a")
         public static let card = Color(hex: "#111111")
+        public static let elevated = Color(hex: "#1c1c1e")
         public static let input = Color.white.opacity(0.03)
         public static let inputFocused = Color.white.opacity(0.05)
+        /// HTML `--glass`
+        public static let glass = Color(hex: "#050505").opacity(0.78)
+        /// Primary button ink on mint (`#052e2c`)
+        public static let accentInk = Color(hex: "#052e2c")
     }
 
     public enum Text {
-        public static let primary = Color(hex: "#ededed")
-        public static let secondary = Color(hex: "#666666")
-        public static let muted = Color(hex: "#444444")
-        public static let labels = Color(hex: "#333333")
-        public static let hint = Color(hex: "#555555")
+        public static let primary = Color.white
+        public static let secondary = Color.white.opacity(0.60)
+        public static let muted = Color.white.opacity(0.30)
+        public static let labels = Color.white.opacity(0.18)
+        public static let hint = Color.white.opacity(0.30)
+        public static let section = Color.white.opacity(0.50)
     }
 
     public enum Accent {
-        public static let teal = Color(hex: "#00e5c0")
-        public static let amber = Color(hex: "#eab308")
-        public static let red = Color(hex: "#ef4444")
-        public static let green = Color(hex: "#22c55e")
-        public static let blue = Color(hex: "#60a5fa")
+        public static let teal = Color(hex: "#63E6E2")
+        public static let amber = Color(hex: "#FF9F0A")
+        public static let red = Color(hex: "#FF453A")
+        public static let green = Color(hex: "#30D158")
+        public static let blue = Color(hex: "#0A84FF")
         /// Invalidation chip selected
-        static let blueFill = Color(hex: "#3b82f6").opacity(0.08)
-        static let blueBorder = Color(hex: "#3b82f6").opacity(0.25)
+        static let blueFill = Color(hex: "#0A84FF").opacity(0.08)
+        static let blueBorder = Color(hex: "#0A84FF").opacity(0.25)
     }
 
     public enum Border {
@@ -44,29 +50,37 @@ public enum BarDS {
     }
 
     enum Semantic {
-        static func tealBg() -> Color { Color(hex: "#00e5c0").opacity(0.06) }
-        static func tealBorder() -> Color { Color(hex: "#00e5c0").opacity(0.20) }
-        static func amberBg() -> Color { Color(hex: "#eab308").opacity(0.06) }
-        static func amberBorder() -> Color { Color(hex: "#eab308").opacity(0.20) }
-        static func redBg() -> Color { Color(hex: "#ef4444").opacity(0.06) }
-        static func redBorder() -> Color { Color(hex: "#ef4444").opacity(0.20) }
-        static func greenBg() -> Color { Color(hex: "#22c55e").opacity(0.06) }
-        static func greenBorder() -> Color { Color(hex: "#22c55e").opacity(0.20) }
+        static func tealBg() -> Color { Accent.teal.opacity(0.06) }
+        static func tealBorder() -> Color { Accent.teal.opacity(0.20) }
+        static func amberBg() -> Color { Accent.amber.opacity(0.06) }
+        static func amberBorder() -> Color { Accent.amber.opacity(0.20) }
+        static func redBg() -> Color { Accent.red.opacity(0.06) }
+        static func redBorder() -> Color { Accent.red.opacity(0.20) }
+        static func greenBg() -> Color { Accent.green.opacity(0.06) }
+        static func greenBorder() -> Color { Accent.green.opacity(0.20) }
     }
 
     public enum Radius {
         public static let card: CGFloat = 8
         public static let small: CGFloat = 6
         public static let pill: CGFloat = 20
+        public static let sheet: CGFloat = 18
     }
 
     public static let borderThin: CGFloat = 0.5
+    public static let sidebarWidth: CGFloat = 176
+
+    public enum Motion {
+        /// HTML `--spring: cubic-bezier(0.22, 1, 0.36, 1)`
+        public static let spring = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.35)
+    }
 
     public enum FontSize {
         public static let body: CGFloat = 13
         public static let bodySmall: CGFloat = 12
         public static let bodyXS: CGFloat = 11
-        public static let sectionLabel: CGFloat = 10
+        public static let sectionLabel: CGFloat = 11
+        public static let chrome: CGFloat = 10
         public static let metricValue: CGFloat = 20
         public static let brief: CGFloat = 16
         public static let topbarTitle: CGFloat = 14
@@ -217,8 +231,8 @@ struct BarSectionLabel: View {
     var body: some View {
         Text(text.uppercased())
             .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
-            .foregroundColor(BarDS.Text.labels)
-            .kerning(0.08 * 10) // ~0.08em at 10pt
+            .foregroundColor(BarDS.Text.section)
+            .kerning(0.08 * BarDS.FontSize.sectionLabel)
             .padding(.top, 16)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -419,7 +433,7 @@ struct BarBigButton: View {
 
     private var foreground: Color {
         switch style {
-        case .primary: return BarDS.Fill.sidebar
+        case .primary: return BarDS.Fill.accentInk
         case .outline: return BarDS.Text.primary
         case .danger: return BarDS.Accent.red
         }
@@ -427,7 +441,7 @@ struct BarBigButton: View {
 
     private var background: Color {
         switch style {
-        case .primary: return BarDS.Text.primary
+        case .primary: return BarDS.Accent.teal
         case .outline: return .clear
         case .danger: return BarDS.Accent.red.opacity(0.1)
         }
@@ -456,7 +470,7 @@ struct BarInputField: View {
             prompt:
                 Text(placeholder)
                 .font(BarDS.bodyFont(12, weight: .regular))
-                .foregroundColor(BarDS.Text.labels)
+                .foregroundColor(BarDS.Text.hint)
         )
         .textFieldStyle(.plain)
         .font(BarDS.monoFont(BarDS.FontSize.body, weight: .regular))
@@ -509,7 +523,7 @@ struct BarTab: View {
         Button(action: action) {
             Text(label)
                 .font(BarDS.bodyFont(BarDS.FontSize.chip, weight: active ? .medium : .regular))
-                .foregroundColor(active ? BarDS.Text.primary : Color(hex: "#555555"))
+                .foregroundColor(active ? BarDS.Text.primary : BarDS.Text.muted)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 12)
                 .background(active ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
@@ -545,7 +559,7 @@ struct BarFeelButton: View {
                 .foregroundColor(BarDS.Text.primary)
             Text(label)
                 .font(BarDS.bodyFont(10, weight: .regular))
-                .foregroundColor(Color(hex: "#555555"))
+                .foregroundColor(BarDS.Text.hint)
         }
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
@@ -561,18 +575,18 @@ struct BarFeelButton: View {
     private var background: Color {
         switch state {
         case .unselected: return Color.white.opacity(0.03)
-        case .teal: return Color(hex: "#00e5c0").opacity(0.08)
-        case .amber: return Color(hex: "#eab308").opacity(0.08)
-        case .red: return Color(hex: "#ef4444").opacity(0.08)
+        case .teal: return BarDS.Accent.teal.opacity(0.08)
+        case .amber: return BarDS.Accent.amber.opacity(0.08)
+        case .red: return BarDS.Accent.red.opacity(0.08)
         }
     }
 
     private var borderColor: Color {
         switch state {
         case .unselected: return Color.white.opacity(0.08)
-        case .teal: return Color(hex: "#00e5c0").opacity(0.20)
-        case .amber: return Color(hex: "#eab308").opacity(0.20)
-        case .red: return Color(hex: "#ef4444").opacity(0.20)
+        case .teal: return BarDS.Accent.teal.opacity(0.20)
+        case .amber: return BarDS.Accent.amber.opacity(0.20)
+        case .red: return BarDS.Accent.red.opacity(0.20)
         }
     }
 }
@@ -617,7 +631,7 @@ private struct BarCustomToggle: View {
                 .fill(isOn ? BarDS.Accent.teal : Color.white.opacity(0.1))
                 .frame(width: 36, height: 20)
             Circle()
-                .fill(BarDS.Fill.sidebar)
+                .fill(Color.white)
                 .frame(width: 16, height: 16)
                 .padding(2)
         }
@@ -634,26 +648,42 @@ private struct BarCustomToggle: View {
 }
 
 struct BarProgressBlock: View {
+    enum FillStyle {
+        case risk
+        case fidelity
+    }
+
     let label: String
     let valueText: String
     /// 0...1
     let pct: Double
+    var fillStyle: FillStyle = .risk
 
     private var fillColor: Color {
-        let p = pct * 100
-        if p < 60 { return BarDS.Accent.teal }
-        if p < 90 { return BarDS.Accent.amber }
-        return BarDS.Accent.red
+        switch fillStyle {
+        case .fidelity:
+            return BarDS.Text.primary.opacity(0.55)
+        case .risk:
+            let p = pct * 100
+            if p < 60 { return BarDS.Accent.teal }
+            if p < 90 { return BarDS.Accent.amber }
+            return BarDS.Accent.red
+        }
     }
 
-    private var valueTextColor: Color { fillColor }
+    private var valueTextColor: Color {
+        switch fillStyle {
+        case .fidelity: return BarDS.Text.primary
+        case .risk: return fillColor
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label)
                     .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
-                    .foregroundColor(Color(hex: "#888888"))
+                    .foregroundColor(BarDS.Text.secondary)
                 Spacer(minLength: 8)
                 Text(valueText)
                     .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .medium))

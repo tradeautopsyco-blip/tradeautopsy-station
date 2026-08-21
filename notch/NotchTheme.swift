@@ -26,15 +26,15 @@ enum NotchTheme {
     static let textMicro = Color.white.opacity(0.25)
 
     // Accents
-    static let accentTeal = Color(hex: "#00E5C0")
-    static let accentDanger = Color(hex: "#FF3B30")
-    static let accentWarning = Color(hex: "#FF9500")
+    static let accentTeal = Color(hex: "#63E6E2")
+    static let accentDanger = Color(hex: "#FF453A")
+    static let accentWarning = Color(hex: "#FF9F0A")
     static let accentBlue = Color(hex: "#0A84FF")
 
     // Glows
-    static let glowTeal = Color(hex: "#00E5C0").opacity(0.15)
-    static let glowDanger = Color(hex: "#FF3B30").opacity(0.15)
-    static let glowWarning = Color(hex: "#FF9500").opacity(0.12)
+    static let glowTeal = Color(hex: "#63E6E2").opacity(0.15)
+    static let glowDanger = Color(hex: "#FF453A").opacity(0.15)
+    static let glowWarning = Color(hex: "#FF9F0A").opacity(0.12)
 
     // Typography scale
     static let fontMicro: CGFloat = 9

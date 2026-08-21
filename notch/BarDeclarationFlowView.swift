@@ -35,8 +35,7 @@ struct BarDeclarationFlowView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
                 BarUndeclaredPositionBanner(position: viewModel.barLiveState?.undeclaredPosition)
 
                 BarDeclarationSubmitBlockedBanner(
@@ -63,16 +62,16 @@ struct BarDeclarationFlowView: View {
 
                 archetypeTabRow
 
-                BarSectionLabel(text: "Step 1 of 4 — State check")
+                BarSectionLabel(text: "State check")
                 stateCheckCard
 
-                BarSectionLabel(text: "Step 2 of 4 — Risk numbers")
+                BarSectionLabel(text: "Numbers")
                 riskNumbersCard
 
-                BarSectionLabel(text: "Step 3 of 4 — Setup & invalidation")
+                BarSectionLabel(text: "Setup & invalidation")
                 setupAndInvalidationCard
 
-                BarSectionLabel(text: "Step 4 of 4 — Review & consent")
+                BarSectionLabel(text: "Review")
                 BarToggleRow(
                     label: "Auto-place stop loss on fill",
                     sub: "Pre-authorized — placed within 500ms of broker fill",
@@ -101,10 +100,9 @@ struct BarDeclarationFlowView: View {
 
                 Text("Completed in \(elapsedLiveSeconds)s")
                     .font(BarDS.bodyFont(10, weight: .regular))
-                    .foregroundColor(Color(hex: "#333333"))
+                    .foregroundColor(BarDS.Text.labels)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-        }
         .onAppear {
             if declarationStartedAt == nil {
                 declarationStartedAt = Date()
@@ -281,7 +279,7 @@ struct BarDeclarationFlowView: View {
         HStack {
             Text("Risk : Reward")
                 .font(BarDS.bodyFont(12, weight: .regular))
-                .foregroundColor(Color(hex: "#555555"))
+                .foregroundColor(BarDS.Text.hint)
             Spacer(minLength: 8)
             Text(rrSpecValueText)
                 .font(BarDS.monoFont(12, weight: .medium))
@@ -305,9 +303,9 @@ struct BarDeclarationFlowView: View {
 
     private var rrSpecValueColor: Color {
         guard let r = rrComputedRatio else {
-            return Color(hex: "#ededed").opacity(0.9)
+            return BarDS.Text.primary.opacity(0.9)
         }
-        return r >= 2.0 ? Color(hex: "#22c55e") : Color(hex: "#ededed")
+        return r >= 2.0 ? BarDS.Accent.green : BarDS.Text.primary
     }
 
     private var rrComputedRatio: Double? {
@@ -329,13 +327,13 @@ struct BarDeclarationFlowView: View {
                 if viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(invalidationPlaceholder(kind))
                         .font(BarDS.bodyFont(12, weight: .regular))
-                        .foregroundColor(Color(hex: "#aaaaaa"))
+                        .foregroundColor(BarDS.Text.secondary)
                         .padding(.top, 10)
                         .padding(.leading, 6)
                 }
                 TextEditor(text: $viewModel.declInvalidationCondition)
                     .font(BarDS.bodyFont(12, weight: .regular))
-                    .foregroundColor(Color(hex: "#aaaaaa"))
+                    .foregroundColor(BarDS.Text.secondary)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 60)
                     .padding(.vertical, 4)
@@ -352,7 +350,7 @@ struct BarDeclarationFlowView: View {
 
             Text(invalidationExampleHint(kind))
                 .font(BarDS.bodyFont(11, weight: .regular))
-                .foregroundColor(Color(hex: "#444444"))
+                .foregroundColor(BarDS.Text.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 10)
         }
@@ -395,10 +393,10 @@ struct BarDeclarationFlowView: View {
                     VStack(spacing: 4) {
                         invalidationIcon(for: k)
                             .font(.system(size: 16))
-                            .foregroundColor(on ? Color(hex: "#60a5fa") : BarDS.Text.secondary)
+                            .foregroundColor(on ? BarDS.Accent.blue : BarDS.Text.secondary)
                         Text(k.chipTitle)
                             .font(BarDS.bodyFont(11, weight: .regular))
-                            .foregroundColor(on ? Color(hex: "#60a5fa") : BarDS.Text.secondary)
+                            .foregroundColor(on ? BarDS.Accent.blue : BarDS.Text.secondary)
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
@@ -508,7 +506,7 @@ struct BarDeclarationFlowView: View {
         Button(action: action) {
             Text(title)
                 .font(BarDS.bodyFont(12, weight: .semibold))
-                .foregroundColor(selected ? Color(hex: "#ededed") : Color(hex: "#666666"))
+                .foregroundColor(selected ? BarDS.Text.primary : BarDS.Text.secondary)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 16)
                 .background(selected ? Color.white.opacity(0.10) : Color.white.opacity(0.03))
@@ -534,7 +532,7 @@ struct BarDeclarationFlowView: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(kind == .red ? Color(hex: "#ef4444").opacity(0.08) : Color(hex: "#eab308").opacity(0.08))
+            .background(kind == .red ? BarDS.Accent.red.opacity(0.08) : BarDS.Accent.amber.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)

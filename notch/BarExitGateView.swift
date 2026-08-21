@@ -94,10 +94,10 @@ struct BarExitGateView: View {
         } label: {
             Text(title)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(Color(hex: "#050505"))
+                .foregroundColor(BarDS.Fill.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(Color(hex: "#00E5C0"))
+                .background(BarDS.Accent.teal)
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)
@@ -107,7 +107,7 @@ struct BarExitGateView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Scare candle check")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(Color(hex: "#F5A524").opacity(0.95))
+                .foregroundColor(BarDS.Accent.amber.opacity(0.95))
 
             Text(
                 "You said the plan is still intact, but one candle may be driving this exit. "
@@ -123,10 +123,10 @@ struct BarExitGateView: View {
             } label: {
                 Text("I've read this — continue")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(Color(hex: "#050505"))
+                    .foregroundColor(BarDS.Fill.accentInk)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(hex: "#F5A524"))
+                    .background(BarDS.Accent.amber)
                     .cornerRadius(10)
             }
             .buttonStyle(.plain)
@@ -176,7 +176,7 @@ struct BarExitGateView: View {
 
             Text(remaining > 0 ? "Cool-off: \(remaining)s" : "Cool-off complete")
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(remaining > 0 ? Color.white.opacity(0.55) : Color(hex: "#00E5C0").opacity(0.9))
+                .foregroundColor(remaining > 0 ? Color.white.opacity(0.55) : BarDS.Accent.teal.opacity(0.9))
 
             Button {
                 if remaining == 0 { onConfirmExit() }
@@ -185,10 +185,10 @@ struct BarExitGateView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 13, weight: .bold, design: .rounded))
-            .foregroundColor(remaining == 0 ? Color(hex: "#050505") : Color.white.opacity(0.35))
+            .foregroundColor(remaining == 0 ? BarDS.Fill.accentInk : Color.white.opacity(0.35))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(remaining == 0 ? Color(hex: "#00E5C0") : Color.white.opacity(0.12))
+            .background(remaining == 0 ? BarDS.Accent.teal : Color.white.opacity(0.12))
             .cornerRadius(10)
             .disabled(remaining > 0)
             .accessibilityLabel("Continue to exit tools")
@@ -216,12 +216,12 @@ struct BarExitGateView: View {
         } label: {
             Text(title)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(selected ? Color(hex: "#00E5C0") : Color.white.opacity(0.75))
+                .foregroundColor(selected ? BarDS.Accent.teal : Color.white.opacity(0.75))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(selected ? Color(hex: "#00E5C0").opacity(0.14) : Color.white.opacity(0.06)),
+                        .fill(selected ? BarDS.Accent.teal.opacity(0.14) : Color.white.opacity(0.06)),
                 )
         }
         .buttonStyle(.plain)
@@ -233,10 +233,10 @@ struct BarExitGateView: View {
         } label: {
             Text("Continue to exit tools →")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(Color(hex: "#050505"))
+                .foregroundColor(BarDS.Fill.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color(hex: "#00E5C0"))
+                .background(BarDS.Accent.teal)
                 .cornerRadius(10)
         }
         .buttonStyle(.plain)

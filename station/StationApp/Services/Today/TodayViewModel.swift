@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 @MainActor
@@ -7,26 +8,45 @@ public final class TodayViewModel: ObservableObject {
         agentHealthy: false
     )
     @Published public private(set) var isLoading = false
+    @Published public private(set) var showShallowImpact = false
+    @Published public private(set) var advancedStatisticsSymbol: String?
 
     private let client: TodayAgentClient
     private let agentHealthy: () -> Bool
     private let isBrokerSyncActive: () -> Bool
+    private let configuredSlugs: () -> [String]
     private let sessionModel: SessionModel
     private let sessionMirrorPollIntervalSeconds: TimeInterval
     private var sessionMirrorPollTask: Task<Void, Never>?
+    private var positionsCancellable: AnyCancellable?
+    private var deskHonestyCancellable: AnyCancellable?
 
     public init(
         client: TodayAgentClient,
         sessionModel: SessionModel,
         agentHealthy: @escaping () -> Bool,
         isBrokerSyncActive: @escaping () -> Bool = { false },
+        configuredSlugs: @escaping () -> [String] = { [] },
         sessionMirrorPollIntervalSeconds: TimeInterval = 15
     ) {
         self.client = client
         self.sessionModel = sessionModel
         self.agentHealthy = agentHealthy
         self.isBrokerSyncActive = isBrokerSyncActive
+        self.configuredSlugs = configuredSlugs
         self.sessionMirrorPollIntervalSeconds = sessionMirrorPollIntervalSeconds
+        positionsCancellable = sessionModel.$positions
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.lastPayload != nil else { return }
+                self.rebuildPresentation()
+            }
+        deskHonestyCancellable = sessionModel.$activeBrokerSlug
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.lastPayload != nil else { return }
+                self.rebuildPresentation()
+            }
     }
 
     public var showCircuitBreakerBanner: Bool {
@@ -65,10 +85,37 @@ public final class TodayViewModel: ObservableObject {
         defer { isLoading = false }
         let payload = await client.fetchToday()
         lastPayload = payload
+        rebuildPresentation()
+    }
+
+    public func toggleShallowImpact() {
+        showShallowImpact.toggle()
+        rebuildPresentation()
+    }
+
+    public func openAdvancedStatistics(symbol: String) {
+        advancedStatisticsSymbol = symbol
+    }
+
+    private func rebuildPresentation() {
         presentation = TodayScreenPresentation.build(
-            payload: payload,
-            agentHealthy: agentHealthy()
+            payload: lastPayload,
+            agentHealthy: agentHealthy(),
+            positions: sessionModel.positions,
+            showShallowImpact: showShallowImpact,
+            showActiveMoney: showsActiveMoney()
         )
+    }
+
+    private func showsActiveMoney() -> Bool {
+        let configured = configuredSlugs()
+        switch DeskHonesty.resolve(activeSlugs: configured) {
+        case .dualNoBlend:
+            let active = sessionModel.activeBrokerSlug.map { [$0] } ?? []
+            return DeskHonesty.heroQuoteCurrency(activeSlugs: active) != nil
+        case .single, .none:
+            return true
+        }
     }
 
     public func startSessionMirrorPolling() {

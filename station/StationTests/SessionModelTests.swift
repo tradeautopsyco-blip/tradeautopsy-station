@@ -39,6 +39,28 @@ struct SessionModelTests {
         #expect(decoded.positions[1].direction == "SHORT")
     }
 
+    @Test func positionsDecodeOmitsUnknownMarkAndKeepsFractionalQty() throws {
+        let json = """
+        {
+          "kill_switch_active": false,
+          "open_orders": 0,
+          "positions": [
+            {
+              "symbol": "BTCUSDT",
+              "qty": 0.01,
+              "side": "LONG"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try SessionPositionsDecoder.decode(json)
+        #expect(decoded.positions.count == 1)
+        #expect(decoded.positions[0].qty == 0.01)
+        #expect(decoded.positions[0].unrealizedPnL == nil)
+        #expect(decoded.positions[0].direction == "LONG")
+    }
+
     @Test func totalUnrealizedSumsPositions() {
         let session = SessionModel()
         session.positions = [

@@ -8,18 +8,20 @@ struct BriefLeftView: View {
     private static let preM10StubLog = Logger(subsystem: "in.tradeautopsy.notch", category: "pre_m10_patterns")
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            briefCapsHeader("SESSION")
-                .accessibilitySortPriority(20)
+        VStack(alignment: .leading, spacing: 0) {
+            briefCapsHeader("Session")
 
-            VStack(alignment: .leading, spacing: 8) {
+            BarCard {
                 Text("Pre-market")
-                    .font(BarDS.bodyFont(9, weight: .semibold))
-                    .foregroundColor(BarDS.Text.secondary)
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                    .foregroundColor(BarDS.Text.section)
+                    .textCase(.uppercase)
+                    .kerning(0.006 * 11)
+                    .padding(.bottom, 8)
 
                 HStack(spacing: 6) {
                     marketIndex(
-                        "NIFTY",
+                        "Nifty",
                         value: viewModel.niftyValue,
                         change: viewModel.niftyChange
                     )
@@ -40,50 +42,55 @@ struct BriefLeftView: View {
                     )
                 }
             }
-            .padding(10)
-            .background(BarDS.Fill.card)
-            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                    .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
-            )
 
             BarDSDivider()
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
 
-            briefCapsHeader("ANALYSIS")
-                .accessibilitySortPriority(15)
+            briefCapsHeader("What matters")
 
-            if let b = viewModel.morningBrief {
-                behavioralBriefContent(b)
-            } else {
-                Text("Fetching brief...")
-                    .font(BarDS.bodyFont(10, weight: .regular))
-                    .foregroundColor(BarDS.Text.secondary)
+            BarCard {
+                BarTAChartFigure(
+                    kicker: "Yesterday’s session P&L",
+                    takeaway: "Yesterday closed −₹2,100 after two revenge-adjacent adds. Size crept 18% vs declared."
+                ) {
+                    BarTALinePlot(
+                        points: BarTAChartDemo.morningPnL,
+                        kind: .loss,
+                        height: 52,
+                        includeZero: true
+                    )
+                    .accessibilityLabel("Yesterday session P and L, closed minus 2100 rupees")
+                }
+
+                if let b = viewModel.morningBrief {
+                    behavioralBriefContent(b)
+                        .padding(.top, 10)
+                } else {
+                    Text("Watch for size discipline and time-pressure entries in the first 45 minutes.")
+                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
+                        .foregroundColor(BarDS.Text.primary.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
+                }
             }
 
-            BarDSDivider()
-                .padding(.vertical, 4)
-
-            briefCapsHeader("RECOMMENDATION")
-                .accessibilitySortPriority(10)
-            Text(viewModel.morningBrief?.recommendation ?? "Fetching brief...")
-                .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .regular))
+            BarCard {
+                Text(
+                    viewModel.morningBrief?.recommendation
+                        ?? "Trade only A-setups. Cap first trade at half size until calm ≤ 2. Declare before you click buy."
+                )
+                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
                 .foregroundColor(BarDS.Text.primary.opacity(0.72))
                 .lineSpacing(3)
-                .lineLimit(5)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(BarDS.Fill.card)
-                .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                        .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
-                )
+            }
+
+            BarBigButton(label: "Start trading →", style: .primary) {
+                viewModel.startTradingFromMorningBrief()
+            }
+            .accessibilityLabel("Start trading, open plan declaration")
+            .padding(.top, 4)
         }
-        .padding(12)
-        .glassCard(radius: 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -91,8 +98,8 @@ struct BriefLeftView: View {
     private func briefCapsHeader(_ text: String) -> some View {
         Text(text.uppercased())
             .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
-            .foregroundColor(BarDS.Text.labels)
-            .kerning(0.08 * 10)
+            .foregroundColor(BarDS.Text.section)
+            .kerning(0.006 * BarDS.FontSize.sectionLabel)
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -104,14 +111,19 @@ struct BriefLeftView: View {
         accent: Color = .white
     ) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(name).microLabel()
+            Text(name)
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                .foregroundColor(BarDS.Text.secondary)
+                .textCase(.uppercase)
             Text(formatNumber(value))
-                .font(BarDS.monoFont(12, weight: .semibold))
+                .font(BarDS.monoFont(BarDS.FontSize.body, weight: .medium))
+                .monospacedDigit()
                 .foregroundColor(accent)
             if let change {
                 Text(formatChange(change))
-                    .font(BarDS.monoFont(9, weight: .medium))
-                    .foregroundColor(change >= 0 ? BarDS.Accent.teal : BarDS.Accent.red)
+                    .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(change >= 0 ? BarDS.Accent.green : BarDS.Accent.red)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,11 +323,6 @@ struct BriefLeftView: View {
             if let rule = b.nonNegotiableRule, !rule.isEmpty {
                 BarNonNegotiableCard(label: "Watch today", text: rule, kind: .amber)
             }
-
-            BarBigButton(label: "Start trading →", style: .outline) {
-                viewModel.startTradingFromMorningBrief()
-            }
-            .accessibilityLabel("Start trading, open plan declaration")
         }
     }
 
@@ -338,11 +345,6 @@ struct BriefLeftView: View {
                         .briefMetricPillBar()
                 }
             }
-
-            BarBigButton(label: "Start trading →", style: .outline) {
-                viewModel.startTradingFromMorningBrief()
-            }
-            .accessibilityLabel("Start trading, open plan declaration")
         }
     }
 
@@ -369,11 +371,6 @@ struct BriefLeftView: View {
             if let rule = b.nonNegotiableRule, !rule.isEmpty {
                 BarNonNegotiableCard(label: "Non-negotiable today", text: rule, kind: .amber)
             }
-
-            BarBigButton(label: "Start trading →", style: .outline) {
-                viewModel.startTradingFromMorningBrief()
-            }
-            .accessibilityLabel("Start trading, open plan declaration")
         }
     }
 

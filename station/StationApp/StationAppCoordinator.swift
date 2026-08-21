@@ -117,11 +117,13 @@ public final class StationAppCoordinator: ObservableObject {
             isAgentHealthy: { agentSupervisor.isHealthy }
         )
         let session = self.sessionModel
+        let brokers = self.brokersViewModel
         self.todayViewModel = TodayViewModel(
             client: resolvedTodayClient,
             sessionModel: session,
             agentHealthy: { agentSupervisor.isHealthy },
-            isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror }
+            isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror },
+            configuredSlugs: { brokers.configuredBrokerSlugs }
         )
         let resolvedDeviceLoginClient = deviceLoginClient ?? LocalDeviceLoginAgentClient(
             daemonSecret: resolvedDaemonSecret,

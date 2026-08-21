@@ -122,7 +122,7 @@ public struct SessionPulseStrip: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: 38)
-            .background(StationDS.Fill.appPanel)
+            .background(StationDS.Fill.glass)
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(StationDS.Border.divider)
@@ -137,8 +137,9 @@ public struct SessionPulseStrip: View {
     private func metric(label: String, value: String, style: SessionPulseStripPresentation.PnLStyle) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                .font(StationDS.bodyFont(StationDS.FontSize.chrome))
                 .foregroundStyle(StationDS.Text.secondary)
+                .kerning(0.012 * StationDS.FontSize.chrome)
             Text(value)
                 .font(StationDS.monoFont(StationDS.FontSize.bodySmall, weight: .medium))
                 .foregroundStyle(color(for: style))

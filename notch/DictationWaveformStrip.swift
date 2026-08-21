@@ -13,7 +13,7 @@ struct DictationWaveformStrip: View {
                 Capsule(style: .continuous)
                     .fill(
                         isActive
-                            ? Color(hex: "#00E5C0").opacity(0.25 + Double(level) * 0.75)
+                            ? BarDS.Accent.teal.opacity(0.25 + Double(level) * 0.75)
                             : Color.white.opacity(0.08 + Double(level) * 0.35)
                     )
                     .frame(width: 3, height: h)
@@ -58,7 +58,7 @@ struct DictationMicAndWaveform: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(
                         viewModel.isDictating
-                            ? Color(hex: "#00E5C0")
+                            ? BarDS.Accent.teal
                             : Color.white.opacity(0.45)
                     )
                     .frame(width: 32, height: 32)
@@ -66,7 +66,7 @@ struct DictationMicAndWaveform: View {
                         Circle()
                             .fill(
                                 viewModel.isDictating
-                                    ? Color(hex: "#00E5C0").opacity(0.15)
+                                    ? BarDS.Accent.teal.opacity(0.15)
                                     : Color.white.opacity(0.06)
                             )
                     )

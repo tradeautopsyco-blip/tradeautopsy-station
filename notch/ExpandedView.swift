@@ -51,11 +51,17 @@ struct ExpandedNotchView: View {
             Button {
                 viewModel.collapseExpandedFromChromeTap()
             } label: {
-                Color.clear
-                    .frame(minHeight: BarNotchChrome.collapsedStripHeight)
-                    .frame(height: chromeTapStripHeight(viewModel))
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                VStack(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 99, style: .continuous)
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 36, height: 4)
+                        .padding(.top, 5)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: BarNotchChrome.collapsedStripHeight)
+                .frame(height: chromeTapStripHeight(viewModel))
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
             }
             .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
             .accessibilityLabel("Collapse notch")
@@ -117,18 +123,14 @@ struct ExpandedNotchView: View {
 
                         RadialGradient(
                             colors: [
-                                NotchTheme.scoreGlow(viewModel.compositeScore),
+                                BarDS.Accent.teal.opacity(0.14),
                                 Color.clear,
                             ],
                             center: .top,
                             startRadius: 0,
-                            endRadius: 200
+                            endRadius: 180
                         )
-                        .opacity(
-                            viewModel.planSurfaceOnly || viewModel.activeTab == .capture || viewModel.activeTab == .plan
-                                ? 0.35
-                                : 0.6
-                        )
+                        .opacity(0.9)
                         .allowsHitTesting(false)
                     }
 

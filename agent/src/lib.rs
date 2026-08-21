@@ -104,6 +104,7 @@ pub use round_trip_engine::{
 };
 pub use today::{
     TodayDegradedReason, TodayHeroPayload, TodayPayload, TodayService, TodayStore,
+    open_inventory_from_fills, OpenInventoryRow,
 };
 pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
@@ -152,6 +153,20 @@ impl UpstreamConfig {
         )
     }
 
+    /// True when Console is a loopback origin (local `npm run dev`).
+    /// Used only to trust mkcert / skip rustls webpki roots — never a production identity rail.
+    fn is_loopback_console(&self) -> bool {
+        let u = self.base_url.to_ascii_lowercase();
+        let after_scheme = u.split("://").nth(1).unwrap_or("");
+        let hostport = after_scheme.split('/').next().unwrap_or("");
+        let host = if let Some(rest) = hostport.strip_prefix('[') {
+            rest.split(']').next().unwrap_or("")
+        } else {
+            hostport.split(':').next().unwrap_or("")
+        };
+        matches!(host, "localhost" | "127.0.0.1" | "::1")
+    }
+
     /// True only for the loopback-http test/bootstrap escape hatch (wiremock, integration
     /// tests). T1 hardening: `STATION_ACCESS_TOKEN` must never be treated as a production
     /// identity rail — it is only honored against a loopback base URL, never a real
@@ -173,14 +188,13 @@ pub struct UpstreamClient {
 
 impl UpstreamClient {
     pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
-        // TLS verification must always be on for a real (https) Console. The only
-        // exception is the loopback-http test/bootstrap escape hatch (wiremock,
-        // integration tests) — same gate as `is_loopback_http_bootstrap` elsewhere in
-        // this file, so a stray env var can never weaken a production connection.
-        let insecure_ok_for_tests = config.is_loopback_http_bootstrap();
+        // TLS verification must always be on for a real (https) Console.
+        // Loopback Console uses mkcert; reqwest rustls-webpki does not trust that CA.
+        let accept_invalid_certs =
+            config.is_loopback_http_bootstrap() || config.is_loopback_console();
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
-            .danger_accept_invalid_certs(insecure_ok_for_tests)
+            .danger_accept_invalid_certs(accept_invalid_certs)
             .build()?;
         Ok(Self { config, http })
     }
@@ -375,6 +389,14 @@ mod upstream_config_bridge_harden_tests {
             "a real https Console base must never be treated as the STATION_ACCESS_TOKEN bootstrap escape hatch"
         );
         std::env::remove_var("STATION_ACCESS_TOKEN");
+    }
+
+    #[test]
+    fn loopback_https_console_is_local_mkcert_origin_not_production() {
+        let local = cfg("https://localhost:3000");
+        assert!(local.is_loopback_console());
+        assert!(cfg("https://127.0.0.1:3000").is_loopback_console());
+        assert!(!cfg("https://tradeautopsy.in").is_loopback_console());
     }
 
     #[test]

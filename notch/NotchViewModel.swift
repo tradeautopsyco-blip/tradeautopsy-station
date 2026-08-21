@@ -247,6 +247,20 @@ public final class NotchViewModel: ObservableObject {
     @Published var journalCaptureLastPendingCaptureId: String?
     @Published var journalCaptureScreenshotBusy: Bool = false
     @Published var journalCaptureScreenshotError: String?
+    @Published var unpostedCaptures: [UnpostedCaptureRecord] = []
+    @Published var stagedCapturePreview: NSImage?
+    @Published var unpostedSweepDropped: Int = 0
+    @Published var unpostedSendBusyId: UUID?
+    @Published var unpostedLinkTradeId: String = ""
+    @Published var unpostedSearch: String = ""
+    @Published var replaceConfirmTradeId: String?
+    /// Trade UUIDs that already have a screenshot this device has sent (one image per trade).
+    @Published var tradeIdsWithChart: Set<String> = []
+    /// Paste / shutter should jump PLAN sidebar to Live trade (ignored during debrief).
+    @Published var requestLiveCaptureScreen: Bool = false
+    private var stagedCaptureData: Data?
+    private var stagedCaptureType: String = "image/png"
+    private let unpostedStore = UnpostedCaptureStore(directory: UnpostedCaptureStore.defaultDirectory())
     @Published var recentTrades: [RecentTradeRow] = []
 
     // MARK: - Bar / Plan (notch v1 — server projection only)
@@ -330,6 +344,10 @@ public final class NotchViewModel: ObservableObject {
     var onRequestOrderFront: (() -> Void)?
     /// Hide the whole Notch HUD (pill gone) until ⌥Space / show brings it back.
     var onRequestHidePill: (() -> Void)?
+    /// Collapsed pill drag — 1:1 follow from screen mouse (grab offset preserved).
+    var onCollapsedPillDragFromScreen: (() -> Void)?
+    /// Collapsed pill drag ended — snap to edges and persist origin.
+    var onCollapsedPillDragEnded: (() -> Void)?
     /// Station bridge: open desk Brokers + Connect sheet.
     public var onRequestOpenBrokerConnect: ((String) -> Void)?
     /// Station bridge: open desk Brokers + Edit/remint sheet.
@@ -354,6 +372,15 @@ public final class NotchViewModel: ObservableObject {
             isExpanded = false
         }
         onRequestHidePill?()
+    }
+
+    func applyCollapsedPillDragFromScreen() {
+        guard !isExpanded else { return }
+        onCollapsedPillDragFromScreen?()
+    }
+
+    func endCollapsedPillDrag() {
+        onCollapsedPillDragEnded?()
     }
 
     private var resolvedBrokerSlugForBridge: String {
@@ -470,7 +497,7 @@ public final class NotchViewModel: ObservableObject {
         }
         switch daemonConnectionState {
         case .connected:
-            return Color(hex: "#00E5C0")
+            return BarDS.Accent.teal
         case .reconnecting:
             return Color(hex: "#F5A524")
         case .disconnected:
@@ -521,6 +548,7 @@ public final class NotchViewModel: ObservableObject {
         static let pendingKey = "tradeautopsy.notch.journalCapture.explicitPending"
         static let lastPendingForScreenshotKey =
             "tradeautopsy.notch.journalCapture.lastPendingForScreenshot"
+        static let chartTradesKey = "tradeautopsy.notch.journalCapture.chartTradeIds"
     }
 
     private enum BarOptimisticArmedPersistence {
@@ -564,6 +592,8 @@ public final class NotchViewModel: ObservableObject {
         restoreOptimisticArmedFromDefaults()
         refreshActiveArchetype()
         recomputeBarSurfacePhase()
+        reloadUnpostedCaptures()
+        loadChartTradeIds()
     }
 
     /// Station-hosted Notch: clamp navigation to PLAN (matches approved PLAN-only mock).
@@ -1423,6 +1453,360 @@ public final class NotchViewModel: ObservableObject {
         journalCaptureLastSuccess = "Draft saved locally."
     }
 
+    func reloadUnpostedCaptures() {
+        unpostedSweepDropped = unpostedStore.sweep()
+        unpostedCaptures = unpostedStore.all()
+    }
+
+    var capturePhaseForJournal: String {
+        switch barSurfacePhase {
+        case .declaration, .armed: return "pre"
+        case .livePlan: return "during"
+        case .debrief: return "post"
+        }
+    }
+
+    func ingestImageData(_ data: Data, hintedType: String?) {
+        do {
+            let encoded = try JournalImageEncoder.encode(data, hintedType: hintedType)
+            stagedCaptureData = encoded.data
+            stagedCaptureType = encoded.contentType
+            stagedCapturePreview = NSImage(data: encoded.data)
+            journalCaptureScreenshotError = nil
+            noteCaptureStaged()
+            Task { await notchHost?.expandToCapture() }
+        } catch JournalImageEncoderError.unsupportedType {
+            journalCaptureScreenshotError = "Paste a PNG or JPEG."
+        } catch JournalImageEncoderError.tooLarge {
+            journalCaptureScreenshotError = "Image too large."
+        } catch {
+            journalCaptureScreenshotError = error.localizedDescription
+        }
+    }
+
+    func ingestPastedImage() {
+        let pb = NSPasteboard.general
+        if let types = pb.types, types.contains(.png), let data = pb.data(forType: .png) {
+            ingestImageData(data, hintedType: "image/png")
+            return
+        }
+        if let types = pb.types, types.contains(.tiff), let data = pb.data(forType: .tiff) {
+            ingestImageData(data, hintedType: "image/tiff")
+            return
+        }
+        if let url = pb.readObjects(forClasses: [NSURL.self], options: nil)?.first as? URL {
+            let ext = url.pathExtension.lowercased()
+            guard ext == "png" || ext == "jpg" || ext == "jpeg" else {
+                journalCaptureScreenshotError = "Paste a PNG or JPEG."
+                return
+            }
+            guard let data = try? Data(contentsOf: url) else { return }
+            ingestImageData(data, hintedType: ext == "png" ? "image/png" : "image/jpeg")
+            return
+        }
+        journalCaptureScreenshotError = "Paste a PNG or JPEG."
+    }
+
+    func stageScreenshotFromRegion() async {
+        journalCaptureScreenshotBusy = true
+        journalCaptureScreenshotError = nil
+        defer { journalCaptureScreenshotBusy = false }
+        do {
+            let captureURL = try await JournalInteractiveScreenshot.captureRegionToTempPNG()
+            let data = try Data(contentsOf: captureURL)
+            JournalInteractiveScreenshot.removeTempFile(at: captureURL)
+            ingestImageData(data, hintedType: "image/png")
+        } catch is JournalInteractiveScreenshotError {
+            journalCaptureScreenshotError = "Screenshot cancelled or failed."
+        } catch {
+            journalCaptureScreenshotError = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func keepStagedCaptureInTray() -> UnpostedCaptureRecord? {
+        guard let data = stagedCaptureData else { return nil }
+        do {
+            let rec = try unpostedStore.insert(
+                imageData: data,
+                contentType: stagedCaptureType,
+                caption: journalCaptureDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+                capturePhase: capturePhaseForJournal
+            )
+            stagedCaptureData = nil
+            stagedCapturePreview = nil
+            reloadUnpostedCaptures()
+            journalCaptureLastSuccess = "Kept on this Mac"
+            journalCaptureLastError = nil
+            return rec
+        } catch {
+            journalCaptureLastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func deleteUnpostedCapture(_ id: UUID) {
+        unpostedStore.delete(id: id)
+        reloadUnpostedCaptures()
+    }
+
+    func unpostedFileURL(for rec: UnpostedCaptureRecord) -> URL {
+        unpostedStore.fileURL(for: rec)
+    }
+
+    var linkableRecentTrades: [RecentTradeRow] {
+        let q = unpostedSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty { return recentTrades }
+        return recentTrades.filter {
+            $0.symbol.lowercased().contains(q) || $0.id.lowercased().contains(q)
+        }
+    }
+
+    func sendUnpostedCapture(_ id: UUID, tradeId: String) async {
+        if let msg = JournalCaptureLinkValidator.validationMessage(
+            draftTrimmed: "",
+            explicitPending: false,
+            tradeRawTrimmed: tradeId,
+            imageOnly: true
+        ) {
+            if let rec = unpostedCaptures.first(where: { $0.id == id }) {
+                var next = rec
+                next.lastError = msg
+                unpostedStore.update(next)
+                reloadUnpostedCaptures()
+            }
+            return
+        }
+        guard let rec = unpostedCaptures.first(where: { $0.id == id }) else { return }
+        let fileURL = unpostedStore.fileURL(for: rec)
+        guard let pngData = try? Data(contentsOf: fileURL) else {
+            var next = rec
+            next.lastError = "Local file missing."
+            unpostedStore.update(next)
+            reloadUnpostedCaptures()
+            return
+        }
+        unpostedSendBusyId = id
+        defer { unpostedSendBusyId = nil }
+
+        do {
+            try await uploadScreenshotToTrade(
+                imageData: pngData,
+                contentType: rec.contentType,
+                caption: rec.caption,
+                tradeId: tradeId,
+                existing: rec
+            )
+            unpostedStore.delete(id: id)
+            reloadUnpostedCaptures()
+            tradeIdsWithChart.insert(tradeId)
+            persistChartTradeIds()
+            journalCaptureLastSuccess = "On the trade note"
+            journalCaptureLastError = nil
+        } catch {
+            var next = rec
+            next.lastError = error.localizedDescription
+            unpostedStore.update(next)
+            reloadUnpostedCaptures()
+        }
+    }
+
+    func sendStagedCapture(tradeId: String) async {
+        guard keepStagedCaptureInTray() != nil else { return }
+        guard let latest = unpostedCaptures.first else { return }
+        await sendUnpostedCapture(latest.id, tradeId: tradeId)
+    }
+
+    func tradeHasChart(_ tradeId: String) -> Bool {
+        tradeIdsWithChart.contains(tradeId)
+    }
+
+    /// Tap a today's-trade row: send the latest unposted shot, or confirm replace if that trade already has one.
+    func requestLinkUnposted(to tradeId: String) {
+        guard unpostedCaptures.first != nil else { return }
+        if tradeIdsWithChart.contains(tradeId) {
+            replaceConfirmTradeId = tradeId
+            return
+        }
+        Task { await sendLatestUnposted(to: tradeId) }
+    }
+
+    func confirmReplaceChart() async {
+        guard let tid = replaceConfirmTradeId else { return }
+        replaceConfirmTradeId = nil
+        await sendLatestUnposted(to: tid)
+    }
+
+    func cancelReplaceChart() {
+        replaceConfirmTradeId = nil
+    }
+
+    func sendLatestUnposted(to tradeId: String) async {
+        guard let latest = unpostedCaptures.first else { return }
+        await sendUnpostedCapture(latest.id, tradeId: tradeId)
+    }
+
+    /// PLAN paste/shutter: jump to Live trade unless debrief is showing Post-trade.
+    func consumeLiveCaptureScreenRequest() -> Bool {
+        guard requestLiveCaptureScreen else { return false }
+        requestLiveCaptureScreen = false
+        return barSurfacePhase != .debrief
+    }
+
+    private func noteCaptureStaged() {
+        if planSurfaceOnly {
+            dictationUsesCaptureDraft = true
+            requestLiveCaptureScreen = true
+        }
+    }
+
+    private func loadChartTradeIds() {
+        let arr = UserDefaults.standard.stringArray(forKey: JournalCapturePersistence.chartTradesKey) ?? []
+        tradeIdsWithChart = Set(arr)
+    }
+
+    private func persistChartTradeIds() {
+        UserDefaults.standard.set(Array(tradeIdsWithChart), forKey: JournalCapturePersistence.chartTradesKey)
+    }
+
+    private func uploadScreenshotToTrade(
+        imageData: Data,
+        contentType: String,
+        caption: String,
+        tradeId: String,
+        existing: UnpostedCaptureRecord
+    ) async throws {
+        guard isAuthenticated && (sessionState == "active" || sessionState == "expiring_soon") else {
+            throw NSError(domain: "Notch", code: 401, userInfo: [NSLocalizedDescriptionKey: "Sign in required to finalize captures."])
+        }
+        let idem = existing.idempotencyKey?.isEmpty == false ? existing.idempotencyKey! : StationWireClient.makeULID()
+        var pendingId = existing.consolePendingId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if pendingId.isEmpty {
+            pendingId = try await acceptImageOnlyCapture(caption: caption, tradeId: tradeId, idempotencyKey: idem)
+            var next = existing
+            next.consolePendingId = pendingId
+            next.idempotencyKey = idem
+            unpostedStore.update(next)
+        }
+        let (uploadURL, r2Key) = try await presignScreenshot(pendingId: pendingId, contentType: contentType)
+        let putCode = try await putPngToPresignedUrlWithRetry(
+            uploadURL: uploadURL,
+            pngData: imageData,
+            contentType: contentType
+        )
+        guard (200 ... 299).contains(putCode) else {
+            throw NSError(domain: "Notch", code: putCode, userInfo: [NSLocalizedDescriptionKey: "Upload failed (\(putCode))"])
+        }
+        try await patchPendingR2Key(pendingId: pendingId, r2Key: r2Key)
+        try await waitUntilPendingFinalized(pendingId: pendingId)
+    }
+
+    private func acceptImageOnlyCapture(caption: String, tradeId: String, idempotencyKey: String) async throws -> String {
+        guard let url = URL(string: baseURL() + "/api/daemon/journal/toolbar-capture/accept") else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bad daemon URL"])
+        }
+        let body: [String: Any] = [
+            "draftText": caption,
+            "imageOnly": true,
+            "tradeId": tradeId,
+            "explicitPending": false,
+            "idempotencyKey": idempotencyKey,
+        ]
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        let req = authorizedRequest(url: url, method: "POST", body: payload)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            handleDaemonErrorResponse(data: data, statusCode: status)
+            throw NSError(domain: "Notch", code: status, userInfo: [NSLocalizedDescriptionKey: daemonProtocolError.map(\.rawValue) ?? "Finalize failed (\(status))"])
+        }
+        guard
+            let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let ok = j["success"] as? Bool, ok,
+            let inner = j["data"] as? [String: Any],
+            let pendingId = inner["pending_capture_id"] as? String
+        else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unexpected server response"])
+        }
+        return pendingId
+    }
+
+    private func presignScreenshot(pendingId: String, contentType: String) async throws -> (URL, String) {
+        guard let url = URL(string: baseURL() + "/api/daemon/screenshot/presign") else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bad daemon URL"])
+        }
+        let ext = contentType == "image/jpeg" ? "jpg" : "png"
+        let body: [String: Any] = [
+            "pending_capture_id": pendingId,
+            "content_type": contentType,
+            "filename": "toolbar-\(Int(Date().timeIntervalSince1970)).\(ext)",
+        ]
+        let payload = try JSONSerialization.data(withJSONObject: body)
+        let req = authorizedRequest(url: url, method: "POST", body: payload)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw NSError(domain: "Notch", code: status, userInfo: [NSLocalizedDescriptionKey: screenshotFlowProtocolMessage(data: data, statusCode: status)])
+        }
+        guard
+            let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let ok = j["success"] as? Bool, ok,
+            let inner = j["data"] as? [String: Any],
+            let uploadUrlStr = inner["uploadUrl"] as? String,
+            let uploadURL = URL(string: uploadUrlStr),
+            let r2Key = inner["key"] as? String
+        else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unexpected presign response"])
+        }
+        return (uploadURL, r2Key)
+    }
+
+    private func patchPendingR2Key(pendingId: String, r2Key: String) async throws {
+        let patchPath = "/api/daemon/journal/toolbar-capture/pending/" + pendingId
+        guard let url = URL(string: baseURL() + patchPath) else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bad daemon URL"])
+        }
+        let payload = try JSONSerialization.data(withJSONObject: ["r2_key": r2Key])
+        let req = authorizedRequest(url: url, method: "PATCH", body: payload)
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw NSError(domain: "Notch", code: status, userInfo: [NSLocalizedDescriptionKey: screenshotFlowProtocolMessage(data: data, statusCode: status)])
+        }
+    }
+
+    private func waitUntilPendingFinalized(pendingId: String) async throws {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            if try await pendingStatus(pendingId: pendingId) == "finalized" {
+                return
+            }
+            try await Task.sleep(nanoseconds: 400_000_000)
+        }
+        throw NSError(domain: "Notch", code: 408, userInfo: [NSLocalizedDescriptionKey: "Journal send timed out — retry."])
+    }
+
+    private func pendingStatus(pendingId: String) async throws -> String {
+        let path = "/api/daemon/journal/toolbar-capture/pending/" + pendingId
+        guard let url = URL(string: baseURL() + path) else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bad daemon URL"])
+        }
+        let req = authorizedRequest(url: url, method: "GET")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw NSError(domain: "Notch", code: status, userInfo: [NSLocalizedDescriptionKey: "Status check failed (\(status))"])
+        }
+        guard
+            let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let inner = j["data"] as? [String: Any],
+            let st = inner["status"] as? String
+        else {
+            throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unexpected status response"])
+        }
+        return st
+    }
+
     private func writeJournalCaptureDefaults() {
         let d = UserDefaults.standard
         d.set(journalCaptureDraft, forKey: JournalCapturePersistence.draftKey)
@@ -1635,12 +2019,16 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Presigned R2 PUT with bounded 429 retries (Phase 7).
-    private func putPngToPresignedUrlWithRetry(uploadURL: URL, pngData: Data) async throws -> Int {
+    private func putPngToPresignedUrlWithRetry(
+        uploadURL: URL,
+        pngData: Data,
+        contentType: String = "image/png"
+    ) async throws -> Int {
         var lastCode = 0
         for attempt in 0..<3 {
             var putReq = URLRequest(url: uploadURL)
             putReq.httpMethod = "PUT"
-            putReq.setValue("image/png", forHTTPHeaderField: "Content-Type")
+            putReq.setValue(contentType, forHTTPHeaderField: "Content-Type")
             let (_, putResp) = try await URLSession.shared.upload(for: putReq, from: pngData)
             let code = (putResp as? HTTPURLResponse)?.statusCode ?? 0
             lastCode = code
@@ -2279,7 +2667,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func fetchPulseData() async {
-        guard let url = URL(string: baseURL() + "/api/daemon/pulse") else { return }
+        guard let url = URL(string: baseURL() + "/api/daemon/today") else { return }
         do {
             let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
             let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -2289,28 +2677,29 @@ public final class NotchViewModel: ObservableObject {
             }
             daemonProtocolError = nil
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let old = compositeScore
-            if let c = j["composite_score"] as? Double { compositeScore = c }
-            if let s = j["behavioral_state"] as? String { behavioralState = s }
-            if let p = j["session_pnl"] as? Double { sessionPnL = p }
-            if let w = j["win_rate"] as? Double { winRate = w }
-            if let t = j["trades_today"] as? Int {
+            applyDeskHonesty(from: j)
+            let hero = j["hero"] as? [String: Any] ?? [:]
+            if j["degradedReason"] is String {
+                sessionPnL = 0
+                winRate = 0
+                tradesToday = 0
+                return
+            }
+            if let p = hero["pnlTodayUsd"] as? Double {
+                sessionPnL = p
+            } else {
+                sessionPnL = 0
+            }
+            if let w = hero["winRate"] as? Double { winRate = w }
+            if let t = hero["tradesToday"] as? Int {
                 let prev = tradesToday
                 if t > prev {
                     fireTradeFillRingPulse()
                 }
                 tradesToday = t
+            } else if let t = hero["tradesToday"] as? Double {
+                tradesToday = Int(t)
             }
-            if let sig = j["signals"] as? [String: Any] {
-                signals = SignalBreakdown(
-                    lossChasingScore: sig["loss_chasing"] as? Double ?? 0,
-                    revengeScore: sig["revenge"] as? Double ?? 0,
-                    overtradingScore: sig["overtrading"] as? Double ?? 0,
-                    sizingErrorScore: sig["sizing_error"] as? Double ?? 0,
-                    symbolDriftScore: sig["symbol_drift"] as? Double ?? 0
-                )
-            }
-            checkSmartTriggers(oldScore: old, newScore: compositeScore)
         } catch {
             lastAlert = error.localizedDescription
         }
@@ -2342,7 +2731,9 @@ public final class NotchViewModel: ObservableObject {
                         ?? (p["tradingSymbol"] as? String)
                         ?? (p["symbol"] as? String)
                         ?? "—"
-                    let qty = (p["quantity"] as? Int) ?? (p["qty"] as? Int) ?? 0
+                    let qty = (p["quantity"] as? Int)
+                        ?? (p["qty"] as? Int)
+                        ?? Int(((p["qty"] as? Double) ?? (p["quantity"] as? Double) ?? 0).rounded())
                     let pnl = (p["unrealizedPnl"] as? Double) ?? (p["unrealized_pnl"] as? Double) ?? 0
                     let dir = (p["direction"] as? String) ?? (p["side"] as? String) ?? ""
                     out.append(NotchPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))

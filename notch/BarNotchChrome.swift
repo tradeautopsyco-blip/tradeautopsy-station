@@ -6,8 +6,10 @@ import SwiftUI
 // so chrome stays consistent (CollapsedView, BarEscrowMatchView, intervention rows).
 
 enum BarNotchChrome {
-    /// Collapsed daemon strip — target from mockups; adjust only for hardware notch overlap (document deltas).
-    static let collapsedStripHeight: CGFloat = 28
+    /// HTML `.pill` height (32px).
+    static let collapsedStripHeight: CGFloat = 32
+    /// Hug `dot + 0.00 + CALM` — not a stretched 200pt slab.
+    static let collapsedPillWidth: CGFloat = 128
 
     /// Escrow fidelity / match status ring (diameter in points @1x design baseline).
     static let escrowStatusRingDiameter: CGFloat = 60

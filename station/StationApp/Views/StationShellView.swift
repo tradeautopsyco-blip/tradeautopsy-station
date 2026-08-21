@@ -33,6 +33,8 @@ public struct StationShellView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StationDS.Fill.appPanel)
+        .tint(StationDS.Accent.teal)
     }
 
     @ViewBuilder

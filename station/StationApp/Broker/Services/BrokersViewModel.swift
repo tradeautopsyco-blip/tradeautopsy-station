@@ -25,6 +25,8 @@ public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var isConnecting = false
     /// Surfaced when Start/Stop fails (was previously swallowed by `try?`).
     @Published public private(set) var syncActionMessage: String?
+    /// Silent Keychain ACL probe — granted vs needs Always Allow. Station never writes ACL.
+    @Published public private(set) var keychainGrantHint: String?
     /// Bumped when one-time secrets are cleared so the Connect sheet remounts empty SecureFields.
     @Published public private(set) var connectSecretFieldsEpoch = 0
 
@@ -40,6 +42,7 @@ public final class BrokersViewModel: ObservableObject {
     private let runtimeClient: BrokerAgentRuntimeClient
     private let loginProfileStore: KotakLoginProfileStoring
     private var connectController: BrokerConnectController?
+    private var didReconcileVaultAccounts = false
 
     public var connectBrokerDisplayName: String {
         guard let slug = connectBrokerSlug else { return "Broker" }
@@ -80,10 +83,14 @@ public final class BrokersViewModel: ObservableObject {
     }
 
     public func load() async {
-        let configuredIDs = configuredConnectionIDsForReconcile()
-        BrokerCredentialOrphanCleanup.reconcileVaultAccounts(
-            configuredConnectionIDs: configuredIDs
-        )
+        if !didReconcileVaultAccounts {
+            let configuredIDs = configuredConnectionIDsForReconcile()
+            BrokerCredentialOrphanCleanup.reconcileVaultAccounts(
+                configuredConnectionIDs: configuredIDs
+            )
+            didReconcileVaultAccounts = true
+            refreshKeychainGrantHint()
+        }
         let snapshot = await brokerControl.loadSnapshot()
         cards = Self.applyValidatingOverlay(
             cards: BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1),
@@ -96,10 +103,12 @@ public final class BrokersViewModel: ObservableObject {
         var ids = Set<UUID>()
         for slug in ["binance_com", "kotak_neo"] {
             let identity = BrokerConnectServices.identity(for: slug)
+            if metadataStore.load(for: identity)?.lastValidatedAt != nil {
+                ids.insert(identity.brokerConnectionID)
+                continue
+            }
             if slug == "kotak_neo" {
-                if metadataStore.load(for: identity)?.lastValidatedAt != nil
-                    || loginProfileStore.hasProfile(for: identity)
-                {
+                if loginProfileStore.hasProfile(for: identity) {
                     ids.insert(identity.brokerConnectionID)
                 }
             } else if credentialStore.hasCredentials(for: identity) {
@@ -107,6 +116,20 @@ public final class BrokersViewModel: ObservableObject {
             }
         }
         return ids
+    }
+
+    private func refreshKeychainGrantHint() {
+        let identity = BrokerConnectServices.identity(for: "binance_com")
+        switch credentialStore.accessGrant(for: identity) {
+        case .granted:
+            keychainGrantHint =
+                "Mac Keychain access is granted for this app. If you need to change it, do that in Keychain Access — Station will not rewrite Always Allow."
+        case .needsAlwaysAllow:
+            keychainGrantHint =
+                "Mac Keychain would prompt. Click Always Allow once (not Allow). Station does not change that for you."
+        case .missing:
+            keychainGrantHint = nil
+        }
     }
 
     private static func applyValidatingOverlay(

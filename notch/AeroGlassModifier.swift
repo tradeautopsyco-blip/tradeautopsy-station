@@ -50,7 +50,7 @@ struct GlassCard: ViewModifier {
 
 struct GlassPanel: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    var radius: CGFloat = 16
+    var radius: CGFloat = 18
 
     func body(content: Content) -> some View {
         content
@@ -66,7 +66,7 @@ struct GlassPanel: ViewModifier {
                                 blendingMode: .behindWindow
                             )
                             RoundedRectangle(cornerRadius: radius, style: .continuous)
-                                .fill(Color.black.opacity(0.75))
+                                .fill(BarDS.Fill.glass)
                             RoundedRectangle(cornerRadius: radius, style: .continuous)
                                 .fill(Color.white.opacity(0.02))
                         }
@@ -109,7 +109,7 @@ extension View {
         modifier(GlassCard(radius: radius))
     }
 
-    func glassPanel(radius: CGFloat = 16) -> some View {
+    func glassPanel(radius: CGFloat = 18) -> some View {
         modifier(GlassPanel(radius: radius))
     }
 
@@ -165,12 +165,12 @@ func primaryButton(_ label: String, accessibilityLabel: String? = nil, action: @
     }
     .buttonStyle(.plain)
     .accessibilityLabel(accessibilityLabel ?? label)
-    .background(Color(hex: "#00E5C0"))
-    .cornerRadius(10)
-    .shadow(
-        color: Color(hex: "#00E5C0").opacity(0.3),
-        radius: 10, x: 0, y: 0
-    )
+            .background(BarDS.Accent.teal)
+            .cornerRadius(10)
+            .shadow(
+                color: BarDS.Accent.teal.opacity(0.3),
+                radius: 10, x: 0, y: 0
+            )
 }
 
 @ViewBuilder

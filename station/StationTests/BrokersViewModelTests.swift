@@ -142,4 +142,42 @@ struct BrokersViewModelTests {
         #expect(viewModel.syncActionMessage?.localizedCaseInsensitiveContains("keychain") == true)
         #expect(viewModel.cards.contains { $0.id == "binance_com" && $0.status == .readyToStart })
     }
+
+    @Test func keychainGrantHintShowsGrantedWithoutSecretRead() async {
+        let store = FakeBrokerCredentialStore()
+        store.nextAccessGrant = .granted
+        let (viewModel, client, _, _) = makeViewModelWithStore(store)
+        client.scenario = .notConfigured
+        await viewModel.load()
+        await viewModel.load()
+        #expect(viewModel.keychainGrantHint?.localizedCaseInsensitiveContains("granted") == true)
+        #expect(store.readCallCount == 0)
+    }
+
+    @Test func keychainGrantHintAsksAlwaysAllowWhenLocked() async {
+        let store = FakeBrokerCredentialStore()
+        store.nextAccessGrant = .needsAlwaysAllow
+        let (viewModel, client, _, _) = makeViewModelWithStore(store)
+        client.scenario = .notConfigured
+        await viewModel.load()
+        #expect(viewModel.keychainGrantHint?.localizedCaseInsensitiveContains("always allow") == true)
+        #expect(store.readCallCount == 0)
+    }
+
+    private func makeViewModelWithStore(
+        _ store: FakeBrokerCredentialStore
+    ) -> (BrokersViewModel, FakeBrokerControlClient, FakeBrokerCredentialStore, FakeBrokerSyncControl) {
+        let sync = FakeBrokerSyncControl()
+        let metadataStore = UserDefaultsBrokerMetadataStore(
+            defaults: UserDefaults(suiteName: "StationTests.BrokersVM.\(UUID().uuidString)")!
+        )
+        let client = FakeBrokerControlClient()
+        let viewModel = BrokersViewModel(
+            brokerControl: client,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync
+        )
+        return (viewModel, client, store, sync)
+    }
 }

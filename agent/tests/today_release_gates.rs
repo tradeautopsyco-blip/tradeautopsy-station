@@ -103,3 +103,22 @@ fn today_degraded_reason_serializes_snake_case() {
     let j = serde_json::to_string(&reason).unwrap();
     assert_eq!(j, "\"sync_unavailable\"");
 }
+
+#[test]
+fn today_stub_adapter_serializes_snake_case() {
+    let reason = tradeautopsy_agent::TodayDegradedReason::StubAdapter;
+    let j = serde_json::to_string(&reason).unwrap();
+    assert_eq!(j, "\"stub_adapter\"");
+}
+
+#[test]
+fn open_inventory_keeps_leftover_buy_qty() {
+    let leftover = tradeautopsy_agent::open_inventory_from_fills(&[
+        fill("b1", "BUY", 0.02, 60_000.0),
+        fill("s1", "SELL", 0.01, 61_000.0),
+    ]);
+    assert_eq!(leftover.len(), 1);
+    assert_eq!(leftover[0].symbol, "BTCUSDT");
+    assert!((leftover[0].qty - 0.01).abs() < 1e-12);
+    assert_eq!(leftover[0].side, "LONG");
+}

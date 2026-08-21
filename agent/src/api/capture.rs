@@ -22,6 +22,8 @@ pub(crate) struct ToolbarCaptureAcceptBody {
     idempotency_key: Option<String>,
     #[serde(default)]
     r2_key: Option<String>,
+    #[serde(default)]
+    image_only: Option<bool>,
 }
 
 fn validation_error(message: &str, request_id: Option<&str>) -> Response {
@@ -246,6 +248,42 @@ pub async fn pending_patch_handler(
         &path,
         request_id,
         Some(&body),
+        true,
+    )
+    .await
+    {
+        Ok((st, text)) => upstream_json_response(st, text),
+        Err(msg) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error_class": "SERVER_DOWN",
+                "message": msg,
+                "retry_after_ms": Value::Null,
+                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET pending capture status — wait-for-finalize (T4).
+pub async fn pending_get_handler(
+    State(state): State<AppState>,
+    Path(pending_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+    if uuid::Uuid::parse_str(&pending_id).is_err() {
+        return validation_error("pending id must be UUID", request_id);
+    }
+
+    let path = format!("/api/daemon/journal/toolbar-capture/pending/{pending_id}");
+    match forward_daemon_json_with_optional_429_retry(
+        &state.upstream,
+        reqwest::Method::GET,
+        &path,
+        request_id,
+        None,
         true,
     )
     .await

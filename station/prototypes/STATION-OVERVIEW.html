@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<!--
+  STATION OVERVIEW — dense Today (images 1–3 craft, not TradingView market).
+  Remaining-to-floor is a T8 preview: labeled, not live Station math.
+  Circuit stays on Notch. Journal / Replay open Console.
+  Open: open station/prototypes/STATION-OVERVIEW.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Station — Overview</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --sidebar-bg: rgba(8,8,8,.88);
+      --card: #111111;
+      --elevated: #1c1c1e;
+      --accent: #63E6E2;
+      --accent-rgb: 99, 230, 226;
+      --gain: #30D158;
+      --gain-rgb: 48, 209, 88;
+      --loss: #FF453A;
+      --loss-rgb: 255, 69, 58;
+      --caution: #FF9F0A;
+      --caution-rgb: 255, 159, 10;
+      --info: #0A84FF;
+      --t1: #ffffff;
+      --t2: rgba(255,255,255,.60);
+      --t3: rgba(255,255,255,.30);
+      --bd: rgba(255,255,255,.06);
+      --glass: rgba(8,8,8,.74);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --type-chrome: 10px;
+      --type-caption: 11px;
+      --type-body: 13px;
+      --type-title: 14px;
+      --track-10: 0.012em;
+      --track-11: 0.006em;
+      --track-13: -0.006em;
+      --track-14: -0.011em;
+      --track-17: -0.026em;
+      --r: 8px;
+      --sidebar-w: 212px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font: 400 var(--type-body)/1.45 var(--sans);
+      letter-spacing: var(--track-13);
+      font-optical-sizing: auto;
+      background: #1a1a1c;
+      color: var(--t1);
+      -webkit-font-smoothing: antialiased;
+      padding: 24px 20px 72px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; touch-action: manipulation; }
+    .press { transition: transform 100ms ease-out; }
+    .press.is-down { transform: scale(0.97); }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .tag {
+      position: fixed; top: 12px; left: 12px; z-index: 40;
+      font: 500 var(--type-chrome)/1 var(--mono); letter-spacing: var(--track-10);
+      text-transform: uppercase; color: var(--caution);
+      background: rgba(var(--caution-rgb), .10);
+      border: 0.5px solid rgba(var(--caution-rgb), .28);
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .legend { max-width: 1180px; margin: 0 auto 16px; }
+    .legend h1 { font-size: 17px; font-weight: 500; letter-spacing: var(--track-17); margin-bottom: 6px; }
+    .legend p { color: var(--t2); max-width: 78ch; }
+    .legend code { font-family: var(--mono); font-size: var(--type-caption); color: var(--t1); }
+
+    .app {
+      width: 1180px; height: 760px; margin: 0 auto;
+      background: var(--bg); border-radius: 12px; overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 0.5px rgba(255,255,255,.06);
+    }
+    .pulse {
+      height: 40px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px; padding: 0 14px 0 12px;
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid rgba(255,255,255,.14);
+      border-bottom: 0.5px solid var(--bd);
+      font-family: var(--mono); font-size: var(--type-caption);
+    }
+    .traffic { display: flex; gap: 6px; }
+    .traffic i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .pulse .lbl { font-family: var(--sans); font-size: var(--type-chrome); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+    .pulse .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .pulse .val.pos { color: var(--gain); } .pulse .val.neg { color: var(--loss); } .pulse .val.muted { color: var(--t2); }
+    .pulse .sep { width: 1px; height: 14px; background: var(--bd); }
+    .pulse .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .chip { font-size: var(--type-chrome); font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 0.5px solid var(--bd); color: var(--t2); }
+    .chip.on { color: var(--accent); border-color: rgba(var(--accent-rgb),.28); background: rgba(var(--accent-rgb),.10); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gain); }
+    .dot.warn { background: var(--caution); } .dot.kill { background: var(--loss); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sidebar {
+      width: var(--sidebar-w); flex-shrink: 0;
+      background: var(--sidebar-bg);
+      backdrop-filter: blur(28px) saturate(140%);
+      border-right: 0.5px solid var(--bd);
+      display: flex; flex-direction: column;
+    }
+    .sb-section { padding: 14px 16px 6px; font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); text-transform: uppercase; color: var(--t3); }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 7px 10px; border-radius: 8px;
+      font-size: var(--type-body); color: var(--t2); width: calc(100% - 16px); text-align: left;
+    }
+    .nav-item:hover { background: rgba(255,255,255,.04); color: var(--t1); }
+    .nav-item.on { background: rgba(255,255,255,.08); color: #fff; font-weight: 500; }
+    .sb-spacer { flex: 1; }
+    .sb-foot { padding: 12px 16px; border-top: 0.5px solid var(--bd); font-family: var(--mono); font-size: var(--type-chrome); color: var(--t3); }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--gain); }
+
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; background: #000; }
+    .scroll { flex: 1; overflow-y: auto; padding: 18px 22px 12px; display: flex; flex-direction: column; gap: 18px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
+    .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .screen.on { display: flex; }
+
+    .head {
+      display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start;
+    }
+    .gauge {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: conic-gradient(var(--caution) 0 calc(var(--pct, .52) * 360deg), #1c1c1e 0);
+      display: grid; place-items: center;
+      position: relative;
+    }
+    .gauge::after {
+      content: ""; width: 46px; height: 46px; border-radius: 50%; background: #000;
+    }
+    .gauge span {
+      position: absolute; text-align: center;
+      font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: var(--track-10);
+      color: var(--caution); line-height: 1.15;
+    }
+    .date { font-size: 28px; font-weight: 600; letter-spacing: var(--track-17); line-height: 1.1; }
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .pill {
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      padding: 4px 9px; border-radius: 999px; border: 0.5px solid var(--bd); color: var(--t2);
+    }
+    .pill.on { background: var(--elevated); color: var(--t1); border-color: rgba(255,255,255,.16); }
+    .preview-tag {
+      font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--caution);
+    }
+
+    .anchor { margin-top: 4px; }
+    .remain {
+      font-size: 22px; font-weight: 600; letter-spacing: var(--track-17); line-height: 1.15;
+    }
+    .remain .used { font-size: 13px; font-weight: 500; color: var(--loss); margin-left: 10px; letter-spacing: var(--track-13); }
+    .meta { margin-top: 6px; font-size: var(--type-caption); color: var(--t3); font-family: var(--mono); }
+
+    .tabs {
+      display: flex; gap: 18px; border-bottom: 0.5px solid var(--bd); padding-bottom: 0;
+    }
+    .tabs button {
+      padding: 0 0 10px; font-size: var(--type-body); font-weight: 500; color: var(--t3);
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tabs button.on { color: var(--t1); border-bottom-color: #fff; }
+
+    .pane { display: none; flex-direction: column; gap: 18px; }
+    .pane.on { display: flex; }
+
+    .line {
+      display: flex; align-items: baseline; gap: 12px; justify-content: space-between;
+    }
+    .line p { font-size: var(--type-body); font-weight: 500; max-width: 62ch; }
+    .cta {
+      flex-shrink: 0; padding: 8px 14px; border-radius: 6px;
+      background: #fff; color: #111; font-size: var(--type-body); font-weight: 600;
+    }
+    .cta.kill { background: var(--loss); color: #fff; }
+
+    .chart-card { position: relative; }
+    .chart-tools { position: absolute; top: 0; right: 0; display: flex; gap: 6px; }
+    .ghost {
+      padding: 5px 10px; border-radius: 6px; border: 0.5px solid rgba(255,255,255,.14);
+      font-size: var(--type-caption); color: var(--t2);
+    }
+    .chart-host { width: 100%; height: 220px; }
+    .chart-host svg { display: block; width: 100%; height: 100%; }
+    .ta-tick { fill: var(--t3); font-size: 10px; font-family: var(--sans); }
+    .readout {
+      font-family: var(--mono); font-size: var(--type-caption); color: var(--t2); margin-top: 6px;
+    }
+
+    .horiz { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; }
+    .tf {
+      padding: 8px 6px 10px; text-align: left; border-radius: 8px;
+    }
+    .tf:hover, .tf.on { background: rgba(255,255,255,.06); }
+    .tf .k { display: block; font-size: var(--type-chrome); font-weight: 500; letter-spacing: var(--track-10); color: var(--t3); margin-bottom: 4px; }
+    .tf .v { font-family: var(--mono); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tf .v.pos { color: var(--gain); } .tf .v.neg { color: var(--loss); } .tf .v.muted { color: var(--t2); }
+
+    .sec { font-size: var(--type-title); font-weight: 600; letter-spacing: var(--track-14); }
+    .sec .more { font-weight: 400; color: var(--t3); }
+    .subcopy { font-size: var(--type-caption); color: var(--t2); margin-top: 4px; margin-bottom: 10px; }
+
+    .days { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+    .day {
+      padding: 12px 10px; border-radius: var(--r); border: 0.5px solid var(--bd);
+      background: #0a0a0a; text-align: left;
+    }
+    .day .d { font-size: var(--type-caption); color: var(--t3); }
+    .day .v { margin-top: 6px; font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .day .v.pos { color: var(--gain); } .day .v.neg { color: var(--loss); }
+    .day .f { margin-top: 4px; font-size: 10px; color: var(--t3); }
+
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .key .k { font-size: var(--type-caption); color: var(--t3); margin-bottom: 4px; }
+    .key .v { font-size: 17px; font-weight: 600; letter-spacing: var(--track-17); }
+
+    .gauges { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .gbox { padding: 8px 8px 4px; }
+    .gbox h3 { font-size: var(--type-caption); font-weight: 500; color: var(--t2); text-align: center; margin-bottom: 4px; }
+    .gbox .state { text-align: center; font-size: var(--type-caption); font-weight: 600; margin-top: 2px; }
+    .gbox .state.slip { color: var(--caution); }
+    .gbox .state.ok { color: var(--t2); }
+
+    .tbl { border-top: 0.5px solid var(--bd); }
+    .t-row {
+      display: grid; grid-template-columns: 56px 1.2fr 52px 48px 52px 100px 110px;
+      align-items: center; height: 40px; font-size: 12px;
+      border-bottom: 0.5px solid var(--bd);
+    }
+    .t-row.head { height: 28px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+    .t-row .mono { font-family: var(--mono); }
+    .t-row .pos { color: var(--gain); } .t-row .neg { color: var(--loss); }
+    .flag {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px;
+      background: rgba(var(--loss-rgb),.12); color: var(--loss);
+    }
+    .see { color: var(--info); font-size: var(--type-caption); font-weight: 500; padding: 10px 0; text-align: left; }
+
+    .stub { color: var(--t2); max-width: 48ch; padding: 24px 0; }
+
+    .status {
+      flex-shrink: 0; height: 36px;
+      display: flex; align-items: center; gap: 18px; padding: 0 22px;
+      border-top: 0.5px solid var(--bd);
+      font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3);
+    }
+    .status .grp { display: flex; align-items: center; gap: 10px; }
+    .status .on { color: var(--t1); }
+    .status .on::before {
+      content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--gain); margin-right: 6px; vertical-align: middle;
+    }
+    .status.kill .breaker .on::before { background: var(--loss); }
+    .status .wm { margin-left: auto; font-weight: 500; letter-spacing: .04em; color: #333; text-transform: none; }
+
+    .toast {
+      position: absolute; top: 16px; right: 16px; z-index: 8;
+      padding: 10px 14px; border-radius: 12px;
+      background: var(--elevated); border: 0.5px solid var(--bd);
+      font-size: 12px; font-weight: 500; opacity: 0; pointer-events: none;
+    }
+
+    .proto {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 20; display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px; border-radius: 999px;
+      background: rgba(20,20,22,.72); backdrop-filter: blur(20px);
+      border: 0.5px solid var(--bd);
+    }
+    .proto button { min-width: 28px; height: 28px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--t3); }
+    .proto button.on { background: var(--elevated); color: var(--t1); }
+    .proto .note { padding: 0 8px; font-family: var(--mono); font-size: 10px; color: var(--t3); white-space: nowrap; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .press { transition: none; } .press.is-down { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .pulse, .sidebar, .proto { background: #0a0a0a; backdrop-filter: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tag">T8 preview · floor not live</div>
+  <div class="legend">
+    <h1>Station Today — dense, still one story</h1>
+    <p>
+      Structure from your session harness: remaining, one chart, trips, behaviour.
+      Not a market terminal. Floor math is labeled preview until T8 owns it.
+      Next action still opens the Notch.
+    </p>
+  </div>
+
+  <div class="app">
+    <div class="pulse">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <span class="lbl">P&amp;L today</span>
+      <span class="val neg" id="pulse-pnl">−₹5,800</span>
+      <span class="sep"></span>
+      <span class="lbl">Open</span>
+      <span class="val muted" id="pulse-open">—</span>
+      <span class="sep"></span>
+      <span class="lbl">Positions</span>
+      <span class="val muted" id="pulse-pos">0 open</span>
+      <div class="right"><span class="chip on">Kotak INR</span><span class="dot" id="pulse-dot"></span></div>
+    </div>
+    <div class="body">
+      <nav class="sidebar">
+        <div class="sb-section">Desk</div>
+        <button type="button" class="nav-item on" data-route="Today">Today</button>
+        <div class="sb-section">Backend Box</div>
+        <button type="button" class="nav-item" data-route="Brokers">Brokers</button>
+        <button type="button" class="nav-item" data-route="Market Data">Market Data</button>
+        <button type="button" class="nav-item" data-route="AI / Workflow">AI / Workflow</button>
+        <div class="sb-section">This Mac</div>
+        <button type="button" class="nav-item" data-route="Settings">Settings</button>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span>Kotak Neo</span><span class="ok">syncing</span></div>
+          <div><span>Journal</span><span>Console</span></div>
+        </div>
+      </nav>
+      <div class="main">
+        <div class="toast" id="toast" role="status"></div>
+
+        <section class="screen on" id="screen-Today">
+          <div class="scroll">
+            <div class="head">
+              <div class="gauge" id="gauge" style="--pct:.52"><span>52%<br>LEFT</span></div>
+              <div>
+                <div class="date" id="date">Thursday, 20 August</div>
+                <div class="pills">
+                  <span class="pill">Kotak · ••4471 · NIFTY &amp; BANKNIFTY</span>
+                  <span class="pill">Scalper</span>
+                  <span class="pill on">Intraday</span>
+                  <span class="pill">Swing</span>
+                  <span class="preview-tag">T8 preview</span>
+                </div>
+                <div class="anchor">
+                  <div class="remain" id="remain">₹6,200 remaining <span class="used">−₹5,800 · 48% of ₹12,000 floor used</span></div>
+                  <div class="meta" id="sess-meta">Session open · 11:42 GMT+5:30 · 7 round trips</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tabs" role="tablist">
+              <button type="button" class="on" data-tab="overview">Overview</button>
+              <button type="button" data-tab="trips">Round trips</button>
+              <button type="button" data-tab="behaviour">Behaviour</button>
+              <button type="button" data-tab="rules">Rules</button>
+              <button type="button" data-tab="journal">Journal</button>
+              <button type="button" data-tab="replay">Replay</button>
+            </div>
+
+            <div class="pane on" id="pane-overview">
+              <div class="line">
+                <p id="takeaway">You have ₹6,200 before the floor stops you — a little over one average loss at your ₹5,400 mean.</p>
+                <button type="button" class="cta press" id="now-btn">Open Notch · Live</button>
+              </div>
+              <div class="chart-card">
+                <div class="chart-tools">
+                  <button type="button" class="ghost press" data-say="Snapshot stays on this Mac.">Snapshot</button>
+                  <button type="button" class="ghost press" data-say="Full chart is this plot, not TradingView.">Full chart</button>
+                </div>
+                <div class="chart-host" id="floor-chart"></div>
+                <div class="readout" id="floor-read">11:42 · −₹5,800 · ₹6,200 to floor</div>
+              </div>
+              <div class="horiz" id="tfs"></div>
+              <div>
+                <div class="sec">Compare with recent sessions</div>
+                <p class="subcopy">Your last six local days. Not the index.</p>
+                <div class="days" id="days"></div>
+              </div>
+              <div>
+                <div class="sec">Key data points</div>
+                <div class="keys" id="keys"></div>
+              </div>
+              <div>
+                <div class="sec">Behaviour</div>
+                <p class="subcopy">Three weighted signals from your last week. Loss chasing is the one dragging the summary down.</p>
+                <div class="gauges" id="gauges-mini"></div>
+              </div>
+            </div>
+
+            <div class="pane" id="pane-trips">
+              <div>
+                <div class="sec">Time of day <span class="more">›</span></div>
+                <p class="subcopy">Your net by hour today against your 3-month average and your best week.</p>
+                <div class="chart-host" id="tod-chart" style="height:180px"></div>
+              </div>
+              <div>
+                <div class="sec">Round trips <span class="more">›</span></div>
+                <p class="subcopy">7 today, 2 flagged. Both flags were size — together they cost ₹15,720.</p>
+                <div class="tbl" id="tbl"></div>
+                <button type="button" class="see press" data-say="Opens Console journal for the day sheet.">See all 7 round trips ›</button>
+              </div>
+            </div>
+
+            <div class="pane" id="pane-behaviour">
+              <p class="subcopy">Gauges are local to you. They are not market heat.</p>
+              <div class="gauges" id="gauges-full"></div>
+              <p class="note" style="color:var(--t2);font-size:12px">Loss chasing is slipping. Summary and plan adherence are still neutral. Next move is still on the Notch, not a new Station form.</p>
+            </div>
+
+            <div class="pane" id="pane-rules">
+              <div class="keys">
+                <div class="key"><div class="k">Daily floor</div><div class="v">₹12,000</div></div>
+                <div class="key"><div class="k">Used today</div><div class="v" style="color:var(--loss)">₹5,800</div></div>
+                <div class="key"><div class="k">Mean loss</div><div class="v">₹5,400</div></div>
+                <div class="key"><div class="k">Max trips</div><div class="v">12</div></div>
+              </div>
+              <p class="subcopy">These numbers are the rule you set in Settings. Remaining is a T8 preview of the charge engine — Station does not own that math yet. Stop pauses sync. Kill is the Notch overlay.</p>
+              <button type="button" class="ghost press" data-say="Settings — This Mac.">Open Settings</button>
+            </div>
+          </div>
+          <footer class="status" id="status">
+            <span>Breaker</span>
+            <div class="grp breaker">
+              <span class="on" id="br-on">Armed</span>
+              <span>Warning</span>
+              <span>Tripped</span>
+              <span>Degraded</span>
+            </div>
+            <span>Data</span>
+            <div class="grp">
+              <span class="on">Live</span>
+              <span>No data</span>
+              <span>Stale</span>
+            </div>
+            <span class="wm">Preview harness · floor remaining not live</span>
+          </footer>
+        </section>
+
+        <section class="screen" id="screen-Brokers">
+          <div class="scroll"><p class="stub">Brokers stay in Backend Box. Connect on the card. Stop is not Kill. Density lives on Today.</p></div>
+        </section>
+        <section class="screen" id="screen-Market Data">
+          <div class="scroll"><p class="stub">Market Data is the feed for the desk. Notch overlays the chart. This is not a TradingView summary page.</p></div>
+        </section>
+        <section class="screen" id="screen-AI / Workflow">
+          <div class="scroll"><p class="stub">Capture helpers. Debrief still happens on the Notch.</p></div>
+        </section>
+        <section class="screen" id="screen-Settings">
+          <div class="scroll"><p class="stub">Launch at login, loss limits, hide Notch. Limits sync to the Notch. They do not fire Kill.</p></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <nav class="proto">
+    <button type="button" class="press on" data-v="A">A</button>
+    <button type="button" class="press" data-v="E">E</button>
+    <button type="button" class="press" data-v="F">F</button>
+    <span class="note" id="vnote">Session with 7 trips</span>
+  </nav>
+
+  <script>
+    const times = ['09:15','10:15','11:15','12:15','13:15','14:15','15:30'];
+    const pnl = [0, 800, -400, -1200, -2100, -4100, -5800];
+    const avg = [0, 200, 350, 480, 620, 700, 740];
+    const best = [0, 900, 1600, 2400, 3100, 3800, 4500];
+    const floor = -12000;
+    const days = [
+      { d: '18 Aug', w: 'Tue', v: '+₹3,200', cls: 'pos', f: '22% of floor' },
+      { d: '17 Aug', w: 'Mon', v: '−₹1,400', cls: 'neg', f: '12% of floor' },
+      { d: '14 Aug', w: 'Fri', v: '+₹4,100', cls: 'pos', f: 'best this week' },
+      { d: '13 Aug', w: 'Thu', v: '−₹2,600', cls: 'neg', f: '22% of floor' },
+      { d: '12 Aug', w: 'Wed', v: '−₹7,900', cls: 'neg', f: '66% of floor' },
+      { d: '11 Aug', w: 'Mon', v: '+₹1,050', cls: 'pos', f: 'quiet' },
+    ];
+    const tfs = [
+      ['Today', '−₹5,800', 'neg'],
+      ['5 days', '−₹2,140', 'neg'],
+      ['1 month', '+₹18,400', 'pos'],
+      ['3 months', '−₹9,300', 'neg'],
+      ['Year to date', '+₹1,42,600', 'pos'],
+      ['1 year', '+₹2,08,400', 'pos'],
+      ['All time', '+₹3,11,900', 'pos'],
+    ];
+    const trips = [
+      { t: '09:41', s: 'NIFTY', side: 'CE', hold: '12m', qty: '50', net: '+₹3,100', cls: 'pos', flag: '' },
+      { t: '10:08', s: 'BANKNIFTY', side: 'PE', hold: '9m', qty: '25', net: '−₹8,160', cls: 'neg', flag: 'Size +50%' },
+      { t: '10:44', s: 'NIFTY', side: 'CE', hold: '6m', qty: '50', net: '+₹1,840', cls: 'pos', flag: '' },
+      { t: '11:19', s: 'NIFTY', side: 'PE', hold: '4m', qty: '75', net: '−₹7,560', cls: 'neg', flag: 'Re-entry' },
+      { t: '12:02', s: 'BANKNIFTY', side: 'CE', hold: '18m', qty: '25', net: '+₹2,200', cls: 'pos', flag: '' },
+      { t: '13:11', s: 'NIFTY', side: 'CE', hold: '8m', qty: '50', net: '+₹1,050', cls: 'pos', flag: '' },
+      { t: '14:26', s: 'NIFTY', side: 'PE', hold: '11m', qty: '50', net: '+₹1,730', cls: 'pos', flag: '' },
+    ];
+
+    function rupee(n) {
+      const sign = n > 0 ? '+' : n < 0 ? '−' : '';
+      return sign + '₹' + Math.abs(n).toLocaleString('en-IN');
+    }
+    function say(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.opacity = '1'; t.style.transform = 'translateY(0)';
+      clearTimeout(say.t);
+      say.t = setTimeout(() => { t.style.opacity = '0'; }, 2200);
+    }
+
+    function drawFloor(host, series, floorY) {
+      host.innerHTML = '';
+      const w = host.clientWidth || 760, h = 220, l = 8, r = 52, t = 12, b = 28;
+      const yMin = floorY - 800, yMax = 5000;
+      const xAt = (i) => l + (i / (series.length - 1)) * (w - l - r);
+      const yAt = (v) => t + (1 - (v - yMin) / (yMax - yMin)) * (h - t - b);
+      const pts = series.map((v, i) => [xAt(i), yAt(v)]);
+      const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+      const last = pts[pts.length - 1];
+      const fy = yAt(floorY);
+      const zy = yAt(0);
+      const area = line + ' L' + last[0].toFixed(1) + ' ' + zy.toFixed(1) + ' L' + pts[0][0].toFixed(1) + ' ' + zy.toFixed(1) + ' Z';
+      host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Session P and L versus daily floor">
+        <defs>
+          <pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(255,69,58,.45)" stroke-width="1.6"/>
+          </pattern>
+        </defs>
+        <line x1="${l}" x2="${w-r}" y1="${zy}" y2="${zy}" stroke="rgba(255,255,255,.2)" stroke-dasharray="3 3"/>
+        <line x1="${l}" x2="${w-r}" y1="${fy}" y2="${fy}" stroke="rgba(255,69,58,.55)" stroke-dasharray="4 4"/>
+        <text class="ta-tick" x="${w-4}" y="${zy+4}" text-anchor="end">0</text>
+        <text class="ta-tick" x="${w-4}" y="${yAt(5000)+4}" text-anchor="end">+5k</text>
+        <text class="ta-tick" x="${w-4}" y="${fy+4}" text-anchor="end">−12k</text>
+        <path d="${area}" fill="url(#hatch)" opacity=".7"/>
+        <path d="${line}" fill="none" stroke="#FF453A" stroke-width="1.8" stroke-linejoin="round"/>
+        <text class="ta-tick" x="${l}" y="${fy-6}">₹6,200 to floor</text>
+        <rect x="${last[0]+6}" y="${last[1]-10}" width="54" height="18" rx="9" fill="#FF453A"/>
+        <text x="${last[0]+33}" y="${last[1]+3}" text-anchor="middle" fill="#fff" font-size="10" font-family="ui-monospace,monospace">−₹5.8k</text>
+        ${times.map((lab, i) => `<text class="ta-tick" x="${xAt(i)}" y="${h-8}" text-anchor="middle">${lab}</text>`).join('')}
+      </svg>`;
+    }
+
+    function drawTod(host) {
+      host.innerHTML = '';
+      const w = host.clientWidth || 760, h = 180, l = 8, r = 88, t = 10, b = 24;
+      const yMin = -7000, yMax = 5000;
+      const xAt = (i) => l + (i / (times.length - 1)) * (w - l - r);
+      const yAt = (v) => t + (1 - (v - yMin) / (yMax - yMin)) * (h - t - b);
+      const path = (arr) => arr.map((v, i) => (i ? 'L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1)).join(' ');
+      const end = (arr, color, label, dy) => {
+        const x = xAt(arr.length - 1), y = yAt(arr[arr.length - 1]);
+        return `<rect x="${x+8}" y="${y-8+dy}" width="${7*label.length+10}" height="16" rx="8" fill="rgba(20,20,22,.85)" stroke="${color}" stroke-width=".5"/>
+          <text x="${x+13}" y="${y+4+dy}" fill="${color}" font-size="10">${label}</text>`;
+      };
+      host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        <path d="${path(best)}" fill="none" stroke="#30D158" stroke-width="1.6"/>
+        <path d="${path(avg)}" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.4" stroke-dasharray="4 4"/>
+        <path d="${path(pnl)}" fill="none" stroke="#FF453A" stroke-width="1.8"/>
+        ${end(best, '#30D158', 'Best week', -10)}
+        ${end(avg, 'rgba(255,255,255,.55)', '3-month avg', 8)}
+        ${end(pnl, '#FF453A', 'Today', 0)}
+        ${times.map((lab, i) => `<text class="ta-tick" x="${xAt(i)}" y="${h-6}" text-anchor="middle">${lab}</text>`).join('')}
+      </svg>`;
+    }
+
+    function gaugeSVG(pos) {
+      const ang = -180 + pos * 180;
+      const rad = (ang * Math.PI) / 180;
+      const x = 60 + Math.cos(rad) * 38;
+      const y = 58 + Math.sin(rad) * 38;
+      return `<svg viewBox="0 0 120 72" width="100%" height="72" aria-hidden="true">
+        <path d="M12 58 A48 48 0 0 1 108 58" fill="none" stroke="#1c1c1e" stroke-width="8" stroke-linecap="round"/>
+        <path d="M12 58 A48 48 0 0 1 40 18" fill="none" stroke="#FF453A" stroke-width="8" stroke-linecap="round"/>
+        <path d="M40 18 A48 48 0 0 1 80 18" fill="none" stroke="#FF9F0A" stroke-width="8" stroke-linecap="round"/>
+        <path d="M80 18 A48 48 0 0 1 108 58" fill="none" stroke="#30D158" stroke-width="8" stroke-linecap="round"/>
+        <line x1="60" y1="58" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#fff" stroke-width="2"/>
+        <circle cx="60" cy="58" r="3" fill="#fff"/>
+        <text x="12" y="70" fill="rgba(255,255,255,.3)" font-size="8">Tilted</text>
+        <text x="108" y="70" fill="rgba(255,255,255,.3)" font-size="8" text-anchor="end">Locked</text>
+      </svg>`;
+    }
+    function renderGauges(id) {
+      const items = [
+        { n: 'Loss chasing', s: 'Slipping', cls: 'slip', p: 0.32 },
+        { n: 'Summary', s: 'Neutral', cls: 'ok', p: 0.5 },
+        { n: 'Plan adherence', s: 'Neutral', cls: 'ok', p: 0.52 },
+      ];
+      document.getElementById(id).innerHTML = items.map((g) =>
+        `<div class="gbox"><h3>${g.n}</h3>${gaugeSVG(g.p)}<div class="state ${g.cls}">${g.s}</div></div>`
+      ).join('');
+    }
+
+    function fillStatic() {
+      document.getElementById('tfs').innerHTML = tfs.map((row, i) =>
+        `<button type="button" class="tf ${i === 0 ? 'on' : ''}"><span class="k">${row[0]}</span><span class="v ${row[2]}">${row[1]}</span></button>`
+      ).join('');
+      document.getElementById('days').innerHTML = days.map((d) =>
+        `<div class="day"><div class="d">${d.d} · ${d.w}</div><div class="v ${d.cls}">${d.v}</div><div class="f">${d.f}</div></div>`
+      ).join('');
+      document.getElementById('keys').innerHTML = [
+        ['Trades taken', '7 of 12'],
+        ['Day’s range', '53,940 – 54,410'],
+        ['ATR, 14 day', '612 pts'],
+        ['Volume vs median', '2.1×'],
+      ].map((k) => `<div class="key"><div class="k">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+      document.getElementById('tbl').innerHTML =
+        `<div class="t-row head"><span>Time</span><span>Symbol</span><span>Side</span><span>Hold</span><span>Qty</span><span>Net</span><span>Flag</span></div>` +
+        trips.map((r) => `<div class="t-row">
+          <span class="mono">${r.t}</span><span class="mono">${r.s}</span><span>${r.side}</span>
+          <span class="mono">${r.hold}</span><span class="mono">${r.qty}</span>
+          <span class="mono ${r.cls}">${r.net}</span>
+          <span>${r.flag ? `<span class="flag">${r.flag}</span>` : '—'}</span>
+        </div>`).join('');
+      renderGauges('gauges-mini');
+      renderGauges('gauges-full');
+    }
+
+    let empty = false;
+    function charts() {
+      const floorHost = document.getElementById('floor-chart');
+      const todHost = document.getElementById('tod-chart');
+      if (empty) {
+        if (floorHost) floorHost.innerHTML = '';
+        if (todHost) todHost.innerHTML = '';
+        return;
+      }
+      if (floorHost && floorHost.offsetParent !== null) drawFloor(floorHost, pnl, floor);
+      if (todHost && todHost.offsetParent !== null) drawTod(todHost);
+    }
+
+    function setTab(name) {
+      document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
+      document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + name));
+      requestAnimationFrame(charts);
+    }
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      b.addEventListener('click', () => {
+        if (b.dataset.tab === 'journal' || b.dataset.tab === 'replay') {
+          say(b.dataset.tab === 'journal' ? 'Opens Console journal. Not a Station tab.' : 'Replay lives in Console.');
+          return;
+        }
+        setTab(b.dataset.tab);
+      });
+    });
+
+    document.querySelectorAll('.nav-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const name = el.getAttribute('data-route');
+        document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('on', n === el));
+        document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + name));
+        requestAnimationFrame(charts);
+      });
+    });
+    document.getElementById('now-btn').addEventListener('click', () => say('Opens Notch. Today stays the mirror.'));
+    document.querySelectorAll('[data-say]').forEach((el) => el.addEventListener('click', () => say(el.getAttribute('data-say'))));
+    document.querySelectorAll('.tf').length;
+
+    let pressEl, px, py;
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.press');
+      if (!el) return;
+      pressEl = el; px = e.clientX; py = e.clientY; el.classList.add('is-down');
+    }, true);
+    document.addEventListener('pointermove', (e) => {
+      if (pressEl) pressEl.classList.toggle('is-down', Math.hypot(e.clientX - px, e.clientY - py) <= 10);
+    }, true);
+    document.addEventListener('pointerup', () => { if (pressEl) pressEl.classList.remove('is-down'); pressEl = null; }, true);
+
+    function setState(v) {
+      document.querySelectorAll('.proto button').forEach((b) => b.classList.toggle('on', b.dataset.v === v));
+      const st = document.getElementById('status');
+      const btn = document.getElementById('now-btn');
+      const br = document.getElementById('br-on');
+      empty = v === 'F';
+      if (v === 'E') {
+        document.getElementById('vnote').textContent = 'Kill firing';
+        document.getElementById('takeaway').textContent = 'Kill is firing. Remaining is still a preview. Resume is the kill path on the Notch, not a new click.';
+        btn.textContent = 'Review kill'; btn.classList.add('kill');
+        br.textContent = 'Tripped'; st.classList.add('kill');
+        document.getElementById('pulse-dot').className = 'dot kill';
+      } else if (v === 'F') {
+        document.getElementById('vnote').textContent = 'Morning empty';
+        document.getElementById('gauge').style.setProperty('--pct', '1');
+        document.querySelector('#gauge span').innerHTML = '—<br>LEFT';
+        document.getElementById('remain').innerHTML = '— remaining <span class="used" style="color:var(--t2)">No floor used · no trips</span>';
+        document.getElementById('sess-meta').textContent = 'Not started · 09:15 GMT+5:30 · 0 round trips';
+        document.getElementById('takeaway').textContent = 'Nothing to consolidate yet. Empty is a dash, not a zero. Floor remaining stays unlabeled until there is a session.';
+        document.getElementById('pulse-pnl').textContent = '—';
+        document.getElementById('pulse-pnl').className = 'val muted';
+        btn.textContent = 'Open Notch · Pre-trade'; btn.classList.remove('kill');
+        br.textContent = 'Armed'; st.classList.remove('kill');
+        document.getElementById('pulse-dot').className = 'dot';
+      } else {
+        document.getElementById('vnote').textContent = 'Session with 7 trips';
+        document.getElementById('gauge').style.setProperty('--pct', '.52');
+        document.querySelector('#gauge span').innerHTML = '52%<br>LEFT';
+        document.getElementById('remain').innerHTML = '₹6,200 remaining <span class="used">−₹5,800 · 48% of ₹12,000 floor used</span>';
+        document.getElementById('sess-meta').textContent = 'Session open · 11:42 GMT+5:30 · 7 round trips';
+        document.getElementById('takeaway').textContent = 'You have ₹6,200 before the floor stops you — a little over one average loss at your ₹5,400 mean.';
+        document.getElementById('pulse-pnl').textContent = '−₹5,800';
+        document.getElementById('pulse-pnl').className = 'val neg';
+        btn.textContent = 'Open Notch · Live'; btn.classList.remove('kill');
+        br.textContent = 'Armed'; st.classList.remove('kill');
+        document.getElementById('pulse-dot').className = 'dot';
+      }
+      requestAnimationFrame(charts);
+    }
+    document.querySelectorAll('.proto button').forEach((b) => b.addEventListener('click', () => setState(b.dataset.v)));
+    window.addEventListener('resize', charts);
+
+    fillStatic();
+    document.getElementById('tfs').addEventListener('click', (e) => {
+      const tf = e.target.closest('.tf');
+      if (!tf) return;
+      document.querySelectorAll('.tf').forEach((n) => n.classList.toggle('on', n === tf));
+    });
+    requestAnimationFrame(charts);
+  </script>
+</body>
+</html>

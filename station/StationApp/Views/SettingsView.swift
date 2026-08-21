@@ -22,10 +22,12 @@ public struct SettingsView: View {
                 ))
                 .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                 .foregroundStyle(StationDS.Text.primary)
+                .tint(StationDS.Accent.teal)
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StationDS.Fill.appPanel)
     }
 }

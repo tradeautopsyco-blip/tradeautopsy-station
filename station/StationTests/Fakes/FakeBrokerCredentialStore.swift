@@ -6,6 +6,8 @@ final class FakeBrokerCredentialStore: BrokerCredentialStoring, @unchecked Senda
     private(set) var saveCallCount = 0
     private(set) var deleteCallCount = 0
     private(set) var readCallCount = 0
+    private(set) var hasCredentialsCallCount = 0
+    var nextAccessGrant: BrokerKeychainAccessGrant?
 
     private func storageKey(for identity: BrokerConnectionIdentity) -> String {
         "\(identity.environment).\(identity.brokerSlug).\(identity.brokerConnectionID.uuidString)"
@@ -27,6 +29,12 @@ final class FakeBrokerCredentialStore: BrokerCredentialStoring, @unchecked Senda
     }
 
     func hasCredentials(for identity: BrokerConnectionIdentity) -> Bool {
-        storage[storageKey(for: identity)] != nil
+        hasCredentialsCallCount += 1
+        return storage[storageKey(for: identity)] != nil
+    }
+
+    func accessGrant(for identity: BrokerConnectionIdentity) -> BrokerKeychainAccessGrant {
+        if let nextAccessGrant { return nextAccessGrant }
+        return storage[storageKey(for: identity)] != nil ? .granted : .missing
     }
 }

@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 pub enum TodayDegradedReason {
     SyncUnavailable,
     SyncStale,
+    /// Live adapter cannot produce fills (CountingPoll / test stub). Not a quiet day.
+    StubAdapter,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,6 +29,21 @@ pub struct TodayHeroPayload {
     pub pnl_today_usd: Option<f64>,
     pub trades_today: Option<u32>,
     pub win_rate: Option<f64>,
+    /// Eligible closed wins — share, don't refilter rows in Swift (Y3 / S2).
+    pub wins_today: Option<u32>,
+    pub losses_today: Option<u32>,
+}
+
+impl TodayHeroPayload {
+    pub fn empty() -> Self {
+        Self {
+            pnl_today_usd: None,
+            trades_today: None,
+            win_rate: None,
+            wins_today: None,
+            losses_today: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -124,6 +141,12 @@ impl TodayService {
         Ok(())
     }
 
+    /// Leftover inventory from fills — same book Pulse / Today Open now consume (S2).
+    pub fn open_inventory(&self) -> anyhow::Result<Vec<OpenInventoryRow>> {
+        let fills = self.recent_trades.fetch_all_fills()?;
+        Ok(open_inventory_from_fills(&fills))
+    }
+
     pub fn build_payload(&self) -> anyhow::Result<TodayPayload> {
         let desk = self.active_desk_fields();
         if let Some(reason) = self.degraded_reason() {
@@ -160,7 +183,11 @@ impl TodayService {
         let wins = eligible
             .iter()
             .filter(|rt| rt.realized_pnl_usd.unwrap_or(0.0) > 0.0)
-            .count();
+            .count() as u32;
+        let losses = eligible
+            .iter()
+            .filter(|rt| rt.realized_pnl_usd.unwrap_or(0.0) < 0.0)
+            .count() as u32;
         let win_rate = if eligible.is_empty() {
             None
         } else {
@@ -178,6 +205,12 @@ impl TodayService {
                 pnl_today_usd: pnl,
                 trades_today: trades_count,
                 win_rate,
+                wins_today: if eligible.is_empty() { None } else { Some(wins) },
+                losses_today: if eligible.is_empty() {
+                    None
+                } else {
+                    Some(losses)
+                },
             },
             top_signals: analysis
                 .top_signals
@@ -223,6 +256,10 @@ impl TodayService {
             return Some(TodayDegradedReason::SyncUnavailable);
         }
 
+        if is_stub_fill_adapter(snap.backend_broker_label.as_deref()) {
+            return Some(TodayDegradedReason::StubAdapter);
+        }
+
         let sync_state = snap.sync_state_literal(
             self.broker_limits.fresh_secs,
             self.broker_limits.stale_secs,
@@ -266,17 +303,19 @@ fn degraded_payload(
         performance_basis_not_tax: true,
         degraded_reason: Some(reason),
         learning_baseline: true,
-        hero: TodayHeroPayload {
-            pnl_today_usd: None,
-            trades_today: None,
-            win_rate: None,
-        },
+        hero: TodayHeroPayload::empty(),
         top_signals: vec![],
         trades: vec![],
         open_position_count: 0,
         broker_slug: desk.0,
         quote_currency: desk.1,
         calc_profile_id: desk.2,
+    }
+}
+
+impl TodayPayload {
+    pub fn unavailable(reason: TodayDegradedReason) -> Self {
+        degraded_payload(local_today(), reason, (None, None, None))
     }
 }
 
@@ -393,7 +432,18 @@ struct SideFill {
     qty: f64,
 }
 
-fn count_open_positions(fills: &[crate::broker::BrokerFill]) -> u32 {
+fn is_stub_fill_adapter(label: Option<&str>) -> bool {
+    matches!(label, Some("counting_poll"))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenInventoryRow {
+    pub symbol: String,
+    pub qty: f64,
+    pub side: &'static str,
+}
+
+pub fn open_inventory_from_fills(fills: &[crate::broker::BrokerFill]) -> Vec<OpenInventoryRow> {
     use std::collections::BTreeMap;
     let mut qty_by_symbol: BTreeMap<String, f64> = BTreeMap::new();
     for fill in fills {
@@ -404,7 +454,19 @@ fn count_open_positions(fills: &[crate::broker::BrokerFill]) -> u32 {
             *entry -= fill.qty;
         }
     }
-    qty_by_symbol.values().filter(|q| **q > 1e-12).count() as u32
+    qty_by_symbol
+        .into_iter()
+        .filter(|(_, q)| q.abs() > 1e-12)
+        .map(|(symbol, qty)| OpenInventoryRow {
+            side: if qty > 0.0 { "LONG" } else { "SHORT" },
+            symbol,
+            qty: qty.abs(),
+        })
+        .collect()
+}
+
+fn count_open_positions(fills: &[crate::broker::BrokerFill]) -> u32 {
+    open_inventory_from_fills(fills).len() as u32
 }
 
 #[cfg(test)]
@@ -577,6 +639,49 @@ mod tests {
         let analysis = crate::today::signals::analyze_signals(&[rt.clone()], &[rt]);
         let primary = analysis.trip_flags.first().expect("flag");
         assert_eq!(primary.label, "Unknown basis");
+    }
+
+    #[test]
+    fn stub_adapter_reason_is_not_quiet_day() {
+        assert_eq!(
+            serde_json::to_string(&TodayDegradedReason::StubAdapter).unwrap(),
+            "\"stub_adapter\""
+        );
+        assert!(is_stub_fill_adapter(Some("counting_poll")));
+        assert!(!is_stub_fill_adapter(Some("binance_com_wasm")));
+        assert!(!is_stub_fill_adapter(Some("seq_mock")));
+        assert!(!is_stub_fill_adapter(None));
+    }
+
+    #[test]
+    fn open_inventory_omits_flat_symbols() {
+        let fills = vec![
+            crate::broker::BrokerFill {
+                fill_id: "b1".into(),
+                trade_id: "t-b1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "BUY".into(),
+                qty: 0.01,
+                price: 60_000.0,
+                filled_at: Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap(),
+                broker: "binance_us".into(),
+                fee_amount: Some(0.5),
+                fee_asset: Some("USDT".into()),
+            },
+            crate::broker::BrokerFill {
+                fill_id: "s1".into(),
+                trade_id: "t-s1".into(),
+                symbol: "BTCUSDT".into(),
+                side: "SELL".into(),
+                qty: 0.01,
+                price: 61_000.0,
+                filled_at: Utc.with_ymd_and_hms(2026, 7, 4, 13, 0, 0).unwrap(),
+                broker: "binance_us".into(),
+                fee_amount: Some(0.5),
+                fee_asset: Some("USDT".into()),
+            },
+        ];
+        assert!(open_inventory_from_fills(&fills).is_empty());
     }
 
     struct TodayServiceHarness {

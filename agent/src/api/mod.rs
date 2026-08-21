@@ -29,6 +29,7 @@ mod kill_switch;
 mod kotak_session;
 mod outbox_status;
 mod phase8;
+mod positions;
 mod recent_trades;
 mod sse;
 mod station_auth;
@@ -100,6 +101,7 @@ pub fn router(state: AppState) -> Router {
             post(broker_credentials::present_handler),
         )
         .route("/api/daemon/today", get(today::handler))
+        .route("/api/daemon/positions", get(positions::handler))
         .route(
             "/api/daemon/journal/toolbar-capture/accept",
             post(capture::accept_handler),
@@ -114,7 +116,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/api/daemon/journal/toolbar-capture/pending/:id",
-            patch(capture::pending_patch_handler),
+            get(capture::pending_get_handler).patch(capture::pending_patch_handler),
         )
         .route("/api/daemon/bar/live-state", get(bar::live_state_handler))
         .route("/api/daemon/bar/declare", post(bar::declare_handler))

@@ -1,11 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BarPlanStateView: View {
     @ObservedObject var viewModel: NotchViewModel
     /// When `false`, escrow ledger is shown only from sidebar (`BarNotchScreen.escrow`).
     var embedEscrow: Bool = true
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var moveSlFallbackAlert: Bool = false
     @State private var confirmPlaceProtectiveSl: Bool = false
     @State private var cancelSlWebBarAlert: Bool = false
@@ -66,7 +66,7 @@ struct BarPlanStateView: View {
                     .animation(.easeInOut(duration: 0.15), value: viewModel.barInterferenceEcho)
             }
 
-            if shouldShowPlanSnapshot { liveCaptureCard }
+            BarLiveCaptureCard(viewModel: viewModel)
 
             if shouldShowScalperSessionPanel { scalperSessionLivePanel }
 
@@ -317,22 +317,24 @@ struct BarPlanStateView: View {
     }
 
     private func metricPill(title: String, value: String, valueColor: Color, ax: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(BarDS.bodyFont(8, weight: .semibold))
-                .foregroundColor(BarDS.Text.muted)
-                .tracking(0.4)
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.45))
+                .kerning(0.006 * 11)
             Text(value)
-                .font(BarDS.monoFont(12, weight: .semibold))
+                .font(BarDS.monoFont(BarDS.FontSize.body, weight: .medium))
+                .monospacedDigit()
                 .foregroundColor(valueColor)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(Color.white.opacity(0.05))
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                .stroke(BarDS.Border.subtle, lineWidth: BarDS.borderThin),
+                .stroke(Color.white.opacity(0.08), lineWidth: BarDS.borderThin),
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(ax)
@@ -457,108 +459,12 @@ struct BarPlanStateView: View {
         }
     }
 
-    private var liveCaptureCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("CAPTURE — RIGHT NOW WHILE LIVE")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.4))
-                .tracking(0.5)
-            TextEditor(text: $viewModel.journalCaptureDraft)
-                .font(.system(size: 12, weight: .regular, design: .rounded))
-                .foregroundColor(.white)
-                .frame(minHeight: 72, maxHeight: 120)
-                .padding(8)
-                .background(Color.white.opacity(0.06))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5),
-                )
-                .accessibilityLabel("Live capture note")
-                .accessibilityHint("What you are thinking or feeling at this moment")
-                .onTapGesture {
-                    viewModel.dictationUsesCaptureDraft = true
-                }
-            HStack(spacing: 8) {
-                Button {
-                    viewModel.dictationUsesCaptureDraft = true
-                } label: {
-                    captureToolButtonLabel(icon: "mic.fill", title: "Voice")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Voice capture")
-                Button {
-                    Task { await viewModel.attachJournalCaptureScreenshotToPending() }
-                } label: {
-                    captureToolButtonLabel(icon: "camera.viewfinder", title: "Screenshot")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Attach screenshot")
-                .disabled(viewModel.journalCaptureScreenshotBusy)
-                Spacer(minLength: 0)
-                Button {
-                    if viewModel.isAuthenticated && (viewModel.sessionState == "active" || viewModel.sessionState == "expiring_soon") {
-                        Task { await viewModel.finalizeJournalCapture() }
-                    } else {
-                        viewModel.persistJournalCaptureDraftLocally()
-                    }
-                } label: {
-                    Text("Save note")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(Color(hex: "#050505"))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color(hex: "#00E5C0"))
-                        .cornerRadius(8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Save note")
-            }
-            if viewModel.dictationUsesCaptureDraft {
-                DictationMicAndWaveform(viewModel: viewModel, reduceMotion: reduceMotion)
-                    .scaleEffect(0.92)
-                    .padding(.top, 4)
-            }
-            if let err = viewModel.journalCaptureLastError, !err.isEmpty {
-                Text(err)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundColor(Color(hex: "#FF3B30"))
-            }
-            if let ok = viewModel.journalCaptureLastSuccess, !ok.isEmpty {
-                Text(ok)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.green.opacity(0.85))
-            }
-        }
-        .padding(10)
-        .background(Color.white.opacity(0.04))
-        .cornerRadius(10)
-    }
-
-    private func captureToolButtonLabel(icon: String, title: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-            Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-        }
-        .foregroundColor(Color(hex: "#00E5C0"))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.white.opacity(0.06))
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(hex: "#00E5C0").opacity(0.35), lineWidth: 0.5),
-        )
-    }
-
     private var livePlanFooterBar: some View {
         HStack(spacing: 8) {
             Button {
                 showExitGateSheet = true
             } label: {
-                footerPill(title: "Exit trade")
+                footerPill(title: "Exit trade", danger: true)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Exit trade")
@@ -581,17 +487,21 @@ struct BarPlanStateView: View {
         }
     }
 
-    private func footerPill(title: String) -> some View {
+    private func footerPill(title: String, danger: Bool = false) -> some View {
         Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundColor(Color.white.opacity(0.88))
+            .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .semibold))
+            .foregroundColor(danger ? BarDS.Accent.red : Color.white.opacity(0.88))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
+            .padding(.horizontal, 6)
             .background(Color.white.opacity(0.06))
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 0.5),
+                RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                    .stroke(
+                        danger ? BarDS.Accent.red.opacity(0.25) : Color.white.opacity(0.12),
+                        lineWidth: BarDS.borderThin
+                    ),
             )
     }
 
@@ -719,7 +629,7 @@ struct BarPlanStateView: View {
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundColor(Color(hex: "#00E5C0"))
+                .foregroundColor(BarDS.Accent.teal)
                 .accessibilityHint("Re-rate calm and confidence locally after 10th trade in session")
             }
         }
@@ -737,7 +647,7 @@ struct BarPlanStateView: View {
         let f = min(1, max(0, fraction))
         if f >= 0.9 { return Color(hex: "#EF4444").opacity(0.92) }
         if f >= 0.6 { return Color(hex: "#CA8A04").opacity(0.92) }
-        return Color(hex: "#00E5C0").opacity(0.92)
+        return BarDS.Accent.teal.opacity(0.92)
     }
 
     private func scalperMetricTile(title: String, value: String, valueColor: Color) -> some View {
@@ -816,7 +726,7 @@ struct BarPlanStateView: View {
                 swingThesisChoiceButton(
                     title: "Yes — thesis intact",
                     selected: swingThesisIntact == true,
-                    color: Color(hex: "#00E5C0"),
+                    color: BarDS.Accent.teal,
                 ) {
                     swingThesisIntact = true
                     swingCapitulationTag = nil
@@ -841,11 +751,11 @@ struct BarPlanStateView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(hex: "#00E5C0").opacity(0.08))
+                    .background(BarDS.Accent.teal.opacity(0.08))
                     .cornerRadius(8)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(hex: "#00E5C0").opacity(0.22), lineWidth: 0.5),
+                            .stroke(BarDS.Accent.teal.opacity(0.22), lineWidth: 0.5),
                     )
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -903,7 +813,7 @@ struct BarPlanStateView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .background(canSubmit ? Color(hex: "#00E5C0") : Color.white.opacity(0.18))
+                .background(canSubmit ? BarDS.Accent.teal : Color.white.opacity(0.18))
                 .foregroundColor(canSubmit ? Color(hex: "#050505") : Color.white.opacity(0.45))
                 .cornerRadius(10)
             }
@@ -957,12 +867,12 @@ struct BarPlanStateView: View {
         } label: {
             Text(title)
                 .font(.system(size: 9, weight: .medium, design: .rounded))
-                .foregroundColor(on ? Color(hex: "#00E5C0") : Color.white.opacity(0.72))
+                .foregroundColor(on ? BarDS.Accent.teal : Color.white.opacity(0.72))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(on ? Color(hex: "#00E5C0").opacity(0.12) : Color.white.opacity(0.06)),
+                        .fill(on ? BarDS.Accent.teal.opacity(0.12) : Color.white.opacity(0.06)),
                 )
         }
         .buttonStyle(.plain)
@@ -1010,24 +920,21 @@ struct BarPlanStateView: View {
 
     @ViewBuilder
     private var interferenceQuestionBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        BarCard {
             Text("Are you thinking about changing anything?")
                 .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
                 .foregroundColor(BarDS.Text.primary)
-                .padding(.bottom, 2)
+            Text("Warning channel — not a toast stacked on the banner.")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .padding(.top, 2)
+                .padding(.bottom, 8)
             HStack(spacing: 6) {
                 interferenceChip("No — following plan", id: "no")
                 interferenceChip("Maybe — unsure", id: "maybe")
                 interferenceChip("Yes — feeling it", id: "yes")
             }
         }
-        .padding(12)
-        .background(BarDS.Fill.card)
-        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
-        )
     }
 
     private func interferenceChip(_ title: String, id: String) -> some View {
@@ -1037,50 +944,23 @@ struct BarPlanStateView: View {
         } label: {
             Text(title)
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
-                .foregroundColor(interferenceChipForeground(id: id, on: on))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 8)
+                .foregroundColor(on ? BarDS.Text.primary : BarDS.Text.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
-                        .fill(interferenceChipBackground(id: id, on: on)),
+                    RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                        .fill(on ? Color.white.opacity(0.08) : Color.white.opacity(0.03)),
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
-                        .stroke(interferenceChipBorder(id: id, on: on), lineWidth: BarDS.borderThin),
+                    RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                        .stroke(
+                            on ? Color.white.opacity(0.20) : BarDS.Border.input,
+                            lineWidth: BarDS.borderThin
+                        ),
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    private func interferenceChipForeground(id: String, on: Bool) -> Color {
-        guard on else { return BarDS.Text.hint }
-        switch id {
-        case "no": return BarDS.Accent.teal
-        case "maybe": return BarDS.Accent.amber
-        case "yes": return BarDS.Accent.red
-        default: return BarDS.Text.secondary
-        }
-    }
-
-    private func interferenceChipBackground(id: String, on: Bool) -> Color {
-        guard on else { return Color.white.opacity(0.03) }
-        switch id {
-        case "no": return BarDS.Accent.teal.opacity(0.08)
-        case "maybe": return BarDS.Accent.amber.opacity(0.08)
-        case "yes": return BarDS.Accent.red.opacity(0.08)
-        default: return Color.white.opacity(0.03)
-        }
-    }
-
-    private func interferenceChipBorder(id: String, on: Bool) -> Color {
-        guard on else { return BarDS.Border.chipUnselected }
-        switch id {
-        case "no": return BarDS.Accent.teal.opacity(0.2)
-        case "maybe": return BarDS.Accent.amber.opacity(0.2)
-        case "yes": return BarDS.Accent.red.opacity(0.2)
-        default: return BarDS.Border.chipUnselected
-        }
     }
 
     @ViewBuilder
@@ -1121,7 +1001,7 @@ struct BarPlanStateView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(Color(hex: "#00E5C0"))
+                    .foregroundColor(BarDS.Accent.teal)
                     .disabled(viewModel.barProtectiveBusy)
                     .accessibilityHint("Requires confirmation before sending protective order")
                 }
@@ -1388,7 +1268,7 @@ struct BarPlanStateView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(interactionsEnabled ? Color(hex: "#00E5C0") : Color.white.opacity(0.35))
+                .foregroundColor(interactionsEnabled ? BarDS.Accent.teal : Color.white.opacity(0.35))
                 .disabled(!interactionsEnabled || viewModel.barProtectiveBusy)
                 .accessibilityHint("Confirms protective placement through the daemon")
             }
@@ -1503,7 +1383,7 @@ struct BarPlanStateView: View {
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
                                 .foregroundColor(
                                     viewModel.stopMeReason == chip
-                                        ? Color(hex: "#00E5C0")
+                                        ? BarDS.Accent.teal
                                         : Color.white.opacity(0.7),
                                 )
                                 .padding(.horizontal, 10)
@@ -1512,7 +1392,7 @@ struct BarPlanStateView: View {
                                     RoundedRectangle(cornerRadius: 6)
                                         .fill(
                                             viewModel.stopMeReason == chip
-                                                ? Color(hex: "#00E5C0").opacity(0.12)
+                                                ? BarDS.Accent.teal.opacity(0.12)
                                                 : Color.white.opacity(0.06),
                                         ),
                                 )

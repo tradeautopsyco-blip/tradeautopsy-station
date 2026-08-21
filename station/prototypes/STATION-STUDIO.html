@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<!--
+  STATION STUDIO — merged IA that still feels like a new Mac: lots to make, room to grow.
+  Journal = the work you create (pre/live/post live inside the cards).
+  Backend Box = a workbench you add to (brokers, feeds, workflows).
+  Open: open station/prototypes/STATION-STUDIO.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Station — studio</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0c0c0d;
+      --card: #141416;
+      --elevated: #1c1c1e;
+      --accent: #63E6E2;
+      --accent-rgb: 99, 230, 226;
+      --gain: #30D158;
+      --gain-rgb: 48, 209, 88;
+      --loss: #FF453A;
+      --loss-rgb: 255, 69, 58;
+      --caution: #FF9F0A;
+      --caution-rgb: 255, 159, 10;
+      --t1: #fff;
+      --t2: rgba(255,255,255,.62);
+      --t3: rgba(255,255,255,.32);
+      --bd: rgba(255,255,255,.08);
+      --glass: rgba(8,8,8,.72);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --track-10: 0.012em;
+      --track-11: 0.006em;
+      --track-13: -0.006em;
+      --track-17: -0.028em;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font: 400 13px/1.45 var(--sans);
+      letter-spacing: var(--track-13);
+      background: #17171a; color: var(--t1);
+      -webkit-font-smoothing: antialiased;
+      padding: 22px 18px 72px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    .press { transition: transform 100ms ease-out; }
+    .press.is-down { transform: scale(0.97); }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .tag {
+      position: fixed; top: 12px; left: 12px; z-index: 40;
+      font: 500 10px/1 var(--mono); letter-spacing: var(--track-10);
+      text-transform: uppercase; color: var(--accent);
+      background: rgba(var(--accent-rgb),.08);
+      border: .5px solid rgba(var(--accent-rgb),.25);
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .legend { max-width: 1180px; margin: 0 auto 14px; }
+    .legend h1 { font-size: 17px; font-weight: 500; letter-spacing: var(--track-17); margin-bottom: 6px; }
+    .legend p { color: var(--t2); max-width: 78ch; }
+
+    .app {
+      width: 1180px; height: 780px; margin: 0 auto;
+      background: var(--bg); border-radius: 14px; overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.06);
+    }
+    .pulse {
+      height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 14px;
+      background: var(--glass); backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: .5px solid var(--bd); font-family: var(--mono); font-size: 11px;
+    }
+    .traffic { display: flex; gap: 6px; }
+    .traffic i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .pulse .lbl { font-family: var(--sans); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+    .pulse .val { font-weight: 600; }
+    .pulse .val.neg { color: var(--loss); }
+    .pulse .right { margin-left: auto; color: var(--t3); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sidebar {
+      width: 220px; flex-shrink: 0;
+      background: rgba(8,8,8,.9); backdrop-filter: blur(28px);
+      border-right: .5px solid var(--bd);
+      display: flex; flex-direction: column; padding: 10px 0 12px;
+    }
+    .sb-section { padding: 14px 16px 6px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 8px 10px; border-radius: 8px;
+      font-size: 13px; color: var(--t2); width: calc(100% - 16px); text-align: left;
+    }
+    .nav-item:hover { background: rgba(255,255,255,.04); color: #fff; }
+    .nav-item.on { background: rgba(255,255,255,.08); color: #fff; font-weight: 500; }
+    .nav-item .count {
+      margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--t3);
+      min-width: 18px; text-align: right;
+    }
+    .nav-item.on .count { color: var(--accent); }
+    .sb-spacer { flex: 1; }
+    .sb-foot { padding: 12px 16px; border-top: .5px solid var(--bd); font-family: var(--mono); font-size: 10px; color: var(--t3); }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--gain); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #070707; position: relative; }
+    .topbar {
+      height: 52px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 20px;
+      background: var(--glass); backdrop-filter: blur(22px);
+    }
+    .topbar h1 { font-size: 15px; font-weight: 600; letter-spacing: var(--track-17); }
+    .topbar .sub { font-family: var(--mono); font-size: 11px; color: var(--t3); flex: 1; }
+    .cta {
+      padding: 7px 14px; border-radius: 8px; background: #fff; color: #111;
+      font-size: 12px; font-weight: 600;
+    }
+    .scroll { flex: 1; overflow-y: auto; padding: 20px 22px 28px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+    .screen { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .screen.on { display: flex; }
+
+    .hello { margin-bottom: 18px; }
+    .hello h2 { font-size: 28px; font-weight: 600; letter-spacing: var(--track-17); line-height: 1.1; }
+    .hello p { margin-top: 8px; color: var(--t2); max-width: 56ch; font-size: 14px; }
+
+    .launch {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 22px;
+    }
+    .tile {
+      position: relative; min-height: 132px; padding: 16px;
+      border-radius: 14px; border: .5px solid var(--bd);
+      background: linear-gradient(180deg, #18181b, #101012);
+      text-align: left; overflow: hidden;
+    }
+    .tile:hover { background: linear-gradient(180deg, #1e1e22, #141416); }
+    .tile .mark {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: grid; place-items: center; margin-bottom: 12px;
+      background: rgba(255,255,255,.06); font-size: 16px;
+    }
+    .tile h3 { font-size: 14px; font-weight: 600; }
+    .tile p { margin-top: 4px; font-size: 11px; color: var(--t2); line-height: 1.4; }
+    .tile .go { position: absolute; right: 14px; bottom: 12px; font-size: 11px; color: var(--t3); }
+    .tile.add {
+      border-style: dashed; background: transparent;
+      display: flex; flex-direction: column; justify-content: flex-end;
+    }
+    .tile.add h3 { color: var(--t2); font-weight: 500; }
+
+    .split { display: grid; grid-template-columns: 168px 1fr; gap: 16px; min-height: 520px; }
+    .days { display: flex; flex-direction: column; gap: 2px; }
+    .day {
+      padding: 8px 10px; border-radius: 8px; text-align: left; color: var(--t2);
+    }
+    .day.on { background: rgba(255,255,255,.08); color: #fff; }
+    .day .d { font-size: 12px; font-weight: 500; }
+    .day .n { font-family: var(--mono); font-size: 10px; color: var(--t3); margin-top: 2px; }
+
+    .shelf { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .card {
+      padding: 14px; border-radius: 12px; border: .5px solid var(--bd);
+      background: var(--card); text-align: left; min-height: 128px;
+    }
+    .card.new {
+      border-style: dashed; background: rgba(99,230,226,.04);
+      border-color: rgba(var(--accent-rgb),.28);
+      display: flex; flex-direction: column; justify-content: center;
+    }
+    .card .when { font-family: var(--mono); font-size: 10px; color: var(--t3); }
+    .card .sym { margin-top: 6px; font-family: var(--mono); font-size: 15px; font-weight: 600; }
+    .card .blurb { margin-top: 4px; font-size: 12px; color: var(--t2); }
+    .chips { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+    .chip {
+      font-family: var(--mono); font-size: 9px; font-weight: 600;
+      padding: 2px 7px; border-radius: 999px; border: .5px solid var(--bd); color: var(--t3);
+    }
+    .chip.ok { color: var(--gain); border-color: rgba(var(--gain-rgb),.3); background: rgba(var(--gain-rgb),.1); }
+    .chip.due { color: var(--caution); border-color: rgba(var(--caution-rgb),.3); background: rgba(var(--caution-rgb),.1); }
+    .pnl { margin-top: 8px; font-family: var(--mono); font-weight: 600; }
+    .pnl.pos { color: var(--gain); } .pnl.neg { color: var(--loss); }
+
+    .bench { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .mod {
+      padding: 16px; border-radius: 14px; border: .5px solid var(--bd);
+      background: var(--card); text-align: left; min-height: 150px;
+    }
+    .mod.add { border-style: dashed; background: transparent; }
+    .mod .ico {
+      width: 40px; height: 40px; border-radius: 12px; margin-bottom: 12px;
+      display: grid; place-items: center; background: rgba(255,255,255,.06); font-size: 18px;
+    }
+    .mod h3 { font-size: 14px; font-weight: 600; }
+    .mod p { margin-top: 4px; font-size: 11px; color: var(--t2); }
+    .mod .st { margin-top: 12px; font-family: var(--mono); font-size: 10px; color: var(--gain); }
+    .mod.add .st { color: var(--t3); }
+    .mod .row { display: flex; gap: 6px; margin-top: 12px; }
+    .mini {
+      padding: 5px 10px; border-radius: 6px; border: .5px solid var(--bd); font-size: 11px; color: var(--t2);
+    }
+    .mini.primary { background: var(--accent); color: #052e2c; border-color: transparent; }
+
+    .sec { font-size: 13px; font-weight: 600; color: var(--t2); margin: 18px 0 10px; }
+
+    .toast {
+      position: absolute; top: 60px; right: 16px;
+      padding: 10px 14px; border-radius: 12px; background: var(--elevated);
+      border: .5px solid var(--bd); font-size: 12px; opacity: 0; pointer-events: none; z-index: 8;
+    }
+    .proto {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; align-items: center;
+      padding: 4px 6px; border-radius: 999px;
+      background: rgba(20,20,22,.75); backdrop-filter: blur(20px); border: .5px solid var(--bd);
+    }
+    .proto button { min-width: 64px; height: 28px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--t3); }
+    .proto button.on { background: var(--elevated); color: #fff; }
+    .proto .note { padding: 0 8px; font-family: var(--mono); font-size: 10px; color: var(--t3); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .press { transition: none; } .press.is-down { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="tag">Studio · grow the desk</div>
+  <div class="legend">
+    <h1>A desk you fill, not a desk we emptied</h1>
+    <p>
+      Same merge: Pre / Live / Post live <em>inside</em> Journal cards. Brokers, feed, and workflows live
+      <em>inside</em> Backend Box. The feeling is a new Mac — lots to make, empty tiles waiting, value that stacks.
+    </p>
+  </div>
+
+  <div class="app">
+    <div class="pulse">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <span class="lbl">P&amp;L today</span>
+      <span class="val neg" id="pulse-pnl">−₹6,840</span>
+      <span class="right" id="pulse-right">4 trips on the shelf · 1 workflow running</span>
+    </div>
+    <div class="body">
+      <nav class="sidebar">
+        <div class="sb-section">Studio</div>
+        <button type="button" class="nav-item on" data-route="Today">Today <span class="count">6</span></button>
+        <button type="button" class="nav-item" data-route="Journal">Journal <span class="count" id="j-count">18</span></button>
+        <button type="button" class="nav-item" data-route="Backend Box">Backend Box <span class="count">5</span></button>
+        <div class="sb-section">This Mac</div>
+        <button type="button" class="nav-item" data-route="Settings">Settings</button>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span>Kotak Neo</span><span class="ok">live</span></div>
+          <div><span>You can add more</span><span>+</span></div>
+        </div>
+      </nav>
+      <div class="main">
+        <div class="toast" id="toast"></div>
+
+        <section class="screen on" id="screen-Today">
+          <header class="topbar">
+            <h1>Today</h1>
+            <span class="sub">Thursday 20 Aug · your studio on this Mac</span>
+            <button type="button" class="cta press" data-say="Opens Notch · Pre-trade. The next thing you make.">New declaration</button>
+          </header>
+          <div class="scroll">
+            <div class="hello">
+              <h2 id="hello-h">You already have a day in motion.</h2>
+              <p id="hello-p">Four trips on the shelf. Post is open on the last one. The next thing you make still starts on the Notch — then it lands here.</p>
+            </div>
+            <div class="launch">
+              <button type="button" class="tile press" data-go="Journal">
+                <div class="mark">📓</div>
+                <h3>Journal</h3>
+                <p>Every pre, live, and post you save becomes a card you can keep.</p>
+                <span class="go">18 cards ›</span>
+              </button>
+              <button type="button" class="tile press" data-go="Backend Box">
+                <div class="mark">🔗</div>
+                <h3>Connect more</h3>
+                <p>Another broker, another feed, another workflow. The box grows with you.</p>
+                <span class="go">Add ›</span>
+              </button>
+              <button type="button" class="tile press" data-say="Patterns you earn. Opens Console with today’s flags.">
+                <div class="mark">🧠</div>
+                <h3>Patterns</h3>
+                <p>Loss-chase, size, revenge — the ones this desk has actually seen.</p>
+                <span class="go">2 live ›</span>
+              </button>
+              <button type="button" class="tile press" data-say="Fidelity is a score you build. Console keeps the years.">
+                <div class="mark">📊</div>
+                <h3>Fidelity</h3>
+                <p>How often the day matched the declaration. It only exists because you wrote both.</p>
+                <span class="go">92% ›</span>
+              </button>
+              <button type="button" class="tile press" data-say="Escrow match: broker fills vs the cards you saved.">
+                <div class="mark">🛡</div>
+                <h3>Escrow</h3>
+                <p>Prove the journal against the venue. One unmatched fill is a job, not a dead tab.</p>
+                <span class="go">3 of 4 ›</span>
+              </button>
+              <button type="button" class="tile press" data-say="Opens Notch · Live. The circuit is still there.">
+                <div class="mark">⚡️</div>
+                <h3>Live circuit</h3>
+                <p>Hold, move stop, exit. Station shows the card. Notch is the hands.</p>
+                <span class="go">Notch ›</span>
+              </button>
+              <button type="button" class="tile press" data-say="Workflows you author. Capture, debrief drafts, later Algo Labs.">
+                <div class="mark">✨</div>
+                <h3>Workflows</h3>
+                <p>Start with screenshot capture. Later you write your own. This is the create surface.</p>
+                <span class="go">1 on ›</span>
+              </button>
+              <button type="button" class="tile add press" data-say="Empty on purpose. Tomorrow this is a new broker, a new ritual, a new card type.">
+                <div class="mark">+</div>
+                <h3>Add to this desk</h3>
+                <p>Station is meant to take more. The blank tile is the point.</p>
+                <span class="go">Soon ›</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-Journal">
+          <header class="topbar">
+            <h1>Journal</h1>
+            <span class="sub">What you made · pre / live / post live on the card</span>
+            <button type="button" class="cta press" data-say="Opens Notch. A new card starts the moment you declare.">Make another</button>
+          </header>
+          <div class="scroll">
+            <div class="split">
+              <div class="days" id="days"></div>
+              <div>
+                <div class="shelf" id="shelf"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-Backend Box">
+          <header class="topbar">
+            <h1>Backend Box</h1>
+            <span class="sub">A workbench. Add brokers, feeds, workflows — not an AI overview.</span>
+            <button type="button" class="cta press" data-say="Add broker. The box is supposed to get heavier.">Add connection</button>
+          </header>
+          <div class="scroll">
+            <div class="sec">On this Mac</div>
+            <div class="bench">
+              <div class="mod">
+                <div class="ico">🏦</div>
+                <h3>Kotak Neo</h3>
+                <p>Equities · INR · keys on this card. Stop is not Kill.</p>
+                <div class="st">LIVE · ••4471</div>
+                <div class="row">
+                  <button type="button" class="mini press" data-say="Edit keys on this module.">Edit</button>
+                  <button type="button" class="mini press" data-say="Stop paused sync. Venue still on.">Stop</button>
+                </div>
+              </div>
+              <div class="mod">
+                <div class="ico">📈</div>
+                <h3>NSE F&amp;O</h3>
+                <p>Primary feed for the desk. Notch overlays the chart.</p>
+                <div class="st">LIVE · tick 14:41:08</div>
+              </div>
+              <div class="mod">
+                <div class="ico">📷</div>
+                <h3>Capture screenshots</h3>
+                <p>Attaches chart context to each journal card you save.</p>
+                <div class="st">ON · 7 attached today</div>
+              </div>
+              <div class="mod">
+                <div class="ico">✍️</div>
+                <h3>Debrief draft</h3>
+                <p>Writes a first pass after flatten. You still save on the Notch.</p>
+                <div class="st">OFF · turn on when you want help</div>
+                <div class="row"><button type="button" class="mini primary press" data-say="Workflow on. Still not an AI overview.">Turn on</button></div>
+              </div>
+              <button type="button" class="mod add press" data-say="Add broker. COM dollars stay a second desk — never blended.">
+                <div class="ico">+</div>
+                <h3>Add a broker</h3>
+                <p>Binance.US, another Kotak, whatever you run. Each one is a new module.</p>
+                <div class="st">Empty slot</div>
+              </button>
+              <button type="button" class="mod add press" data-say="New workflow. Later this is Algo Labs on Station, authored by you.">
+                <div class="ico">+</div>
+                <h3>New workflow</h3>
+                <p>A ritual you invent: after 3 losses, lock size. After flatten, prompt post.</p>
+                <div class="st">Create</div>
+              </button>
+              <button type="button" class="mod add press" data-say="Add a feed. Cash, spot, later your own.">
+                <div class="ico">+</div>
+                <h3>Add a feed</h3>
+                <p>Another venue’s tape. The desk can hold more than one.</p>
+                <div class="st">Empty slot</div>
+              </button>
+              <button type="button" class="mod add press" data-say="Escrow, patterns, fidelity attach here when you want them on this Mac — or stay Console.">
+                <div class="ico">+</div>
+                <h3>Bring a tool home</h3>
+                <p>Escrow match, patterns, fidelity. Console has the years. Station can pin the ones you use every day.</p>
+                <div class="st">Pin from Console</div>
+              </button>
+              <button type="button" class="mod add press" data-say="Room for whatever we ship next. The box is the expansion joint.">
+                <div class="ico">+</div>
+                <h3>Reserved</h3>
+                <p>Station is allowed to get more valuable. This tile is how that looks on day one.</p>
+                <div class="st">Soon</div>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-Settings">
+          <header class="topbar"><h1>Settings</h1><span class="sub">This Mac · launch at login · limits · hide Notch</span></header>
+          <div class="scroll">
+            <p style="color:var(--t2);max-width:52ch">The quiet page. Limits here sync to the Notch. They do not fire Kill. The studio is Today, Journal, and the Box.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <nav class="proto">
+    <button type="button" class="press on" data-v="full">Full desk</button>
+    <button type="button" class="press" data-v="new">New Mac</button>
+    <span class="note" id="vnote">A desk that already has work on it</span>
+  </nav>
+
+  <script>
+    const days = [
+      { id: '20', d: 'Thu 20 Aug', n: '4 cards · post due', on: true },
+      { id: '19', d: 'Wed 19 Aug', n: '3 cards · saved' },
+      { id: '18', d: 'Tue 18 Aug', n: '5 cards · saved' },
+      { id: '14', d: 'Fri 14 Aug', n: '2 cards · saved' },
+      { id: '13', d: 'Thu 13 Aug', n: '6 cards · saved' },
+      { id: '12', d: 'Wed 12 Aug', n: '1 card · saved' },
+    ];
+    const cards = [
+      { t: '10:05', s: 'RELIANCE', b: 'Breakout · calm 2', pnl: '−₹1,840', cls: 'neg', pre: 1, live: 1, post: 1 },
+      { t: '11:22', s: 'NIFTY 19AUG', b: 'You named the chase', pnl: '−₹4,200', cls: 'neg', pre: 1, live: 1, post: 1 },
+      { t: '13:40', s: 'HDFCBANK', b: 'Pullback · size held', pnl: '+₹1,200', cls: 'pos', pre: 1, live: 1, post: 1 },
+      { t: '14:02', s: 'NIFTY 24500 CE', b: 'Waiting on the debrief you still get to write', pnl: '−₹1,250', cls: 'neg', pre: 1, live: 1, post: 0 },
+    ];
+
+    function say(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.style.opacity = '1';
+      clearTimeout(say.t);
+      say.t = setTimeout(() => { t.style.opacity = '0'; }, 2400);
+    }
+    function chips(c) {
+      return `<div class="chips">
+        <span class="chip ${c.pre ? 'ok' : 'due'}">${c.pre ? 'Pre saved' : 'Pre empty'}</span>
+        <span class="chip ${c.live ? 'ok' : 'due'}">${c.live ? 'Live saved' : 'Live empty'}</span>
+        <span class="chip ${c.post ? 'ok' : 'due'}">${c.post ? 'Post saved' : 'Post due'}</span>
+      </div>`;
+    }
+    function renderJournal(empty) {
+      document.getElementById('days').innerHTML = (empty ? [{ d: 'Thu 20 Aug', n: 'Nothing yet', on: true }] : days).map((d, i) =>
+        `<button type="button" class="day ${d.on || i === 0 ? 'on' : ''}"><div class="d">${d.d}</div><div class="n">${d.n}</div></button>`
+      ).join('');
+      if (empty) {
+        document.getElementById('shelf').innerHTML = `
+          <button type="button" class="card new press" data-say="Opens Notch · Pre-trade. Your first card.">
+            <div class="when">Start here</div>
+            <div class="sym">Make the first card</div>
+            <div class="blurb">Declare on the Notch. The moment it saves, this shelf is yours.</div>
+          </button>
+          <div class="card" style="opacity:.4">
+            <div class="when">After the first close</div>
+            <div class="sym">A trip will sit here</div>
+            <div class="blurb">Symbol, P&amp;L, and three saves — pre, live, post — on one object you made.</div>
+          </div>
+          <div class="card" style="opacity:.28">
+            <div class="when">After a week</div>
+            <div class="sym">This column fills</div>
+            <div class="blurb">Days on the left, like Photos. You will have a body of work.</div>
+          </div>
+          <div class="card" style="opacity:.18">
+            <div class="when">Later</div>
+            <div class="sym">Console keeps the years</div>
+            <div class="blurb">Station is the desk you write at. Console is the library it becomes.</div>
+          </div>`;
+        document.querySelectorAll('#shelf [data-say]').forEach((el) => el.addEventListener('click', () => say(el.dataset.say)));
+        return;
+      }
+      document.getElementById('shelf').innerHTML =
+        `<button type="button" class="card new press" data-say="Opens Notch. Another card on today’s shelf.">
+          <div class="when">Still time</div>
+          <div class="sym">Make another</div>
+          <div class="blurb">The last post is due. You can still declare the next one after you save it.</div>
+        </button>` +
+        cards.map((c) => `<button type="button" class="card press" data-say="Full write-up opens in Console. The card stays on this Mac.">
+          <div class="when">${c.t}</div>
+          <div class="sym">${c.s}</div>
+          <div class="blurb">${c.b}</div>
+          ${chips(c)}
+          <div class="pnl ${c.cls}">${c.pnl}</div>
+        </button>`).join('');
+      document.querySelectorAll('#shelf [data-say]').forEach((el) => el.addEventListener('click', () => say(el.dataset.say)));
+    }
+
+    document.querySelectorAll('.nav-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('on', n === el));
+        document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + el.dataset.route));
+      });
+    });
+    document.querySelectorAll('[data-go]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const name = el.dataset.go;
+        document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('on', n.dataset.route === name));
+        document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === 'screen-' + name));
+      });
+    });
+    document.querySelectorAll('[data-say]').forEach((el) => el.addEventListener('click', () => say(el.getAttribute('data-say'))));
+
+    let pressEl;
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.press');
+      if (!el) return;
+      pressEl = el; el.classList.add('is-down');
+    }, true);
+    document.addEventListener('pointerup', () => { if (pressEl) pressEl.classList.remove('is-down'); pressEl = null; }, true);
+
+    document.querySelectorAll('.proto button').forEach((b) => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.proto button').forEach((n) => n.classList.toggle('on', n === b));
+        const neu = b.dataset.v === 'new';
+        document.getElementById('vnote').textContent = neu ? 'Out of the box — empty tiles are invitations' : 'A desk that already has work on it';
+        document.getElementById('hello-h').textContent = neu ? 'This Mac is yours. Fill it.' : 'You already have a day in motion.';
+        document.getElementById('hello-p').textContent = neu
+          ? 'Nothing is saved yet. That is the exciting part. Declare once, connect a broker, turn on a workflow — the tiles light up because you made them.'
+          : 'Four trips on the shelf. Post is open on the last one. The next thing you make still starts on the Notch — then it lands here.';
+        document.getElementById('pulse-pnl').textContent = neu ? '—' : '−₹6,840';
+        document.getElementById('pulse-pnl').className = neu ? 'val' : 'val neg';
+        document.getElementById('pulse-right').textContent = neu ? '0 trips · 0 workflows · add the first' : '4 trips on the shelf · 1 workflow running';
+        document.getElementById('j-count').textContent = neu ? '0' : '18';
+        renderJournal(neu);
+      });
+    });
+    renderJournal(false);
+  </script>
+</body>
+</html>

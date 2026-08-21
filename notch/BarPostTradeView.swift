@@ -41,8 +41,7 @@ struct BarPostTradeView: View {
     private let momentASeconds: TimeInterval = 120
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 16) {
                 Text("Trade closed")
                     .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .semibold))
                     .foregroundColor(BarDS.Text.primary)
@@ -51,6 +50,10 @@ struct BarPostTradeView: View {
                     .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                     .foregroundColor(BarDS.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if !viewModel.unpostedCaptures.isEmpty {
+                    unpostedChartsCard
+                }
 
                 momentA
                 momentB
@@ -68,7 +71,6 @@ struct BarPostTradeView: View {
                 .foregroundColor(BarDS.Text.hint)
                 .padding(.top, 4)
             }
-        }
         .onAppear {
             postTrade = .initial
             momentABase = Date()
@@ -112,6 +114,27 @@ struct BarPostTradeView: View {
 
     private var momentACanContinue: Bool {
         postTrade.momentAAcknowledged || momentAElapsed >= momentASeconds
+    }
+
+    private var unpostedChartsCard: some View {
+        BarCard {
+            Text("Unposted charts")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .bold))
+                .foregroundColor(BarDS.Text.primary)
+                .padding(.bottom, 4)
+            Text("Still on this Mac. Tap the closed trade to send. Not part of Moments A–C.")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 8)
+            UnpostedCaptureTrayView(viewModel: viewModel)
+            if let trade = viewModel.linkableRecentTrades.first {
+                BarBigButton(label: "Send to this trade", style: .outline) {
+                    viewModel.requestLinkUnposted(to: trade.id)
+                }
+                .accessibilityLabel("Send unposted chart to \(trade.symbol)")
+            }
+        }
     }
 
     private var momentA: some View {
@@ -320,7 +343,7 @@ struct BarPostTradeView: View {
                     .frame(width: 64, height: 64)
                 Circle()
                     .trim(from: 0, to: 1)
-                    .stroke(BarDS.Accent.teal.opacity(0.88), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(BarDS.Text.primary.opacity(0.88), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: 64, height: 64)
                     .rotationEffect(.degrees(-90))
             }
@@ -328,11 +351,11 @@ struct BarPostTradeView: View {
         }
         .padding(.vertical, 13)
         .padding(.horizontal, 15)
-        .background(BarDS.Semantic.tealBg())
+        .background(BarDS.Fill.card)
         .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                .stroke(BarDS.Semantic.tealBorder(), lineWidth: BarDS.borderThin),
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
         )
         .padding(.bottom, 8)
     }

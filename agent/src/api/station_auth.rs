@@ -13,6 +13,13 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
 
+fn anyhow_message(err: &anyhow::Error) -> String {
+    err.chain()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join(": ")
+}
+
 fn workos_station_client_id() -> Result<String, String> {
     std::env::var("WORKOS_STATION_CLIENT_ID")
         .map(|s| s.trim().to_string())
@@ -54,7 +61,7 @@ pub async fn station_auth_begin_handler(State(state): State<AppState>) -> Respon
             StatusCode::BAD_GATEWAY,
             Json(json!({
                 "error_class": "UPSTREAM",
-                "message": err.to_string(),
+                "message": anyhow_message(&err),
             })),
         )
             .into_response(),
@@ -101,7 +108,7 @@ pub async fn station_auth_complete_handler(State(state): State<AppState>) -> Res
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
                     "error_class": "SESSION_PROOF",
-                    "message": err.to_string(),
+                    "message": anyhow_message(&err),
                 })),
             )
                 .into_response(),
@@ -120,7 +127,7 @@ pub async fn station_auth_complete_handler(State(state): State<AppState>) -> Res
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
                     "error_class": "UPSTREAM",
-                    "message": err.to_string(),
+                    "message": anyhow_message(&err),
                 })),
             )
                 .into_response()
@@ -143,7 +150,7 @@ pub async fn station_auth_session_handler(State(state): State<AppState>) -> Resp
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "error_class": "KEYCHAIN",
-                    "message": err.to_string(),
+                    "message": anyhow_message(&err),
                 })),
             )
                 .into_response();
@@ -169,7 +176,7 @@ pub async fn station_auth_session_handler(State(state): State<AppState>) -> Resp
             Json(json!({
                 "signed_in": false,
                 "error_class": "SESSION_PROOF",
-                "message": err.to_string(),
+                "message": anyhow_message(&err),
             })),
         )
             .into_response(),
@@ -183,7 +190,7 @@ pub async fn station_auth_sign_out_handler(State(state): State<AppState>) -> Res
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({
                 "error_class": "KEYCHAIN",
-                "message": err.to_string(),
+                "message": anyhow_message(&err),
             })),
         )
             .into_response(),

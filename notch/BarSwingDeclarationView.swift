@@ -164,10 +164,10 @@ struct BarSwingDeclarationView: View {
                         VStack(spacing: 4) {
                             swingInvalidationIcon(for: k)
                                 .font(.system(size: 16))
-                                .foregroundColor(on ? Color(hex: "#60a5fa") : BarDS.Text.secondary)
+                                .foregroundColor(on ? BarDS.Accent.blue : BarDS.Text.secondary)
                             Text(k.chipTitle)
                                 .font(BarDS.bodyFont(11, weight: .regular))
-                                .foregroundColor(on ? Color(hex: "#60a5fa") : BarDS.Text.secondary)
+                                .foregroundColor(on ? BarDS.Accent.blue : BarDS.Text.secondary)
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)

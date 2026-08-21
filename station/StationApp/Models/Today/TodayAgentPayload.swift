@@ -51,11 +51,21 @@ public struct TodayHeroPayload: Decodable, Equatable, Sendable {
     public let pnlTodayUsd: Double?
     public let tradesToday: Int?
     public let winRate: Double?
+    public let winsToday: Int?
+    public let lossesToday: Int?
 
-    public init(pnlTodayUsd: Double?, tradesToday: Int?, winRate: Double?) {
+    public init(
+        pnlTodayUsd: Double?,
+        tradesToday: Int?,
+        winRate: Double?,
+        winsToday: Int? = nil,
+        lossesToday: Int? = nil
+    ) {
         self.pnlTodayUsd = pnlTodayUsd
         self.tradesToday = tradesToday
         self.winRate = winRate
+        self.winsToday = winsToday
+        self.lossesToday = lossesToday
     }
 }
 

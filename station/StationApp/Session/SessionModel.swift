@@ -23,7 +23,7 @@ public final class SessionModel: ObservableObject {
     }
 
     public var totalUnrealizedPnL: Double {
-        positions.map(\.unrealizedPnL).reduce(0, +)
+        positions.compactMap(\.unrealizedPnL).reduce(0, +)
     }
 
     /// True while broker sync is running or has fresh/stale data — drives Today session mirror polling.

@@ -28,12 +28,29 @@ public enum SessionPositionsDecoder {
                     ?? (p["tradingSymbol"] as? String)
                     ?? (p["symbol"] as? String)
                     ?? "—"
-                let qty = (p["quantity"] as? Int) ?? (p["qty"] as? Int) ?? 0
-                let pnl = (p["unrealizedPnl"] as? Double) ?? (p["unrealized_pnl"] as? Double) ?? 0
+                let qty = SessionPositionsDecoder.qty(from: p)
+                let pnl: Double?
+                if p["unrealizedPnl"] is NSNull || p["unrealized_pnl"] is NSNull {
+                    pnl = nil
+                } else if let n = p["unrealizedPnl"] as? Double {
+                    pnl = n
+                } else if let n = p["unrealized_pnl"] as? Double {
+                    pnl = n
+                } else {
+                    pnl = nil
+                }
                 let dir = (p["direction"] as? String) ?? (p["side"] as? String) ?? ""
                 out.append(DeskPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))
             }
         }
         return Result(positions: out, killSwitchActive: killSwitch, openOrders: openOrders)
+    }
+
+    static func qty(from p: [String: Any]) -> Double {
+        if let n = p["qty"] as? Double { return n }
+        if let n = p["quantity"] as? Double { return n }
+        if let n = p["qty"] as? Int { return Double(n) }
+        if let n = p["quantity"] as? Int { return Double(n) }
+        return 0
     }
 }

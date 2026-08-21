@@ -55,6 +55,16 @@ public enum BinanceUSSigner {
         let hex = signature.map { String(format: "%02x", $0) }.joined()
         return "\(query)&signature=\(hex)"
     }
+
+    public static func apiRestrictionsURL(baseURL: URL, signedQuery: String) -> URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.path = "/sapi/v1/account/apiRestrictions"
+        components.percentEncodedQuery = signedQuery
+        guard let url = components.url else {
+            preconditionFailure("Binance.US apiRestrictions URL")
+        }
+        return url
+    }
 }
 
 public struct BinanceUSValidationHTTPResponse: Equatable, Sendable {
@@ -95,7 +105,7 @@ public struct URLSessionBinanceUSValidationTransport: BinanceUSValidationTranspo
             apiSecret: apiSecret,
             parameters: ["timestamp": timestamp]
         )
-        var request = URLRequest(url: baseURL.appendingPathComponent("/sapi/v1/account/apiRestrictions?\(signedQuery)"))
+        var request = URLRequest(url: BinanceUSSigner.apiRestrictionsURL(baseURL: baseURL, signedQuery: signedQuery))
         request.httpMethod = "GET"
         request.setValue(apiKey, forHTTPHeaderField: "X-MBX-APIKEY")
 

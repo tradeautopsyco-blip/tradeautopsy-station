@@ -55,6 +55,18 @@ public enum BinanceComSigner {
         let hex = signature.map { String(format: "%02x", $0) }.joined()
         return "\(query)&signature=\(hex)"
     }
+
+    /// Query must stay a real `?…` string. `appendingPathComponent("path?query")` encodes `?` as `%3F`
+    /// and Binance returns invalid-key errors.
+    public static func apiRestrictionsURL(baseURL: URL, signedQuery: String) -> URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        components.path = "/sapi/v1/account/apiRestrictions"
+        components.percentEncodedQuery = signedQuery
+        guard let url = components.url else {
+            preconditionFailure("Binance.com apiRestrictions URL")
+        }
+        return url
+    }
 }
 
 public struct BinanceComValidationHTTPResponse: Equatable, Sendable {
@@ -95,7 +107,7 @@ public struct URLSessionBinanceComValidationTransport: BinanceComValidationTrans
             apiSecret: apiSecret,
             parameters: ["timestamp": timestamp]
         )
-        var request = URLRequest(url: baseURL.appendingPathComponent("/sapi/v1/account/apiRestrictions?\(signedQuery)"))
+        var request = URLRequest(url: BinanceComSigner.apiRestrictionsURL(baseURL: baseURL, signedQuery: signedQuery))
         request.httpMethod = "GET"
         request.setValue(apiKey, forHTTPHeaderField: "X-MBX-APIKEY")
 

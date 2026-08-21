@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Notch
 
@@ -125,5 +126,68 @@ struct PlanSurfaceOnlyTests {
         vm.requestHidePill()
         #expect(vm.isExpanded == false)
         #expect(hideCalls == 1)
+    }
+
+    @Test func ingestPasteRequestsLiveScreenWhenNotDebrief() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.barSurfacePhase = .livePlan
+        vm.ingestImageData(Self.onePxPng, hintedType: "image/png")
+        #expect(vm.requestLiveCaptureScreen)
+        #expect(vm.consumeLiveCaptureScreenRequest())
+        #expect(vm.requestLiveCaptureScreen == false)
+    }
+
+    @Test func ingestPasteDoesNotLeaveLiveDuringDebrief() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.barSurfacePhase = .debrief
+        vm.ingestImageData(Self.onePxPng, hintedType: "image/png")
+        #expect(vm.requestLiveCaptureScreen)
+        #expect(vm.consumeLiveCaptureScreenRequest() == false)
+        #expect(vm.requestLiveCaptureScreen == false)
+    }
+
+    @Test func hostedExpandToCaptureStillClampsToPlanTab() async {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        await launcher.expandToCapture()
+        #expect(launcher.viewModel.activeTab == .plan)
+        #expect(launcher.viewModel.planSurfaceOnly)
+    }
+
+    @Test func requestLinkUnpostedConfirmsReplaceWhenTradeAlreadyHasChart() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.unpostedCaptures = [
+            UnpostedCaptureRecord(
+                id: UUID(),
+                createdAt: Date(),
+                updatedAt: Date(),
+                filename: "x.png",
+                contentType: "image/png",
+                byteSize: 1,
+                caption: "",
+                capturePhase: "during",
+                lastError: nil,
+                consolePendingId: nil,
+                idempotencyKey: nil
+            )
+        ]
+        vm.tradeIdsWithChart.insert("trade-has-chart")
+        vm.requestLinkUnposted(to: "trade-has-chart")
+        #expect(vm.replaceConfirmTradeId == "trade-has-chart")
+        vm.cancelReplaceChart()
+        #expect(vm.replaceConfirmTradeId == nil)
+    }
+
+    @Test func requestLinkUnpostedNoopsWithoutUnpostedItems() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.unpostedCaptures = []
+        vm.tradeIdsWithChart.insert("trade-has-chart")
+        vm.requestLinkUnposted(to: "trade-has-chart")
+        #expect(vm.replaceConfirmTradeId == nil)
+    }
+
+    private static var onePxPng: Data {
+        Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )!
     }
 }

@@ -48,11 +48,22 @@ public enum BrokerConnectOutcome: Equatable, Sendable {
     case connected(permissionWarning: BrokerPermissionWarning?)
 }
 
+/// Silent Keychain ACL probe — never shows the login-password sheet.
+public enum BrokerKeychainAccessGrant: Equatable, Sendable {
+    /// This app can read the item without a password dialog (Always Allow / trusted ACL).
+    case granted
+    /// No item for this identity.
+    case missing
+    /// Item exists but macOS would prompt. User must click Always Allow; Station does not change ACL.
+    case needsAlwaysAllow
+}
+
 public protocol BrokerCredentialStoring: Sendable {
     func save(credentials: BrokerCredentials, for identity: BrokerConnectionIdentity) throws
     func read(for identity: BrokerConnectionIdentity) throws -> BrokerCredentials?
     func delete(for identity: BrokerConnectionIdentity) throws
     func hasCredentials(for identity: BrokerConnectionIdentity) -> Bool
+    func accessGrant(for identity: BrokerConnectionIdentity) -> BrokerKeychainAccessGrant
 }
 
 public protocol BrokerCredentialValidating: Sendable {

@@ -135,27 +135,27 @@ struct BarSettingsView: View {
         HStack(alignment: .center, spacing: 10) {
             HStack(spacing: 8) {
                 syncStatusDot
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(syncPrimaryLabel)
-                        .font(BarDS.bodyFont(12, weight: .medium))
+                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
                         .foregroundColor(BarDS.Text.primary)
                     Text(syncSecondaryLabel)
-                        .font(BarDS.bodyFont(10, weight: .regular))
-                        .foregroundColor(BarDS.Text.hint)
+                        .font(BarDS.bodyFont(BarDS.FontSize.chip, weight: .regular))
+                        .foregroundColor(BarDS.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)
             Text(currentTimeText)
-                .font(BarDS.monoFont(10, weight: .regular))
-                .foregroundColor(Color(hex: "#333333"))
+                .font(BarDS.monoFont(BarDS.FontSize.chip, weight: .medium))
+                .foregroundColor(BarDS.Text.primary)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 13)
+        .padding(.horizontal, 15)
         .background(BarDS.Fill.card)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
                 .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
         )
         .padding(.bottom, 8)
@@ -255,7 +255,7 @@ struct BarSettingsView: View {
                     .overlay {
                         Text(brokerInitials)
                             .font(BarDS.bodyFont(10, weight: .medium))
-                            .foregroundColor(Color(hex: "#888888"))
+                            .foregroundColor(BarDS.Text.secondary)
                     }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(brokerDisplayName)
@@ -386,10 +386,10 @@ struct BarSettingsView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .foregroundColor(danger ? BarDS.Accent.red : Color(hex: "#888888"))
+            .foregroundColor(danger ? BarDS.Accent.red : BarDS.Text.secondary)
             .frame(maxWidth: .infinity)
             .padding(7)
-            .background(danger ? Color(hex: "#ef4444").opacity(0.06) : Color.white.opacity(0.04))
+            .background(danger ? BarDS.Accent.red.opacity(0.06) : Color.white.opacity(0.04))
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -414,7 +414,7 @@ struct BarSettingsView: View {
                     Spacer(minLength: 8)
                     Text(row.url)
                         .font(BarDS.monoFont(11, weight: .regular))
-                        .foregroundColor(Color(hex: "#444444"))
+                        .foregroundColor(BarDS.Text.muted)
                 }
                 .padding(.vertical, 7)
                 if idx < Self.killSwitchDomains.count - 1 {
@@ -583,7 +583,7 @@ struct BarSettingsView: View {
                 }
                 Text("Weights locked to research defaults. Phase B (Optuna) unlocks after 500 trades per archetype.")
                     .font(BarDS.bodyFont(11, weight: .regular))
-                    .foregroundColor(Color(hex: "#444444"))
+                    .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
             }

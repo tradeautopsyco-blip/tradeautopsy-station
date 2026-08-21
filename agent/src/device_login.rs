@@ -63,8 +63,12 @@ struct WorkOsDeviceAuthenticateSuccess {
     #[serde(default)]
     authkit_authorization_code: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
     access_token: Option<String>,
+}
+
+enum WorkOsMintProof {
+    AuthorizationCode(String),
+    AccessToken(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +132,7 @@ pub async fn complete_device_login(
 async fn poll_workos_device_code(
     http: &reqwest::Client,
     pending: &DeviceLoginPending,
-) -> Result<String> {
+) -> Result<WorkOsMintProof> {
     let deadline = std::time::Instant::now() + Duration::from_secs(pending.public.expires_in.max(30));
     let mut interval = Duration::from_secs(pending.public.interval);
 
@@ -160,12 +164,15 @@ async fn poll_workos_device_code(
             let parsed: WorkOsDeviceAuthenticateSuccess =
                 serde_json::from_str(&text).context("parse WorkOS authenticate success")?;
             if let Some(code) = parsed.authkit_authorization_code.filter(|s| !s.is_empty()) {
-                return Ok(code);
+                return Ok(WorkOsMintProof::AuthorizationCode(code));
             }
-            // Fallback: some tenants may only return access_token; Console mint currently
-            // expects authorization_code. Prefer code; otherwise error clearly.
+            // Same AuthKit client as Console: WorkOS returns access_token and omits
+            // authkit_authorization_code (that field is for a *different* application).
+            if let Some(token) = parsed.access_token.filter(|s| !s.is_empty()) {
+                return Ok(WorkOsMintProof::AccessToken(token));
+            }
             return Err(anyhow!(
-                "WorkOS authenticate succeeded without authkit_authorization_code"
+                "WorkOS authenticate succeeded without authkit_authorization_code or access_token"
             ));
         }
 
@@ -187,18 +194,26 @@ async fn poll_workos_device_code(
 async fn mint_station_tokens(
     http: &reqwest::Client,
     console_base_url: &str,
-    authorization_code: &str,
+    proof: &WorkOsMintProof,
 ) -> Result<StationTokens> {
     let base = console_base_url.trim_end_matches('/');
     require_console_base_url(base)?;
 
+    let body = match proof {
+        WorkOsMintProof::AuthorizationCode(code) => serde_json::json!({
+            "grant_type": "authorization_code",
+            "code": code,
+        }),
+        WorkOsMintProof::AccessToken(access_token) => serde_json::json!({
+            "grant_type": "workos_access_token",
+            "access_token": access_token,
+        }),
+    };
+
     let resp = http
         .post(format!("{base}/api/auth/station/token"))
         .header("content-type", "application/json")
-        .json(&serde_json::json!({
-            "grant_type": "authorization_code",
-            "code": authorization_code,
-        }))
+        .json(&body)
         .send()
         .await
         .context("Console station/token network")?;
@@ -338,7 +353,7 @@ mod tests {
             .block_on(mint_station_tokens(
                 &http,
                 "http://localhost:3000",
-                "code",
+                &WorkOsMintProof::AuthorizationCode("code".into()),
             ))
             .expect_err("must reject http");
         assert!(err.to_string().contains("https://"));

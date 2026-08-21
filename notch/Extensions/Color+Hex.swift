@@ -21,8 +21,8 @@ extension Color {
         )
     }
 
-    static let taSafe = Color(hex: "#00E5C0")
-    static let taDanger = Color(hex: "#FF3B30")
-    static let taWarning = Color(hex: "#FF9500")
-    static let taAccent = Color(hex: "#00E5C0")
+    static let taSafe = Color(hex: "#63E6E2")
+    static let taDanger = Color(hex: "#FF453A")
+    static let taWarning = Color(hex: "#FF9F0A")
+    static let taAccent = Color(hex: "#63E6E2")
 }

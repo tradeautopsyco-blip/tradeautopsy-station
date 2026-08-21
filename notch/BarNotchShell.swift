@@ -18,20 +18,6 @@ public enum BarNotchScreen: String, CaseIterable {
         default: return false
         }
     }
-
-    var sfSymbol: String {
-        switch self {
-        case .morning: return "sun.max"
-        case .pretrade: return "checkmark.clipboard"
-        case .live: return "bolt"
-        case .posttrade: return "checklist"
-        case .escrow: return "shield.fill"
-        case .patterns: return "brain"
-        case .fidelity: return "chart.bar.fill"
-        case .triage: return "arrow.down.circle"
-        case .settings: return "gear"
-        }
-    }
 }
 
 struct BarNotchShell: View {
@@ -40,6 +26,7 @@ struct BarNotchShell: View {
     @State private var localActiveScreen: BarNotchScreen = .morning
     @AppStorage("notch.planMorningBriefConsumed") private var morningBriefConsumed: Bool = false
     @State private var hoveredSession: BarNotchScreen?
+    @State private var analysisOpen: Bool = false
 
     init(viewModel: NotchViewModel, activeScreen: Binding<BarNotchScreen>? = nil) {
         self.viewModel = viewModel
@@ -65,6 +52,7 @@ struct BarNotchShell: View {
         .onAppear {
             syncActiveScreenFromPhase(animated: false)
             syncDeclarationFormFlagToActiveScreen()
+            openAnalysisIfNeeded(for: activeScreen.wrappedValue)
             Task { await viewModel.fetchBarLiveState() }
         }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
@@ -76,12 +64,46 @@ struct BarNotchShell: View {
         }
         .onChange(of: activeScreen.wrappedValue) { _, new in
             syncDeclarationFormFlagToActiveScreen(screen: new)
+            openAnalysisIfNeeded(for: new)
+        }
+        .onChange(of: viewModel.showingDeclarationForm) { _, showing in
+            guard showing, activeScreen.wrappedValue != .pretrade else { return }
+            withAnimation(NotchTheme.contentAnimation) {
+                activeScreen.wrappedValue = .pretrade
+            }
+        }
+        .onChange(of: viewModel.requestLiveCaptureScreen) { _, flag in
+            guard flag else { return }
+            if viewModel.consumeLiveCaptureScreenRequest() {
+                withAnimation(NotchTheme.contentAnimation) {
+                    activeScreen.wrappedValue = .live
+                }
+            }
+        }
+        .alert("Replace this trade’s chart?", isPresented: replaceChartAlertPresented) {
+            Button("Cancel", role: .cancel) {
+                viewModel.cancelReplaceChart()
+            }
+            Button("Replace", role: .destructive) {
+                Task { await viewModel.confirmReplaceChart() }
+            }
+        } message: {
+            Text("\(replaceConfirmSymbol) already has one. Confirm replaces it. One image per trade.")
         }
     }
 
     private func syncDeclarationFormFlagToActiveScreen(screen: BarNotchScreen? = nil) {
         let s = screen ?? activeScreen.wrappedValue
         viewModel.showingDeclarationForm = (s == .pretrade)
+    }
+
+    private func openAnalysisIfNeeded(for screen: BarNotchScreen) {
+        switch screen {
+        case .escrow, .patterns, .fidelity, .triage:
+            analysisOpen = true
+        default:
+            break
+        }
     }
 
     // MARK: - Phase → sidebar (does not fight user while on auxiliary tabs)
@@ -98,79 +120,88 @@ struct BarNotchShell: View {
         }
     }
 
-    // MARK: - Sidebar (192px)
+    // MARK: - Sidebar (176px)
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("TradeAutopsy")
-                    .font(BarDS.bodyFont(13, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-                    .kerning(-0.01 * 13)
-                Text("Behavioral trading OS")
-                    .font(BarDS.bodyFont(11, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
-                    .padding(.top, 1)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(BarDS.Border.section)
-                    .frame(height: BarDS.borderThin)
-            }
-
-            BarSectionLabel(text: "SESSION")
-                .padding(.horizontal, 10)
-                .padding(.top, 0)
+            Text("Session")
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.5))
+                .kerning(0.006 * 11)
+                .textCase(.uppercase)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+                .padding(.horizontal, 16)
 
             sessionNavButton(.morning, badge: morningUnreadBadgeText)
             sessionNavButton(.pretrade, badge: nil)
-            sessionNavButton(.live, badge: liveInterventionBadgeText)
+            sessionNavButton(.live, badges: liveSessionBadges)
             sessionNavButton(.posttrade, badge: nil)
 
-            BarSectionLabel(text: "ANALYSIS")
-                .padding(.horizontal, 10)
+            Button {
+                withAnimation(BarDS.Motion.spring) {
+                    analysisOpen.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    BarNavIcon(glyph: .chevron, size: 14)
+                        .rotationEffect(.degrees(analysisOpen ? 180 : 0))
+                    Text("More · analysis")
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .kerning(0.006 * 11)
+                        .textCase(.uppercase)
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(analysisOpen ? BarDS.Text.primary : Color.white.opacity(0.45))
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                        .fill(analysisOpen ? Color.white.opacity(0.04) : Color.clear)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .accessibilityLabel("More analysis")
+            .accessibilityValue(analysisOpen ? "Expanded" : "Collapsed")
 
-            navButton(.escrow, badge: nil)
-            navButton(.patterns, badge: nil)
-            navButton(.fidelity, badge: nil)
-            navButton(.triage, badge: nil)
+            if analysisOpen {
+                navButton(.escrow, badge: nil)
+                navButton(.patterns, badge: nil)
+                navButton(.fidelity, badge: nil)
+                navButton(.triage, badge: nil)
+            }
 
             Spacer(minLength: 0)
 
             Button {
                 viewModel.requestHidePill()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(BarDS.Text.muted)
-                    Text("Hide notch")
-                        .font(BarDS.bodyFont(12, weight: .regular))
-                        .foregroundColor(BarDS.Text.muted)
+                HStack(spacing: 10) {
+                    BarNavIcon(glyph: .eyeSlash)
+                    Text("Hide notch · ⌥Space")
+                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
                     Spacer(minLength: 0)
                 }
-                .padding(.vertical, 6)
+                .foregroundColor(BarDS.Text.hint)
+                .padding(.vertical, 7)
                 .padding(.horizontal, 10)
                 .contentShape(Rectangle())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
             }
             .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
             .accessibilityLabel("Hide notch")
             .accessibilityHint("Hides the notch pill. Press Option-Space to show it again.")
+            .padding(.horizontal, 8)
             .padding(.bottom, 4)
 
-            Rectangle()
-                .fill(BarDS.Border.section)
-                .frame(height: BarDS.borderThin)
             archetypePill
                 .padding(.horizontal, 8)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
         }
-        .frame(width: 192, alignment: .topLeading)
-        .background(BarDS.Fill.sidebar)
+        .frame(width: BarDS.sidebarWidth, alignment: .topLeading)
+        .background(BarDS.Fill.sidebar.opacity(0.72))
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(BarDS.Border.section)
@@ -183,9 +214,26 @@ struct BarNotchShell: View {
         return nil
     }
 
-    private var liveInterventionBadgeText: String? {
-        let n = viewModel.barLiveState?.activeInterventions.count ?? 0
-        return n > 0 ? "!" : nil
+    private var liveSessionBadges: [String] {
+        var badges: [String] = []
+        if (viewModel.barLiveState?.activeInterventions.count ?? 0) > 0 {
+            badges.append("!")
+        }
+        let n = viewModel.unpostedCaptures.count
+        if n > 0 { badges.append("\(n)") }
+        return badges
+    }
+
+    private var replaceChartAlertPresented: Binding<Bool> {
+        Binding(
+            get: { viewModel.replaceConfirmTradeId != nil },
+            set: { if !$0 { viewModel.cancelReplaceChart() } }
+        )
+    }
+
+    private var replaceConfirmSymbol: String {
+        guard let id = viewModel.replaceConfirmTradeId else { return "This trade" }
+        return viewModel.recentTrades.first(where: { $0.id == id })?.symbol ?? "This trade"
     }
 
     private func navButton(_ screen: BarNotchScreen, badge: String?) -> some View {
@@ -199,13 +247,10 @@ struct BarNotchShell: View {
                 activeScreen.wrappedValue = screen
             }
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: screen.sfSymbol)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundColor(navPrimary(isActive: isActive, isHover: isHover))
-                    .opacity(isActive ? 1 : 0.7)
-                Text(screen.rawValue)
-                    .font(BarDS.bodyFont(12, weight: isActive ? .medium : .regular))
+            HStack(spacing: 10) {
+                BarNavIcon(glyph: screen.navGlyph, filled: isActive)
+                Text(screen.navTitle)
+                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: isActive ? .medium : .regular))
                     .foregroundColor(navPrimary(isActive: isActive, isHover: isHover))
                 Spacer(minLength: 0)
                 if let badge {
@@ -223,7 +268,7 @@ struct BarNotchShell: View {
                         .clipShape(Capsule())
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
@@ -241,6 +286,10 @@ struct BarNotchShell: View {
 
     /// SESSION group: SF Symbol + hex icon colors (matches spec); label uses same row styling as `navButton`.
     private func sessionNavButton(_ screen: BarNotchScreen, badge: String?) -> some View {
+        sessionNavButton(screen, badges: badge.map { [$0] } ?? [])
+    }
+
+    private func sessionNavButton(_ screen: BarNotchScreen, badges: [String]) -> some View {
         let isActive = activeScreen.wrappedValue == screen
         let isHover = hoveredSession == screen
         return Button {
@@ -251,16 +300,13 @@ struct BarNotchShell: View {
                 activeScreen.wrappedValue = screen
             }
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: screen.sfSymbol)
-                    .font(.system(size: 14))
-                    .foregroundColor(isActive ? Color(hex: "#ededed") : Color(hex: "#666666"))
-                    .opacity(isActive ? 1.0 : 0.7)
-                Text(screen.rawValue)
-                    .font(BarDS.bodyFont(12, weight: isActive ? .medium : .regular))
+            HStack(spacing: 10) {
+                BarNavIcon(glyph: screen.navGlyph, filled: isActive)
+                Text(screen.navTitle)
+                    .font(BarDS.bodyFont(BarDS.FontSize.body, weight: isActive ? .medium : .regular))
                     .foregroundColor(navPrimary(isActive: isActive, isHover: isHover))
                 Spacer(minLength: 0)
-                if let badge {
+                ForEach(badges, id: \.self) { badge in
                     Text(badge)
                         .font(BarDS.bodyFont(10, weight: .medium))
                         .foregroundColor(badge == "!" ? BarDS.Accent.red : BarDS.Accent.amber)
@@ -275,7 +321,7 @@ struct BarNotchShell: View {
                         .clipShape(Capsule())
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
@@ -292,15 +338,15 @@ struct BarNotchShell: View {
     }
 
     private func navBackground(isActive: Bool, isHover: Bool) -> Color {
-        if isActive { return Color.white.opacity(0.07) }
+        if isActive { return Color.white.opacity(0.08) }
         if isHover { return Color.white.opacity(0.04) }
         return .clear
     }
 
     private func navPrimary(isActive: Bool, isHover: Bool) -> Color {
         if isActive { return BarDS.Text.primary }
-        if isHover { return Color(hex: "#aaaaaa") }
-        return Color(hex: "#666666")
+        if isHover { return BarDS.Text.primary }
+        return BarDS.Text.secondary
     }
 
     private var archetypePill: some View {
@@ -323,12 +369,19 @@ struct BarNotchShell: View {
                     activeScreen.wrappedValue = .settings
                 }
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14))
+                BarNavIcon(
+                    glyph: .gear,
+                    filled: activeScreen.wrappedValue == .settings,
+                    size: 16
+                )
                     .foregroundColor(
-                        activeScreen.wrappedValue == .settings ? Color(hex: "#00e5c0") : Color(hex: "#888888")
+                        activeScreen.wrappedValue == .settings ? BarDS.Text.primary : BarDS.Text.muted
                     )
-                    .frame(width: 36, height: 36)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                            .fill(activeScreen.wrappedValue == .settings ? Color.white.opacity(0.08) : Color.clear)
+                    )
                     .contentShape(Rectangle())
             }
             .buttonStyle(NotchPressButtonStyle(pressedScale: 0.94))
@@ -365,53 +418,28 @@ struct BarNotchShell: View {
             Text(activeScreen.wrappedValue.rawValue)
                 .font(BarDS.bodyFont(BarDS.FontSize.topbarTitle, weight: .medium))
                 .foregroundColor(BarDS.Text.primary)
+                .kerning(-0.011 * BarDS.FontSize.topbarTitle)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("score \(String(format: "%.2f", viewModel.compositeScore))")
+            Text(String(format: "%.2f", viewModel.compositeScore))
                 .font(BarDS.monoFont(11, weight: .regular))
+                .monospacedDigit()
                 .foregroundColor(BarDS.Text.muted)
 
             if let mult = viewModel.barBehavioralMultiplierLabel, !mult.isEmpty {
                 Text(mult)
-                    .font(BarDS.monoFont(10, weight: .medium))
+                    .font(BarDS.monoFont(11, weight: .medium))
+                    .monospacedDigit()
                     .foregroundColor(BarDS.Accent.amber)
             }
 
             brokerConnectionPill
 
             statePill
-
-            Button {
-                viewModel.showingDeclarationForm = true
-                withAnimation(NotchTheme.contentAnimation) {
-                    activeScreen.wrappedValue = .pretrade
-                }
-            } label: {
-                Text("+ New trade")
-                    .font(BarDS.bodyFont(12, weight: .medium))
-                    .foregroundColor(BarDS.Fill.sidebar)
-                    .padding(.vertical, 5)
-                    .padding(.horizontal, 12)
-                    .background(BarDS.Text.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
-            }
-            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.97))
-
-            Button {
-                viewModel.collapseExpandedFromChromeTap()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(BarDS.Text.muted)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.94))
-            .accessibilityLabel("Collapse notch")
         }
         .padding(.vertical, 11)
         .padding(.horizontal, 16)
-        .background(BarDS.Fill.sidebar)
+        .background(BarDS.Fill.sidebar.opacity(0.70))
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(BarDS.Border.section)
@@ -468,68 +496,34 @@ struct BarNotchShell: View {
 
     private var screenBehavioralPillStyle: (dot: Color, title: String, titleColor: Color, bg: Color) {
         switch activeScreen.wrappedValue {
-        case .live:
-            let interventions = viewModel.barLiveState?.activeInterventions.count ?? 0
-            if interventions > 0 {
-                return (
-                    BarDS.Accent.amber,
-                    "LIVE · ACTION",
-                    BarDS.Accent.amber,
-                    BarDS.Accent.amber.opacity(0.12),
-                )
-            }
-            return behavioralPillStyle
-        case .posttrade:
-            return (
-                BarDS.Accent.teal,
-                "DEBRIEF",
-                BarDS.Accent.teal,
-                BarDS.Accent.teal.opacity(0.10),
-            )
+        case .morning:
+            return (BarDS.Accent.teal, "Pre-market", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
         case .pretrade:
-            if viewModel.compositeScore >= 0.35 {
-                return (
-                    BarDS.Accent.amber,
-                    "PRE · ELEVATED",
-                    BarDS.Accent.amber,
-                    BarDS.Accent.amber.opacity(0.12),
-                )
+            return (BarDS.Accent.teal, "Declaration", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+        case .live:
+            let broken = viewModel.compositeScore >= 0.45
+            if broken {
+                return (BarDS.Accent.amber, "Intact", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
             }
+            return (BarDS.Accent.teal, "Intact", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+        case .posttrade:
+            return (BarDS.Accent.amber, "Debrief", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
+        case .escrow:
+            return (BarDS.Accent.teal, "Match", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+        case .patterns:
+            return (BarDS.Accent.amber, "Building", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
+        case .fidelity:
             return (
-                BarDS.Accent.teal,
-                "PRE · CALM",
-                BarDS.Accent.teal,
-                BarDS.Accent.teal.opacity(0.10),
+                BarDS.Text.primary,
+                String(format: "%.2f", viewModel.compositeScore),
+                BarDS.Text.primary,
+                Color.white.opacity(0.10)
             )
-        default:
-            return behavioralPillStyle
+        case .triage:
+            return (BarDS.Accent.teal, "Triage", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+        case .settings:
+            return (BarDS.Accent.teal, "Config", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
         }
-    }
-
-    private var behavioralPillStyle: (dot: Color, title: String, titleColor: Color, bg: Color) {
-        let raw = viewModel.behavioralState.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if raw.contains("DANGER") || raw == "HIGH" || viewModel.compositeScore >= 0.45 {
-            return (
-                BarDS.Accent.red,
-                "HIGH RISK",
-                BarDS.Accent.red,
-                BarDS.Accent.red.opacity(0.12)
-            )
-        }
-        if raw == "CAUTION" || viewModel.compositeScore >= 0.25 {
-            return (
-                BarDS.Accent.amber,
-                "CAUTION",
-                BarDS.Accent.amber,
-                BarDS.Accent.amber.opacity(0.12)
-            )
-        }
-        return (
-            BarDS.Accent.teal,
-            "CALM",
-            BarDS.Accent.teal,
-            BarDS.Accent.teal.opacity(0.10)
-        )
     }
 
     // MARK: - Header strip (loading / errors) — preserves BarCircuitPanelView diagnostics
@@ -635,12 +629,9 @@ struct BarNotchShell: View {
         case .escrow:
             BarEscrowMatchView(report: viewModel.barLiveState?.escrowMatchReport)
         case .patterns:
-            BarPlaceholderCard(
-                title: "Patterns",
-                caption: "Building patterns — need 50+ trades"
-            )
+            BarPatternsChartView()
         case .fidelity:
-            BarFidelityRouteView(viewModel: viewModel)
+            BarFidelityChartView(viewModel: viewModel)
         case .triage:
             BarTriageRouteView(viewModel: viewModel)
         case .settings:
@@ -651,29 +642,18 @@ struct BarNotchShell: View {
     @ViewBuilder
     private var liveBody: some View {
         switch viewModel.barSurfacePhase {
-        case .livePlan:
-            ScrollView {
-                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
-            }
-            .scrollIndicators(.hidden)
         case .armed:
             if viewModel.barLiveState != nil {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
-                        planPanelDivider
-                        barArmedWaiting
-                    }
+                VStack(alignment: .leading, spacing: 16) {
+                    BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
+                    planPanelDivider
+                    barArmedWaiting
                 }
-                .scrollIndicators(.hidden)
             } else {
                 barArmedWaiting
             }
         default:
-            ScrollView {
-                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
-            }
-            .scrollIndicators(.hidden)
+            BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
         }
     }
 
@@ -787,29 +767,109 @@ private struct BarPlaceholderCard: View {
     }
 }
 
-private struct BarFidelityRouteView: View {
-    @ObservedObject var viewModel: NotchViewModel
+private struct BarPatternsChartView: View {
+    @State private var selected: String = "Breakout"
+    private let counts: [Double: Int] = [42: 21, 28: 14, 14: 7, 10: 5, 6: 3]
+    private let maxPct: Double = 50
+
+    private var readout: String {
+        guard let row = BarTAChartDemo.setupMix.first(where: { $0.x == selected }) else {
+            return "Breakout · 21 of 50 trades"
+        }
+        let n = counts[row.y] ?? 0
+        return "\(row.x) · \(n) of 50 trades"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        BarTAChartFigure(
+            kicker: "Setup mix · last 50 trades",
+            takeaway: "Breakout is the most used setup at 42% of the last 50 trades. Horizontal bars compare categories — this is not a time series.",
+            readout: readout
+        ) {
+            VStack(spacing: 0) {
+                ForEach(BarTAChartDemo.setupMix) { row in
+                    BarTABarRow(
+                        label: row.x,
+                        pct: row.y,
+                        maxPct: maxPct,
+                        selected: selected == row.x
+                    ) {
+                        selected = row.x
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct BarFidelityChartView: View {
+    @ObservedObject var viewModel: NotchViewModel
+    @State private var lens: String = "last"
+    @State private var readout: String = "14 Aug · 94%"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            BarTAChartFigure(
+                kicker: "Plan fidelity · 14 sessions",
+                takeaway: "Plan fidelity averaged 92% over the last 14 sessions, up 6 points from the prior two weeks. Latest session 94%.",
+                readout: readout
+            ) {
+                BarTALinePlot(
+                    points: BarTAChartDemo.fidelitySessions,
+                    kind: .fidelity,
+                    height: 132,
+                    includeZero: false,
+                    yMinFixed: 80,
+                    yMaxFixed: 100,
+                    showDiamonds: true
+                )
+                .accessibilityLabel("Plan fidelity over 14 sessions, latest 94 percent")
+            }
+
+            fidelityLens(id: "last", title: "Last session", sub: " — micro", value: "94%") {
+                readout = "14 Aug · 94%"
+            }
+            fidelityLens(id: "avg", title: "Average", sub: " — macro", value: "92%") {
+                readout = "Average · 92%"
+            }
+            fidelityLens(id: "best", title: "Best day", sub: " — 11 Aug", value: "96%") {
+                readout = "11 Aug · 96%"
+            }
+
             if let pct = viewModel.barLiveState?.escrowMatchReport?.fidelityPct, pct.isFinite {
                 BarProgressBlock(
                     label: "Plan fidelity (escrow)",
                     valueText: String(format: "%.0f%%", pct),
-                    pct: min(1, max(0, pct / 100))
+                    pct: min(1, max(0, pct / 100)),
+                    fillStyle: .fidelity
                 )
-            } else {
-                BarPlaceholderCard(
-                    title: "Fidelity score",
-                    caption: "Escrow match data loads after your next reconciled trade."
-                )
+                .padding(.top, 8)
             }
-            BarProgressBlock(
-                label: "Composite behavioral score",
-                valueText: String(format: "%.2f", viewModel.compositeScore),
-                pct: min(1, max(0, viewModel.compositeScore))
-            )
         }
+    }
+
+    private func fidelityLens(id: String, title: String, sub: String, value: String, action: @escaping () -> Void) -> some View {
+        Button {
+            lens = id
+            action()
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                (Text(title).font(BarDS.bodyFont(13, weight: .medium))
+                    + Text(sub).font(BarDS.bodyFont(11, weight: .regular)).foregroundColor(BarDS.Text.secondary))
+                    .foregroundColor(BarDS.Text.primary)
+                Spacer(minLength: 0)
+                Text(value)
+                    .font(BarDS.monoFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Text.primary)
+            }
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.white.opacity(0.05)).frame(height: 0.5)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
+        .opacity(lens == id ? 1 : 0.85)
     }
 }
 

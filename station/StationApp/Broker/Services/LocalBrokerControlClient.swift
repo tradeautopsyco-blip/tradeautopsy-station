@@ -72,6 +72,9 @@ public final class LocalBrokerControlClient: BrokerControlling {
                 } else {
                     isConfigured = false
                 }
+            } else if metadata?.lastValidatedAt != nil {
+                // COM: metadata from Connect. Do not read Keychain secrets on Brokers refresh.
+                isConfigured = true
             } else {
                 isConfigured = credentialStore.hasCredentials(for: identity)
             }

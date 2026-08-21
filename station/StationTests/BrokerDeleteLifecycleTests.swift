@@ -37,7 +37,8 @@ struct BrokerDeleteLifecycleTests {
             validator: FakeBrokerCredentialValidator(),
             syncControl: syncControl,
             metadataStore: metadataStore,
-            runtimeClient: runtimeClient
+            runtimeClient: runtimeClient,
+            keychainItems: FakeBrokerKeychainItemStore()
         )
         return (client, store, metadataStore, runtimeClient, connectController, supervisor)
     }

@@ -1,10 +1,10 @@
 import Foundation
 
 public enum TodayPalette {
-    public static let profit = "#0ECB81"
-    public static let loss = "#F6465D"
-    public static let watch = "#FF7A6B"
-    public static let neutral = "#EDEDED"
+    public static let profit = "#30D158"
+    public static let loss = "#FF453A"
+    public static let watch = "#FF9F0A"
+    public static let neutral = "#FFFFFF"
 }
 
 public enum TodayPresentationState: Equatable, Sendable {
@@ -55,6 +55,20 @@ public struct TodayTradeRowPresentation: Equatable, Identifiable, Sendable {
     public let flagText: String
     public let flagTone: TodaySignalTone
     public let isFlagged: Bool
+    public let accountShareText: String
+    public let goalText: String
+}
+
+public struct TodayOpenRowPresentation: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let symbol: String
+    public let sideText: String
+    public let qtyText: String
+    public let mtmText: String
+    public let mtmTone: TodayValueTone
+    public let accountShareText: String
+    public let goalText: String
+    public let behaviorText: String
 }
 
 public struct TodayScreenPresentation: Equatable, Sendable {
@@ -72,11 +86,20 @@ public struct TodayScreenPresentation: Equatable, Sendable {
     public let showEmptyTable: Bool
     public let learningBaseline: Bool
     public let showSignalsUnavailableMessage: Bool
+    public let openRows: [TodayOpenRowPresentation]
+    public let showEmptyOpenBook: Bool
+    public let showShallowImpact: Bool
+    public let shallowImpactCaption: String
+    public let takeaway: String
+    public let caption: String
 
     public static func build(
         payload: TodayAgentPayload?,
         agentHealthy: Bool,
-        now: Date = Date()
+        now: Date = Date(),
+        positions: [DeskPosition] = [],
+        showShallowImpact: Bool = false,
+        showActiveMoney: Bool = true
     ) -> TodayScreenPresentation {
         if !agentHealthy || payload == nil {
             return degraded(agentHealthy: false, reason: "unavailable")
@@ -87,23 +110,55 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         if payload.degradedReason == "sync_unavailable" || payload.degradedReason == "sync_stale" {
             return degraded(agentHealthy: true, reason: payload.degradedReason ?? "sync_unavailable")
         }
-        if payload.trades.isEmpty && payload.hero.pnlTodayUsd == nil {
-            return healthyEmpty(payload: payload, now: now)
+        if payload.degradedReason == "stub_adapter" {
+            return degraded(agentHealthy: true, reason: "stub_adapter")
         }
-        return healthyActive(payload: payload, now: now)
+        if !showActiveMoney {
+            return dualDeskNoBlend(payload: payload, now: now)
+        }
+        let hasClosed = !payload.trades.isEmpty || payload.hero.pnlTodayUsd != nil
+        if !hasClosed && positions.isEmpty {
+            return healthyEmpty(payload: payload, now: now, showShallowImpact: showShallowImpact)
+        }
+        return healthyActive(
+            payload: payload,
+            now: now,
+            positions: positions,
+            showShallowImpact: showShallowImpact
+        )
     }
 
     private static func degraded(agentHealthy: Bool, reason: String) -> TodayScreenPresentation {
-        let caption = agentHealthy
-            ? (reason == "sync_stale" ? "Unavailable · sync stale" : "Unavailable · sync paused")
-            : "Unavailable · agent down"
+        let caption: String
+        let banner: String?
+        let takeaway: String
+        switch reason {
+        case "stub_adapter":
+            caption = "Unavailable · stub adapter"
+            banner = "This connection cannot produce fills — not a quiet trading day."
+            takeaway = "Stub-empty is not a quiet day. Hero stays dash, not zero."
+        case "sync_stale":
+            caption = "Unavailable · sync stale"
+            banner = "Broker sync stale — P&L, trades, and signals are placeholders. Not zero."
+            takeaway = "Desk numbers are unavailable while broker sync is stale."
+        case "sync_unavailable":
+            caption = "Unavailable · sync paused"
+            banner = "Broker sync paused — P&L, trades, and signals are placeholders. Not zero."
+            takeaway = "Desk numbers are unavailable while broker sync is paused."
+        default:
+            caption = agentHealthy ? "Unavailable · sync paused" : "Unavailable · agent down"
+            banner = agentHealthy
+                ? "Broker sync paused — hero metrics and trades show placeholders until sync resumes."
+                : nil
+            takeaway = agentHealthy
+                ? "Desk numbers are unavailable while broker sync is paused."
+                : "Agent is down. Today stays dash, not zero."
+        }
         return TodayScreenPresentation(
             state: agentHealthy ? .syncUnavailable : .agentDown,
             subtitle: subtitleForDate(Date()),
             showDegradedBanner: agentHealthy,
-            degradedBannerText: agentHealthy
-                ? "Broker sync paused — hero metrics and trades show placeholders until sync resumes."
-                : nil,
+            degradedBannerText: banner,
             heroTiles: [
                 heroTile(id: "pnl", label: "P&L today", value: emDash, caption: caption, tone: .empty),
                 heroTile(id: "trades", label: "Trades today", value: emDash, caption: caption, tone: .empty),
@@ -115,14 +170,54 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             trades: [],
             showEmptyTable: true,
             learningBaseline: true,
-            showSignalsUnavailableMessage: true
+            showSignalsUnavailableMessage: true,
+            openRows: [],
+            showEmptyOpenBook: true,
+            showShallowImpact: false,
+            shallowImpactCaption: "",
+            takeaway: takeaway,
+            caption: "Degraded contract: null, not zero. One owner per number."
         )
     }
 
-    private static func healthyEmpty(payload: TodayAgentPayload, now: Date) -> TodayScreenPresentation {
+    private static func dualDeskNoBlend(
+        payload: TodayAgentPayload,
+        now: Date
+    ) -> TodayScreenPresentation {
         TodayScreenPresentation(
             state: .healthyEmpty,
-            subtitle: subtitleForDate(now),
+            subtitle: subtitleForDate(now, payload: payload, dualDesk: true),
+            showDegradedBanner: true,
+            degradedBannerText: "No active desk — COM is USD, Kotak is INR. Pulse shows both chips. Hero does not add them.",
+            heroTiles: [
+                heroTile(id: "pnl", label: "P&L today", value: emDash, caption: "No single desk currency", tone: .empty),
+                heroTile(id: "trades", label: "Trades today", value: emDash, caption: "Choose COM or Kotak", tone: .empty),
+                heroTile(id: "wr", label: "Win rate", value: emDash, caption: "Not a blended rate", tone: .empty),
+            ],
+            signalsMeta: "unavailable until a desk is active",
+            signals: signalCards(from: payload.topSignals, learning: true),
+            tradesMeta: "",
+            trades: [],
+            showEmptyTable: true,
+            learningBaseline: true,
+            showSignalsUnavailableMessage: false,
+            openRows: [],
+            showEmptyOpenBook: true,
+            showShallowImpact: false,
+            shallowImpactCaption: "",
+            takeaway: "Two desks are live. There is no blended P&L. Pick a desk or keep money as dash.",
+            caption: "T2 honesty. Market cap, weekly gauges, and remaining risk stay off this screen."
+        )
+    }
+
+    private static func healthyEmpty(
+        payload: TodayAgentPayload,
+        now: Date,
+        showShallowImpact: Bool
+    ) -> TodayScreenPresentation {
+        TodayScreenPresentation(
+            state: .healthyEmpty,
+            subtitle: subtitleForDate(now, payload: payload),
             showDegradedBanner: false,
             degradedBannerText: nil,
             heroTiles: [
@@ -130,22 +225,36 @@ public struct TodayScreenPresentation: Equatable, Sendable {
                 heroTile(id: "trades", label: "Trades today", value: emDash, caption: "No closed round-trips", tone: .empty),
                 heroTile(id: "wr", label: "Win rate", value: emDash, caption: "No closed round-trips", tone: .empty),
             ],
-            signalsMeta: payload.learningBaseline ? "learning baseline" : "updated just now",
+            signalsMeta: payload.learningBaseline ? "learning baseline" : "local · top 2 of 4",
             signals: signalCards(from: payload.topSignals, learning: payload.learningBaseline),
             tradesMeta: "",
             trades: [],
             showEmptyTable: true,
             learningBaseline: payload.learningBaseline,
-            showSignalsUnavailableMessage: false
+            showSignalsUnavailableMessage: false,
+            openRows: [],
+            showEmptyOpenBook: true,
+            showShallowImpact: showShallowImpact,
+            shallowImpactCaption: shallowCaption,
+            takeaway: "No closed round-trips yet today. Hero stays dash, not zero.",
+            caption: "Performance basis, not tax. Local calendar day. One owner per number."
         )
     }
 
-    private static func healthyActive(payload: TodayAgentPayload, now: Date) -> TodayScreenPresentation {
+    private static func healthyActive(
+        payload: TodayAgentPayload,
+        now: Date,
+        positions: [DeskPosition],
+        showShallowImpact: Bool
+    ) -> TodayScreenPresentation {
         let flagged = payload.trades.filter { $0.flagSeverity == "firing" || $0.flagSeverity == "watch" }.count
         let quote = payload.deskQuoteCurrency ?? "USD"
+        let closedEmpty = payload.trades.isEmpty && payload.hero.pnlTodayUsd == nil
+        let wins = payload.hero.winsToday
+        let losses = payload.hero.lossesToday
         return TodayScreenPresentation(
             state: .healthyActive,
-            subtitle: subtitleForDate(now),
+            subtitle: subtitleForDate(now, payload: payload),
             showDegradedBanner: false,
             degradedBannerText: nil,
             heroTiles: [
@@ -153,7 +262,9 @@ public struct TodayScreenPresentation: Equatable, Sendable {
                     id: "pnl",
                     label: "P&L today",
                     value: formatMoney(payload.hero.pnlTodayUsd, quoteCurrency: quote),
-                    caption: "Net of fees · performance basis, not tax",
+                    caption: closedEmpty
+                        ? "No closed round-trips"
+                        : "Net of fees · performance basis, not tax",
                     tone: toneForPnL(payload.hero.pnlTodayUsd)
                 ),
                 heroTile(
@@ -167,19 +278,28 @@ public struct TodayScreenPresentation: Equatable, Sendable {
                     id: "wr",
                     label: "Win rate",
                     value: formatWinRate(payload.hero.winRate),
-                    caption: winRateCaption(payload: payload),
+                    caption: closedEmpty ? "No closed round-trips" : winRateCaption(wins: wins, losses: losses),
                     tone: toneForWinRate(payload.hero.winRate)
                 ),
             ],
-            signalsMeta: payload.learningBaseline ? "learning baseline" : "updated just now",
+            signalsMeta: payload.learningBaseline ? "learning baseline" : "local · top 2 of 4",
             signals: signalCards(from: payload.topSignals, learning: payload.learningBaseline),
-            tradesMeta: flagged > 0 ? "\(flagged) flagged" : "",
+            tradesMeta: flagged > 0 ? "\(payload.trades.count) closed · \(flagged) flagged" : "\(payload.trades.count) closed · newest first",
             trades: payload.trades.map { tradeRow($0, quoteCurrency: quote) },
-            showEmptyTable: false,
+            showEmptyTable: payload.trades.isEmpty,
             learningBaseline: payload.learningBaseline,
-            showSignalsUnavailableMessage: false
+            showSignalsUnavailableMessage: false,
+            openRows: positions.map { openRow($0, quoteCurrency: quote) },
+            showEmptyOpenBook: positions.isEmpty,
+            showShallowImpact: showShallowImpact,
+            shallowImpactCaption: shallowCaption,
+            takeaway: takeawayForActive(payload: payload, quote: quote, wins: wins, losses: losses),
+            caption: "Performance basis, not tax. Local calendar day. One owner per number."
         )
     }
+
+    private static let shallowCaption =
+        "Account % and toward-goal stay — until a capital / goal owner exists. Remaining risk is not this screen."
 
     private static func heroTile(
         id: String,
@@ -244,7 +364,26 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             pnlTone: tone,
             flagText: row.primaryFlag,
             flagTone: flagTone,
-            isFlagged: row.flagSeverity == "firing"
+            isFlagged: row.flagSeverity == "firing",
+            accountShareText: emDash,
+            goalText: emDash
+        )
+    }
+
+    private static func openRow(
+        _ position: DeskPosition,
+        quoteCurrency: String
+    ) -> TodayOpenRowPresentation {
+        return TodayOpenRowPresentation(
+            id: position.id,
+            symbol: formatSymbol(position.symbol),
+            sideText: position.direction.isEmpty ? "—" : position.direction.uppercased(),
+            qtyText: formatQty(position.qty),
+            mtmText: position.unrealizedPnL.map { formatSignedMoney($0, quoteCurrency: quoteCurrency) } ?? emDash,
+            mtmTone: toneForPnL(position.unrealizedPnL),
+            accountShareText: emDash,
+            goalText: emDash,
+            behaviorText: "Still open"
         )
     }
 
@@ -296,10 +435,56 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         return "--:--"
     }
 
-    private static func subtitleForDate(_ date: Date) -> String {
+    private static func subtitleForDate(
+        _ date: Date,
+        payload: TodayAgentPayload? = nil,
+        dualDesk: Bool = false
+    ) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE · local day"
-        return formatter.string(from: date)
+        var parts = [formatter.string(from: date)]
+        if dualDesk {
+            parts.append("two desks configured")
+        } else if let slug = payload?.brokerSlug, !slug.isEmpty {
+            let desk = slug == "kotak_neo" ? "Kotak" : (slug == "binance_com" ? "COM" : slug)
+            parts.append(desk)
+            if let ccy = payload?.deskQuoteCurrency {
+                parts.append(ccy)
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func formatQty(_ qty: Double) -> String {
+        if qty == qty.rounded() {
+            return String(Int(qty))
+        }
+        return String(format: "%g", qty)
+    }
+
+    private static func takeawayForActive(
+        payload: TodayAgentPayload,
+        quote: String,
+        wins: Int?,
+        losses: Int?
+    ) -> String {
+        guard let pnl = payload.hero.pnlTodayUsd else {
+            return "Closed round-trips are on the table. Hero stays dash until eligible P&L exists."
+        }
+        let money = formatSignedMoney(pnl, quoteCurrency: quote)
+        let wl: String
+        if let wins, let losses {
+            wl = " \(wins) win, \(losses) loss."
+        } else {
+            wl = ""
+        }
+        if pnl < 0 {
+            return "Closed round-trips today lost \(money) net of fees.\(wl)"
+        }
+        if pnl > 0 {
+            return "Closed round-trips today made \(money) net of fees.\(wl)"
+        }
+        return "Closed round-trips today netted even.\(wl)"
     }
 
     private static func toneForPnL(_ value: Double?) -> TodayValueTone {
@@ -316,9 +501,8 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         return .neutral
     }
 
-    private static func winRateCaption(payload: TodayAgentPayload) -> String {
-        let wins = payload.trades.filter { ($0.netPnlUsd ?? 0) > 0 }.count
-        let losses = payload.trades.filter { ($0.netPnlUsd ?? 0) < 0 }.count
+    private static func winRateCaption(wins: Int?, losses: Int?) -> String {
+        guard let wins, let losses else { return "Closed round-trips only" }
         return "\(wins) win · \(losses) loss"
     }
 

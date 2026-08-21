@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<!--
+  TODAY — session mirror
+  Fluid: WWDC18 Designing Fluid Interfaces — press on down, 1:1 sheet drag,
+  interruptible springs, velocity handoff, rubber-band, glass chrome
+  Open: open station/prototypes/TODAY-CONSOLIDATED.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Today — session mirror</title>
+  <style>
+    :root {
+      --void: #050505;
+      --panel: #0a0a0a;
+      --elevated: #111111;
+      --fill: #1c1c1e;
+      --accent: #63E6E2;
+      --gain: #30D158;
+      --loss: #FF453A;
+      --caution: #FF9F0A;
+      --label: #ffffff;
+      --secondary: rgba(255,255,255,.62);
+      --tertiary: rgba(255,255,255,.34);
+      --hairline: rgba(255,255,255,.08);
+      --glass: rgba(8,8,8,.74);
+      --gain-bg: rgba(48,209,88,.10);
+      --gain-bd: rgba(48,209,88,.28);
+      --loss-bg: rgba(255,69,58,.10);
+      --loss-bd: rgba(255,69,58,.28);
+      --caution-bg: rgba(255,159,10,.10);
+      --caution-bd: rgba(255,159,10,.28);
+      --accent-bg: rgba(99,230,226,.10);
+      --accent-bd: rgba(99,230,226,.28);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+      --sidebar: 212px;
+      --track-10: 0.012em;
+      --track-11: 0.006em;
+      --track-13: -0.006em;
+      --track-17: -0.026em;
+      --space: 8px;
+      --r: 10px;
+      --title: 22px;
+      --headline: 17px;
+      --body: 13px;
+      --callout: 12px;
+      --footnote: 11px;
+      --caption2: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--sans);
+      font-size: 13px;
+      letter-spacing: var(--track-13);
+      font-optical-sizing: auto;
+      background: #1a1a1c;
+      color: var(--label);
+      -webkit-font-smoothing: antialiased;
+      display: flex; align-items: center; justify-content: center;
+      padding: 28px 24px 72px;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; }
+    .press { transition: transform 100ms ease-out; }
+    .press.is-down { transform: scale(0.97); }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .shell {
+      position: relative;
+      width: min(1120px, 100%); height: 740px;
+      background: var(--void); border-radius: 18px; overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.06);
+    }
+    .pulse {
+      height: 40px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px; padding: 0 14px 0 12px;
+      background: var(--glass); backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid rgba(255,255,255,.14);
+      border-bottom: 1px solid var(--hairline);
+      font-family: var(--mono); font-size: 11px; letter-spacing: var(--track-11);
+    }
+    .traffic { display: flex; gap: 6px; margin-right: 8px; }
+    .traffic i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .pulse .lbl { color: var(--tertiary); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }
+    .pulse .val { font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: 0.01em; }
+    .pulse .val.pos { color: var(--gain); }
+    .pulse .val.neg { color: var(--loss); }
+    .pulse .val.muted { color: var(--secondary); }
+    .pulse .sep { width: 1px; height: 14px; background: var(--hairline); }
+    .pulse .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .chip {
+      font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      border: 1px solid var(--hairline); color: var(--secondary);
+    }
+    .chip.on { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gain); }
+    .dot.warn { background: var(--caution); }
+    .dot.kill { background: var(--loss); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sidebar {
+      width: var(--sidebar); flex-shrink: 0;
+      background: rgba(8,8,8,.88);
+      backdrop-filter: blur(28px) saturate(140%);
+      -webkit-backdrop-filter: blur(28px) saturate(140%);
+      border-right: 1px solid var(--hairline);
+      display: flex; flex-direction: column;
+    }
+    .sb-label {
+      padding: 16px 16px 6px; font-size: 11px; font-weight: 600;
+      letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary);
+    }
+    .nav {
+      display: flex; align-items: center; gap: 10px;
+      margin: 1px 8px; padding: 8px 10px;       border-radius: 8px;
+      font-size: var(--body); font-weight: 500; letter-spacing: var(--track-13); color: var(--secondary);
+      min-height: 32px; width: calc(100% - 16px);
+    }
+    .nav:hover { background: rgba(255,255,255,.04); }
+    .nav.active { background: var(--fill); color: var(--label); }
+    .nav.here { outline: 1px solid var(--accent-bd); background: var(--accent-bg); color: var(--label); }
+    .nav:disabled, .nav.off {
+      opacity: .38; cursor: not-allowed; background: transparent;
+    }
+    .nav:disabled:hover, .nav.off:hover { background: transparent; }
+    .nav .hint { margin-left: auto; font-size: 10px; font-family: var(--mono); color: var(--tertiary); }
+    .nav.here .hint { color: var(--accent); }
+    .sb-spacer { flex: 1; }
+    .sb-foot {
+      padding: 12px 16px; border-top: 1px solid var(--hairline);
+      font-family: var(--mono); font-size: 10px; color: var(--tertiary);
+    }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--gain); } .bad { color: var(--caution); }
+
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+    .topbar {
+      position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+      height: 52px;
+      display: flex; align-items: center; gap: 12px; padding: 0 16px 0 20px;
+      background: var(--glass);
+      backdrop-filter: blur(22px) saturate(180%);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+    }
+    .scroll { flex: 1; overflow-y: auto; padding: 68px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .tb-actions { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+    .icon-btn {
+      position: relative;
+      width: 32px; height: 32px; border-radius: 8px; color: var(--secondary);
+      display: grid; place-items: center;
+    }
+    .icon-btn::after { content: ""; position: absolute; inset: -10px; }
+    .icon-btn:hover { background: var(--fill); color: var(--label); }
+    .icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .topbar::after {
+      content: "";
+      position: absolute; left: 0; right: 0; bottom: -14px; height: 14px;
+      background: linear-gradient(to bottom, rgba(5,5,5,.55), transparent);
+      pointer-events: none;
+    }
+    .topbar h1 { font-size: var(--headline); font-weight: 600; letter-spacing: var(--track-17); }
+    .topbar .sub { font-family: var(--mono); font-size: 11px; color: var(--tertiary); flex: 1; }
+    .map {
+      display: flex; align-items: center; gap: 0;
+      font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--tertiary);
+    }
+    .map span { padding: 4px 8px; border-radius: 999px; }
+    .map span.on { color: var(--label); background: var(--fill); }
+    .map i { width: 10px; height: 1px; background: var(--hairline); }
+
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+
+    .takeaway { font-size: 13px; font-weight: 500; letter-spacing: -0.006em; color: var(--secondary); line-height: 1.45; }
+    .takeaway b { color: var(--label); font-weight: 600; }
+
+    .warn, .cb {
+      display: none; padding: 12px 14px; border-radius: 14px; line-height: 1.45;
+    }
+    .warn { background: var(--caution-bg); border: 1px solid var(--caution-bd); font-size: 12px; color: var(--secondary); }
+    .warn.show { display: block; }
+    .warn b { color: var(--caution); }
+    .cb {
+      align-items: center; gap: 12px;
+      background: var(--loss-bg); border: 1px solid var(--loss-bd); border-left: 3px solid var(--loss);
+    }
+    .cb.show { display: flex; }
+    .cb h2 { font-size: 13px; font-weight: 600; color: var(--loss); }
+    .cb p { font-size: 11px; color: rgba(255,69,58,.72); margin-top: 3px; }
+    .cb-btn {
+      margin-left: auto; flex-shrink: 0;
+      border-radius: 8px;
+      font-size: 11px; font-weight: 600; color: var(--loss);
+    }
+
+    .now {
+      display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+      padding: 20px 20px; border-radius: var(--r);
+      background: var(--elevated); border: 1px solid var(--hairline);
+    }
+    .actions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+    .next {
+      padding: 9px 16px; border-radius: 8px;
+      background: #fff; color: #111; font-size: 13px; font-weight: 600;
+      letter-spacing: var(--track-13); white-space: nowrap;
+    }
+    .ghost {
+      padding: 8px 16px; border-radius: 8px;
+      border: 1px solid var(--hairline); color: var(--secondary);
+      font-size: 12px; font-weight: 500;
+    }
+    .ghost:hover { background: rgba(255,255,255,.04); color: var(--label); }
+    .now.live { border-color: var(--accent-bd); background: var(--accent-bg); }
+    .now.risk { border-color: var(--caution-bd); background: var(--caution-bg); }
+    .now.kill { border-color: var(--loss-bd); background: var(--loss-bg); }
+    .now .kicker {
+      font-size: var(--caption2); font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--tertiary); margin-bottom: 6px;
+    }
+    .now h2 { font-size: var(--title); font-weight: 600; letter-spacing: var(--track-17); line-height: 1.15; }
+    .now p { margin-top: 6px; font-size: var(--callout); color: var(--secondary); line-height: 1.45; max-width: 52ch; }
+    .now .factline {
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hairline);
+      font-family: var(--mono); font-size: var(--footnote); color: var(--secondary);
+    }
+    .now.kill .next { background: var(--loss); color: #fff; }
+    .now.risk .next { background: var(--caution); color: #111; }
+
+    .hero { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 10px; }
+    .tile {
+      background: var(--elevated); border: 1px solid var(--hairline);
+      border-radius: var(--r); padding: 16px 16px 14px; min-height: 96px;
+      cursor: default; pointer-events: none;
+    }
+    .tile .val { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .tile:first-child .val { font-size: 28px; }
+    .tile.pos { background: var(--gain-bg); border-color: var(--gain-bd); }
+    .tile.neg { background: var(--loss-bg); border-color: var(--loss-bd); }
+    .tile .lbl { font-size: var(--caption2); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); margin-bottom: 10px; }
+    .tile .val.pos { color: var(--gain); }
+    .tile .val.neg { color: var(--loss); }
+    .tile .val.empty { color: var(--secondary); font-size: 26px; font-weight: 600; }
+    .tile .sub { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--tertiary); line-height: 1.4; }
+
+    .sec {
+      display: flex; align-items: baseline; gap: 8px;
+      font-size: 13px; font-weight: 600; color: var(--secondary);
+      letter-spacing: -0.006em; margin-bottom: 10px;
+    }
+    .sec .meta { margin-left: auto; font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--tertiary); }
+
+    .process {
+      background: var(--elevated); border: 1px solid var(--hairline); overflow: hidden;
+    }
+    .process, .sig, .tbl, .empty, .sheet .card { border-radius: var(--r); }
+    .prow {
+      width: 100%; display: grid; grid-template-columns: 88px 1fr auto 12px;
+      gap: 12px; align-items: center; text-align: left;
+      padding: 13px 16px; border-bottom: 1px solid var(--hairline); color: inherit;
+    }
+    .chev { color: var(--tertiary); font-size: 11px; transition: transform 0.32s cubic-bezier(.22,1,.36,1); }
+    .prow.open .chev { transform: rotate(90deg); }
+    .prow:last-child { border-bottom: 0; }
+    .prow:hover { background: rgba(255,255,255,.03); }
+    .prow .phase { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary); }
+    .prow .fact { font-size: 13px; font-weight: 500; letter-spacing: -0.006em; }
+    .prow .fact span { display: block; margin-top: 3px; font-size: 11px; font-family: var(--mono); color: var(--tertiary); font-weight: 400; }
+    .st {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px; border: 1px solid var(--hairline); color: var(--secondary);
+    }
+    .st.done { color: var(--gain); border-color: var(--gain-bd); background: var(--gain-bg); }
+    .st.live { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg); }
+    .st.wait { color: var(--caution); border-color: var(--caution-bd); background: var(--caution-bg); }
+
+    .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .sig { background: var(--elevated); border: 1px solid var(--hairline); border-radius: 14px; padding: 14px; }
+    .sig.fire { background: var(--loss-bg); border-color: var(--loss-bd); }
+    .sig.watch { background: var(--caution-bg); border-color: var(--caution-bd); }
+    .sig-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .sig-name { font-size: 13px; font-weight: 600; }
+    .badge {
+      font-family: var(--mono); font-size: 10px; font-weight: 600;
+      padding: 3px 8px; border-radius: 999px; border: 1px solid;
+    }
+    .badge.fire { color: var(--loss); background: var(--loss-bg); border-color: var(--loss-bd); }
+    .badge.watch { color: var(--caution); background: var(--caution-bg); border-color: var(--caution-bd); }
+    .badge.ok { color: var(--gain); background: var(--gain-bg); border-color: var(--gain-bd); }
+    .badge.learn { color: var(--secondary); background: var(--fill); border-color: var(--hairline); }
+    .sig-desc { font-size: 12px; color: var(--secondary); line-height: 1.5; }
+
+    .tbl { background: var(--elevated); border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; }
+    .tbl-row { display: flex; align-items: center; padding: 0 14px; height: 38px; font-size: 12px; border-bottom: 1px solid var(--hairline); }
+    .tbl-row:last-child { border-bottom: 0; }
+    .tbl-row.head { height: 32px; background: rgba(255,255,255,.03); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); }
+    .tbl-row.flagged { background: rgba(255,69,58,.05); }
+    .c-time { width: 52px; font-family: var(--mono); font-size: 11px; color: var(--tertiary); }
+    .c-sym { flex: 1; font-family: var(--mono); }
+    .c-num { width: 88px; font-family: var(--mono); font-size: 11px; text-align: right; color: var(--secondary); }
+    .c-pnl { width: 92px; font-family: var(--mono); font-size: 12px; text-align: right; font-weight: 600; }
+    .c-pnl.pos { color: var(--gain); } .c-pnl.neg { color: var(--loss); } .c-pnl.empty { color: var(--secondary); font-weight: 500; }
+    .c-flag { width: 108px; text-align: right; }
+    .empty {
+      display: none; flex-direction: column; align-items: center; gap: 8px;
+      padding: 36px 20px; text-align: center; border: 1px dashed var(--hairline); border-radius: 14px;
+    }
+    .empty.show { display: flex; }
+    .empty .p { font-size: 13px; font-weight: 600; color: var(--secondary); }
+    .empty .s { font-size: 11px; font-family: var(--mono); color: var(--tertiary); max-width: 380px; line-height: 1.5; }
+    .caption { font-size: 11px; color: var(--tertiary); }
+    .toast {
+      position: absolute; top: 62px; right: 16px; z-index: 8;
+      padding: 10px 14px; border-radius: 12px;
+      background: var(--fill); border: 1px solid var(--hairline);
+      font-size: 12px; font-weight: 500; color: var(--label);
+      opacity: 0; transform: translateY(-8px); pointer-events: none;
+      will-change: transform, opacity;
+    }
+    .sheet {
+      position: absolute; inset: 0; z-index: 12;
+      pointer-events: none;
+    }
+    .sheet.on { pointer-events: auto; }
+    .scrim {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,.5);
+      opacity: 0;
+    }
+    .sheet .card {
+      position: absolute; left: 50%; bottom: 24px;
+      width: min(360px, calc(100% - 32px));
+      margin-left: calc(min(360px, calc(100% - 32px)) / -2);
+      padding: 8px 20px 20px;
+      border-radius: 14px;
+      background: rgba(22,22,24,.88);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border: 1px solid var(--hairline);
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+      will-change: transform;
+      touch-action: none;
+      user-select: none;
+    }
+    .grab {
+      display: flex; justify-content: center; padding: 8px 0 12px; cursor: grab;
+    }
+    .grab:active { cursor: grabbing; }
+    .grab b {
+      width: 36px; height: 5px; border-radius: 99px;
+      background: rgba(255,255,255,.22); display: block;
+    }
+    .sheet h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.016em; margin-bottom: 8px; line-height: 1.2; }
+    .sheet p { font-size: 13px; color: var(--secondary); line-height: 1.45; margin-bottom: 16px; }
+    .sheet .row { display: flex; gap: 8px; justify-content: flex-end; }
+    .detail {
+      display: grid; grid-template-rows: 0fr;
+      padding: 0 16px 0 116px;
+      font-size: 12px; color: var(--secondary); line-height: 1.5;
+      transition: grid-template-rows 0.32s cubic-bezier(.22,1,.36,1), padding 0.32s cubic-bezier(.22,1,.36,1);
+    }
+    .detail > div { overflow: hidden; }
+    .detail.show { grid-template-rows: 1fr; padding-bottom: 14px; }
+    .detail b { color: var(--label); font-weight: 600; }
+
+    .proto {
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 20; display: flex; align-items: center; gap: 4px;
+      padding: 4px 6px; border-radius: 999px;
+      background: rgba(20,20,22,.72); backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid var(--hairline);
+    }
+    .proto button {
+      min-width: 28px; height: 28px; border-radius: 999px; background: transparent;
+      font-size: 11px; font-weight: 600; color: var(--tertiary);
+    }
+    .proto button.on { background: var(--fill); color: var(--label); }
+    .proto .note { padding: 0 8px; font-family: var(--mono); font-size: 10px; color: var(--tertiary); white-space: nowrap; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .press, .chev, .detail { transition: none; }
+      .press.is-down { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .pulse, .topbar, .sidebar, .proto, .sheet .card {
+        background: #0a0a0a; backdrop-filter: none; -webkit-backdrop-filter: none;
+      }
+    }
+    @media (prefers-contrast: more) {
+      .tile, .now, .process, .sig, .tbl, .sheet .card { border-color: rgba(255,255,255,.28); }
+      .nav.active { outline: 1px solid #fff; }
+      .pulse, .topbar, .sidebar { background: #0a0a0a; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="pulse">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div id="pulse" style="display:flex;align-items:center;gap:14px;flex:1;min-width:0"></div>
+    </div>
+    <div class="body">
+      <aside class="sidebar">
+        <div class="sb-label">Desk</div>
+        <div class="nav active">Today</div>
+        <div class="nav" data-go="Brokers">Brokers</div>
+        <div class="nav" data-go="Journal">Journal</div>
+        <div class="sb-label" style="margin-top:10px">Session</div>
+        <button type="button" class="nav press" id="nav-pre" data-go="pre">Pre-trade <span class="hint" id="h-pre"></span></button>
+        <button type="button" class="nav press" id="nav-live" data-go="live">Live <span class="hint" id="h-live"></span></button>
+        <button type="button" class="nav press" id="nav-post" data-go="post">Post-trade <span class="hint" id="h-post"></span></button>
+        <div class="sb-spacer"></div>
+        <div class="sb-foot">
+          <div><span id="sb-desk">Kotak Neo</span><span class="ok" id="sb-sync">syncing</span></div>
+          <div><span>Agent</span><span class="ok">running</span></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="toast" id="toast" role="status"></div>
+        <header class="topbar">
+          <h1>Today</h1>
+          <span class="sub" id="sub"></span>
+          <div class="map" id="map" aria-label="Session phase"></div>
+          <div class="tb-actions">
+            <button class="icon-btn press" id="gear-btn" type="button" aria-label="Settings" title="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </button>
+          </div>
+        </header>
+        <div class="scroll">
+          <p class="takeaway" id="takeaway"></p>
+          <div class="warn" id="warn"></div>
+          <div class="cb" id="cb">
+            <div>
+              <h2>Circuit breaker active</h2>
+              <p id="cb-sub"></p>
+            </div>
+            <button class="cb-btn press" id="cb-btn" type="button">Review &amp; resume</button>
+          </div>
+          <section class="now" id="now">
+            <div>
+              <div class="kicker" id="now-kicker">Now</div>
+              <h2 id="now-h"></h2>
+              <p id="now-p"></p>
+              <div class="factline" id="now-fact"></div>
+            </div>
+            <div class="actions">
+              <button class="next press" id="now-btn" type="button"></button>
+              <button class="ghost press" id="alt-btn" type="button">Open journal</button>
+            </div>
+          </section>
+          <div class="hero" id="hero"></div>
+          <div>
+            <div class="sec">This session <span class="meta">By progress</span></div>
+            <div class="process" id="process"></div>
+          </div>
+          <div>
+            <div class="sec">Hints <span class="meta" id="sig-meta"></span></div>
+            <div class="sig-grid" id="sigs"></div>
+          </div>
+          <div>
+            <div class="sec">Closed round-trips <span class="meta" id="tbl-meta"></span></div>
+            <div class="tbl" id="tbl"></div>
+            <div class="empty" id="empty">
+              <div class="p">No closed trades yet today</div>
+              <div class="s">They show up after a buy then a sell. An open trade stays in Live.</div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h" aria-hidden="true">
+          <div class="scrim" id="scrim"></div>
+          <div class="card" id="sheet-card">
+            <div class="grab" id="grab" aria-hidden="true"><b></b></div>
+            <h3 id="sheet-h">Turn the venue back on?</h3>
+            <p>This is the one action that can put you back in a trade. Cancel stays blocked. Resume is the kill path, not a new order.</p>
+            <div class="row">
+              <button class="ghost press" id="sheet-no" type="button">Cancel</button>
+              <button class="next press" id="sheet-yes" type="button">Resume</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <nav class="proto" aria-label="Session states">
+    <button type="button" class="press" data-v="A">A</button>
+    <button type="button" class="press" data-v="B">B</button>
+    <button type="button" class="press" data-v="C">C</button>
+    <button type="button" class="press" data-v="D">D</button>
+    <button type="button" class="press" data-v="E">E</button>
+    <button type="button" class="press" data-v="F">F</button>
+    <span class="note" id="vnote"></span>
+  </nav>
+
+  <script>
+    const V = {
+      A: {
+        note: 'Between trades · forms filled',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '−₹6,840', cls: 'neg', unreal: '—', pos: '0 open', chip: 'Kotak INR', on: true, dot: 'live' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · between trades',
+        takeaway: 'Session is <b>open and honest</b>. Last trip closed. Process was saved. Next click still needs a new declaration.',
+        warn: null, cb: null,
+        now: { tone: '', kicker: 'Now · between trades', h: 'Declare before the next click', p: 'Last trip is closed and saved. The next click still needs a new plan.', fact: 'Post saved · new pre is empty', btn: 'Open Notch · Pre-trade' },
+        session: 'pre',
+        hints: { pre: 'Next', live: 'Held', post: 'Saved' },
+        hero: [
+          { lbl: 'P&L today', val: '−₹6,840', cls: 'neg', sub: 'Net of fees · 3 closed round-trips' },
+          { lbl: 'Trades today', val: '3', cls: '', sub: 'Closed round-trips only' },
+          { lbl: 'Win rate', val: '33%', cls: 'neg', sub: '1 win · 2 losses' },
+        ],
+        process: [
+          { phase: 'Pre', st: 'done', stl: 'Declared', fact: 'NIFTY 24500 CE · BUY 50 · Breakout', sub: 'Calm 2 · planned loss ₹3,000 · stop 24,520', detail: '<b>Filled, not edited here.</b> Entry 24,580 · target 24,720 · invalidation: close below 24520 on 5m. Auto-stop on.' },
+          { phase: 'Live', st: 'done', stl: 'Held', fact: 'Plan intact · 18m in trade', sub: 'Interference: No — following plan', detail: 'Unrealised peaked +₹1,250. Stop stayed at declared trigger. Exit was the plan, not a flatten panic.' },
+          { phase: 'Post', st: 'done', stl: 'Saved', fact: 'Good process · 4 of 4', sub: '“Size stays half until calm is 1.”', detail: 'Stop, size, invalidation, exit all matched the declaration. Reflection is on the day sheet, not a second form on Today.' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Loss chasing', tier: 'watch', desc: 'Two closed trips after a loss. Next declaration is the gate, not another click.' },
+          { name: 'Position sizing', tier: 'watch', desc: 'Last size matched the plan. Keep the half-size rule from the debrief.' },
+        ],
+        tblMeta: '3 closed',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Watch' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Firing' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,200', flag: 'Clean' },
+        ],
+      },
+      B: {
+        note: 'Live · plan intact',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '−₹6,840', cls: 'neg', unreal: '+₹1,250', pos: '1 open', chip: 'Kotak INR', on: true, dot: 'live' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · in trade',
+        takeaway: 'You are <b>in the declared trade</b>. Money on the desk is still the closed-day mirror plus this open. Next action is hold.',
+        warn: null, cb: null,
+        now: { tone: 'live', kicker: 'Now · live', h: 'Hold the plan', p: 'You are in the declared trade. Do not add size. Exit and stop live in Notch.', fact: 'Stop 24,520 resting · invalidation: close below 24520 on 5m', btn: 'Open Notch · Live' },
+        session: 'live',
+        hints: { pre: 'Declared', live: 'In trade', post: 'Waiting' },
+        hero: [
+          { lbl: 'P&L today', val: '−₹6,840', cls: 'neg', sub: 'Closed trips · open is on pulse' },
+          { lbl: 'Trades today', val: '3', cls: '', sub: 'Plus 1 open · not in this count' },
+          { lbl: 'Win rate', val: '33%', cls: 'neg', sub: 'Closed round-trips only' },
+        ],
+        process: [
+          { phase: 'Pre', st: 'done', stl: 'Declared', fact: 'NIFTY 24500 CE · BUY 50 · Breakout', sub: 'Calm 2 · stop 24,520 · target 24,720', detail: 'Declaration is the live snapshot. Today does not re-ask entry, stop, or qty.' },
+          { phase: 'Live', st: 'live', stl: 'In trade', fact: 'Plan intact · 18m · risk used 42%', sub: 'Max loss declared ₹3,000', detail: 'Unrealised +₹1,250. Interference answer: No — following plan. Exit / move SL / hold live in Notch.' },
+          { phase: 'Post', st: '', stl: 'Waiting', fact: 'Debrief opens when this trip closes', sub: 'Not a Today form', detail: 'Post is empty until flatten. Do not fake a process score.' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Overtrading', tier: 'watch', desc: 'Three closed trips already. The live one must stay the declared size.' },
+          { name: 'Revenge', tier: 'learn', desc: 'No live revenge flag. Adding size would change that.' },
+        ],
+        tblMeta: '3 closed · open omitted',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Watch' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Firing' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,200', flag: 'Clean' },
+        ],
+      },
+      C: {
+        note: 'Live · interference',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '−₹6,840', cls: 'neg', unreal: '−₹420', pos: '1 open', chip: 'Kotak INR', on: true, dot: 'warn' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · in trade',
+        takeaway: 'The mirror is still the day P&L. The session is <b>not intact</b>. Next action is do not add size.',
+        warn: null, cb: null,
+        now: { tone: 'risk', kicker: 'Now · intervention', h: 'Do not add size', p: 'You marked “Yes — feeling it.” That warning lives next to this action, not in a toast pile.', fact: 'Live interference · revenge risk · 90s no-add', btn: 'Open Notch · Live' },
+        session: 'live',
+        hints: { pre: 'Declared', live: 'Feeling it', post: 'Waiting' },
+        hero: [
+          { lbl: 'P&L today', val: '−₹6,840', cls: 'neg', sub: 'Closed trips · not the open bleed' },
+          { lbl: 'Trades today', val: '3', cls: '', sub: 'Open trip is live, not a fourth close' },
+          { lbl: 'Win rate', val: '33%', cls: 'neg', sub: 'Closed round-trips only' },
+        ],
+        process: [
+          { phase: 'Pre', st: 'done', stl: 'Declared', fact: 'NIFTY 24500 CE · BUY 50', sub: 'Planned loss ₹3,000', detail: 'The declaration still exists. Size drift would break it.' },
+          { phase: 'Live', st: 'wait', stl: 'Feeling it', fact: 'Interference: Yes · revenge risk', sub: 'Mandatory read — do not add size for 90s', detail: 'This row is the live form, collapsed. Full controls (exit, move SL, stop me) stay in Notch.' },
+          { phase: 'Post', st: '', stl: 'Waiting', fact: 'Not yet', sub: 'Closes with the trip', detail: 'Empty is honest. No score until exit.' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Revenge', tier: 'fire', desc: 'Live interference matches a loss-chasing pattern. Adding size is the next mistake.' },
+          { name: 'Loss chasing', tier: 'watch', desc: 'Two closed losses already sit on the day sheet.' },
+        ],
+        tblMeta: '3 closed',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Watch' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Firing' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,200', flag: 'Clean' },
+        ],
+      },
+      D: {
+        note: 'Post open · finish debrief',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '−₹8,090', cls: 'neg', unreal: '—', pos: '0 open', chip: 'Kotak INR', on: true, dot: 'live' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · debrief due',
+        takeaway: 'The trip is closed. The session is not finished until <b>post is saved</b>. Next action is the debrief, not a new click.',
+        warn: null, cb: null,
+        now: { tone: 'risk', kicker: 'Now · post-trade', h: 'Finish the debrief', p: 'The trip is closed. The session is not finished until post is saved.', fact: 'Moment A done · B and C still open', btn: 'Open Notch · Post-trade' },
+        session: 'post',
+        hints: { pre: 'Declared', live: 'Closed', post: 'Due' },
+        hero: [
+          { lbl: 'P&L today', val: '−₹8,090', cls: 'neg', sub: 'Net of fees · 4 closed round-trips' },
+          { lbl: 'Trades today', val: '4', cls: '', sub: 'Last close 2 min ago' },
+          { lbl: 'Win rate', val: '25%', cls: 'neg', sub: '1 win · 3 losses' },
+        ],
+        process: [
+          { phase: 'Pre', st: 'done', stl: 'Declared', fact: 'NIFTY 24500 CE · BUY 50 · Breakout', sub: 'Stop 24,520', detail: 'Declaration already on the day sheet.' },
+          { phase: 'Live', st: 'done', stl: 'Closed', fact: 'Exited at market · 22m in trade', sub: 'Stop was not moved', detail: 'Live answers are stored. No more live controls on Today.' },
+          { phase: 'Post', st: 'wait', stl: 'Due', fact: 'Moment A done · B and C open', sub: 'No process score yet', detail: 'Stop as declared · size · invalidation · exit per plan — still unanswered. Reflection empty.' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Loss chasing', tier: 'fire', desc: 'Fourth close after two losses. Do not skip post to re-enter.' },
+          { name: 'Overtrading', tier: 'watch', desc: 'Four closed trips. Cooling window belongs in post, not in the next order.' },
+        ],
+        tblMeta: '4 closed',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Watch' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Firing' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,200', flag: 'Clean' },
+          { t: '14:02', s: 'NIFTY 24500 CE', en: '24,580', ex: '24,510', pnl: '−₹1,250', flag: 'Firing' },
+        ],
+      },
+      E: {
+        note: 'Kill firing',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '−₹8,090', cls: 'neg', unreal: '—', pos: '0 open', chip: 'Kotak INR', on: true, dot: 'kill' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · blocked',
+        takeaway: 'Kill is <b>firing</b>. The session mirror still shows the day. Next action is resume through kill, not a new trade.',
+        warn: null,
+        cb: { sub: 'Venue hosts blocked. Today is display-only. Teeth stay on the kill path.', btn: 'Review & resume · 1:12' },
+        now: { tone: 'kill', kicker: 'Now · blocked', h: 'Do not trade', p: 'Filled forms do not override kill. Resume is the kill path, then a new declaration.', fact: 'Hosts blocked · last post already saved', btn: 'Review kill' },
+        session: 'none',
+        hints: { pre: 'Declared', live: 'Flat', post: 'Saved' },
+        hero: [
+          { lbl: 'P&L today', val: '−₹8,090', cls: 'neg', sub: 'Same number as pulse' },
+          { lbl: 'Trades today', val: '4', cls: '', sub: 'Closed round-trips only' },
+          { lbl: 'Win rate', val: '25%', cls: 'neg', sub: '1 win · 3 losses' },
+        ],
+        process: [
+          { phase: 'Pre', st: 'done', stl: 'Declared', fact: 'Last plan is on file', sub: 'Does not clear kill', detail: 'A filled declaration is not permission to fire while kill is latched.' },
+          { phase: 'Live', st: 'done', stl: 'Flat', fact: 'No open position', sub: 'Hosts blocked', detail: 'Live form is not the teeth. DNS block is.' },
+          { phase: 'Post', st: 'done', stl: 'Saved', fact: 'Debrief already on the day sheet', sub: 'Cooling still applies', detail: 'Process can be complete and you can still be blocked. That is correct.' },
+        ],
+        sigMeta: 'local · top 2 of 4',
+        sigs: [
+          { name: 'Loss chasing', tier: 'fire', desc: 'Kill fired after the loss-chase pattern. Banner is the behavior change.' },
+          { name: 'Overtrading', tier: 'watch', desc: 'Four closed trips. Count does not need a max tile to be useful.' },
+        ],
+        tblMeta: '4 closed',
+        trades: [
+          { t: '10:05', s: 'RELIANCE', en: '2,410', ex: '2,398', pnl: '−₹1,840', flag: 'Watch' },
+          { t: '11:22', s: 'NIFTY 19AUG', en: '24,120', ex: '24,080', pnl: '−₹4,200', flag: 'Firing' },
+          { t: '13:40', s: 'HDFCBANK', en: '1,662', ex: '1,671', pnl: '+₹1,200', flag: 'Clean' },
+          { t: '14:02', s: 'NIFTY 24500 CE', en: '24,580', ex: '24,510', pnl: '−₹1,250', flag: 'Firing' },
+        ],
+      },
+      F: {
+        note: 'Morning · nothing filled',
+        desk: 'Kotak Neo',
+        pulse: { pnl: '—', cls: 'muted', unreal: '—', pos: '0 open', chip: 'Kotak INR', on: true, dot: 'live' },
+        sub: 'Wednesday · Mac local day · Kotak · INR · not started',
+        takeaway: '<b>No closed round-trips yet.</b> No declaration yet. Empty is dash, not zero.',
+        warn: null, cb: null,
+        now: { tone: '', kicker: 'Now · start of day', h: 'Start in Notch', p: 'Nothing to consolidate yet. Empty is a dash, not a zero, and not a form.', fact: 'No declaration · no live · no debrief', btn: 'Open Notch · Pre-trade' },
+        session: 'pre',
+        hints: { pre: 'Empty', live: 'Empty', post: 'Empty' },
+        hero: [
+          { lbl: 'P&L today', val: '—', cls: 'empty', sub: 'No trades yet today' },
+          { lbl: 'Trades today', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+          { lbl: 'Win rate', val: '—', cls: 'empty', sub: 'No closed round-trips' },
+        ],
+        process: [
+          { phase: 'Pre', st: '', stl: 'Empty', fact: 'No declaration', sub: 'Honest null', detail: 'Not a form. The empty row is the state.' },
+          { phase: 'Live', st: '', stl: 'Empty', fact: 'No open trade', sub: 'Honest null', detail: 'Live metrics do not appear as zero.' },
+          { phase: 'Post', st: '', stl: 'Empty', fact: 'No debrief', sub: 'Honest null', detail: 'Post without a close is not a skip — it is not due.' },
+        ],
+        sigMeta: 'still learning',
+        sigs: [
+          { name: 'Loss chasing', tier: 'learn', desc: 'Needs about 10 closed trips before this hint is real.' },
+          { name: 'Overtrading', tier: 'learn', desc: 'Needs about 10 closed trips before this hint is real.' },
+        ],
+        tblMeta: '',
+        trades: [],
+      },
+    };
+
+    const badge = { fire: ['Firing', 'fire'], watch: ['Watch', 'watch'], learn: ['Learning', 'learn'] };
+    const flagClass = (f) => f === 'Clean' ? 'ok' : f === 'Watch' ? 'watch' : 'fire';
+    let current = 'A';
+
+    function render(key) {
+      current = key;
+      const d = V[key];
+      document.getElementById('vnote').textContent = d.note;
+      document.querySelectorAll('.proto button').forEach((b) => b.classList.toggle('on', b.dataset.v === key));
+      document.getElementById('sb-desk').textContent = d.desk;
+      document.getElementById('sub').textContent = d.sub;
+      document.getElementById('takeaway').innerHTML = d.takeaway;
+
+      document.getElementById('pulse').innerHTML = `
+        <span class="lbl">P&amp;L today</span><span class="val ${d.pulse.cls}">${d.pulse.pnl}</span>
+        <span class="sep"></span>
+        <span class="lbl">Open</span><span class="val ${d.pulse.unreal.startsWith('+') ? 'pos' : d.pulse.unreal === '—' ? 'muted' : 'neg'}">${d.pulse.unreal}</span>
+        <span class="sep"></span>
+        <span class="lbl">Positions</span><span class="val ${d.pulse.pos.includes('0') || d.pulse.pos === '—' ? 'muted' : ''}">${d.pulse.pos}</span>
+        <div class="right"><span class="chip on">${d.pulse.chip}</span><span class="dot ${d.pulse.dot === 'warn' ? 'warn' : d.pulse.dot === 'kill' ? 'kill' : ''}"></span></div>`;
+
+      document.getElementById('map').innerHTML = ['Pre','Live','Post'].map((n, i) => {
+        const id = ['pre','live','post'][i];
+        const on = d.session === id ? 'on' : '';
+        return `${i ? '<i></i>' : ''}<span class="${on}">${n}</span>`;
+      }).join('');
+      ['pre','live','post'].forEach((id) => {
+        document.getElementById('h-' + id).textContent = d.hints[id];
+        document.getElementById('nav-' + id).classList.toggle('here', d.session === id);
+      });
+      const blocked = d.now.tone === 'kill';
+      document.getElementById('nav-pre').disabled = blocked;
+      document.getElementById('nav-pre').classList.toggle('off', blocked);
+      document.getElementById('alt-btn').hidden = blocked;
+
+      const warn = document.getElementById('warn');
+      if (d.warn) { warn.innerHTML = d.warn; warn.classList.add('show'); }
+      else warn.classList.remove('show');
+
+      const cb = document.getElementById('cb');
+      if (d.cb) {
+        cb.classList.add('show');
+        document.getElementById('cb-sub').textContent = d.cb.sub;
+        document.getElementById('cb-btn').textContent = d.cb.btn;
+      } else cb.classList.remove('show');
+
+      const now = document.getElementById('now');
+      now.className = 'now ' + d.now.tone;
+      document.getElementById('now-kicker').textContent = d.now.kicker;
+      document.getElementById('now-h').textContent = d.now.h;
+      document.getElementById('now-p').textContent = d.now.p;
+      document.getElementById('now-fact').textContent = d.now.fact;
+      document.getElementById('now-btn').textContent = d.now.btn;
+
+      document.getElementById('hero').innerHTML = d.hero.map((t) => `
+        <div class="tile ${t.cls === 'neg' ? 'neg' : t.cls === 'pos' ? 'pos' : ''}">
+          <div class="lbl">${t.lbl}</div>
+          <div class="val ${t.cls}">${t.val}</div>
+          <div class="sub">${t.sub}</div>
+        </div>`).join('');
+
+      document.getElementById('process').innerHTML = d.process.map((r, i) => `
+        <button type="button" class="prow press" data-i="${i}">
+          <span class="phase">${r.phase}</span>
+          <span class="fact">${r.fact}<span>${r.sub}</span></span>
+          <span class="st ${r.st}">${r.stl}</span>
+          <span class="chev">›</span>
+        </button>
+        <div class="detail" data-d="${i}"><div>${r.detail}</div></div>`).join('');
+
+      document.getElementById('sig-meta').textContent = d.sigMeta;
+      document.getElementById('sigs').innerHTML = d.sigs.map((s) => {
+        const [lbl, cls] = badge[s.tier];
+        return `<div class="sig ${s.tier}"><div class="sig-head"><span class="sig-name">${s.name}</span><span class="badge ${cls}">${lbl}</span></div><div class="sig-desc">${s.desc}</div></div>`;
+      }).join('');
+
+      const tbl = document.getElementById('tbl');
+      const empty = document.getElementById('empty');
+      document.getElementById('tbl-meta').textContent = d.tblMeta;
+      if (!d.trades.length) {
+        tbl.style.display = 'none';
+        empty.classList.add('show');
+      } else {
+        tbl.style.display = 'block';
+        empty.classList.remove('show');
+        tbl.innerHTML = `<div class="tbl-row head"><span class="c-time">Time</span><span class="c-sym">Symbol</span><span class="c-num">Avg entry</span><span class="c-num">Avg exit</span><span class="c-pnl">Net P&amp;L</span><span class="c-flag">Flag</span></div>` +
+          d.trades.map((r) => {
+            const pcls = r.pnl.startsWith('+') ? 'pos' : 'neg';
+            return `<div class="tbl-row ${r.flag === 'Firing' ? 'flagged' : ''}">
+              <span class="c-time">${r.t}</span><span class="c-sym">${r.s}</span>
+              <span class="c-num">${r.en}</span><span class="c-num">${r.ex}</span>
+              <span class="c-pnl ${pcls}">${r.pnl}</span>
+              <span class="c-flag"><span class="badge ${flagClass(r.flag)}">${r.flag}</span></span>
+            </div>`;
+          }).join('');
+      }
+    }
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function project(v, d = 0.998) { return (v / 1000) * d / (1 - d); }
+    function rubberband(overshoot, dim, k = 0.55) {
+      return (overshoot * dim * k) / (dim + k * Math.abs(overshoot));
+    }
+    function Spring(value, apply) {
+      this.value = value; this.v = 0; this.target = value; this.apply = apply;
+      this.omega = 2 * Math.PI / 0.35; this.zeta = 1; this.raf = 0;
+    }
+    Spring.prototype.set = function (t, vel, { response = 0.35, damping = 1 } = {}) {
+      this.target = t;
+      this.omega = 2 * Math.PI / response;
+      this.zeta = damping;
+      if (vel != null) this.v = vel;
+      if (!this.raf) this.tick();
+    };
+    Spring.prototype.snap = function (x) {
+      this.value = this.target = x; this.v = 0;
+      if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
+      this.apply(x);
+    };
+    Spring.prototype.tick = function () {
+      const step = (now) => {
+        if (!this._t) this._t = now;
+        const dt = Math.min(0.032, (now - this._t) / 1000);
+        this._t = now;
+        const x = this.value - this.target;
+        const a = -(2 * this.zeta * this.omega) * this.v - (this.omega * this.omega) * x;
+        this.v += a * dt;
+        this.value += this.v * dt;
+        this.apply(this.value);
+        if (Math.abs(this.value - this.target) < 0.4 && Math.abs(this.v) < 12) {
+          this.value = this.target; this.v = 0; this._t = 0; this.raf = 0;
+          this.apply(this.value);
+          if (this.onRest) this.onRest();
+          return;
+        }
+        this.raf = requestAnimationFrame(step);
+      };
+      this._t = 0;
+      this.raf = requestAnimationFrame(step);
+    };
+
+    const sheet = document.getElementById('sheet');
+    const scrim = document.getElementById('scrim');
+    const card = document.getElementById('sheet-card');
+    const mainEl = document.querySelector('.main');
+    let sheetOpen = false;
+    let closedY = 420;
+    function measureClosed() { closedY = card.offsetHeight + 48; }
+    function paintSheet(y, o) {
+      if (reduceMotion.matches) {
+        card.style.transform = 'none';
+        card.style.filter = 'none';
+        card.style.opacity = String(o);
+        scrim.style.opacity = o;
+        return;
+      }
+      const travel = Math.max(closedY, 1);
+      const p = 1 - Math.min(Math.max(y, 0), travel) / travel;
+      const scale = 0.96 + 0.04 * p;
+      card.style.transform = `translateY(${y}px) scale(${scale})`;
+      card.style.filter = `blur(${(1 - p) * 8}px)`;
+      card.style.opacity = '1';
+      scrim.style.opacity = o;
+    }
+    const ySpring = new Spring(420, (v) => paintSheet(v, oSpring.value));
+    const oSpring = new Spring(0, (v) => paintSheet(ySpring.value, v));
+    ySpring.onRest = () => {
+      if (!sheetOpen && ySpring.value >= closedY - 1) {
+        sheet.classList.remove('on');
+        sheet.setAttribute('aria-hidden', 'true');
+      }
+    };
+    function setOrigin(trigger) {
+      if (!trigger) { card.style.transformOrigin = '50% 100%'; return; }
+      const w = card.offsetWidth;
+      const mr = mainEl.getBoundingClientRect();
+      const left = mr.left + (mr.width - w) / 2;
+      const x = trigger.getBoundingClientRect().left + trigger.offsetWidth / 2 - left;
+      card.style.transformOrigin = `${x}px 100%`;
+    }
+    function openSheet(trigger) {
+      measureClosed();
+      setOrigin(trigger);
+      sheet.classList.add('on');
+      sheet.setAttribute('aria-hidden', 'false');
+      sheetOpen = true;
+      if (reduceMotion.matches) {
+        ySpring.snap(0); oSpring.snap(1);
+      } else {
+        ySpring.set(0, ySpring.v, { response: 0.3, damping: 1 });
+        oSpring.set(1, null, { response: 0.3, damping: 1 });
+      }
+      document.getElementById('sheet-no').focus();
+    }
+    function closeSheet() {
+      sheetOpen = false;
+      measureClosed();
+      if (reduceMotion.matches) {
+        ySpring.snap(closedY); oSpring.snap(0);
+        sheet.classList.remove('on');
+        sheet.setAttribute('aria-hidden', 'true');
+      } else {
+        ySpring.set(closedY, ySpring.v, { response: 0.32, damping: 1 });
+        oSpring.set(0, null, { response: 0.32, damping: 1 });
+      }
+    }
+    measureClosed();
+    ySpring.snap(closedY);
+    oSpring.snap(0);
+
+    let drag = null;
+    function samplesVel(samples) {
+      if (samples.length < 2) return 0;
+      const a = samples[samples.length - 1];
+      const b = samples[Math.max(0, samples.length - 5)];
+      const dt = (a.t - b.t) / 1000;
+      return dt > 0 ? (a.y - b.y) / dt : 0;
+    }
+    function beginDrag(e) {
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      if (!sheet.classList.contains('on') && !sheetOpen) return;
+      card.setPointerCapture(e.pointerId);
+      const grabOffset = e.clientY - card.getBoundingClientRect().top;
+      drag = { id: e.pointerId, grabOffset, startY: e.clientY, y0: ySpring.value, samples: [{ y: e.clientY, t: e.timeStamp }], committed: false };
+      ySpring.snap(ySpring.value);
+    }
+    card.addEventListener('pointerdown', beginDrag);
+    card.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag.samples.push({ y: e.clientY, t: e.timeStamp });
+      if (drag.samples.length > 6) drag.samples.shift();
+      const dy = e.clientY - drag.startY;
+      if (!drag.committed && Math.abs(dy) < 10) return;
+      drag.committed = true;
+      let y = drag.y0 + dy;
+      if (y < 0) y = -rubberband(-y, card.offsetHeight);
+      paintSheet(y, oSpring.value);
+      ySpring.value = y;
+      const p = 1 - Math.min(Math.max(y, 0), closedY) / closedY;
+      oSpring.snap(Math.max(0.15, p));
+    });
+    function endDrag(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      const vel = samplesVel(drag.samples);
+      const y = ySpring.value;
+      drag = null;
+      if (reduceMotion.matches) {
+        if (y > closedY * 0.35) closeSheet(); else { sheetOpen = true; ySpring.snap(0); oSpring.snap(1); }
+        return;
+      }
+      const projected = y + project(vel);
+      const flickDown = vel > 420;
+      const flickUp = vel < -420;
+      const dismiss = flickDown || (!flickUp && projected > closedY * 0.38);
+      if (dismiss) {
+        sheetOpen = false;
+        const bounce = Math.abs(vel) > 700 ? 0.8 : 1;
+        ySpring.set(closedY, vel, { response: 0.3, damping: bounce });
+        oSpring.set(0, null, { response: 0.3, damping: 1 });
+      } else {
+        sheetOpen = true;
+        ySpring.set(0, vel, { response: 0.3, damping: Math.abs(vel) > 700 ? 0.8 : 1 });
+        oSpring.set(1, null, { response: 0.3, damping: 1 });
+      }
+    }
+    card.addEventListener('pointerup', endDrag);
+    card.addEventListener('pointercancel', endDrag);
+    scrim.addEventListener('pointerdown', closeSheet);
+
+    let toastTimer;
+    const toast = document.getElementById('toast');
+    const toastY = new Spring(-8, (v) => { toast.style.transform = `translateY(${v}px)`; });
+    const toastO = new Spring(0, (v) => { toast.style.opacity = String(v); });
+    function say(msg) {
+      toast.textContent = msg;
+      if (reduceMotion.matches) { toastY.snap(0); toastO.snap(1); }
+      else { toastY.set(0, null, { response: 0.35, damping: 1 }); toastO.set(1, null, { response: 0.3, damping: 1 }); }
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        if (reduceMotion.matches) { toastY.snap(-8); toastO.snap(0); }
+        else { toastY.set(-8, null, { response: 0.32, damping: 1 }); toastO.set(0, null, { response: 0.32, damping: 1 }); }
+      }, 2200);
+    }
+
+    let pressEl = null, pressX = 0, pressY = 0;
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest('.press');
+      if (!el || el.disabled) return;
+      pressEl = el; pressX = e.clientX; pressY = e.clientY;
+      el.classList.add('is-down');
+    }, true);
+    document.addEventListener('pointermove', (e) => {
+      if (!pressEl) return;
+      const away = Math.hypot(e.clientX - pressX, e.clientY - pressY) > 10;
+      pressEl.classList.toggle('is-down', !away);
+    }, true);
+    function clearPress() {
+      if (pressEl) pressEl.classList.remove('is-down');
+      pressEl = null;
+    }
+    document.addEventListener('pointerup', clearPress, true);
+    document.addEventListener('pointercancel', clearPress, true);
+
+    document.getElementById('process').addEventListener('click', (e) => {
+      const row = e.target.closest('.prow');
+      if (!row) return;
+      const i = row.dataset.i;
+      const el = document.querySelector(`[data-d="${i}"]`);
+      const open = el.classList.toggle('show');
+      row.classList.toggle('open', open);
+    });
+
+    document.getElementById('now-btn').addEventListener('click', (e) => {
+      if (V[current].now.tone === 'kill') openSheet(e.currentTarget);
+      else say('Opens Notch. Today stays the mirror.');
+    });
+    document.getElementById('cb-btn').addEventListener('click', (e) => openSheet(e.currentTarget));
+    document.getElementById('alt-btn').addEventListener('click', () => say('Opens today’s journal. Capture stays in Notch.'));
+    document.getElementById('sheet-no').addEventListener('click', closeSheet);
+    document.getElementById('sheet-yes').addEventListener('click', () => { closeSheet(); say('Venue can come back. This is not a new order.'); });
+    document.getElementById('nav-pre').addEventListener('click', (e) => {
+      if (e.currentTarget.disabled) {
+        say('Pre-trade is closed while kill is on. That is the safety net.');
+        return;
+      }
+      say('Opens Notch · Pre-trade');
+    });
+    document.getElementById('nav-live').addEventListener('click', () => say('Opens Notch · Live'));
+    document.getElementById('nav-post').addEventListener('click', () => say('Opens Notch · Post-trade'));
+    document.querySelectorAll('[data-go="Brokers"], [data-go="Journal"]').forEach((el) => {
+      el.addEventListener('click', () => say('Leaves Today → ' + el.dataset.go));
+    });
+    document.getElementById('gear-btn').addEventListener('click', () => say('Settings — not a tab.'));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeSheet();
+        document.querySelectorAll('.detail.show').forEach((n) => n.classList.remove('show'));
+        document.querySelectorAll('.prow.open').forEach((n) => n.classList.remove('open'));
+      }
+    });
+
+    document.querySelectorAll('.proto button').forEach((b) => {
+      b.addEventListener('click', () => {
+        closeSheet();
+        const url = new URL(location.href);
+        url.searchParams.set('v', b.dataset.v);
+        history.replaceState(null, '', url);
+        render(b.dataset.v);
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toUpperCase();
+      if (V[k]) {
+        closeSheet();
+        const url = new URL(location.href);
+        url.searchParams.set('v', k);
+        history.replaceState(null, '', url);
+        render(k);
+      }
+    });
+    const start = new URLSearchParams(location.search).get('v')?.toUpperCase();
+    render(V[start] ? start : 'A');
+  </script>
+</body>
+</html>

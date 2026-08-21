@@ -22,7 +22,7 @@ public final class AgentBrokerSyncControl: BrokerSyncControlling {
         let present: Bool
         if identity.brokerSlug == "kotak_neo" {
             present = await runtimeClient.vaultCredentialsPresent(for: identity)
-        } else if (try? credentialStore.read(for: identity)) != nil {
+        } else if credentialStore.hasCredentials(for: identity) {
             present = true
         } else {
             present = await runtimeClient.vaultCredentialsPresent(for: identity)

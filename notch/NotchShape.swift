@@ -10,8 +10,8 @@ struct NotchShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let collapsedRadius: CGFloat = 16
-        let expandedRadius: CGFloat = 22
+        let collapsedRadius: CGFloat = 20
+        let expandedRadius: CGFloat = 18
         let radius = collapsedRadius + (expandedRadius - collapsedRadius) * expansionProgress
         return Path(roundedRect: rect, cornerRadius: radius, style: .continuous)
     }

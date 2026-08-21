@@ -125,4 +125,38 @@ struct BrokerPauseLifecycleTests {
         #expect(runtime.startSyncCallCount == 1)
         #expect(metadataStore.load(for: .binanceComProd)?.syncPaused == false)
     }
+
+    @Test func loadSnapshotDoesNotReadKeychainSecretsWhenMetadataExists() async throws {
+        let (client, store, metadataStore, _, supervisor) = await makeClient()
+        _ = supervisor
+        try store.save(
+            credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
+            for: .binanceComProd
+        )
+        metadataStore.save(
+            BrokerConnectionMetadata(lastValidatedAt: Date()),
+            for: .binanceComProd
+        )
+
+        _ = await client.loadSnapshot()
+
+        #expect(store.readCallCount == 0)
+        #expect(store.hasCredentialsCallCount == 0)
+    }
+
+    @Test func startSyncUsesPresenceNotSecretRead() async throws {
+        let store = FakeBrokerCredentialStore()
+        try store.save(
+            credentials: BrokerCredentials(apiKey: "key", apiSecret: "secret"),
+            for: .binanceComProd
+        )
+        let runtime = FakeBrokerAgentRuntimeClient()
+        let sync = AgentBrokerSyncControl(credentialStore: store, runtimeClient: runtime)
+
+        try await sync.startSync(for: .binanceComProd)
+
+        #expect(store.readCallCount == 0)
+        #expect(store.hasCredentialsCallCount == 1)
+        #expect(runtime.startSyncCallCount == 1)
+    }
 }

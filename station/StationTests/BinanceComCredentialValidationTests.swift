@@ -3,6 +3,15 @@ import Testing
 @testable import Station
 
 struct BinanceComCredentialValidationTests {
+    @Test func apiRestrictionsURLKeepsQuerySeparator() {
+        let url = BinanceComSigner.apiRestrictionsURL(
+            baseURL: URL(string: "https://api.binance.com")!,
+            signedQuery: "timestamp=1&signature=abc"
+        )
+        #expect(url.absoluteString == "https://api.binance.com/sapi/v1/account/apiRestrictions?timestamp=1&signature=abc")
+        #expect(!url.absoluteString.contains("%3F"))
+    }
+
     @Test func permissionClassifierReadOnly() {
         let posture = BinanceComPermissionClassifier.classify(
             BinanceComApiRestrictions(

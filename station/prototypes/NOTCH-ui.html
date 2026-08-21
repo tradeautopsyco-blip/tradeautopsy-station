@@ -1,741 +1,1052 @@
 <!DOCTYPE html>
 <!--
-  NOTCH UI MOCK — PLAN tab only (BarNotchShell)
-  Source of truth: tradeautopsy-station/notch/BarNotchShell.swift + Bar* views
-  Default expanded surface = PLAN (no PULSE/BRIEF/WORKFLOWS/TAI/POSITIONS/CAPTURE tabs).
-  Run: open station/prototypes/NOTCH-ui.html
+  NOTCH UI — PLAN (BarNotchShell) realigned to Apple fluid interfaces.
+  Same screens as today.   Tokens: Apple dark semantic — mint accent, green/red money, orange caution.
+  Open: open station/prototypes/NOTCH-ui.html
+  Drag the pill or the sheet chrome — expand is interruptible.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NOTCH UI — PLAN (BarNotchShell)</title>
+  <title>NOTCH UI — PLAN (Apple-realigned)</title>
   <style>
     :root {
       --bg: #050505;
       --panel: #0d0d0d;
       --sidebar: #0a0a0a;
-      --card: #111;
-      --t1: #ededed;
-      --t2: #666;
-      --t3: #444;
-      --labels: #333;
-      --hint: #555;
-      --teal: #00e5c0;
-      --amber: #eab308;
-      --red: #ef4444;
-      --green: #22c55e;
-      --blue: #3b82f6;
+      --card: #111111;
+      --elevated: #1c1c1e;
+      /* Apple dark semantic */
+      --accent: #63E6E2;
+      --accent-rgb: 99, 230, 226;
+      --gain: #30D158;
+      --gain-rgb: 48, 209, 88;
+      --loss: #FF453A;
+      --loss-rgb: 255, 69, 58;
+      --caution: #FF9F0A;
+      --caution-rgb: 255, 159, 10;
+      --info: #0A84FF;
+      --label: #ffffff;
+      --secondary: rgba(255, 255, 255, 0.60);
+      --tertiary: rgba(255, 255, 255, 0.30);
+      --quaternary: rgba(255, 255, 255, 0.18);
+      --t1: var(--label);
+      --t2: var(--secondary);
+      --t3: var(--tertiary);
+      --labels: var(--quaternary);
+      --hint: var(--tertiary);
+      --teal: var(--accent);
+      --amber: var(--caution);
+      --red: var(--loss);
+      --green: var(--gain);
+      --blue: var(--info);
       --bd: rgba(255,255,255,.06);
       --bd-card: rgba(255,255,255,.07);
       --bd-input: rgba(255,255,255,.10);
-      --mono: ui-monospace, "SF Mono", Menlo, monospace;
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --glass: rgba(5,5,5,.78);
+      --scrim: rgba(0,0,0,.5);
+      --mono: ui-monospace, "SF Mono", "SF Mono Regular", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+      --type-chrome: 10px;
+      --type-caption: 11px;
+      --type-body: 13px;
+      --type-title: 14px;
+      --track-10: 0.012em;
+      --track-11: 0.006em;
+      --track-13: -0.006em;
+      --track-14: -0.011em;
+      --track-17: -0.026em;
+      --spring: cubic-bezier(0.22, 1, 0.36, 1);
       --r-card: 8px;
       --r-sm: 6px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
     body {
-      min-height: 100vh;
+      font-family: var(--sans);
+      font-size: var(--type-body);
+      font-weight: 400;
+      line-height: 1.45;
+      letter-spacing: var(--track-13);
+      font-optical-sizing: auto;
       background: #1a1a1c;
       background-image:
         radial-gradient(ellipse 80% 50% at 50% 0%, #2a2a2e 0%, transparent 55%),
         linear-gradient(#1a1a1c, #111);
       color: var(--t1);
-      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
       padding: 28px 24px 48px;
     }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    .press { transition: transform 100ms ease-out, background 120ms var(--spring); }
+    .press:active { transform: scale(0.97); }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+      .press:active, .combo-chev:active { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .glass { background: #0a0a0a !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+      .field, .combo, .text-view, .combo-list {
+        background: #0a0a0a !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+      }
+    }
+    @media (prefers-contrast: more) {
+      .field, .combo, .text-view, .combo-list {
+        background: #0a0a0a;
+        border: 1px solid rgba(255,255,255,.42);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
+      .big-btn.primary { color: #000; }
+    }
+
     .tag {
       position: fixed; top: 12px; left: 12px; z-index: 50;
       font: 600 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase;
-      color: var(--teal);
-      background: rgba(0,229,192,.08);
-      border: 1px solid rgba(0,229,192,.25);
+      color: var(--accent); background: rgba(var(--accent-rgb),.08);
+      border: 1px solid rgba(var(--accent-rgb),.25);
       padding: 6px 10px; border-radius: 999px;
     }
-    .legend { max-width: 1040px; margin: 0 auto 20px; padding-top: 28px; }
-    .legend h1 { font-size: 18px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 8px; }
-    .legend p { font-size: 13px; color: var(--t2); line-height: 1.5; max-width: 68ch; }
-    .legend code { font-family: var(--mono); font-size: 11px; color: var(--teal); }
+    .legend { max-width: 1040px; margin: 0 auto 18px; padding-top: 28px; }
+    .legend h1 { font-size: 22px; font-weight: 500; letter-spacing: var(--track-14); line-height: 1.15; margin-bottom: 8px; }
+    .legend p { font-size: var(--type-body); color: var(--t2); line-height: 1.5; max-width: 72ch; }
+    .legend code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+    .principles {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px;
+    }
+    .principles div {
+      background: #0a0a0a; border: 1px solid var(--bd); border-radius: 10px; padding: 10px 12px;
+    }
+    .principles strong {
+      display: block; font-size: 11px; font-weight: 500; letter-spacing: .04em;
+      text-transform: uppercase; color: rgba(255,255,255,.5); margin-bottom: 4px;
+    }
+    .principles span { font-size: 12px; color: var(--secondary); line-height: 1.4; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
     .controls button {
       font: 600 11px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase;
       color: var(--t2); background: #0a0a0a; border: 1px solid var(--bd);
       padding: 8px 12px; border-radius: 8px; cursor: pointer;
     }
-    .controls button.on { color: var(--t1); border-color: rgba(255,255,255,.2); }
+    .controls button.on { color: var(--t1); border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); }
     .controls button:hover { color: var(--t1); }
 
     .desktop {
-      max-width: 1040px; margin: 0 auto;
-      height: 720px;
+      max-width: 1040px; margin: 0 auto; height: 720px;
       border-radius: 14px; overflow: hidden;
       border: 1px solid rgba(255,255,255,.08);
-      background: #0c0c0e;
+      background: #0c0c0e; position: relative;
       box-shadow: 0 40px 100px rgba(0,0,0,.55);
-      position: relative;
-      display: flex; flex-direction: column;
     }
     .menubar {
-      height: 28px; flex-shrink: 0;
-      background: rgba(30,30,32,.92);
+      height: 28px; display: flex; align-items: center; justify-content: center;
+      background: rgba(22,22,24,.88); backdrop-filter: blur(20px) saturate(180%);
       border-bottom: 1px solid rgba(255,255,255,.06);
-      display: flex; align-items: center; justify-content: center;
-      position: relative;
-      font-size: 11px; color: rgba(255,255,255,.55);
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: rgba(255,255,255,.5); position: relative; z-index: 30;
     }
     .menubar .apple { position: absolute; left: 12px; opacity: .7; }
-    .menubar .clock { position: absolute; right: 12px; font-family: var(--mono); font-size: 10px; }
+    .menubar .clock { position: absolute; right: 12px; font-family: var(--mono); font-size: var(--type-chrome); letter-spacing: var(--track-10); }
+
+    .chart {
+      position: absolute; inset: 28px 0 0; z-index: 0;
+      background:
+        linear-gradient(180deg, rgba(5,5,5,.15), rgba(5,5,5,.5)),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.025) 47px 48px),
+        repeating-linear-gradient(0deg, transparent 0 39px, rgba(255,255,255,.02) 39px 40px),
+        #08080a;
+    }
+    .candles { position: absolute; left: 8%; right: 8%; bottom: 16%; height: 48%; display: flex; align-items: flex-end; gap: 7px; opacity: .5; }
+    .cndl { width: 5px; border-radius: 1px; position: relative; }
+    .cndl::before {
+      content: ""; position: absolute; left: 50%; width: 1px; transform: translateX(-50%);
+      background: inherit; top: -16px; bottom: -10px; opacity: .7;
+    }
+    .chart-label {
+      position: absolute; left: 20px; bottom: 14px;
+      font: 500 var(--type-caption)/1.2 var(--mono); letter-spacing: var(--track-11); text-transform: uppercase;
+      color: rgba(255,255,255,.28);
+    }
 
     .notch-anchor {
-      position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
-      z-index: 20;
+      position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 40;
     }
     .pill {
-      display: flex; align-items: center; gap: 10px;
-      height: 32px; padding: 0 16px;
-      background: #0a0a0a;
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 20px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
-      cursor: pointer;
-      font-family: var(--mono);
-      user-select: none; white-space: nowrap;
-      transition: transform .15s ease, border-color .15s;
+      display: flex; align-items: center; gap: 10px; touch-action: none;
+      height: 32px; padding: 0 16px; background: #0a0a0a;
+      border: 1px solid rgba(255,255,255,.1); border-radius: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+      cursor: grab; font-family: var(--mono); user-select: none; white-space: nowrap;
     }
-    .pill:hover { border-color: rgba(255,255,255,.18); transform: scale(1.02); }
-    .pill .score { font-size: 13px; font-weight: 600; color: var(--t1); }
-    .pill .label { font-size: 10px; font-weight: 500; color: var(--t2); letter-spacing: .5px; }
+    .pill:active { cursor: grabbing; }
+    .pill .score { font-size: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: var(--track-13); }
+    .pill .label { font-size: var(--type-chrome); font-weight: 500; color: var(--t2); letter-spacing: var(--track-10); }
     .pill .sep { width: 1px; height: 12px; background: var(--bd); }
-    .pill .pnl { font-size: 11px; font-weight: 500; color: var(--teal); }
-    .pill .dot {
-      width: 6px; height: 6px; border-radius: 50%; background: var(--green);
-      box-shadow: 0 0 6px rgba(34,197,94,.5);
-    }
-    .pill .dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(234,179,8,.5); }
-    .pill .dot.bad { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,.5); }
-    .pill.intervention { background: #3b0a0a; border-color: rgba(239,68,68,.35); }
-    .pill.intervention .kw {
-      font-size: 12px; font-weight: 700; letter-spacing: .4px; color: #fff;
-      width: 100%; text-align: center;
-    }
-    .pill.scalper .muted { font-size: 10px; color: rgba(237,237,237,.72); }
-    .pill.pulse-amber { animation: amb 1.2s ease-in-out infinite; }
-    @keyframes amb {
-      0%,100% { border-color: rgba(234,179,8,.25); }
-      50% { border-color: rgba(234,179,8,.7); box-shadow: 0 0 16px rgba(234,179,8,.25); }
-    }
-    @keyframes pulseDot {
-      0%,100% { opacity: .35; }
-      50% { opacity: 1; }
-    }
+    .pill .pnl { font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--gain); }
+    .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gain); box-shadow: 0 0 6px rgba(var(--gain-rgb),.5); }
+    .pill .dot.warn { background: var(--caution); box-shadow: 0 0 6px rgba(var(--caution-rgb),.5); }
+    .pill .dot.bad { background: var(--loss); box-shadow: 0 0 6px rgba(var(--loss-rgb),.5); }
+    .pill.intervention { background: #3b0a0a; border-color: rgba(var(--loss-rgb),.35); }
+    .pill.intervention .kw { font-size: var(--type-body); font-weight: 700; letter-spacing: var(--track-13); }
+    .pill .muted { font-size: var(--type-chrome); font-weight: 500; letter-spacing: var(--track-10); color: rgba(237,237,237,.72); }
 
-    /* Expanded = PLAN shell only */
-    .expanded {
-      display: none;
-      flex: 1; min-height: 0;
-      flex-direction: column;
-      margin: 36px 12px 12px;
-      background: var(--panel);
-      border: 1px solid rgba(255,255,255,.08);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    .sheet {
+      position: absolute; top: 44px; left: 50%; z-index: 25;
+      width: min(980px, calc(100% - 24px)); height: calc(100% - 60px);
+      transform-origin: 50% -28px;
+      border-radius: 18px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 28px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+      display: flex; flex-direction: column;
+      will-change: transform, opacity, filter;
+      visibility: hidden;
     }
-    .desktop.expanded-on .expanded { display: flex; }
-    .desktop.expanded-on .pill { opacity: .35; pointer-events: none; }
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+    }
+    .sheet-glow {
+      position: absolute; top: -48px; left: 18%; right: 18%; height: 140px; pointer-events: none;
+      background: radial-gradient(ellipse at top, rgba(var(--accent-rgb),.14), transparent 70%);
+    }
 
     .chrome-tap {
-      height: 14px; flex-shrink: 0; cursor: pointer;
-      background: linear-gradient(transparent, rgba(255,255,255,.02));
+      height: 14px; flex-shrink: 0; cursor: grab; touch-action: none;
+      background: linear-gradient(rgba(255,255,255,.04), transparent);
     }
-    .chrome-tap:hover { background: rgba(255,255,255,.03); }
+    .chrome-tap::after {
+      content: ""; display: block; width: 36px; height: 4px; border-radius: 99px;
+      background: rgba(255,255,255,.18); margin: 5px auto 0;
+    }
 
-    /* BarNotchShell layout */
-    .plan-shell { display: flex; flex: 1; min-height: 0; background: var(--panel); }
+    .plan-shell { display: flex; flex: 1; min-height: 0; }
     .plan-sb {
-      width: 192px; flex-shrink: 0; background: var(--sidebar);
+      width: 176px; flex-shrink: 0; background: rgba(10,10,10,.72);
       border-right: 0.5px solid var(--bd);
-      display: flex; flex-direction: column;
-      overflow: hidden;
+      display: flex; flex-direction: column; overflow: hidden;
     }
-    .plan-brand { padding: 16px; border-bottom: 0.5px solid var(--bd); }
-    .plan-brand .t { font-size: 13px; font-weight: 500; letter-spacing: -.01em; }
-    .plan-brand .s { font-size: 11px; color: var(--t3); margin-top: 2px; }
-    .plan-nav-scroll { flex: 1; overflow-y: auto; padding-bottom: 4px; }
     .plan-sec {
-      padding: 14px 16px 6px 18px;
-      font-size: 10px; font-weight: 500;
-      letter-spacing: .08em; text-transform: uppercase; color: var(--labels);
+      padding: 12px 16px 6px 16px;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: rgba(255,255,255,.5); line-height: 1.2;
     }
     .plan-nav {
-      display: flex; align-items: center; gap: 8px;
-      margin: 1px 6px; padding: 6px 10px; border-radius: var(--r-sm);
-      font-size: 12px; color: #666; cursor: pointer;
-      border: 0; background: transparent; width: calc(100% - 12px); text-align: left;
-      font-family: var(--sans);
-    }
-    .plan-nav .ico { width: 14px; text-align: center; font-size: 12px; opacity: .7; color: #666; }
-    .plan-nav:hover { background: rgba(255,255,255,.04); color: #aaa; }
-    .plan-nav:hover .ico { color: #aaa; }
-    .plan-nav.on { background: rgba(255,255,255,.07); color: var(--t1); font-weight: 500; }
-    .plan-nav.on .ico { color: #ededed; opacity: 1; }
-    .plan-nav .badge {
-      margin-left: auto;
-      font: 500 10px/1 var(--sans);
-      padding: 2px 6px; border-radius: 999px;
-      background: rgba(234,179,8,.2); color: var(--amber);
-    }
-    .plan-nav .badge.hot { background: rgba(239,68,68,.2); color: var(--red); }
-    .archetype-pill {
-      margin: 10px 8px; padding: 7px 10px;
-      background: rgba(255,255,255,.04); border-radius: var(--r-sm);
-      display: flex; align-items: center; gap: 7px;
-      border-top: 0.5px solid var(--bd);
-      margin-top: 0; padding-top: 10px;
-      border-radius: 0 0 var(--r-sm) var(--r-sm);
-    }
-    .archetype-pill .wrap {
-      flex: 1; display: flex; align-items: center; gap: 7px;
-      padding: 7px 10px; margin: 0 8px 10px;
-      background: rgba(255,255,255,.04); border-radius: var(--r-sm);
-    }
-    .archetype-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
-    .archetype-pill .lab { font-size: 11px; color: var(--hint); flex: 1; }
-    .archetype-pill .gear {
-      width: 36px; height: 36px; display: grid; place-items: center;
-      color: #888; cursor: pointer; font-size: 14px; border: 0; background: transparent;
-    }
-    .archetype-pill .gear.on { color: var(--teal); }
-
-    .plan-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
-    .plan-top {
       display: flex; align-items: center; gap: 10px;
-      padding: 11px 16px; background: var(--sidebar);
-      border-bottom: 0.5px solid var(--bd);
-      flex-shrink: 0;
+      margin: 1px 6px; padding: 7px 10px; border-radius: 8px;
+      font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13);
+      color: var(--secondary); width: calc(100% - 12px); text-align: left;
     }
-    .plan-top .title { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; }
-    .plan-top .score { font-family: var(--mono); font-size: 11px; color: var(--t3); }
-    .plan-top .mult { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--amber); }
+    .plan-nav:hover { background: rgba(255,255,255,.04); color: #fff; }
+    .plan-nav.on { background: rgba(255,255,255,.08); color: #fff; font-weight: 500; }
+    .ico {
+      width: 18px; height: 18px; flex-shrink: 0; position: relative;
+      color: inherit;
+    }
+    .ico svg { position: absolute; inset: 0; width: 18px; height: 18px; display: block; }
+    .ico .fill { display: none; }
+    .plan-nav.on .ico .line { display: none; }
+    .plan-nav.on .ico .fill { display: block; }
+    .plan-nav.on .ico { color: #fff; }
+    .plan-nav .badge {
+      margin-left: auto; font: 500 var(--type-caption)/1.2 var(--sans); letter-spacing: var(--track-11);
+      padding: 2px 6px; border-radius: 999px;
+      background: rgba(var(--caution-rgb),.2); color: var(--caution);
+    }
+    .plan-nav .badge.hot { background: rgba(var(--loss-rgb),.2); color: var(--loss); }
+    .more-btn {
+      margin: 8px 12px 0; padding: 6px 8px; border-radius: 8px;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: rgba(255,255,255,.45); text-align: left;
+      display: flex; align-items: center; gap: 8px; width: calc(100% - 24px);
+    }
+    .more-btn svg { width: 14px; height: 14px; transition: transform 280ms var(--spring); }
+    .more-btn.open svg { transform: rotate(180deg); }
+    .more-btn:hover { color: #fff; background: rgba(255,255,255,.04); }
+    .more-panel { display: none; }
+    .more-panel.open { display: block; }
+    .hide-row {
+      margin: 8px 8px 4px; padding: 7px 10px; border-radius: 8px;
+      font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13); color: var(--hint);
+      display: flex; gap: 10px; align-items: center;
+    }
+    .hide-row svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .hide-row:hover { background: rgba(255,255,255,.04); color: var(--label); }
+    .archetype {
+      margin: 8px; padding: 8px 10px; border-radius: 8px;
+      background: rgba(255,255,255,.04); display: flex; align-items: center; gap: 8px;
+      border-top: 0.5px solid var(--bd); border-radius: 0 0 8px 8px; margin-top: auto;
+    }
+    .archetype .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .archetype .lab { flex: 1; font-size: var(--type-caption); letter-spacing: var(--track-11); color: var(--hint); }
+    .gear {
+      width: 28px; height: 28px; border-radius: 8px; color: var(--tertiary); display: grid; place-items: center;
+    }
+    .gear svg { width: 16px; height: 16px; }
+    .gear:hover { background: rgba(255,255,255,.08); color: #fff; }
+    .gear.on { color: #fff; background: rgba(255,255,255,.08); }
+
+    .plan-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .plan-top {
+      position: relative;
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; flex-shrink: 0;
+      background: linear-gradient(rgba(10,10,10,.7), rgba(10,10,10,.35));
+    }
+    .plan-top::after {
+      content: ""; position: absolute; left: 176px; right: 0; height: 16px;
+      background: linear-gradient(rgba(5,5,5,.45), transparent); pointer-events: none;
+      top: 53px;
+    }
+    .plan-top .title { font-size: var(--type-title); font-weight: 500; letter-spacing: var(--track-14); line-height: 1.15; flex: 1; min-width: 0; }
+    .plan-top .score { font-family: var(--mono); font-size: var(--type-caption); letter-spacing: var(--track-11); font-variant-numeric: tabular-nums; color: var(--t3); }
+    .plan-top .mult { font-family: var(--mono); font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); font-variant-numeric: tabular-nums; color: var(--caution); }
     .pill-chip {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 500;
-      white-space: nowrap;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
     }
-    .pill-chip .d { width: 6px; height: 6px; border-radius: 50%; }
-    .pill-chip.broker { background: rgba(0,229,192,.10); color: var(--teal); }
-    .pill-chip.broker .d { background: var(--teal); }
-    .pill-chip.state { background: rgba(0,229,192,.10); color: var(--teal); }
-    .pill-chip.state .d { background: var(--teal); }
-    .pill-chip.state.warn { background: rgba(234,179,8,.10); color: var(--amber); }
-    .pill-chip.state.warn .d { background: var(--amber); }
-    .btn-new {
-      font: 500 12px/1 var(--sans); color: var(--sidebar);
-      background: var(--t1); border: 0; border-radius: var(--r-sm);
-      padding: 5px 12px; cursor: pointer; white-space: nowrap;
-    }
-    .btn-new:hover { filter: brightness(1.05); }
+    .pill-chip .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .pill-chip.broker { background: rgba(var(--accent-rgb),.10); color: var(--accent); }
+    .pill-chip.state { background: rgba(var(--accent-rgb),.10); color: var(--accent); }
+    .pill-chip.state.warn { background: rgba(var(--caution-rgb),.10); color: var(--caution); }
 
     .plan-body {
-      flex: 1; overflow-y: auto; padding: 16px;
-      font-size: 13px; color: var(--t2);
+      flex: 1; overflow-y: auto; padding: 16px 16px 20px;
+      font-size: var(--type-body); font-weight: 400; line-height: 1.45; letter-spacing: var(--track-13); color: var(--t2);
+      mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent);
     }
+    .plan-body::-webkit-scrollbar { width: 8px; }
+    .plan-body::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
     .screen { display: none; }
     .screen.on { display: block; }
 
     .sec-label {
-      font-size: 10px; font-weight: 500; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--labels);
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: rgba(255,255,255,.5); line-height: 1.2;
       padding-top: 16px; padding-bottom: 8px;
     }
     .sec-label:first-child { padding-top: 0; }
-
     .card {
-      background: var(--card);
-      border: 0.5px solid var(--bd-card);
-      border-radius: var(--r-card);
-      padding: 13px 15px;
-      margin-bottom: 8px;
+      background: var(--card); border: 0.5px solid var(--bd-card);
+      border-radius: var(--r-card); padding: 13px 15px; margin-bottom: 8px;
     }
-    .card h4 { font-size: 13px; font-weight: 500; color: var(--t1); margin-bottom: 4px; }
-    .card .sub { font-size: 12px; color: var(--t2); line-height: 1.45; margin-bottom: 10px; }
-    .card p { font-size: 12px; line-height: 1.45; color: var(--t2); }
+    .card h4 { font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); line-height: 1.25; color: var(--t1); margin-bottom: 4px; }
+    .card .sub { font-size: var(--type-body); font-weight: 400; line-height: 1.45; letter-spacing: var(--track-13); color: var(--t2); margin-bottom: 10px; }
+    .card p { font-size: var(--type-body); font-weight: 400; line-height: 1.45; letter-spacing: var(--track-13); color: var(--t2); }
 
     .state-banner {
       display: flex; gap: 10px; align-items: flex-start;
-      padding: 12px 14px; border-radius: var(--r-card);
-      margin-bottom: 10px;
-      border: 0.5px solid rgba(0,229,192,.2);
-      background: rgba(0,229,192,.06);
+      padding: 12px 14px; border-radius: var(--r-card); margin-bottom: 10px;
+      border: 0.5px solid rgba(var(--accent-rgb),.2); background: rgba(var(--accent-rgb),.06);
     }
-    .state-banner.watch {
-      border-color: rgba(234,179,8,.2);
-      background: rgba(234,179,8,.06);
-    }
-    .state-banner.broken {
-      border-color: rgba(239,68,68,.2);
-      background: rgba(239,68,68,.06);
-    }
-    .state-banner .dot {
-      width: 8px; height: 8px; border-radius: 50%; background: var(--teal);
-      margin-top: 3px; flex-shrink: 0;
-    }
-    .state-banner.watch .dot { background: var(--amber); animation: pulseDot 1.1s ease-in-out infinite; }
-    .state-banner.broken .dot { background: var(--red); animation: pulseDot .7s ease-in-out infinite; }
-    .state-banner .lab {
-      font-size: 10px; font-weight: 500; letter-spacing: .06em;
-      text-transform: uppercase; color: var(--teal); margin-bottom: 3px;
-    }
-    .state-banner.watch .lab { color: var(--amber); }
-    .state-banner.broken .lab { color: var(--red); }
-    .state-banner .sent { font-size: 13px; color: inherit; line-height: 1.45; }
-    .state-banner.watch .sent, .state-banner.watch .lab { color: var(--amber); }
-    .state-banner.broken .sent { color: var(--red); }
-    .state-banner .sent { color: var(--teal); }
-    .state-banner.watch .sent { color: var(--amber); }
+    .state-banner.watch { border-color: rgba(var(--caution-rgb),.2); background: rgba(var(--caution-rgb),.06); }
+    .state-banner.broken { border-color: rgba(var(--loss-rgb),.2); background: rgba(var(--loss-rgb),.06); }
+    .state-banner .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-top: 3px; flex-shrink: 0; }
+    .state-banner.watch .dot { background: var(--caution); }
+    .state-banner.broken .dot { background: var(--loss); }
+    .state-banner .lab { font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+    .state-banner.watch .lab { color: var(--caution); }
+    .state-banner.broken .lab { color: var(--loss); }
+    .state-banner .sent { font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13); line-height: 1.45; color: var(--accent); }
+    .state-banner.watch .sent { color: var(--caution); }
+    .state-banner.broken .sent { color: var(--loss); }
 
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
     .metric {
       background: rgba(255,255,255,.04); border: 0.5px solid rgba(255,255,255,.08);
       border-radius: 8px; padding: 8px 10px;
     }
-    .metric .k {
-      font-size: 8px; font-weight: 600; letter-spacing: .4px;
-      color: var(--t3); margin-bottom: 2px;
-    }
-    .metric .v { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--t1); }
-    .metric .v.pos { color: var(--green); }
-    .metric .v.neg { color: var(--red); }
-    .metric .v.teal { color: var(--teal); }
-    .metric .v.amber { color: var(--amber); }
+    .metric .k { font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); text-transform: uppercase; color: rgba(255,255,255,.45); margin-bottom: 4px; }
+    .metric .v { font-family: var(--mono); font-size: var(--type-body); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: var(--track-13); color: var(--t1); }
+    .metric .v.pos { color: var(--gain); }
+    .metric .v.neg { color: var(--loss); }
+    .metric .v.teal { color: var(--accent); }
+    .metric .v.amber { color: var(--caution); }
 
-    .snap {
-      background: rgba(255,255,255,.04); border-radius: 8px; padding: 10px; margin-bottom: 10px;
-    }
-    .snap .h {
-      font-size: 10px; font-weight: 600; letter-spacing: .6px;
-      color: rgba(255,255,255,.38); margin-bottom: 6px;
-    }
-    .snap-row {
-      display: flex; justify-content: space-between; gap: 8px;
-      padding: 5px 0; font-size: 11px;
-    }
+    .snap { background: rgba(255,255,255,.04); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .snap .h { font-size: var(--type-caption); font-weight: 600; letter-spacing: var(--track-11); color: rgba(255,255,255,.38); margin-bottom: 6px; }
+    .snap-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: var(--type-caption); letter-spacing: var(--track-11); }
     .snap-row .k { color: rgba(255,255,255,.42); font-weight: 500; }
     .snap-row .v { font-family: var(--mono); font-weight: 500; color: rgba(255,255,255,.88); text-align: right; }
-    .snap-row .v.warn { color: rgba(251,146,60,.88); }
+    .snap-row .v.warn { color: var(--caution); }
 
     .footer-bar { display: flex; gap: 8px; margin: 8px 0 12px; }
     .footer-pill {
-      flex: 1; text-align: center;
-      font-size: 10px; font-weight: 600; color: rgba(255,255,255,.88);
-      padding: 10px 6px; border-radius: 8px;
-      background: rgba(255,255,255,.06);
+      flex: 1; text-align: center; font-size: var(--type-caption); font-weight: 600; letter-spacing: var(--track-11); color: rgba(255,255,255,.88);
+      padding: 10px 6px; border-radius: 8px; background: rgba(255,255,255,.06);
       border: 0.5px solid rgba(255,255,255,.12);
-      cursor: pointer;
     }
     .footer-pill:hover { background: rgba(255,255,255,.09); }
+    .footer-pill.danger { color: var(--loss); border-color: rgba(var(--loss-rgb),.25); }
 
     .tabs-arch { display: flex; gap: 5px; margin-bottom: 8px; }
     .tab-arch {
-      font: 500 11px/1 var(--sans); color: var(--t2);
-      background: transparent; border: 0.5px solid var(--bd-input);
-      padding: 6px 10px; border-radius: 999px; cursor: pointer;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      color: var(--t2); background: transparent; border: 0.5px solid var(--bd-input);
+      padding: 6px 10px; border-radius: 999px;
     }
-    .tab-arch.on {
-      color: var(--t1); border-color: rgba(255,255,255,.2);
-      background: rgba(255,255,255,.06);
-    }
+    .tab-arch.on { color: var(--t1); border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
 
     .feel-row { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
     .feel {
-      flex: 1; min-width: 48px; text-align: center;
-      padding: 8px 4px; border-radius: var(--r-sm);
-      border: 0.5px solid var(--bd-input);
-      background: rgba(255,255,255,.03);
-      cursor: pointer; font-size: 10px; color: var(--t2);
+      flex: 1; min-width: 48px; text-align: center; padding: 8px 4px; border-radius: var(--r-sm);
+      border: 0.5px solid var(--bd-input); background: rgba(255,255,255,.03);
+      font-size: var(--type-caption); font-weight: 400; letter-spacing: var(--track-11); color: var(--t2);
     }
-    .feel strong { display: block; font-size: 12px; color: var(--t1); margin-bottom: 2px; }
-    .feel.on {
-      border-color: rgba(0,229,192,.35);
-      background: rgba(0,229,192,.08);
-      color: var(--teal);
-    }
-    .feel.on strong { color: var(--teal); }
+    .feel strong { display: block; font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); color: var(--t1); margin-bottom: 2px; }
+    .feel.on { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: var(--t1); }
+    .feel.on strong { color: var(--t1); }
 
     .warn-box {
-      font-size: 11px; padding: 8px 10px; border-radius: var(--r-sm); margin-bottom: 8px;
-      border: 0.5px solid rgba(234,179,8,.2); background: rgba(234,179,8,.06); color: var(--amber);
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); padding: 8px 10px; border-radius: var(--r-sm); margin-bottom: 8px;
+      border: 0.5px solid rgba(var(--caution-rgb),.2); background: rgba(var(--caution-rgb),.06); color: var(--caution);
     }
-    .warn-box.red {
-      border-color: rgba(239,68,68,.2); background: rgba(239,68,68,.06); color: var(--red);
-    }
+    .warn-box.red { border-color: rgba(var(--loss-rgb),.2); background: rgba(var(--loss-rgb),.06); color: var(--loss); }
 
+    .ctl { width: 100%; margin-bottom: 8px; }
+    .ctl:last-child { margin-bottom: 0; }
+    .ctl-label {
+      display: block; font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13);
+      color: var(--t1); margin-bottom: 6px; line-height: 1.2;
+    }
     .field {
-      width: 100%; margin-bottom: 6px;
-      background: rgba(255,255,255,.03);
-      border: 0.5px solid var(--bd-input);
-      border-radius: var(--r-sm);
-      padding: 9px 11px;
-      color: var(--t1); font: 400 13px/1.3 var(--sans);
-      outline: none;
+      width: 100%; background: rgba(255,255,255,.03);
+      border: 0.5px solid var(--bd-input); border-radius: var(--r-sm);
+      padding: 9px 11px; color: var(--t1); font: 400 var(--type-body)/1.3 var(--sans); letter-spacing: var(--track-13); outline: none;
+      font-variant-numeric: tabular-nums;
     }
-    .field:focus {
-      background: rgba(255,255,255,.05);
-      border-color: rgba(255,255,255,.25);
-    }
+    .field:focus { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.25); }
     .field::placeholder { color: var(--hint); }
+    .field.invalid { border-color: rgba(var(--loss-rgb),.55); }
+    .field-err {
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--loss); margin-top: 4px; line-height: 1.3;
+    }
+    .text-view {
+      width: 100%; min-height: 4.5em; resize: vertical;
+      background: rgba(255,255,255,.03);
+      border: 0.5px solid var(--bd-input); border-radius: var(--r-sm);
+      padding: 9px 11px; color: var(--t1); font: 400 var(--type-body)/1.45 var(--sans); letter-spacing: var(--track-13);
+      text-align: left; outline: none; overflow-y: auto; user-select: text;
+    }
+    .text-view:focus { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.25); }
+    .text-view::placeholder { color: var(--hint); }
+
+    .combo {
+      display: flex; align-items: stretch; position: relative;
+      width: 100%;
+      background: rgba(255,255,255,.03);
+      border: 0.5px solid var(--bd-input); border-radius: var(--r-sm);
+      backdrop-filter: blur(12px) saturate(160%);
+      -webkit-backdrop-filter: blur(12px) saturate(160%);
+    }
+    .combo.open { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.25); }
+    .combo-input, .combo-value {
+      flex: 1; min-width: 0; background: transparent; border: 0; outline: none;
+      padding: 9px 11px; color: var(--t1); font: 400 var(--type-body)/1.3 var(--sans); letter-spacing: var(--track-13);
+      text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .combo-input::placeholder { color: var(--hint); }
+    .combo-value { cursor: pointer; }
+    .combo-chev {
+      width: 32px; flex-shrink: 0; display: grid; place-items: center;
+      border-left: 0.5px solid var(--bd-input); color: var(--t2);
+      border-radius: 0 var(--r-sm) var(--r-sm) 0;
+      transition: transform 100ms ease-out;
+    }
+    .combo-chev svg { width: 14px; height: 14px; display: block; }
+    .combo-chev:active { transform: scale(0.97); }
+    .combo-list {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; width: 100%;
+      z-index: 40; margin: 0; padding: 4px 0; list-style: none;
+      background: rgba(10,10,10,.88);
+      border: 0.5px solid rgba(255,255,255,.12); border-radius: var(--r-sm);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      box-shadow: 0 12px 32px rgba(0,0,0,.45);
+      max-height: 220px; overflow-y: auto; overflow-x: hidden;
+    }
+    .combo-list[hidden] { display: none; }
+    .combo-list li {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 11px; font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13); color: var(--secondary);
+      cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .combo-list li:hover { background: rgba(255,255,255,.08); color: var(--t1); }
+    .combo-list li.sel {
+      background: rgba(255,255,255,.08); color: var(--t1);
+    }
+    .combo-list li.sel::after {
+      content: ""; flex-shrink: 0; margin-left: auto;
+      width: 6px; height: 11px;
+      border-right: 1.6px solid var(--t1);
+      border-bottom: 1.6px solid var(--t1);
+      transform: rotate(45deg) translateY(-1px);
+    }
 
     .side-row { display: flex; gap: 5px; margin-bottom: 8px; }
     .side {
-      flex: 1; text-align: center; padding: 8px;
-      border-radius: var(--r-sm); border: 0.5px solid var(--bd-input);
-      background: transparent; color: var(--t2); font: 500 12px/1 var(--sans); cursor: pointer;
+      flex: 1; text-align: center; padding: 8px; border-radius: var(--r-sm);
+      border: 0.5px solid var(--bd-input); color: var(--t2);
+      font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13);
     }
-    .side.on { border-color: rgba(0,229,192,.35); background: rgba(0,229,192,.08); color: var(--teal); }
+    .side.on { border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: var(--t1); }
 
     .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
     .chip {
-      font: 500 11px/1 var(--sans); color: var(--t2);
-      padding: 6px 10px; border-radius: 999px;
-      border: 0.5px solid var(--bd-input); background: transparent; cursor: pointer;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      color: var(--t2); padding: 6px 10px; border-radius: 999px;
+      border: 0.5px solid var(--bd-input);
     }
-    .chip.on {
-      color: var(--t1); border-color: rgba(255,255,255,.2);
-      background: rgba(255,255,255,.06);
-    }
-    .chip.inv.on {
-      color: #93c5fd; border-color: rgba(59,130,246,.25);
-      background: rgba(59,130,246,.08);
-    }
+    .chip.on { color: var(--t1); border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
+    .chip.inv.on { color: var(--info); border-color: rgba(10,132,255,.35); background: rgba(10,132,255,.10); }
 
     .rr-row {
       display: flex; justify-content: space-between; align-items: center;
       padding: 8px 10px; margin-bottom: 10px;
       background: rgba(255,255,255,.03); border: 0.5px solid rgba(255,255,255,.08);
-      border-radius: var(--r-sm); font-size: 12px; color: var(--hint);
+      border-radius: var(--r-sm); font-size: var(--type-body); letter-spacing: var(--track-13); color: var(--hint);
     }
     .rr-row .v { font-family: var(--mono); font-weight: 500; color: var(--t1); }
-    .rr-row .v.good { color: var(--green); }
+    .rr-row .v.good { color: var(--gain); }
 
     .toggle-row {
-      display: flex; align-items: center; gap: 12px;
-      padding: 10px 12px; margin-bottom: 10px;
-      background: var(--card); border: 0.5px solid var(--bd-card);
-      border-radius: var(--r-card);
+      display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 10px;
+      background: var(--card); border: 0.5px solid var(--bd-card); border-radius: var(--r-card);
     }
     .toggle-row .txt { flex: 1; }
-    .toggle-row .lab { font-size: 12px; color: var(--t1); font-weight: 500; }
-    .toggle-row .sub { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .toggle-row .lab { font-size: var(--type-body); color: var(--t1); font-weight: 500; letter-spacing: var(--track-13); }
+    .toggle-row .sub { font-size: var(--type-caption); color: var(--t2); margin-top: 2px; letter-spacing: var(--track-11); }
     .switch {
       width: 36px; height: 20px; border-radius: 999px;
       background: rgba(255,255,255,.12); position: relative; cursor: pointer; flex-shrink: 0;
     }
-    .switch.on { background: rgba(0,229,192,.45); }
+    .switch.on { background: var(--accent); }
+    .switch::before {
+      content: ""; position: absolute; left: 7px; top: 5px;
+      width: 5px; height: 8px;
+      border-right: 1.5px solid rgba(5, 46, 44, 0.55);
+      border-bottom: 1.5px solid rgba(5, 46, 44, 0.55);
+      transform: rotate(45deg); opacity: 0;
+      transition: opacity 180ms ease;
+    }
+    .switch.on::before { opacity: 1; }
     .switch::after {
       content: ""; position: absolute; top: 2px; left: 2px;
       width: 16px; height: 16px; border-radius: 50%; background: #fff;
-      transition: left .15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.28);
+      transition: left 280ms var(--spring);
     }
     .switch.on::after { left: 18px; }
 
     .big-btn {
-      width: 100%; padding: 12px; border: 0; border-radius: var(--r-card);
-      font: 600 13px/1 var(--sans); cursor: pointer; margin-bottom: 8px;
+      width: 100%; padding: 12px; border-radius: var(--r-card);
+      font: 500 var(--type-body)/1.2 var(--sans); letter-spacing: var(--track-13); cursor: pointer; margin-bottom: 8px;
     }
-    .big-btn.primary {
-      background: var(--teal); color: #04140f;
-    }
+    .big-btn.primary { background: var(--accent); color: #052e2c; }
     .big-btn.primary:disabled { opacity: .3; cursor: not-allowed; }
-    .big-btn.outline {
-      background: transparent; color: var(--t1);
-      border: 0.5px solid rgba(255,255,255,.15);
-    }
-    .big-btn.danger { background: rgba(239,68,68,.15); color: var(--red); border: 0.5px solid rgba(239,68,68,.25); }
-    .hint-line { font-size: 10px; color: var(--hint); margin-bottom: 6px; }
-    .elapsed { font-size: 10px; color: var(--labels); text-align: right; }
+    .big-btn.outline { background: transparent; color: var(--label); border: 0.5px solid rgba(255,255,255,.15); }
+    .big-btn.danger { background: rgba(var(--loss-rgb),.15); color: var(--loss); border: 0.5px solid rgba(var(--loss-rgb),.25); }
+    .hint-line { font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--hint); margin-bottom: 6px; }
+    .elapsed { font-size: var(--type-chrome); font-weight: 500; letter-spacing: var(--track-10); color: var(--labels); text-align: right; }
 
     .idx-row { display: flex; gap: 6px; }
     .idx { flex: 1; }
-    .idx .n { font-size: 9px; color: var(--t2); letter-spacing: .04em; text-transform: uppercase; }
-    .idx .v { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--t1); }
-    .idx .c { font-family: var(--mono); font-size: 9px; font-weight: 500; color: var(--teal); }
-    .idx .c.neg { color: var(--red); }
-
+    .idx .n { font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--t2); text-transform: uppercase; }
+    .idx .v { font-family: var(--mono); font-size: var(--type-body); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: var(--track-13); color: var(--t1); }
+    .idx .c { font-family: var(--mono); font-size: var(--type-caption); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: var(--track-11); color: var(--gain); }
+    .idx .c.neg { color: var(--loss); }
     .caps {
-      font-size: 10px; font-weight: 500; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--labels); margin-bottom: 6px;
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: rgba(255,255,255,.5); margin-bottom: 6px; line-height: 1.2;
     }
     .divider { height: 0.5px; background: var(--bd); margin: 10px 0; }
 
     .adh-row {
       display: flex; gap: 10px; align-items: flex-start;
-      padding: 8px 0; border-bottom: 0.5px solid rgba(255,255,255,.05);
-      cursor: pointer;
+      padding: 8px 0; border-bottom: 0.5px solid rgba(255,255,255,.05); cursor: pointer;
     }
     .adh-row:last-of-type { border-bottom: 0; }
     .adh-mark {
-      width: 22px; height: 22px; border-radius: 6px;
-      border: 0.5px solid var(--bd-input);
-      display: grid; place-items: center;
-      font-size: 11px; color: var(--t3); flex-shrink: 0;
+      width: 22px; height: 22px; border-radius: 6px; border: 0.5px solid var(--bd-input);
+      display: grid; place-items: center; font-size: var(--type-caption); letter-spacing: var(--track-11); color: var(--t3); flex-shrink: 0;
     }
-    .adh-mark.yes { background: rgba(0,229,192,.15); border-color: rgba(0,229,192,.35); color: var(--teal); }
-    .adh-mark.no { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.35); color: var(--red); }
-    .adh-row .t { font-size: 12px; font-weight: 500; color: var(--t1); }
-    .adh-row .s { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .adh-mark.yes { background: rgba(var(--accent-rgb),.15); border-color: rgba(var(--accent-rgb),.35); color: var(--accent); }
+    .adh-row .t { font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); color: var(--t1); }
+    .adh-row .s { font-size: var(--type-caption); letter-spacing: var(--track-11); color: var(--t2); margin-top: 2px; }
     .process-badge {
-      font-size: 11px; font-weight: 600; color: var(--teal);
-      padding: 8px; margin: 8px 0; border-radius: var(--r-sm);
-      background: rgba(0,229,192,.1);
+      font-size: var(--type-caption); font-weight: 600; letter-spacing: var(--track-11); color: var(--accent);
+      padding: 8px; margin: 8px 0; border-radius: var(--r-sm); background: rgba(var(--accent-rgb),.1);
     }
     .dim { opacity: .45; pointer-events: none; }
-    .link-quiet {
-      background: none; border: 0; color: var(--hint); font: 500 11px/1 var(--sans);
-      cursor: pointer; padding: 4px 0; margin-top: 4px;
-    }
-
-    .progress {
-      margin-bottom: 12px;
-    }
-    .progress .row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
+    .link-quiet { color: var(--hint); font: 500 var(--type-caption)/1.2 var(--sans); letter-spacing: var(--track-11); padding: 4px 0; margin-top: 4px; }
+    .progress { margin-bottom: 12px; }
+    .progress .row { display: flex; justify-content: space-between; font-size: var(--type-caption); letter-spacing: var(--track-11); margin-bottom: 6px; }
     .progress .row .k { color: var(--t2); }
     .progress .row .v { font-family: var(--mono); color: var(--t1); }
     .bar { height: 4px; background: rgba(255,255,255,.06); border-radius: 99px; overflow: hidden; }
-    .bar > i { display: block; height: 100%; background: var(--teal); border-radius: 99px; }
-
+    .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
     .escrow-row {
       display: flex; justify-content: space-between; padding: 8px 0;
-      border-bottom: 0.5px solid rgba(255,255,255,.05); font-size: 12px;
+      border-bottom: 0.5px solid rgba(255,255,255,.05); font-size: var(--type-body); letter-spacing: var(--track-13);
     }
     .escrow-row .k { color: var(--hint); }
     .escrow-row .v { font-family: var(--mono); color: var(--t1); }
-
     .settings-row {
       display: flex; justify-content: space-between; align-items: center;
       padding: 10px 0; border-bottom: 0.5px solid rgba(255,255,255,.05);
-      font-size: 12px; color: var(--t1);
+      font-size: var(--type-body); letter-spacing: var(--track-13); color: var(--t1);
     }
-    .settings-row .s { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .settings-row .s { font-size: var(--type-caption); letter-spacing: var(--track-11); color: var(--t2); margin-top: 2px; }
 
-    .hint-page {
-      max-width: 1040px; margin: 14px auto 0;
-      font-size: 11px; color: #888; font-family: var(--mono);
+    .interfere { display: flex; gap: 6px; margin: 8px 0 4px; }
+    .interfere button {
+      flex: 1; font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); padding: 10px 6px; border-radius: 8px;
+      border: 0.5px solid var(--bd-input); color: var(--t2); background: rgba(255,255,255,.03);
+    }
+    .interfere button.on { color: var(--t1); border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.08); }
+
+    .scrim {
+      display: none; position: absolute; inset: 28px 0 0; z-index: 70;
+      background: var(--scrim); backdrop-filter: blur(12px);
+      align-items: center; justify-content: center;
+    }
+    .scrim.on { display: flex; }
+    .dialog {
+      width: min(380px, calc(100% - 48px)); background: #0a0a0a;
+      border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 22px 20px 16px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+    }
+    .dialog h3 { font-size: 17px; font-weight: 500; letter-spacing: var(--track-17); line-height: 1.2; margin-bottom: 8px; }
+    .dialog p { font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13); line-height: 1.45; color: var(--t2); margin-bottom: 18px; }
+    .dialog .row { display: flex; gap: 8px; }
+    .dialog .row button { flex: 1; padding: 11px; border-radius: 10px; font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); }
+    .dialog .cancel { background: rgba(255,255,255,.06); }
+    .dialog .go { background: var(--loss); color: #fff; }
+    .thumb-frame {
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      border: 0.5px solid var(--bd-card);
+      background: #0a0a0a;
+    }
+
+    .toast {
+      position: absolute; bottom: 20px; left: 50%; z-index: 80;
+      transform: translateX(-50%) translateY(10px); opacity: 0; pointer-events: none;
+      background: rgba(10,10,10,.92); border: 1px solid rgba(255,255,255,.12);
+      padding: 10px 16px; border-radius: 12px; font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13);
+    }
+    .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); transition: opacity 350ms var(--spring), transform 350ms var(--spring); }
+
+    .hint-page { max-width: 1040px; margin: 14px auto 0; font-size: 11px; color: var(--tertiary); font-family: var(--mono); }
+    @media (max-width: 860px) { .principles { grid-template-columns: 1fr 1fr; } }
+
+    /* Charts — HIG: data prominent, axes supporting, trailing Y, never color-only */
+    .ta-chart { margin: 0 0 8px; }
+    .ta-kicker {
+      font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      text-transform: uppercase; color: rgba(255,255,255,.5); margin-bottom: 6px;
+    }
+    .ta-takeaway {
+      font-size: var(--type-body); font-weight: 400; letter-spacing: var(--track-13); line-height: 1.45; color: var(--t1); margin-bottom: 10px;
+    }
+    .ta-plot-host { width: 100%; min-height: 48px; position: relative; }
+    .ta-readout {
+      font-family: var(--mono); font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11);
+      font-variant-numeric: tabular-nums; color: var(--t2); min-height: 16px; margin: 6px 0 8px;
+    }
+    .ta-lenses { display: flex; flex-direction: column; gap: 0; list-style: none; margin: 0; padding: 0; }
+    .ta-lenses button {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+      width: 100%; text-align: left; padding: 8px 0;
+      border-bottom: 0.5px solid rgba(255,255,255,.05);
+      font-size: var(--type-body); letter-spacing: var(--track-13); color: var(--t1); font-weight: 500;
+    }
+    .ta-lenses button .s { font-size: var(--type-caption); letter-spacing: var(--track-11); color: var(--t2); font-weight: 400; }
+    .ta-lenses button .v { font-family: var(--mono); font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--t1); }
+    .ta-lenses button.on { color: var(--t1); }
+    .ta-lenses button:last-child { border-bottom: 0; }
+    .ta-lenses button:hover { color: #fff; }
+    .ta-a11y {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+    .ta-svg { display: block; outline: none; }
+    .ta-svg:focus-visible { outline: 2px solid rgba(255,255,255,.35); outline-offset: 2px; border-radius: 4px; }
+    .ta-grid { stroke: rgba(255,255,255,.08); stroke-width: 0.5; }
+    .ta-zero { stroke: rgba(255,255,255,.35); stroke-width: 1; stroke-dasharray: 3 3; }
+    .ta-tick { fill: var(--t3); font-size: var(--type-chrome); font-family: var(--sans); }
+    .ta-line { stroke: var(--t1); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+    .ta-line.gain { stroke: var(--gain); }
+    .ta-line.loss { stroke: var(--loss); }
+    .ta-line.fidelity { stroke: var(--t1); }
+    .ta-area { fill: rgba(255,255,255,.06); }
+    .ta-area.gain { fill: rgba(var(--gain-rgb),.16); }
+    .ta-area.loss { fill: rgba(var(--loss-rgb),.16); }
+    .ta-point { fill: var(--t1); }
+    .ta-point.circle { fill: var(--t1); }
+    .ta-point.diamond { fill: none; stroke: var(--t1); stroke-width: 1.4; }
+    .ta-point.is-on { fill: var(--t1); }
+    .ta-scrub[hidden], .ta-focus[hidden] { display: none; }
+    .ta-focus { fill: var(--t1); stroke: #050505; stroke-width: 2; }
+    .ta-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .ta-bar {
+      display: grid; grid-template-columns: 92px 1fr 40px; gap: 8px; align-items: center;
+      padding: 4px 0; border: 0; background: none; width: 100%;
+    }
+    .ta-bar-lab { font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ta-bar-track {
+      height: 8px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden;
+    }
+    .ta-bar-fill { display: block; height: 100%; border-radius: 99px; background: rgba(255,255,255,.55); }
+    .ta-bar.is-on .ta-bar-fill { background: #fff; }
+    .ta-bar-val { font-family: var(--mono); font-size: var(--type-caption); font-weight: 500; letter-spacing: var(--track-11); color: var(--t2); text-align: right; }
+    .ta-bars.is-interactive .ta-bar { cursor: pointer; border-radius: 6px; padding: 6px 8px; margin: 0 -8px; }
+    .ta-bars.is-interactive .ta-bar:hover,
+    .ta-bars.is-interactive .ta-bar.is-on { background: rgba(255,255,255,.06); }
+    .ta-link {
+      font-size: var(--type-body); font-weight: 500; letter-spacing: var(--track-13); color: var(--t2); padding: 4px 0;
+    }
+    .ta-link:hover { color: var(--t1); }
+    @media (prefers-reduced-motion: reduce) {
+      .ta-bar-fill { transition: none !important; }
+    }
+    @media (prefers-contrast: more) {
+      .ta-grid { stroke: rgba(255,255,255,.28); }
+      .ta-bar-track { background: #1a1a1a; border: 1px solid rgba(255,255,255,.35); }
     }
   </style>
 </head>
 <body>
-  <div class="tag">NOTCH · PLAN only · BarNotchShell</div>
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true">
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1"/>
+    </symbol>
+    <symbol id="i-sun-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6Zm0-4.4a.9.9 0 0 1 .9.9v1.2a.9.9 0 1 1-1.8 0V3.7a.9.9 0 0 1 .9-.9Zm0 15.4a.9.9 0 0 1 .9.9v1.2a.9.9 0 1 1-1.8 0v-1.2a.9.9 0 0 1 .9-.9ZM3.7 11.1h1.2a.9.9 0 1 1 0 1.8H3.7a.9.9 0 1 1 0-1.8Zm15.4 0h1.2a.9.9 0 1 1 0 1.8h-1.2a.9.9 0 1 1 0-1.8ZM5.4 4.15a.9.9 0 0 1 1.27 0l.85.85a.9.9 0 1 1-1.27 1.27l-.85-.85a.9.9 0 0 1 0-1.27Zm11.03 11.03a.9.9 0 0 1 1.27 0l.85.85a.9.9 0 0 1-1.27 1.27l-.85-.85a.9.9 0 0 1 0-1.27ZM4.15 18.6a.9.9 0 0 1 1.27 0l.85.85a.9.9 0 1 1-1.27 1.27l-.85-.85a.9.9 0 0 1 0-1.27Zm11.03-11.03a.9.9 0 0 1 1.27 0l.85.85a.9.9 0 1 1-1.27 1.27l-.85-.85a.9.9 0 0 1 0-1.27Z"/>
+    </symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="7" y="4.5" width="10" height="15" rx="2"/><path d="M9 4.5h6v2.2H9z"/><path d="M9.5 11.2h5M9.5 14.2h3.5"/>
+    </symbol>
+    <symbol id="i-clipboard-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9.2 3.6h5.6c.4 0 .8.2 1 .5l.2.4H17a2.4 2.4 0 0 1 2.4 2.4v11.7A2.4 2.4 0 0 1 17 20.9H7a2.4 2.4 0 0 1-2.4-2.4V6.9A2.4 2.4 0 0 1 7 4.5h1l.2-.4c.2-.3.6-.5 1-.5Zm.6 1.6v1.4h4.4V5.2H9.8Zm.4 6.2a.75.75 0 0 0 0 1.5h4.6a.75.75 0 1 0 0-1.5H10.2Zm0 3a.75.75 0 0 0 0 1.5H14a.75.75 0 1 0 0-1.5h-3.8Z"/>
+    </symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 3 5.8 13.2h5.4L10 21l8.4-11.4h-5.6L13 3z"/>
+    </symbol>
+    <symbol id="i-bolt-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13.35 2.4c.38-.55 1.22-.22 1.12.45l-1.1 7.15h5.08c.7 0 1.07.84.6 1.36L10.7 21.7c-.45.5-1.27.1-1.14-.56l1.2-7.34H5.7c-.7 0-1.06-.85-.58-1.37L13.35 2.4Z"/>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M8.5 7.5h10M8.5 12h10M8.5 16.5h10"/><path d="M5.2 7.5h.01M5.2 12h.01M5.2 16.5h.01"/>
+    </symbol>
+    <symbol id="i-list-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5.2 6.4a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm3.6.6h10.5a.9.9 0 1 1 0 1.8H8.8a.9.9 0 1 1 0-1.8ZM5.2 10.9a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm3.6.6h10.5a.9.9 0 1 1 0 1.8H8.8a.9.9 0 1 1 0-1.8ZM5.2 15.4a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2Zm3.6.6h10.5a.9.9 0 1 1 0 1.8H8.8a.9.9 0 1 1 0-1.8Z"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+      <path d="M12 3.5 19 6.2v5.3c0 4.3-2.9 7.3-7 8.8-4.1-1.5-7-4.5-7-8.8V6.2L12 3.5z"/>
+    </symbol>
+    <symbol id="i-shield-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.6 19.4 5.4c.4.15.6.5.6.9v5.4c0 5-3.4 8.5-8 10.2-.3.1-.6.1-.9 0C6.4 20.2 3 16.7 3 11.7V6.3c0-.4.3-.75.7-.9L12 2.6Z"/>
+    </symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.2 5.4a3 3 0 0 0-2.7 4.3A2.8 2.8 0 0 0 7 15.4c.4 1.4 1.6 2.4 3 2.6M14.8 5.4a3 3 0 0 1 2.7 4.3A2.8 2.8 0 0 1 17 15.4c-.4 1.4-1.6 2.4-3 2.6M12 5.2v12.8M9.2 9.2h2.6M12.2 12.4H15"/>
+    </symbol>
+    <symbol id="i-brain-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9.1 4.4a4 4 0 0 0-3.8 5.4 3.7 3.7 0 0 0 .6 6.4 4 4 0 0 0 4.1 2.5V4.55A4 4 0 0 0 9.1 4.4Zm5.8 0a4 4 0 0 1 3.8 5.4 3.7 3.7 0 0 1-.6 6.4 4 4 0 0 1-4.1 2.5V4.55A4 4 0 0 1 14.9 4.4Z"/>
+    </symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M6 17.5V11M12 17.5V7M18 17.5v-4.2"/>
+    </symbol>
+    <symbol id="i-chart-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5.2 10.2h1.6a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H5.2a1 1 0 0 1-1-1v-6.8a1 1 0 0 1 1-1Zm5.8-4.6h1.6a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1V6.6a1 1 0 0 1 1-1Zm5.8 4.2h1.6a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1h-1.6a1 1 0 0 1-1-1v-7.2a1 1 0 0 1 1-1Z"/>
+    </symbol>
+    <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="8"/><path d="M12 8.2v7.2M8.8 12.8 12 16l3.2-3.2"/>
+    </symbol>
+    <symbol id="i-down-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 3.2a8.8 8.8 0 1 1 0 17.6 8.8 8.8 0 0 1 0-17.6Zm0 4.4a.9.9 0 0 0-.9.9v5.02l-1.66-1.66a.9.9 0 1 0-1.28 1.28l3.2 3.2a.9.9 0 0 0 1.28 0l3.2-3.2a.9.9 0 1 0-1.28-1.28L12.9 13.52V8.5a.9.9 0 0 0-.9-.9Z"/>
+    </symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/><path d="M12 4.2 13.1 6l1.8.4 1.2-1.4 1.6 1.6-1.4 1.2.4 1.8 1.8 1.1v2.2L17.3 13.9l-.4 1.8 1.4 1.2-1.6 1.6-1.2-1.4-1.8.4L12 19.8 10.9 18l-1.8-.4-1.2 1.4-1.6-1.6 1.4-1.2-.4-1.8L5.5 13.1v-2.2L7.3 10.1l.4-1.8L6.3 7.1 7.9 5.5l1.2 1.4 1.8-.4L12 4.2z"/>
+    </symbol>
+    <symbol id="i-gear-fill" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10.3 3.6h3.4l.7 2.1 1.8.5 1.6-1.4 2.4 2.4-1.4 1.6.5 1.8 2.1.7v3.4l-2.1.7-.5 1.8 1.4 1.6-2.4 2.4-1.6-1.4-1.8.5-.7 2.1h-3.4l-.7-2.1-1.8-.5-1.6 1.4-2.4-2.4 1.4-1.6-.5-1.8-2.1-.7v-3.4l2.1-.7.5-1.8L4.6 6.8 7 4.4l1.6 1.4 1.8-.5.7-2.1ZM12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z"/>
+    </symbol>
+    <symbol id="i-eye-slash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 5.5 19.5 21M9.6 9.8A3.4 3.4 0 0 0 12 15.4c.5 0 1-.1 1.4-.3M17.2 13.6A9.8 9.8 0 0 0 20.5 12 10 10 0 0 0 6.4 7.2M8.1 16.2A10 10 0 0 0 12 17.2 10 10 0 0 0 20.2 9"/>
+    </symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 10l5 5 5-5"/>
+    </symbol>
+  </svg>
+  <div class="tag">NOTCH · Live capture on today’s PLAN</div>
 
   <div class="legend">
-    <h1>TradeAutopsy Notch — PLAN tab (default)</h1>
+    <h1>TradeAutopsy Notch — Live capture on this shell</h1>
     <p>
-      Expanded Notch opens straight into <code>BarNotchShell</code> — the same PLAN UI as
-      <code>tradeautopsy-station/notch/</code>. No PULSE / BRIEF / CAPTURE tabs.
-      Sidebar screens match <code>BarNotchScreen</code>; content mirrors Morning brief,
-      Pre-trade declaration, Live plan, Post-trade debrief, Analysis routes, Settings.
+      Same <code>BarNotchShell</code> as today. Capture is the existing <strong>Live capture</strong> card on Live trade —
+      not a new panel. Paste on the pill, or Screenshot. Keep on this Mac, then tap a trade to send.
     </p>
+    <div class="principles">
+      <div><strong>Wayfinding</strong><span>Title = this phase. Session is nearby. Collapse is how you leave.</span></div>
+      <div><strong>Feedback</strong><span>Press on down. Toast on commit. Dialog only for Kill / Exit.</span></div>
+      <div><strong>80 / 20</strong><span>Session is the circuit. Analysis is disclosure, not a second product.</span></div>
+      <div><strong>Fluid</strong><span>Spring 0.35 critically damped. Flick projects. Rubber-band at the ends.</span></div>
+    </div>
     <div class="controls">
-      <button type="button" class="on" id="btn-toggle">Expanded</button>
-      <button type="button" class="on" data-pill="intraday">Pill: Intraday</button>
-      <button type="button" data-pill="intervention">Pill: Intervention</button>
-      <button type="button" data-pill="scalper">Pill: Scalper</button>
-      <button type="button" data-pill="swing">Pill: Swing</button>
+      <button type="button" class="on press" data-pill="intraday">Pill: Intraday</button>
+      <button type="button" class="press" data-pill="intervention">Pill: Intervention</button>
+      <button type="button" class="press" data-pill="scalper">Pill: Scalper</button>
+      <button type="button" class="press" data-pill="swing">Pill: Swing</button>
     </div>
   </div>
 
-  <div class="desktop expanded-on" id="desktop">
+  <div class="desktop" id="desktop">
     <div class="menubar">
       <span class="apple"> TradeAutopsy</span>
-      <span>Camera / notch strip</span>
+      <span>NIFTY 50 · 5m</span>
       <span class="clock">12:41</span>
+    </div>
+    <div class="chart" aria-hidden="true">
+      <div class="candles" id="candles"></div>
+      <div class="chart-label">Chart stays. Notch overlays.</div>
     </div>
 
     <div class="notch-anchor">
-      <div class="pill" id="pill" title="Click or Space to toggle"></div>
+      <div class="pill" id="pill" title="Drag down to expand · click to toggle"></div>
     </div>
 
-    <div class="expanded" id="expanded">
-      <div class="chrome-tap" id="chrome-tap" title="Collapse"></div>
-
+    <div class="sheet glass" id="sheet">
+      <div class="sheet-glow"></div>
+      <div class="chrome-tap" id="chrome-tap" title="Drag up to collapse"></div>
       <div class="plan-shell">
-        <!-- Sidebar — BarNotchShell.sidebar -->
         <nav class="plan-sb">
-          <div class="plan-brand">
-            <div class="t">TradeAutopsy</div>
-            <div class="s">Behavioral trading OS</div>
-          </div>
-          <div class="plan-nav-scroll">
-            <div class="plan-sec">Session</div>
-            <button type="button" class="plan-nav on" data-screen="morning">
-              <span class="ico">☀</span> Morning brief
-              <span class="badge">1</span>
-            </button>
-            <button type="button" class="plan-nav" data-screen="pretrade">
-              <span class="ico">☑</span> Pre-trade
-            </button>
-            <button type="button" class="plan-nav" data-screen="live">
-              <span class="ico">⚡</span> Live trade
-              <span class="badge hot">!</span>
-            </button>
-            <button type="button" class="plan-nav" data-screen="posttrade">
-              <span class="ico">☰</span> Post-trade
-            </button>
+          <div class="plan-sec">Session</div>
+          <button type="button" class="plan-nav press" data-screen="morning">
+            <span class="ico"><svg class="line"><use href="#i-sun"/></svg><svg class="fill"><use href="#i-sun-fill"/></svg></span>
+            Morning brief <span class="badge" id="morning-badge">1</span>
+          </button>
+          <button type="button" class="plan-nav press" data-screen="pretrade">
+            <span class="ico"><svg class="line"><use href="#i-clipboard"/></svg><svg class="fill"><use href="#i-clipboard-fill"/></svg></span>
+            Pre-trade
+          </button>
+          <button type="button" class="plan-nav on press" data-screen="live">
+            <span class="ico"><svg class="line"><use href="#i-bolt"/></svg><svg class="fill"><use href="#i-bolt-fill"/></svg></span>
+            Live trade <span class="badge hot">!</span>
+            <span class="badge" id="unposted-badge">1</span>
+          </button>
+          <button type="button" class="plan-nav press" data-screen="posttrade">
+            <span class="ico"><svg class="line"><use href="#i-list"/></svg><svg class="fill"><use href="#i-list-fill"/></svg></span>
+            Post-trade
+          </button>
 
-            <div class="plan-sec">Analysis</div>
-            <button type="button" class="plan-nav" data-screen="escrow">
-              <span class="ico">🛡</span> Escrow match
+          <button type="button" class="more-btn press" id="more-btn">
+            <svg><use href="#i-chevron"/></svg> More · analysis
+          </button>
+          <div class="more-panel" id="more-panel">
+            <button type="button" class="plan-nav press" data-screen="escrow">
+              <span class="ico"><svg class="line"><use href="#i-shield"/></svg><svg class="fill"><use href="#i-shield-fill"/></svg></span>
+              Escrow match
             </button>
-            <button type="button" class="plan-nav" data-screen="patterns">
-              <span class="ico">◉</span> Patterns
+            <button type="button" class="plan-nav press" data-screen="patterns">
+              <span class="ico"><svg class="line"><use href="#i-brain"/></svg><svg class="fill"><use href="#i-brain-fill"/></svg></span>
+              Patterns
             </button>
-            <button type="button" class="plan-nav" data-screen="fidelity">
-              <span class="ico">▮</span> Fidelity score
+            <button type="button" class="plan-nav press" data-screen="fidelity">
+              <span class="ico"><svg class="line"><use href="#i-chart"/></svg><svg class="fill"><use href="#i-chart-fill"/></svg></span>
+              Fidelity
             </button>
-            <button type="button" class="plan-nav" data-screen="triage">
-              <span class="ico">↓</span> Triage
+            <button type="button" class="plan-nav press" data-screen="triage">
+              <span class="ico"><svg class="line"><use href="#i-down"/></svg><svg class="fill"><use href="#i-down-fill"/></svg></span>
+              Triage
             </button>
           </div>
-          <div style="border-top:0.5px solid var(--bd)"></div>
-          <div class="archetype-pill wrap" style="margin:10px 8px;display:flex;width:auto;border:0;padding:7px 10px;background:rgba(255,255,255,.04);border-radius:6px;align-items:center">
-            <span class="archetype-dot"></span>
-            <span class="lab" style="flex:1;font-size:11px;color:var(--hint)">Intraday · F&amp;O</span>
-            <button type="button" class="gear" id="gear-settings" title="Settings" style="width:28px;height:28px;border:0;background:transparent;color:#888;cursor:pointer;font-size:14px">⚙</button>
+
+          <button type="button" class="hide-row press" id="btn-hide">
+            <svg><use href="#i-eye-slash"/></svg> Hide notch · ⌥Space
+          </button>
+          <div class="archetype">
+            <span class="dot"></span>
+            <span class="lab">Intraday · F&amp;O</span>
+            <button type="button" class="gear press" id="gear-settings" title="Settings" aria-label="Settings">
+              <svg><use href="#i-gear"/></svg>
+            </button>
           </div>
         </nav>
 
         <div class="plan-main">
           <div class="plan-top">
-            <div class="title" id="plan-title">Morning brief</div>
-            <span class="score">score 0.72</span>
+            <div class="title" id="plan-title">Live trade</div>
+            <span class="score">0.72</span>
             <span class="mult">×0.85</span>
-            <span class="pill-chip broker"><span class="d"></span>Kotak Neo · live</span>
+            <span class="pill-chip broker"><span class="d"></span>Kotak · live</span>
             <span class="pill-chip state" id="state-pill"><span class="d"></span>Intact</span>
-            <button type="button" class="btn-new" id="btn-new-trade">+ New trade</button>
           </div>
-
           <div class="plan-body">
-            <!-- Morning brief — BriefLeftView -->
-            <div class="screen on" id="screen-morning">
+            <div class="screen" id="screen-morning">
               <div class="caps">Session</div>
               <div class="card">
-                <div style="font-size:9px;font-weight:600;color:var(--t2);margin-bottom:8px">Pre-market</div>
+                <div class="caps" style="margin-bottom:8px">Pre-market</div>
                 <div class="idx-row">
-                  <div class="idx">
-                    <div class="n">Nifty</div>
-                    <div class="v">24,812</div>
-                    <div class="c">+0.42%</div>
-                  </div>
-                  <div class="idx">
-                    <div class="n">BNF</div>
-                    <div class="v">52,140</div>
-                    <div class="c neg">−0.18%</div>
-                  </div>
-                  <div class="idx">
-                    <div class="n">VIX</div>
-                    <div class="v" style="color:var(--amber)">14.2</div>
-                  </div>
+                  <div class="idx"><div class="n">Nifty</div><div class="v">24,812</div><div class="c">+0.42%</div></div>
+                  <div class="idx"><div class="n">BNF</div><div class="v">52,140</div><div class="c neg">−0.18%</div></div>
+                  <div class="idx"><div class="n">VIX</div><div class="v" style="color:var(--caution)">14.2</div></div>
                 </div>
               </div>
               <div class="divider"></div>
-              <div class="caps">Analysis</div>
+              <div class="caps">What matters</div>
               <div class="card">
-                <h4 style="margin-bottom:8px">Behavioral brief</h4>
-                <p style="margin-bottom:8px;color:rgba(237,237,237,.72)">Yesterday: two revenge-adjacent adds after a loser. Size crept +18% vs declared. Calm score dipped into tense before the second fill.</p>
-                <p style="color:rgba(237,237,237,.72)">Watch for size discipline and time-pressure entries in the first 45 minutes.</p>
+                <figure class="ta-chart">
+                  <figcaption>
+                    <div class="ta-kicker" id="morn-chart-kicker">Yesterday’s session P&amp;L</div>
+                    <p class="ta-takeaway" id="morn-chart-desc">Yesterday closed −₹2,100 after two revenge-adjacent adds. Size crept 18% vs declared.</p>
+                  </figcaption>
+                  <div class="ta-plot-host" id="morn-plot" style="position:relative"></div>
+                </figure>
+                <p style="margin-top:10px;color:rgba(237,237,237,.72)">Watch for size discipline and time-pressure entries in the first 45 minutes.</p>
               </div>
-              <div class="divider"></div>
-              <div class="caps">Recommendation</div>
               <div class="card">
                 <p style="color:rgba(237,237,237,.72)">Trade only A-setups. Cap first trade at half size until calm ≤ 2. Declare before you click buy.</p>
               </div>
-              <button type="button" class="big-btn outline" id="btn-start-trading">Start trading →</button>
+              <button type="button" class="big-btn primary press" id="btn-start-trading">Start trading →</button>
             </div>
 
-            <!-- Pre-trade — BarDeclarationFlowView -->
             <div class="screen" id="screen-pretrade">
-              <div class="tabs-arch">
-                <button type="button" class="tab-arch on" data-arch="intraday">Intraday</button>
-                <button type="button" class="tab-arch" data-arch="scalper">Scalper</button>
-                <button type="button" class="tab-arch" data-arch="swing">Swing</button>
+              <div class="ctl">
+                <label class="ctl-label" id="arch-pre-lab">Archetype:</label>
+                <div class="combo popup" data-combo="archetype" data-allow-custom="false" data-sync="archetype">
+                  <button type="button" class="combo-value" aria-labelledby="arch-pre-lab">Intraday</button>
+                  <button type="button" class="combo-chev" aria-label="Show archetype choices">
+                    <svg><use href="#i-chevron"/></svg>
+                  </button>
+                  <ul class="combo-list" hidden>
+                    <li class="sel" data-value="Intraday" title="Intraday">Intraday</li>
+                    <li data-value="Scalper" title="Scalper">Scalper</li>
+                    <li data-value="Swing" title="Swing">Swing</li>
+                  </ul>
+                </div>
               </div>
-
-              <div class="sec-label">Step 1 of 4 — State check</div>
+              <div class="sec-label">State check</div>
               <div class="card">
                 <h4>How are you feeling?</h4>
                 <p class="sub">Two readings. Answer honestly — it changes what the system flags.</p>
                 <div class="sec-label" style="padding-top:4px">Psychological calm — 1 is best</div>
                 <div class="feel-row" id="calm-row">
-                  <button type="button" class="feel on" data-v="1"><strong>1</strong>Calm</button>
-                  <button type="button" class="feel" data-v="2"><strong>2</strong>Focused</button>
-                  <button type="button" class="feel" data-v="3"><strong>3</strong>Tense</button>
-                  <button type="button" class="feel" data-v="4"><strong>4</strong>Anxious</button>
-                  <button type="button" class="feel" data-v="5"><strong>5</strong>Angry</button>
+                  <button type="button" class="feel on press" data-v="1"><strong>1</strong>Calm</button>
+                  <button type="button" class="feel press" data-v="2"><strong>2</strong>Focused</button>
+                  <button type="button" class="feel press" data-v="3"><strong>3</strong>Tense</button>
+                  <button type="button" class="feel press" data-v="4"><strong>4</strong>Anxious</button>
+                  <button type="button" class="feel press" data-v="5"><strong>5</strong>Angry</button>
                 </div>
                 <div class="sec-label" style="padding-top:4px">Confidence — 5 is best</div>
                 <div class="feel-row" id="conf-row">
-                  <button type="button" class="feel" data-v="1"><strong>1</strong>Low</button>
-                  <button type="button" class="feel" data-v="2"><strong>2</strong>Flat</button>
-                  <button type="button" class="feel" data-v="3"><strong>3</strong>Neutral</button>
-                  <button type="button" class="feel on" data-v="4"><strong>4</strong>Good</button>
-                  <button type="button" class="feel" data-v="5"><strong>5</strong>Sharp</button>
+                  <button type="button" class="feel press" data-v="1"><strong>1</strong>Low</button>
+                  <button type="button" class="feel press" data-v="2"><strong>2</strong>Flat</button>
+                  <button type="button" class="feel press" data-v="3"><strong>3</strong>Neutral</button>
+                  <button type="button" class="feel on press" data-v="4"><strong>4</strong>Good</button>
+                  <button type="button" class="feel press" data-v="5"><strong>5</strong>Sharp</button>
                 </div>
                 <div class="warn-box" id="calm-warn" hidden></div>
               </div>
-
-              <div class="sec-label">Step 2 of 4 — Risk numbers</div>
+              <div class="sec-label">Numbers</div>
               <div class="card">
-                <input class="field" placeholder="Entry price" value="24580" />
-                <input class="field" placeholder="Stop loss — exact price" value="24520" />
-                <input class="field" placeholder="Target price" value="24720" />
-                <input class="field" placeholder="Symbol" value="NIFTY 24500 CE" />
+                <div class="ctl">
+                  <label class="ctl-label" for="f-entry">Entry Price:</label>
+                  <input id="f-entry" class="field num" data-format="price" inputmode="decimal" placeholder="0.00" value="24,580" />
+                  <p class="field-err" hidden></p>
+                </div>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-stop">Stop Loss:</label>
+                  <input id="f-stop" class="field num" data-format="price" data-required="stop" inputmode="decimal" placeholder="Exact price" value="24,520" />
+                  <p class="field-err" hidden></p>
+                </div>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-target">Target:</label>
+                  <input id="f-target" class="field num" data-format="price" inputmode="decimal" placeholder="0.00" value="24,720" />
+                  <p class="field-err" hidden></p>
+                </div>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-symbol">Symbol:</label>
+                  <div class="combo" data-combo="symbol" data-allow-custom="true">
+                    <input id="f-symbol" class="combo-input" value="NIFTY 24500 CE" placeholder="Type or pick" />
+                    <button type="button" class="combo-chev" aria-label="Show symbol choices">
+                      <svg><use href="#i-chevron"/></svg>
+                    </button>
+                    <ul class="combo-list" hidden>
+                      <li class="sel" data-value="NIFTY 24500 CE" title="NIFTY 24500 CE">NIFTY 24500 CE</li>
+                      <li data-value="NIFTY 24600 CE" title="NIFTY 24600 CE">NIFTY 24600 CE</li>
+                      <li data-value="BANKNIFTY 52000 PE" title="BANKNIFTY 52000 PE">BANKNIFTY 52000 PE</li>
+                      <li data-value="FINNIFTY 23800 CE" title="FINNIFTY 23800 CE">FINNIFTY 23800 CE</li>
+                    </ul>
+                  </div>
+                </div>
                 <div class="side-row">
-                  <button type="button" class="side on" data-side="buy">BUY</button>
-                  <button type="button" class="side" data-side="sell">SELL</button>
+                  <button type="button" class="side on press" data-side="buy">BUY</button>
+                  <button type="button" class="side press" data-side="sell">SELL</button>
                 </div>
-                <input class="field" placeholder="Quantity" value="50" />
+                <div class="ctl">
+                  <label class="ctl-label" for="f-qty">Quantity:</label>
+                  <input id="f-qty" class="field num" data-format="qty" inputmode="numeric" placeholder="0" value="50" />
+                  <p class="field-err" hidden></p>
+                </div>
                 <div class="hint-line" style="font-family:var(--mono)">Max planned loss ≈ ₹3,000</div>
-                <div class="rr-row">
-                  <span>Risk : Reward</span>
-                  <span class="v good">1 : 2.3</span>
-                </div>
+                <div class="rr-row"><span>Risk : Reward</span><span class="v good">1 : 2.3</span></div>
               </div>
-
-              <div class="sec-label">Step 3 of 4 — Setup &amp; invalidation</div>
+              <div class="sec-label">Setup &amp; invalidation</div>
               <div class="card">
-                <div class="sec-label" style="padding-top:0">Setup type</div>
-                <div class="chips" id="setup-chips">
-                  <button type="button" class="chip on">Breakout</button>
-                  <button type="button" class="chip">Pullback</button>
-                  <button type="button" class="chip">Reversal</button>
-                  <button type="button" class="chip">Gap fill</button>
-                  <button type="button" class="chip">Mean reversion</button>
-                  <button type="button" class="chip">Support bounce</button>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-setup">Setup:</label>
+                  <div class="combo" data-combo="setup" data-allow-custom="true">
+                    <input id="f-setup" class="combo-input" value="Breakout" placeholder="Type or pick" />
+                    <button type="button" class="combo-chev" aria-label="Show setup choices">
+                      <svg><use href="#i-chevron"/></svg>
+                    </button>
+                    <ul class="combo-list" hidden>
+                      <li class="sel" data-value="Breakout" title="Breakout">Breakout</li>
+                      <li data-value="Pullback" title="Pullback">Pullback</li>
+                      <li data-value="Reversal" title="Reversal">Reversal</li>
+                      <li data-value="Gap fill" title="Gap fill">Gap fill</li>
+                      <li data-value="Mean reversion" title="Mean reversion">Mean reversion</li>
+                      <li data-value="Support bounce" title="Support bounce">Support bounce</li>
+                    </ul>
+                  </div>
                 </div>
-                <div class="sec-label">Invalidation type</div>
-                <div class="chips" id="inv-chips">
-                  <button type="button" class="chip inv on">Price</button>
-                  <button type="button" class="chip inv">Time</button>
-                  <button type="button" class="chip inv">Structure</button>
-                  <button type="button" class="chip inv">Volume</button>
+                <div class="ctl">
+                  <label class="ctl-label" id="inv-lab">Invalidation:</label>
+                  <div class="combo popup" data-combo="invalidation" data-allow-custom="false">
+                    <button type="button" class="combo-value" aria-labelledby="inv-lab">Price</button>
+                    <button type="button" class="combo-chev" aria-label="Show invalidation choices">
+                      <svg><use href="#i-chevron"/></svg>
+                    </button>
+                    <ul class="combo-list" hidden>
+                      <li class="sel" data-value="Price" title="Price">Price</li>
+                      <li data-value="Time" title="Time">Time</li>
+                      <li data-value="Structure" title="Structure">Structure</li>
+                      <li data-value="Volume" title="Volume">Volume</li>
+                    </ul>
+                  </div>
                 </div>
-                <textarea class="field" rows="3" placeholder="Invalidation condition — exact rule" style="resize:vertical;min-height:64px">Close below 24520 on 5m</textarea>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-inv-cond">Invalidation Condition:</label>
+                  <textarea id="f-inv-cond" class="text-view" rows="3" placeholder="Exact rule — copyable">Close below 24520 on 5m</textarea>
+                </div>
               </div>
-
-              <div class="sec-label">Step 4 of 4 — Review &amp; consent</div>
               <div class="toggle-row">
                 <div class="txt">
-                  <div class="lab">Auto-place stop loss on fill</div>
+                  <div class="lab">Auto-Place Stop Loss</div>
                   <div class="sub">Pre-authorized — placed within 500ms of broker fill</div>
                 </div>
-                <div class="switch on" id="sl-consent" role="switch" aria-checked="true"></div>
+                <div class="switch on" id="sl-consent" role="switch" aria-checked="true" aria-label="Auto-Place Stop Loss"></div>
               </div>
-              <button type="button" class="big-btn primary" id="btn-confirm">Confirm — enter trade →</button>
+              <button type="button" class="big-btn primary press" id="btn-confirm">Confirm — enter trade →</button>
               <div class="elapsed">Completed in 42s</div>
             </div>
 
-            <!-- Live trade — BarPlanStateView -->
-            <div class="screen" id="screen-live">
+            <div class="screen on" id="screen-live">
               <div class="state-banner">
                 <span class="dot"></span>
                 <div>
@@ -743,26 +1054,12 @@
                   <div class="sent">Thesis known · sync fresh · stop resting at declared trigger.</div>
                 </div>
               </div>
-
               <div class="metrics">
-                <div class="metric">
-                  <div class="k">Unrealised P&amp;L</div>
-                  <div class="v pos">+₹1,250</div>
-                </div>
-                <div class="metric">
-                  <div class="k">Max loss declared</div>
-                  <div class="v">₹3,000</div>
-                </div>
-                <div class="metric">
-                  <div class="k">Risk used</div>
-                  <div class="v teal">42%</div>
-                </div>
-                <div class="metric">
-                  <div class="k">Time in trade</div>
-                  <div class="v amber">18m</div>
-                </div>
+                <div class="metric"><div class="k">Unrealised P&amp;L</div><div class="v pos">+₹1,250</div></div>
+                <div class="metric"><div class="k">Max loss declared</div><div class="v">₹3,000</div></div>
+                <div class="metric"><div class="k">Risk used</div><div class="v teal">42%</div></div>
+                <div class="metric"><div class="k">Time in trade</div><div class="v amber">18m</div></div>
               </div>
-
               <div class="snap">
                 <div class="h">Plan snapshot</div>
                 <div class="snap-row"><span class="k">Setup</span><span class="v">Breakout</span></div>
@@ -771,104 +1068,151 @@
                 <div class="snap-row"><span class="k">Invalidation</span><span class="v warn">Close below 24520 on 5m</span></div>
                 <div class="snap-row"><span class="k">Entry state</span><span class="v">Filled · armed</span></div>
               </div>
-
-              <div class="card" style="border-color:rgba(0,229,192,.25)">
-                <h4 style="color:var(--teal)">Live capture</h4>
-                <p>Journal snapshot armed — Fn hold for voice note; screenshot pins to this declaration.</p>
+              <div class="card">
+                <h4>Are you thinking about changing anything?</h4>
+                <p class="sub">Warning channel — not a toast stacked on the banner.</p>
+                <div class="interfere" id="interfere">
+                  <button type="button" class="press on">No — following plan</button>
+                  <button type="button" class="press">Maybe — unsure</button>
+                  <button type="button" class="press">Yes — feeling it</button>
+                </div>
               </div>
-
+              <!-- T4: fill this card only. Swift: BarPlanStateView.liveCaptureCard. No new screen. -->
+              <div class="card" id="live-capture" style="border-color:rgba(var(--accent-rgb),.25)">
+                <h4 style="color:var(--accent)">Live capture</h4>
+                <p class="sub" id="cap-copy">On this Mac until you link a trade.</p>
+                <div id="cap-staged">
+                  <div class="thumb-frame" aria-label="Staged chart">
+                    <svg viewBox="0 0 360 96" width="100%" height="96" aria-hidden="true">
+                      <rect width="360" height="96" fill="#0a0a0a"/>
+                      <polyline fill="none" stroke="var(--accent)" stroke-width="1.4"
+                        points="8,70 40,62 72,66 104,48 136,52 168,36 200,42 232,28 264,34 296,24 328,30 352,22"/>
+                    </svg>
+                  </div>
+                  <div class="ctl" style="margin-top:8px">
+                    <label class="ctl-label" for="f-caption">Caption</label>
+                    <input id="f-caption" class="field" placeholder="Optional" />
+                  </div>
+                </div>
+                <div class="interfere" id="cap-tools">
+                  <button type="button" class="press" id="btn-voice">Voice</button>
+                  <button type="button" class="press" id="btn-shutter">Screenshot</button>
+                </div>
+                <button type="button" class="big-btn outline press" id="btn-keep-local">Keep on this Mac</button>
+                <div id="cap-tray">
+                  <div class="escrow-row">
+                    <span class="k">Unposted</span>
+                    <span class="v" style="color:var(--accent)">1 · this Mac only</span>
+                  </div>
+                  <div class="ctl" style="margin-top:8px">
+                    <label class="ctl-label" for="f-trade-search">Link to today’s trade</label>
+                    <input id="f-trade-search" class="field" placeholder="Search symbol" />
+                  </div>
+                  <button type="button" class="escrow-row press" id="btn-link-live" style="width:100%;text-align:left;border:0;background:transparent;cursor:pointer">
+                    <span class="k">RELIANCE · LIVE</span>
+                    <span class="v" style="color:var(--caution)">Has chart</span>
+                  </button>
+                  <button type="button" class="escrow-row press" id="btn-link-nifty" style="width:100%;text-align:left;border:0;background:transparent;cursor:pointer">
+                    <span class="k">NIFTY 24500 CE</span>
+                    <span class="v" style="color:var(--accent)">Send</span>
+                  </button>
+                </div>
+              </div>
               <div class="footer-bar">
-                <button type="button" class="footer-pill">Exit trade</button>
-                <button type="button" class="footer-pill">Move SL to entry</button>
-                <button type="button" class="footer-pill">Hold and watch</button>
+                <button type="button" class="footer-pill danger press" id="btn-exit">Exit trade</button>
+                <button type="button" class="footer-pill press" id="btn-sl">Move SL to entry</button>
+                <button type="button" class="footer-pill press" id="btn-hold">Hold and watch</button>
               </div>
-
-              <div class="state-banner broken" style="margin-top:4px">
+              <div class="state-banner broken">
                 <span class="dot"></span>
                 <div>
                   <div class="lab">Intervention · revenge risk</div>
-                  <div class="sent">Mandatory read — do not add size for 90s. Primary kill card stays until acknowledged.</div>
+                  <div class="sent">Mandatory read — do not add size for 90s.</div>
                 </div>
               </div>
-
-              <div class="card">
-                <h4>Escrow match (embedded)</h4>
-                <div class="escrow-row"><span class="k">Declared vs fill</span><span class="v">Match</span></div>
-                <div class="escrow-row"><span class="k">Size drift</span><span class="v">0%</span></div>
-                <div class="escrow-row"><span class="k">Fidelity</span><span class="v">94%</span></div>
-              </div>
-
-              <button type="button" class="big-btn danger">Stop me — flatten</button>
+              <button type="button" class="big-btn danger press" id="btn-kill">Stop me — flatten</button>
             </div>
 
-            <!-- Post-trade — BarPostTradeView -->
             <div class="screen" id="screen-posttrade">
-              <h4 style="color:var(--t1);font-size:12px;font-weight:600;margin-bottom:6px">Trade closed</h4>
-              <p style="font-size:11px;color:var(--t2);margin-bottom:16px;line-height:1.45">Three beats — finish in order. The last step saves your debrief to TradeAutopsy.</p>
-
-              <div class="card">
-                <h4 style="color:var(--t1)">Moment A — outcome</h4>
-                <p class="sub">Win or loss aside: did the market prove your thesis wrong, or did you exit early?</p>
-                <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:rgba(0,229,192,.9);margin-bottom:8px">Read window 1:42</div>
-                <input class="field" placeholder="Optional note" />
-                <button type="button" class="big-btn primary" style="opacity:.35" disabled>Continue</button>
+              <h4 style="color:var(--t1);margin-bottom:6px">Trade closed</h4>
+              <p style="margin-bottom:16px">Three beats — finish in order. The last step saves your debrief.</p>
+              <div class="card" id="post-unposted" hidden>
+                <h4>Unposted charts</h4>
+                <p class="sub">Still on this Mac. Tap the closed trade to send. Not part of Moments A–C.</p>
+                <div class="escrow-row">
+                  <span class="k">Wick rejection</span>
+                  <span class="v">14:22</span>
+                </div>
+                <button type="button" class="big-btn outline press" id="btn-post-send">Send to this trade</button>
               </div>
-
+              <div class="card" id="moment-a">
+                <h4>Moment A — outcome</h4>
+                <p class="sub">Did the market prove your thesis wrong, or did you exit early?</p>
+                <div style="font-family:var(--mono);font-size:var(--type-caption);font-weight:500;letter-spacing:var(--track-11);color:var(--accent);margin-bottom:8px">Read window 1:42</div>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-note">Optional Note:</label>
+                  <input id="f-note" class="field" placeholder="One line if needed" />
+                </div>
+                <button type="button" class="big-btn outline press" id="btn-moment-a">Continue</button>
+              </div>
               <div class="card dim" id="moment-b">
                 <h4>Moment B — process</h4>
                 <p class="sub">Affirm each line — only honest yes advances.</p>
-                <div class="adh-row"><div class="adh-mark">—</div><div><div class="t">Stop as declared</div><div class="s">Matches your declared stop for this plan.</div></div></div>
-                <div class="adh-row"><div class="adh-mark">—</div><div><div class="t">Size as declared</div><div class="s">No drift vs declared size.</div></div></div>
-                <div class="adh-row"><div class="adh-mark">—</div><div><div class="t">Invalidation respected</div><div class="s">You honored the invalidation you wrote.</div></div></div>
-                <div class="adh-row"><div class="adh-mark">—</div><div><div class="t">Exit per plan</div><div class="s">Exit matched thesis / risk plan.</div></div></div>
-                <div class="adh-row"><div class="adh-mark">—</div><div><div class="t">No impulsive add / scale-in</div><div class="s">No unplanned adds while stressed.</div></div></div>
+                <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t">Stop as declared</div><div class="s">Matches your declared stop.</div></div></div>
+                <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t">Size as declared</div><div class="s">No drift vs declared size.</div></div></div>
+                <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t">Invalidation respected</div><div class="s">You honored the invalidation you wrote.</div></div></div>
+                <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t">Exit per plan</div><div class="s">Exit matched thesis / risk plan.</div></div></div>
                 <div class="process-badge">Good process</div>
-                <button type="button" class="big-btn primary" disabled>Continue</button>
+                <button type="button" class="big-btn outline press" id="btn-moment-b">Continue</button>
               </div>
-
-              <div class="card dim">
+              <div class="card dim" id="moment-c">
                 <h4>Moment C — reflection</h4>
                 <p class="sub">Cooling window, then one honest sentence.</p>
-                <textarea class="field" rows="3" placeholder="What will you do differently next time?" style="resize:vertical"></textarea>
+                <div class="ctl">
+                  <label class="ctl-label" for="f-reflect">Reflection:</label>
+                  <textarea id="f-reflect" class="text-view" rows="3" placeholder="What will you do differently next time?"></textarea>
+                </div>
+                <button type="button" class="big-btn primary press" id="btn-save-debrief">Save debrief →</button>
               </div>
-
-              <button type="button" class="link-quiet">Dismiss (no save)</button>
+              <button type="button" class="link-quiet press" id="btn-dismiss">Dismiss (no save)</button>
             </div>
 
-            <!-- Escrow match -->
             <div class="screen" id="screen-escrow">
               <div class="card">
                 <h4>Escrow match</h4>
-                <p class="sub">Declared intent vs broker fill reconciliation.</p>
+                <p class="sub">Declared intent vs broker fill.</p>
                 <div class="escrow-row"><span class="k">Symbol</span><span class="v">NIFTY 24500 CE</span></div>
                 <div class="escrow-row"><span class="k">Side / qty</span><span class="v">BUY · 50</span></div>
-                <div class="escrow-row"><span class="k">Fill vs plan</span><span class="v" style="color:var(--teal)">Match</span></div>
+                <div class="escrow-row"><span class="k">Fill vs plan</span><span class="v" style="color:var(--accent)">Match</span></div>
                 <div class="escrow-row"><span class="k">Stop present</span><span class="v">Yes · 24520</span></div>
                 <div class="escrow-row"><span class="k">Fidelity</span><span class="v">94%</span></div>
               </div>
             </div>
-
-            <!-- Patterns -->
             <div class="screen" id="screen-patterns">
-              <div class="card">
-                <h4>Patterns</h4>
-                <p>Building patterns — need 50+ trades</p>
-              </div>
+              <figure class="ta-chart">
+                <figcaption>
+                  <div class="ta-kicker" id="pat-kicker">Setup mix · last 50 trades</div>
+                  <p class="ta-takeaway" id="pat-desc">Breakout is the most used setup at 42% of the last 50 trades. Horizontal bars compare categories — this is not a time series.</p>
+                </figcaption>
+                <div class="ta-plot-host" id="pat-plot" style="position:relative"></div>
+                <p class="ta-readout" id="pat-readout" aria-live="polite">Breakout · 21 of 50 trades</p>
+              </figure>
             </div>
-
-            <!-- Fidelity -->
             <div class="screen" id="screen-fidelity">
-              <div class="card progress">
-                <div class="row"><span class="k">Plan fidelity (escrow)</span><span class="v">94%</span></div>
-                <div class="bar"><i style="width:94%"></i></div>
-              </div>
-              <div class="card progress">
-                <div class="row"><span class="k">Composite behavioral score</span><span class="v">0.72</span></div>
-                <div class="bar"><i style="width:72%"></i></div>
-              </div>
+              <figure class="ta-chart">
+                <figcaption>
+                  <div class="ta-kicker" id="fid-kicker">Plan fidelity · 14 sessions</div>
+                  <p class="ta-takeaway" id="fid-desc">Plan fidelity averaged 92% over the last 14 sessions, up 6 points from the prior two weeks. Latest session 94%.</p>
+                </figcaption>
+                <div class="ta-plot-host" id="fid-plot" style="position:relative"></div>
+                <p class="ta-readout" id="fid-readout" aria-live="polite">14 Aug · 94%</p>
+                <ul class="ta-lenses" id="fid-lenses">
+                  <li><button type="button" class="press on" data-lens="last"><span>Last session<span class="s"> — micro</span></span><span class="v">94%</span></button></li>
+                  <li><button type="button" class="press" data-lens="avg"><span>Average<span class="s"> — macro</span></span><span class="v">92%</span></button></li>
+                  <li><button type="button" class="press" data-lens="best"><span>Best day<span class="s"> — 11 Aug</span></span><span class="v">96%</span></button></li>
+                </ul>
+              </figure>
             </div>
-
-            <!-- Triage -->
             <div class="screen" id="screen-triage">
               <div class="card">
                 <h4 style="margin-bottom:10px">Open positions</h4>
@@ -876,76 +1220,228 @@
                 <div class="escrow-row" style="border:0"><span class="k" style="font-family:var(--mono);color:var(--t1)">BANKNIFTY 52000 PE</span><span class="v" style="font-family:var(--sans);color:var(--t2)">SELL</span></div>
               </div>
             </div>
-
-            <!-- Settings — BarSettingsView (abbreviated sections) -->
             <div class="screen" id="screen-settings">
               <div class="sec-label" style="padding-top:0">Live connection</div>
               <div class="card">
-                <div class="settings-row"><div><div>Daemon</div><div class="s">Connected · polling</div></div><span style="color:var(--teal);font-size:11px">LIVE</span></div>
-                <div class="settings-row" style="border:0"><div><div>Broker sync</div><div class="s">Kotak Neo</div></div><span style="color:var(--teal);font-size:11px">GREEN</span></div>
+                <div class="settings-row"><div><div>Daemon</div><div class="s">Connected · polling</div></div><span style="color:var(--accent);font-size:var(--type-caption);letter-spacing:var(--track-11)">LIVE</span></div>
+                <div class="settings-row" style="border:0"><div><div>Broker sync</div><div class="s">Kotak Neo</div></div><span style="color:var(--accent);font-size:var(--type-caption);letter-spacing:var(--track-11)">LIVE</span></div>
               </div>
-              <div class="sec-label">Archetype</div>
-              <div class="tabs-arch">
-                <button type="button" class="tab-arch on">Intraday</button>
-                <button type="button" class="tab-arch">Scalper</button>
-                <button type="button" class="tab-arch">Swing</button>
+              <div class="ctl">
+                <label class="ctl-label" id="arch-set-lab">Archetype:</label>
+                <div class="combo popup" data-combo="archetype" data-allow-custom="false" data-sync="archetype">
+                  <button type="button" class="combo-value" aria-labelledby="arch-set-lab">Intraday</button>
+                  <button type="button" class="combo-chev" aria-label="Show archetype choices">
+                    <svg><use href="#i-chevron"/></svg>
+                  </button>
+                  <ul class="combo-list" hidden>
+                    <li class="sel" data-value="Intraday" title="Intraday">Intraday</li>
+                    <li data-value="Scalper" title="Scalper">Scalper</li>
+                    <li data-value="Swing" title="Swing">Swing</li>
+                  </ul>
+                </div>
               </div>
               <div class="sec-label">Kill switch domains</div>
               <div class="toggle-row">
-                <div class="txt"><div class="lab">Block new entries</div><div class="sub">When stop-me is armed</div></div>
-                <div class="switch on"></div>
+                <div class="txt">
+                  <div class="lab">Block New Entries</div>
+                  <div class="sub">When stop-me is armed</div>
+                </div>
+                <div class="switch on" role="switch" aria-checked="true" aria-label="Block New Entries"></div>
               </div>
               <div class="toggle-row">
-                <div class="txt"><div class="lab">Flatten on revenge</div><div class="sub">Requires confirmation</div></div>
-                <div class="switch"></div>
+                <div class="txt">
+                  <div class="lab">Flatten on Revenge</div>
+                  <div class="sub">Requires confirmation</div>
+                </div>
+                <div class="switch" role="switch" aria-checked="false" aria-label="Flatten on Revenge"></div>
               </div>
-              <div class="sec-label">Intervention alerts</div>
-              <div class="toggle-row">
-                <div class="txt"><div class="lab">Sound on primary kill</div></div>
-                <div class="switch on"></div>
+              <div class="ctl">
+                <label class="ctl-label" for="f-daily">Daily Loss Limit:</label>
+                <input id="f-daily" class="field num" data-format="rupee" inputmode="numeric" placeholder="₹0" value="₹15,000" />
+                <p class="field-err" hidden></p>
               </div>
-              <div class="toggle-row">
-                <div class="txt"><div class="lab">Mandatory read gate</div></div>
-                <div class="switch on"></div>
+              <div class="ctl">
+                <label class="ctl-label" for="f-weekly">Weekly Loss Limit:</label>
+                <input id="f-weekly" class="field num" data-format="rupee" inputmode="numeric" placeholder="₹0" value="₹40,000" />
+                <p class="field-err" hidden></p>
               </div>
-              <div class="sec-label">Daily loss limit ₹</div>
-              <input class="field" value="15000" />
-              <div class="sec-label" style="padding-top:8px">Weekly loss limit ₹</div>
-              <input class="field" value="40000" />
-              <button type="button" class="big-btn primary" style="margin-top:8px">Save limits</button>
+              <button type="button" class="big-btn primary press" id="btn-save-limits">Save limits</button>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <div class="scrim" id="scrim-kill">
+      <div class="dialog">
+        <h3>Kill switch</h3>
+        <p>Flatten and block new entries. This is not Stop. Stop only pauses sync.</p>
+        <div class="row">
+          <button type="button" class="cancel press" data-close>Cancel</button>
+          <button type="button" class="go press" id="kill-yes">Kill</button>
+        </div>
+      </div>
+    </div>
+    <div class="scrim" id="scrim-exit">
+      <div class="dialog">
+        <h3>Exit this trade?</h3>
+        <p>Closes at market. You land on post-trade debrief.</p>
+        <div class="row">
+          <button type="button" class="cancel press" data-close>Hold</button>
+          <button type="button" class="go press" id="exit-yes">Exit trade</button>
+        </div>
+      </div>
+    </div>
+    <div class="scrim" id="scrim-replace">
+      <div class="dialog">
+        <h3>Replace this trade’s chart?</h3>
+        <p>RELIANCE already has one. Confirm replaces it. One image per trade.</p>
+        <div class="row">
+          <button type="button" class="cancel press" data-close>Cancel</button>
+          <button type="button" class="go press" id="replace-yes">Replace</button>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
   </div>
 
   <p class="hint-page">
-    Space / pill / chrome strip = expand↔collapse · sidebar = BarNotchScreen ·
-    + New trade → Pre-trade · gear → Settings · default screen = Morning brief
+    Drag pill ↓ / grabber ↑ · Space toggles · spring from live value · More reveals Analysis
   </p>
 
+  <script src="ta-charts.js"></script>
   <script>
     (function () {
-      var desktop = document.getElementById("desktop");
+      var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       var pill = document.getElementById("pill");
-      var btnToggle = document.getElementById("btn-toggle");
-      var planTitle = document.getElementById("plan-title");
-      var statePill = document.getElementById("state-pill");
-      var gear = document.getElementById("gear-settings");
+      var sheet = document.getElementById("sheet");
+      var chrome = document.getElementById("chrome-tap");
+      var toastEl = document.getElementById("toast");
+      var p = 0, v = 0, raf = 0, toastTimer;
+
+      function project(vel, d) {
+        d = d == null ? 0.998 : d;
+        return (vel / 1000) * d / (1 - d);
+      }
+      function rubberband(overshoot, dim, c) {
+        c = c == null ? 0.55 : c;
+        return (overshoot * dim * c) / (dim + c * Math.abs(overshoot));
+      }
+      function applyP(val) {
+        var vis = val;
+        if (val < 0) vis = -rubberband(-val, 1);
+        if (val > 1) vis = 1 + rubberband(val - 1, 1);
+        vis = Math.max(-0.08, Math.min(1.06, vis));
+        var y = (1 - vis) * -28;
+        var s = 0.92 + 0.08 * Math.max(0, Math.min(1, vis));
+        var blur = 8 + 16 * Math.max(0, Math.min(1, vis));
+        sheet.style.visibility = vis <= 0.02 ? "hidden" : "visible";
+        sheet.style.opacity = String(Math.max(0, Math.min(1, vis)));
+        sheet.style.transform = "translateX(-50%) translateY(" + y + "px) scale(" + s + ")";
+        sheet.style.filter = "blur(" + ((1 - Math.max(0, Math.min(1, vis))) * 6) + "px)";
+        sheet.style.backdropFilter = "blur(" + blur + "px) saturate(180%)";
+        pill.style.opacity = String(0.42 + 0.58 * (1 - Math.max(0, Math.min(1, vis))));
+        sheet.style.pointerEvents = vis > 0.12 ? "auto" : "none";
+      }
+      function stopSpring() { if (raf) cancelAnimationFrame(raf); raf = 0; }
+      function springTo(target, vel0) {
+        stopSpring();
+        if (reduceMotion) { p = target; v = 0; applyP(p); return; }
+        v = vel0 || 0;
+        var wn = 12, zeta = 1, last = performance.now();
+        function frame(now) {
+          var dt = Math.min(0.032, (now - last) / 1000);
+          last = now;
+          var x = p - target;
+          var a = -2 * zeta * wn * v - wn * wn * x;
+          v += a * dt;
+          p += v * dt;
+          applyP(p);
+          if (Math.abs(p - target) < 0.003 && Math.abs(v) < 0.02) {
+            p = target; v = 0; applyP(p); raf = 0; return;
+          }
+          raf = requestAnimationFrame(frame);
+        }
+        raf = requestAnimationFrame(frame);
+      }
+      function openSheet() { springTo(1, v); }
+      function closeSheet() { springTo(0, v); }
+
+      function bindDrag(el, direction) {
+        el.addEventListener("pointerdown", function (e) {
+          if (e.button && e.button !== 0) return;
+          el.setPointerCapture(e.pointerId);
+          stopSpring();
+          var startY = e.clientY;
+          var startP = p;
+          var lastY = e.clientY, lastT = performance.now();
+          var hist = [];
+          var dragging = false;
+          function move(ev) {
+            var dy = ev.clientY - startY;
+            if (!dragging && Math.abs(dy) < 10) return;
+            dragging = true;
+            var next = startP + (direction * dy) / 420;
+            p = next;
+            applyP(p);
+            var now = performance.now();
+            hist.push({ y: ev.clientY, t: now });
+            if (hist.length > 5) hist.shift();
+            lastY = ev.clientY; lastT = now;
+          }
+          function up(ev) {
+            el.releasePointerCapture(ev.pointerId);
+            el.removeEventListener("pointermove", move);
+            el.removeEventListener("pointerup", up);
+            el.removeEventListener("pointercancel", up);
+            if (!dragging) {
+              if (p > 0.5) closeSheet(); else openSheet();
+              return;
+            }
+            var velPx = 0;
+            if (hist.length >= 2) {
+              var a = hist[0], b = hist[hist.length - 1];
+              var dt = (b.t - a.t) / 1000;
+              if (dt > 0) velPx = (b.y - a.y) / dt;
+            }
+            var velP = (direction * velPx) / 420;
+            var projected = p + project(direction * velPx) / 420;
+            v = velP;
+            var target = (velP > 0.35 || projected > 0.5) ? 1 : 0;
+            if (velP < -0.35) target = 0;
+            springTo(target, velP);
+          }
+          el.addEventListener("pointermove", move);
+          el.addEventListener("pointerup", up);
+          el.addEventListener("pointercancel", up);
+        });
+      }
+      bindDrag(pill, 1);
+      bindDrag(chrome, -1);
+
+      applyP(0);
+      requestAnimationFrame(function () { springTo(1, 0); });
+
+      var pills = {
+        intraday: '<span class="dot"></span><span class="score">0.72</span><span class="label">CALM</span><span class="sep"></span><span class="pnl">+₹1,250</span>',
+        intervention: '<span class="kw">STOP — REVENGE</span><span class="dot bad" style="margin-left:12px"></span>',
+        scalper: '<span class="score">3/8</span><span class="muted">−₹2.1k</span><span class="sep"></span><span class="label">12:04</span><span class="dot warn"></span>',
+        swing: '<span class="score">Day 4</span><span class="label">INTACT</span><span class="sep"></span><span class="pnl">+₹18.4k</span><span class="dot"></span>'
+      };
+      function setPill(kind) {
+        pill.className = "pill" + (kind === "intervention" ? " intervention" : kind === "scalper" ? " scalper" : "");
+        pill.innerHTML = pills[kind];
+        document.querySelectorAll("[data-pill]").forEach(function (b) {
+          b.classList.toggle("on", b.getAttribute("data-pill") === kind);
+        });
+        if (kind === "intervention") setScreen("live");
+      }
+      setPill("intraday");
 
       var titles = {
-        morning: "Morning brief",
-        pretrade: "Pre-trade",
-        live: "Live trade",
-        posttrade: "Post-trade",
-        escrow: "Escrow match",
-        patterns: "Patterns",
-        fidelity: "Fidelity score",
-        triage: "Triage",
-        settings: "Settings"
+        morning: "Morning brief", pretrade: "Pre-trade", live: "Live trade", posttrade: "Post-trade",
+        escrow: "Escrow match", patterns: "Patterns", fidelity: "Fidelity score", triage: "Triage", settings: "Settings"
       };
-
       var stateFor = {
         morning: { text: "Pre-market", warn: false },
         pretrade: { text: "Declaration", warn: false },
@@ -957,37 +1453,6 @@
         triage: { text: "2 open", warn: false },
         settings: { text: "Config", warn: false }
       };
-
-      var pills = {
-        intraday: function () {
-          return '<span class="dot"></span><span class="score">0.72</span><span class="label">CALM</span><span class="sep"></span><span class="pnl">+$1,250</span>';
-        },
-        intervention: function () {
-          return '<span class="kw">STOP — REVENGE</span><span class="dot bad" style="margin-left:12px"></span>';
-        },
-        scalper: function () {
-          return '<span class="score">3/8</span><span class="muted">−₹2.1k</span><span class="sep"></span><span class="label">12:04</span><span class="dot warn"></span>';
-        },
-        swing: function () {
-          return '<span class="score">Day 4</span><span class="label">INTACT</span><span class="sep"></span><span class="pnl">+₹18.4k</span><span class="dot"></span>';
-        }
-      };
-
-      function setPill(kind) {
-        pill.className = "pill " + (kind === "intervention" ? "intervention" : kind === "scalper" ? "scalper pulse-amber" : "");
-        pill.innerHTML = pills[kind]();
-        document.querySelectorAll("[data-pill]").forEach(function (b) {
-          b.classList.toggle("on", b.getAttribute("data-pill") === kind);
-        });
-      }
-      setPill("intraday");
-
-      function setExpanded(on) {
-        desktop.classList.toggle("expanded-on", on);
-        btnToggle.classList.toggle("on", on);
-        btnToggle.textContent = on ? "Expanded" : "Collapsed";
-      }
-
       function setScreen(id) {
         document.querySelectorAll(".plan-nav").forEach(function (n) {
           n.classList.toggle("on", n.getAttribute("data-screen") === id);
@@ -995,83 +1460,328 @@
         document.querySelectorAll(".screen").forEach(function (s) {
           s.classList.toggle("on", s.id === "screen-" + id);
         });
-        planTitle.textContent = titles[id] || id;
+        document.getElementById("plan-title").textContent = titles[id] || id;
         var st = stateFor[id] || { text: "—", warn: false };
+        var statePill = document.getElementById("state-pill");
         statePill.className = "pill-chip state" + (st.warn ? " warn" : "");
         statePill.innerHTML = '<span class="d"></span>' + st.text;
-        gear.classList.toggle("on", id === "settings");
-        gear.style.color = id === "settings" ? "#00e5c0" : "#888";
+        document.getElementById("gear-settings").classList.toggle("on", id === "settings");
+        document.getElementById("gear-settings").innerHTML = id === "settings"
+          ? '<svg><use href="#i-gear-fill"/></svg>'
+          : '<svg><use href="#i-gear"/></svg>';
         if (id === "morning") {
-          var badge = document.querySelector('.plan-nav[data-screen="morning"] .badge');
+          var badge = document.getElementById("morning-badge");
           if (badge) badge.remove();
         }
-      }
-
-      btnToggle.addEventListener("click", function () {
-        setExpanded(!desktop.classList.contains("expanded-on"));
-      });
-      pill.addEventListener("click", function () {
-        setExpanded(!desktop.classList.contains("expanded-on"));
-      });
-      document.getElementById("chrome-tap").addEventListener("click", function () {
-        setExpanded(false);
-      });
-      document.addEventListener("keydown", function (e) {
-        if (e.code === "Space" && !e.metaKey && !e.ctrlKey && (e.target === document.body || e.target === document.documentElement)) {
-          e.preventDefault();
-          setExpanded(!desktop.classList.contains("expanded-on"));
+        var analysis = { escrow: 1, patterns: 1, fidelity: 1, triage: 1 };
+        if (analysis[id]) {
+          document.getElementById("more-panel").classList.add("open");
+          document.getElementById("more-btn").classList.add("open");
         }
-      });
+      }
 
       document.querySelectorAll("[data-pill]").forEach(function (b) {
         b.addEventListener("click", function () {
           setPill(b.getAttribute("data-pill"));
-          setExpanded(false);
+          if (b.getAttribute("data-pill") === "intervention") springTo(1, 0);
+          else springTo(0, 0);
         });
       });
-
       document.querySelectorAll(".plan-nav").forEach(function (n) {
-        n.addEventListener("click", function () {
-          setScreen(n.getAttribute("data-screen"));
+        n.addEventListener("click", function () { setScreen(n.getAttribute("data-screen")); });
+      });
+      document.getElementById("more-btn").addEventListener("click", function () {
+        var open = document.getElementById("more-panel").classList.toggle("open");
+        this.classList.toggle("open", open);
+      });
+      document.getElementById("gear-settings").addEventListener("click", function () { setScreen("settings"); });
+      document.getElementById("btn-hide").addEventListener("click", function () {
+        springTo(0, 0);
+        toast("Notch hidden · ⌥Space to show");
+      });
+      document.getElementById("btn-start-trading").addEventListener("click", function () { setScreen("pretrade"); });
+      document.getElementById("btn-confirm").addEventListener("click", function () {
+        setScreen("live");
+        toast("Plan armed — watching the stop");
+      });
+      document.getElementById("btn-hold").addEventListener("click", function () { toast("Logged: following plan"); });
+      document.getElementById("btn-sl").addEventListener("click", function () { toast("Stop moved to entry"); });
+      document.getElementById("btn-exit").addEventListener("click", function () {
+        document.getElementById("scrim-exit").classList.add("on");
+      });
+      document.getElementById("exit-yes").addEventListener("click", function () {
+        document.getElementById("scrim-exit").classList.remove("on");
+        setScreen("posttrade");
+        document.getElementById("post-unposted").hidden = unposted === 0;
+        toast("Trade closed");
+      });
+      document.getElementById("btn-kill").addEventListener("click", function () {
+        document.getElementById("scrim-kill").classList.add("on");
+      });
+      document.getElementById("kill-yes").addEventListener("click", function () {
+        document.getElementById("scrim-kill").classList.remove("on");
+        setPill("intervention");
+        toast("Kill armed — entries blocked");
+      });
+      document.querySelectorAll("[data-close]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.querySelectorAll(".scrim").forEach(function (s) { s.classList.remove("on"); });
         });
       });
 
-      document.getElementById("btn-new-trade").addEventListener("click", function () {
-        setScreen("pretrade");
-        setExpanded(true);
+      /* T4 — attach to existing Live capture card + pill. No new chrome. */
+      var unposted = 1;
+      function setUnposted(n) {
+        unposted = n;
+        var badge = document.getElementById("unposted-badge");
+        if (n > 0) {
+          badge.hidden = false;
+          badge.textContent = String(n);
+        } else {
+          badge.hidden = true;
+        }
+        document.getElementById("post-unposted").hidden = n === 0;
+      }
+      function stageChart() {
+        openSheet();
+        setScreen("live");
+        document.getElementById("cap-staged").hidden = false;
+        document.getElementById("btn-keep-local").hidden = false;
+        document.getElementById("cap-copy").textContent = "On this Mac until you link a trade.";
+      }
+      function keepLocal() {
+        setUnposted(1);
+        document.getElementById("cap-tray").hidden = false;
+        toast("Kept on this Mac");
+      }
+      function sendOk() {
+        setUnposted(0);
+        document.getElementById("cap-staged").hidden = true;
+        document.getElementById("cap-tray").hidden = true;
+        document.getElementById("btn-keep-local").hidden = true;
+        document.getElementById("cap-copy").textContent = "Fn hold for voice. Paste a chart on the pill or this card — it stays on this Mac until you tap a trade.";
+        toast("On the trade note");
+      }
+      document.getElementById("btn-shutter").addEventListener("click", stageChart);
+      document.getElementById("btn-keep-local").addEventListener("click", keepLocal);
+      document.getElementById("btn-link-live").addEventListener("click", function () {
+        document.getElementById("scrim-replace").classList.add("on");
       });
-      document.getElementById("btn-start-trading").addEventListener("click", function () {
-        setScreen("pretrade");
+      document.getElementById("replace-yes").addEventListener("click", function () {
+        document.getElementById("scrim-replace").classList.remove("on");
+        sendOk();
       });
-      gear.addEventListener("click", function () {
-        setScreen("settings");
+      document.getElementById("btn-link-nifty").addEventListener("click", sendOk);
+      document.getElementById("btn-post-send").addEventListener("click", sendOk);
+      document.getElementById("btn-voice").addEventListener("click", function () {
+        toast("Voice — existing Fn hold");
+      });
+      window.addEventListener("paste", function (e) {
+        var img = e.clipboardData && [].slice.call(e.clipboardData.items || []).some(function (i) {
+          return i.type.indexOf("image/") === 0;
+        });
+        if (!img) return;
+        e.preventDefault();
+        stageChart();
+      });
+      pill.addEventListener("dragover", function (e) { e.preventDefault(); });
+      pill.addEventListener("drop", function (e) {
+        e.preventDefault();
+        stageChart();
       });
 
-      /* Pre-trade interactions */
-      document.querySelectorAll(".tab-arch[data-arch]").forEach(function (t) {
-        t.addEventListener("click", function () {
-          document.querySelectorAll(".tab-arch[data-arch]").forEach(function (x) { x.classList.remove("on"); });
-          t.classList.add("on");
-        });
+      document.getElementById("btn-save-limits").addEventListener("click", function () { toast("Saved successfully"); });
+      document.getElementById("btn-moment-a").addEventListener("click", function () {
+        document.getElementById("moment-b").classList.remove("dim");
       });
+      document.getElementById("btn-moment-b").addEventListener("click", function () {
+        document.getElementById("moment-c").classList.remove("dim");
+      });
+      document.getElementById("btn-save-debrief").addEventListener("click", function () {
+        springTo(0, 0);
+        toast("Debrief saved to journal");
+      });
+      document.getElementById("btn-dismiss").addEventListener("click", function () { springTo(0, 0); });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.code === "Space" && e.target === document.body) {
+          e.preventDefault();
+          if (p > 0.5) closeSheet(); else openSheet();
+        }
+      });
+
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("on");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove("on"); }, 2400);
+      }
+
       document.querySelectorAll(".side").forEach(function (s) {
         s.addEventListener("click", function () {
           document.querySelectorAll(".side").forEach(function (x) { x.classList.remove("on"); });
           s.classList.add("on");
         });
       });
-      function wireChips(sel, multi) {
-        document.querySelectorAll(sel + " .chip").forEach(function (c) {
-          c.addEventListener("click", function () {
-            if (!multi) {
-              document.querySelectorAll(sel + " .chip").forEach(function (x) { x.classList.remove("on"); });
-            }
-            c.classList.toggle("on");
-          });
+
+      function closeAllCombos(except) {
+        document.querySelectorAll(".combo.open").forEach(function (c) {
+          if (c === except) return;
+          c.classList.remove("open");
+          var list = c.querySelector(".combo-list");
+          if (list) list.hidden = true;
         });
       }
-      wireChips("#setup-chips", false);
-      wireChips("#inv-chips", false);
+      function comboValue(el) {
+        var input = el.querySelector(".combo-input");
+        if (input) return input.value;
+        var display = el.querySelector(".combo-value");
+        return display ? display.textContent.trim() : "";
+      }
+      function setComboValue(el, val) {
+        var input = el.querySelector(".combo-input");
+        var display = el.querySelector(".combo-value");
+        if (input) input.value = val;
+        if (display) display.textContent = val;
+        el.querySelectorAll(".combo-list li").forEach(function (li) {
+          var match = (li.getAttribute("data-value") || li.textContent.trim()) === val;
+          li.classList.toggle("sel", match);
+        });
+      }
+      function initCombo(el) {
+        var allowCustom = el.getAttribute("data-allow-custom") === "true";
+        var input = el.querySelector(".combo-input");
+        var display = el.querySelector(".combo-value");
+        var chev = el.querySelector(".combo-chev");
+        var list = el.querySelector(".combo-list");
+        var items = list ? list.querySelectorAll("li") : [];
+        function markSelected() {
+          var v = comboValue(el);
+          items.forEach(function (li) {
+            var match = (li.getAttribute("data-value") || li.textContent.trim()) === v;
+            li.classList.toggle("sel", match);
+          });
+        }
+        function open() {
+          closeAllCombos(el);
+          el.classList.add("open");
+          if (list) list.hidden = false;
+          markSelected();
+        }
+        function close() {
+          el.classList.remove("open");
+          if (list) list.hidden = true;
+        }
+        function toggle() {
+          if (el.classList.contains("open")) close(); else open();
+        }
+        if (chev) {
+          chev.addEventListener("click", function (e) {
+            e.stopPropagation();
+            toggle();
+          });
+        }
+        if (display) {
+          display.addEventListener("click", function (e) {
+            e.stopPropagation();
+            toggle();
+          });
+        }
+        if (input) {
+          input.addEventListener("focus", function () { open(); });
+          input.addEventListener("input", function () { markSelected(); });
+        }
+        items.forEach(function (li) {
+          li.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var val = li.getAttribute("data-value") || li.textContent.trim();
+            setComboValue(el, val);
+            close();
+            el.dispatchEvent(new CustomEvent("combochange", { detail: { value: val, custom: false }, bubbles: true }));
+          });
+        });
+        el.addEventListener("click", function (e) { e.stopPropagation(); });
+        if (!allowCustom && input) input.readOnly = true;
+      }
+      document.querySelectorAll(".combo").forEach(initCombo);
+      document.addEventListener("click", function () { closeAllCombos(); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeAllCombos();
+      });
+      document.querySelectorAll("[data-sync=archetype]").forEach(function (el) {
+        el.addEventListener("combochange", function (ev) {
+          var val = ev.detail.value;
+          document.querySelectorAll("[data-sync=archetype]").forEach(function (other) {
+            if (other !== el) setComboValue(other, val);
+          });
+          var lab = document.querySelector(".archetype .lab");
+          if (lab) lab.textContent = val + " · F&O";
+        });
+      });
+
+      function parseLocaleNum(s) {
+        var t = String(s).replace(/[₹,\s]/g, "");
+        if (t === "") return { ok: true, empty: true, n: null };
+        if (!/^-?\d+(\.\d+)?$/.test(t)) return { ok: false, empty: false, n: null };
+        return { ok: true, empty: false, n: Number(t) };
+      }
+      function formatNum(n, kind) {
+        if (kind === "rupee") return "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+        if (kind === "qty") return String(Math.round(n));
+        return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+      }
+      function fieldErrEl(input) {
+        var wrap = input.closest(".ctl");
+        return wrap ? wrap.querySelector(".field-err") : null;
+      }
+      function showFieldErr(input, msg) {
+        var err = fieldErrEl(input);
+        if (msg) {
+          input.classList.add("invalid");
+          if (err) { err.hidden = false; err.textContent = msg; }
+        } else {
+          input.classList.remove("invalid");
+          if (err) { err.hidden = true; err.textContent = ""; }
+        }
+      }
+      function validateConfirm() {
+        var stop = document.getElementById("f-stop");
+        var btn = document.getElementById("btn-confirm");
+        if (!stop || !btn) return;
+        var r = parseLocaleNum(stop.value);
+        btn.disabled = !(r.ok && !r.empty);
+      }
+      document.querySelectorAll(".field.num").forEach(function (input) {
+        var kind = input.getAttribute("data-format") || "price";
+        var required = input.getAttribute("data-required");
+        input.addEventListener("blur", function () {
+          var r = parseLocaleNum(input.value);
+          if (!r.ok) {
+            showFieldErr(input, "Digits only");
+            validateConfirm();
+            return;
+          }
+          if (r.empty) {
+            showFieldErr(input, required === "stop" ? "Stop loss is required" : "");
+            validateConfirm();
+            return;
+          }
+          showFieldErr(input, "");
+          input.value = formatNum(r.n, kind);
+          validateConfirm();
+        });
+        input.addEventListener("input", validateConfirm);
+      });
+      validateConfirm();
+      document.getElementById("btn-confirm").addEventListener("click", function (e) {
+        var stop = document.getElementById("f-stop");
+        var r = parseLocaleNum(stop.value);
+        if (!r.ok || r.empty) {
+          e.stopImmediatePropagation();
+          showFieldErr(stop, "Stop loss is required");
+          stop.focus();
+        }
+      }, true);
 
       function wireFeel(rowId, onChange) {
         var row = document.getElementById(rowId);
@@ -1084,31 +1794,142 @@
         });
       }
       var calmWarn = document.getElementById("calm-warn");
-      wireFeel("calm-row", function (v) {
-        if (v >= 4) {
-          calmWarn.hidden = false;
-          calmWarn.className = "warn-box red";
-          calmWarn.textContent = "State " + v + " — position size halved. Trade will be flagged.";
-        } else if (v === 3) {
-          calmWarn.hidden = false;
-          calmWarn.className = "warn-box";
+      wireFeel("calm-row", function (val) {
+        if (val >= 4) {
+          calmWarn.hidden = false; calmWarn.className = "warn-box red";
+          calmWarn.textContent = "State " + val + " — position size halved. Trade will be flagged.";
+        } else if (val === 3) {
+          calmWarn.hidden = false; calmWarn.className = "warn-box";
           calmWarn.textContent = "State 3 — trade with heightened awareness.";
-        } else {
-          calmWarn.hidden = true;
-        }
+        } else calmWarn.hidden = true;
       });
       wireFeel("conf-row");
-
-      document.getElementById("sl-consent").addEventListener("click", function () {
-        this.classList.toggle("on");
-        this.setAttribute("aria-checked", this.classList.contains("on") ? "true" : "false");
+      document.querySelectorAll(".switch").forEach(function (sw) {
+        sw.addEventListener("click", function () {
+          this.classList.toggle("on");
+          this.setAttribute("aria-checked", this.classList.contains("on") ? "true" : "false");
+        });
       });
-      document.querySelectorAll(".switch:not(#sl-consent)").forEach(function (sw) {
-        sw.addEventListener("click", function () { this.classList.toggle("on"); });
+      document.querySelectorAll("#interfere button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          document.querySelectorAll("#interfere button").forEach(function (x) { x.classList.remove("on"); });
+          btn.classList.add("on");
+          toast("Interference: " + btn.textContent);
+        });
+      });
+      document.querySelectorAll("[data-adh]").forEach(function (row) {
+        row.addEventListener("click", function () {
+          var m = row.querySelector(".adh-mark");
+          m.classList.toggle("yes");
+          m.textContent = m.classList.contains("yes") ? "✓" : "—";
+        });
       });
 
-      /* default = Morning brief (BarNotchShell localActiveScreen) */
-      setScreen("morning");
+      var fidData = [
+        { x: "30 Jul", y: 88, a11y: "30 July, plan fidelity 88 percent" },
+        { x: "31 Jul", y: 90, a11y: "31 July, plan fidelity 90 percent" },
+        { x: "1 Aug", y: 86, a11y: "1 August, plan fidelity 86 percent" },
+        { x: "2 Aug", y: 91, a11y: "2 August, plan fidelity 91 percent" },
+        { x: "4 Aug", y: 93, a11y: "4 August, plan fidelity 93 percent" },
+        { x: "5 Aug", y: 89, a11y: "5 August, plan fidelity 89 percent" },
+        { x: "6 Aug", y: 94, a11y: "6 August, plan fidelity 94 percent" },
+        { x: "7 Aug", y: 92, a11y: "7 August, plan fidelity 92 percent" },
+        { x: "8 Aug", y: 95, a11y: "8 August, plan fidelity 95 percent" },
+        { x: "9 Aug", y: 90, a11y: "9 August, plan fidelity 90 percent" },
+        { x: "11 Aug", y: 96, a11y: "11 August, plan fidelity 96 percent" },
+        { x: "12 Aug", y: 90, a11y: "12 August, plan fidelity 90 percent" },
+        { x: "13 Aug", y: 93, a11y: "13 August, plan fidelity 93 percent" },
+        { x: "14 Aug", y: 94, a11y: "14 August, plan fidelity 94 percent" }
+      ];
+      var mornData = [
+        { x: "09:15", y: 0, a11y: "9:15, session P and L 0 rupees" },
+        { x: "09:40", y: 420, a11y: "9:40, plus 420 rupees" },
+        { x: "10:05", y: 810, a11y: "10:05, plus 810 rupees" },
+        { x: "10:22", y: 180, a11y: "10:22, plus 180 rupees" },
+        { x: "10:31", y: -420, a11y: "10:31, minus 420 rupees" },
+        { x: "11:02", y: -900, a11y: "11:02, minus 900 rupees" },
+        { x: "11:18", y: -610, a11y: "11:18, minus 610 rupees" },
+        { x: "12:04", y: -1480, a11y: "12:04, minus 1,480 rupees" },
+        { x: "15:20", y: -2100, a11y: "3:20, closed minus 2,100 rupees" }
+      ];
+      var patData = [
+        { x: "Breakout", y: 42, a11y: "Breakout, 42 percent, 21 of 50 trades" },
+        { x: "Pullback", y: 28, a11y: "Pullback, 28 percent, 14 of 50 trades" },
+        { x: "Reversal", y: 14, a11y: "Reversal, 14 percent, 7 of 50 trades" },
+        { x: "Gap fill", y: 10, a11y: "Gap fill, 10 percent, 5 of 50 trades" },
+        { x: "Mean reversion", y: 6, a11y: "Mean reversion, 6 percent, 3 of 50 trades" }
+      ];
+      var fidChart = null;
+      var fidReadout = document.getElementById("fid-readout");
+      function mountNotchCharts() {
+        if (!window.TACharts) return;
+        TACharts.line(document.getElementById("morn-plot"), {
+          data: mornData,
+          interactive: false,
+          height: 52,
+          includeZero: true,
+          zeroLine: true,
+          fill: true,
+          lineClass: "loss",
+          areaClass: "loss",
+          labelledBy: "morn-chart-kicker morn-chart-desc"
+        });
+        fidChart = TACharts.line(document.getElementById("fid-plot"), {
+          data: fidData,
+          interactive: true,
+          height: 132,
+          yMin: 80, yMax: 100, fixedRange: true, tickCount: 3,
+          points: true, pointShape: "diamond",
+          lineClass: "fidelity",
+          yFormat: function (v) { return Math.round(v) + "%"; },
+          labelledBy: "fid-kicker fid-desc",
+          onScrub: function (i, d) {
+            fidReadout.textContent = d.x + " · " + d.y + "%";
+          }
+        });
+        TACharts.bars(document.getElementById("pat-plot"), {
+          data: patData,
+          interactive: true,
+          yMax: 50,
+          yFormat: function (v) { return v + "%"; },
+          labelledBy: "pat-kicker pat-desc",
+          onScrub: function (i, d) {
+            var counts = { 42: 21, 28: 14, 14: 7, 10: 5, 6: 3 };
+            document.getElementById("pat-readout").textContent = d.x + " · " + (counts[d.y] || "") + " of 50 trades";
+          }
+        });
+      }
+      document.querySelectorAll("#fid-lenses button").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          document.querySelectorAll("#fid-lenses button").forEach(function (b) { b.classList.remove("on"); });
+          btn.classList.add("on");
+          var lens = btn.getAttribute("data-lens");
+          var idx = fidData.length - 1;
+          if (lens === "best") idx = 10;
+          if (lens === "avg") {
+            fidReadout.textContent = "Average · 92%";
+            return;
+          }
+          if (fidChart) fidChart.highlight(idx);
+        });
+      });
+      var _origSetScreen = setScreen;
+      setScreen = function (id) {
+        _origSetScreen(id);
+        if (id === "morning" || id === "fidelity" || id === "patterns") {
+          requestAnimationFrame(mountNotchCharts);
+        }
+      };
+      requestAnimationFrame(function () { requestAnimationFrame(mountNotchCharts); });
+
+      var host = document.getElementById("candles");
+      ["up","dn","up","dn","up","dn","up","dn","up","dn","up","dn","up","dn","up","dn","up","dn","up","dn"].forEach(function (k, i) {
+        var d = document.createElement("div");
+        d.className = "cndl";
+        d.style.background = i % 3 === 0 ? "#FF453A" : "#30D158";
+        d.style.height = (24 + ((i * 19) % 52)) + "%";
+        host.appendChild(d);
+      });
     })();
   </script>
 </body>

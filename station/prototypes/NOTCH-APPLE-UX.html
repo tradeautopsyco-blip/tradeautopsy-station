@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<!--
+  Proposed Notch + Station — Apple UX mock
+  Tokens: StationDS / NotchTheme (void #050505, teal #00e5c0, panel #0d0d0d)
+  Plan: ~/.cursor/plans/Notch Station Apple UX-b35e8624.plan.md
+  Open: open station/prototypes/NOTCH-APPLE-UX.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TradeAutopsy — Notch + Station (proposed)</title>
+  <style>
+    :root {
+      --void: #050505;
+      --panel: #0d0d0d;
+      --sidebar: #0a0a0a;
+      --card: #111111;
+      --t1: #ededed;
+      --t2: #666666;
+      --t3: #444444;
+      --labels: #333333;
+      --hint: #555555;
+      --teal: #00e5c0;
+      --amber: #eab308;
+      --red: #ef4444;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --bd: rgba(255,255,255,.06);
+      --bd-card: rgba(255,255,255,.07);
+      --bd-input: rgba(255,255,255,.10);
+      --glass: rgba(5,5,5,.78);
+      --scrim: rgba(0,0,0,.5);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --spring: cubic-bezier(0.22, 1, 0.36, 1);
+      --r: 16px;
+      --r-card: 8px;
+      --r-sm: 6px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font-family: var(--sans);
+      background: #121214;
+      background-image:
+        radial-gradient(ellipse 90% 50% at 50% -10%, #2a2a32 0%, transparent 55%),
+        linear-gradient(#161618, #0c0c0e);
+      color: var(--t1);
+      -webkit-font-smoothing: antialiased;
+      padding: 28px 24px 64px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    .press { transition: transform 100ms ease-out, background 120ms var(--spring), border-color 120ms var(--spring); }
+    .press:active { transform: scale(0.97); }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+      .press:active { transform: none; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .glass { background: #0a0a0a !important; backdrop-filter: none !important; }
+    }
+
+    /* —— studio chrome —— */
+    .studio { max-width: 1180px; margin: 0 auto; }
+    .eyebrow {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+    }
+    .tag {
+      font: 600 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+      color: var(--teal); background: rgba(0,229,192,.08);
+      border: 1px solid rgba(0,229,192,.25);
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .eyebrow p { font-size: 12px; color: var(--t2); }
+    h1.page {
+      font-size: 28px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1;
+      margin-bottom: 8px;
+    }
+    .lede { font-size: 14px; color: rgba(237,237,237,.55); max-width: 62ch; line-height: 1.5; margin-bottom: 22px; }
+
+    .switcher {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; align-items: center;
+    }
+    .seg {
+      display: inline-flex; padding: 3px; border-radius: 10px;
+      background: rgba(255,255,255,.04); border: 1px solid var(--bd);
+    }
+    .seg button {
+      font-size: 12px; font-weight: 500; padding: 7px 12px; border-radius: 8px; color: #a1a1aa;
+    }
+    .seg button.on { background: rgba(255,255,255,.08); color: #fff; }
+    .seg button:hover:not(.on) { color: #fff; }
+    .ghost {
+      font-size: 12px; font-weight: 500; color: #a1a1aa;
+      padding: 8px 12px; border-radius: 10px; border: 1px solid var(--bd);
+    }
+    .ghost:hover { color: #fff; background: rgba(255,255,255,.04); }
+    .ghost.on { color: #fff; background: rgba(255,255,255,.08); }
+
+    /* —— change cards —— */
+    .deltas {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 22px;
+    }
+    .delta {
+      background: var(--card); border: 0.5px solid var(--bd-card);
+      border-radius: 12px; padding: 14px 16px;
+    }
+    .delta .k {
+      font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+      color: rgba(255,255,255,.5); margin-bottom: 6px;
+    }
+    .delta .from { font-size: 12px; color: #71717a; text-decoration: line-through; margin-bottom: 4px; }
+    .delta .to { font-size: 13px; font-weight: 500; color: var(--t1); letter-spacing: -0.01em; }
+    @media (max-width: 860px) { .deltas { grid-template-columns: 1fr; } }
+
+    /* —— mac desktop —— */
+    .desktop {
+      height: 760px; border-radius: 14px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.08);
+      background: #0c0c0e; position: relative;
+      box-shadow: 0 40px 100px rgba(0,0,0,.55);
+    }
+    .menubar {
+      height: 28px; display: flex; align-items: center; justify-content: center;
+      background: rgba(22,22,24,.88); backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font-size: 11px; color: rgba(255,255,255,.5); position: relative; z-index: 30;
+    }
+    .menubar .apple { position: absolute; left: 12px; opacity: .75; }
+    .menubar .clock { position: absolute; right: 12px; font-family: var(--mono); font-size: 10px; }
+
+    .chart {
+      position: absolute; inset: 28px 0 0; z-index: 0;
+      background:
+        linear-gradient(180deg, rgba(5,5,5,.2), rgba(5,5,5,.55)),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.025) 47px 48px),
+        repeating-linear-gradient(0deg, transparent 0 39px, rgba(255,255,255,.02) 39px 40px),
+        #08080a;
+    }
+    .candles { position: absolute; left: 8%; right: 8%; bottom: 18%; height: 46%; display: flex; align-items: flex-end; gap: 7px; opacity: .55; }
+    .cndl { width: 5px; border-radius: 1px; position: relative; }
+    .cndl::before {
+      content: ""; position: absolute; left: 50%; width: 1px; transform: translateX(-50%);
+      background: inherit; top: -18px; bottom: -12px; opacity: .7;
+    }
+    .cndl.up { background: #22c55e; height: 38%; }
+    .cndl.dn { background: #ef4444; height: 52%; }
+    .cndl.up2 { background: #22c55e; height: 64%; }
+    .cndl.dn2 { background: #ef4444; height: 28%; }
+    .chart-label {
+      position: absolute; left: 24px; bottom: 18px;
+      font: 500 11px/1 var(--mono); letter-spacing: .04em; color: rgba(255,255,255,.28);
+      text-transform: uppercase;
+    }
+
+    /* pill */
+    .notch-anchor {
+      position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 40;
+    }
+    .pill {
+      display: flex; align-items: center; gap: 10px;
+      height: 32px; padding: 0 16px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+      cursor: pointer; font-family: var(--mono); user-select: none; white-space: nowrap;
+      transition: transform 100ms ease-out, border-color 180ms var(--spring), opacity 280ms var(--spring);
+    }
+    .pill:hover { border-color: rgba(255,255,255,.2); }
+    .pill:active { transform: scale(0.97); }
+    .pill .score { font-size: 13px; font-weight: 600; color: var(--t1); }
+    .pill .label { font-size: 10px; font-weight: 500; color: var(--t2); letter-spacing: .5px; }
+    .pill .sep { width: 1px; height: 12px; background: var(--bd); }
+    .pill .pnl { font-size: 11px; font-weight: 500; color: var(--teal); }
+    .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.5); }
+    .pill .dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(234,179,8,.5); }
+    .pill .dot.bad { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,.5); }
+    .pill.intervention { background: #3b0a0a; border-color: rgba(239,68,68,.35); }
+    .pill.intervention .kw { font-size: 12px; font-weight: 700; letter-spacing: .4px; width: 100%; text-align: center; }
+    .pill .muted { font-size: 10px; color: rgba(237,237,237,.72); }
+    .desktop.expanded-on .pill { opacity: .4; }
+
+    /* proposed expanded — hanging sheet from the pill */
+    .sheet {
+      display: none;
+      position: absolute; top: 44px; left: 50%; transform: translateX(-50%) translateY(-8px);
+      width: min(720px, calc(100% - 48px)); height: calc(100% - 68px);
+      z-index: 25; opacity: 0;
+      border-radius: 20px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.1);
+      box-shadow: 0 28px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06);
+      flex-direction: column;
+    }
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+    }
+    .desktop.expanded-on .sheet.proposed {
+      display: flex; opacity: 1; transform: translateX(-50%) translateY(0);
+      transition: opacity 350ms var(--spring), transform 350ms var(--spring);
+    }
+    .glow {
+      position: absolute; top: -40px; left: 20%; right: 20%; height: 160px;
+      background: radial-gradient(ellipse at top, rgba(0,229,192,.14), transparent 70%);
+      pointer-events: none;
+    }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; flex-shrink: 0;
+      border-bottom: 0.5px solid var(--bd);
+      background: rgba(10,10,10,.55);
+    }
+    .toolbar h2 {
+      font-size: 14px; font-weight: 500; letter-spacing: -0.02em; flex: 1; min-width: 0;
+    }
+    .icon-hit {
+      width: 28px; height: 28px; border-radius: 8px; color: var(--t2);
+      display: grid; place-items: center;
+    }
+    .icon-hit:hover { background: rgba(255,255,255,.08); color: #fff; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 500;
+      background: rgba(0,229,192,.10); color: var(--teal); white-space: nowrap;
+    }
+    .chip .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .chip.warn { background: rgba(234,179,8,.10); color: var(--amber); }
+    .chip.bad { background: rgba(239,68,68,.10); color: var(--red); }
+    .score-chip { font-family: var(--mono); font-size: 11px; color: var(--t3); }
+    .mult { font-family: var(--mono); font-size: 10px; font-weight: 500; color: var(--amber); }
+
+    .phases {
+      display: flex; gap: 4px; padding: 8px 16px 0; flex-shrink: 0;
+    }
+    .phase {
+      flex: 1; text-align: center; font-size: 11px; font-weight: 500;
+      padding: 7px 4px; border-radius: 8px; color: #71717a;
+    }
+    .phase:hover { color: #fff; background: rgba(255,255,255,.04); }
+    .phase.on { color: #fff; background: rgba(255,255,255,.08); }
+    .phase .n {
+      display: block; font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+      color: rgba(255,255,255,.35); margin-bottom: 2px;
+    }
+    .phase.on .n { color: var(--teal); }
+
+    .body { flex: 1; overflow-y: auto; padding: 16px 16px 20px; }
+    .body::-webkit-scrollbar { width: 8px; }
+    .body::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 4px; }
+    .screen { display: none; }
+    .screen.on { display: block; }
+
+    .caps {
+      font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+      color: rgba(255,255,255,.5); margin-bottom: 8px;
+    }
+    .date-line {
+      font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+      color: rgba(255,255,255,.5); margin-bottom: 10px;
+    }
+    .brief {
+      font-size: 16px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.4;
+      color: var(--t1); margin-bottom: 14px;
+    }
+    .brief b { font-weight: 600; color: #fff; }
+    .brief .cost { color: var(--red); font-family: var(--mono); font-weight: 600; font-size: 15px; }
+
+    .card {
+      background: var(--card); border: 0.5px solid var(--bd-card);
+      border-radius: var(--r-card); padding: 13px 15px; margin-bottom: 8px;
+    }
+    .card h4 { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+    .card .sub { font-size: 12px; color: var(--t2); line-height: 1.45; margin-bottom: 10px; }
+    .card p { font-size: 12px; line-height: 1.45; color: var(--t2); }
+
+    .nn {
+      background: rgba(234,179,8,.08); border: 0.5px solid rgba(234,179,8,.22);
+      border-radius: var(--r-card); padding: 13px 15px; margin-bottom: 12px;
+    }
+    .nn .k { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); margin-bottom: 6px; }
+    .nn p { font-size: 13px; line-height: 1.45; color: rgba(237,237,237,.88); }
+
+    .patterns { display: grid; gap: 6px; margin-bottom: 12px; }
+    .pat {
+      display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+      padding: 10px 12px; background: rgba(255,255,255,.03); border: 0.5px solid var(--bd);
+      border-radius: 8px;
+    }
+    .pat .t { font-size: 12px; font-weight: 500; }
+    .pat .s { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .pat .badge { font-size: 10px; font-weight: 600; color: var(--red); font-family: var(--mono); }
+    .pat .badge.ok { color: var(--green); }
+    .pat .cost { font-family: var(--mono); font-size: 11px; color: var(--red); }
+
+    .sticky {
+      position: sticky; bottom: -20px; padding: 12px 0 4px;
+      background: linear-gradient(transparent, rgba(5,5,5,.92) 28%);
+    }
+    .big {
+      width: 100%; padding: 13px; border-radius: var(--r-card);
+      font: 600 13px/1 var(--sans); cursor: pointer;
+    }
+    .big.primary { background: var(--teal); color: #04140f; }
+    .big.primary:disabled { opacity: .3; cursor: not-allowed; }
+    .big.outline { background: transparent; color: var(--t1); border: 0.5px solid rgba(255,255,255,.15); }
+    .big.danger { background: rgba(239,68,68,.15); color: var(--red); border: 0.5px solid rgba(239,68,68,.25); }
+    .quiet {
+      display: block; width: 100%; text-align: center; margin-top: 8px;
+      font-size: 11px; font-weight: 500; color: var(--hint);
+    }
+    .quiet:hover { color: #aaa; }
+
+    .feel-row { display: flex; gap: 4px; margin-bottom: 10px; }
+    .feel {
+      flex: 1; text-align: center; padding: 10px 4px; border-radius: var(--r-sm);
+      border: 0.5px solid var(--bd-input); background: rgba(255,255,255,.03);
+      font-size: 10px; color: var(--t2);
+    }
+    .feel strong { display: block; font-size: 13px; color: var(--t1); margin-bottom: 2px; }
+    .feel.on { border-color: rgba(0,229,192,.35); background: rgba(0,229,192,.08); color: var(--teal); }
+    .feel.on strong { color: var(--teal); }
+    .field {
+      width: 100%; margin-bottom: 6px; background: rgba(255,255,255,.03);
+      border: 0.5px solid var(--bd-input); border-radius: var(--r-sm);
+      padding: 9px 11px; color: var(--t1); font: 400 13px/1.3 var(--sans); outline: none;
+    }
+    .field:focus { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.25); }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+    .mini {
+      font: 500 11px/1 var(--sans); color: var(--t2); padding: 6px 10px; border-radius: 999px;
+      border: 0.5px solid var(--bd-input);
+    }
+    .mini.on { color: var(--t1); border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.06); }
+    .rr {
+      display: flex; justify-content: space-between; padding: 8px 10px; margin: 8px 0 4px;
+      background: rgba(255,255,255,.03); border: 0.5px solid rgba(255,255,255,.08);
+      border-radius: var(--r-sm); font-size: 12px; color: var(--hint);
+    }
+    .rr .v { font-family: var(--mono); font-weight: 500; color: var(--green); }
+    .side-row { display: flex; gap: 5px; margin-bottom: 8px; }
+    .side {
+      flex: 1; text-align: center; padding: 8px; border-radius: var(--r-sm);
+      border: 0.5px solid var(--bd-input); color: var(--t2); font: 500 12px/1 var(--sans);
+    }
+    .side.on { border-color: rgba(0,229,192,.35); background: rgba(0,229,192,.08); color: var(--teal); }
+    .sec-label {
+      font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--labels); padding: 10px 0 8px;
+    }
+
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+    .metric {
+      background: rgba(255,255,255,.04); border: 0.5px solid rgba(255,255,255,.08);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .metric .k { font-size: 8px; font-weight: 600; letter-spacing: .4px; color: var(--t3); margin-bottom: 2px; }
+    .metric .v { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .metric .v.pos { color: var(--green); }
+    .metric .v.neg { color: var(--red); }
+    .metric .v.teal { color: var(--teal); }
+    .metric .v.amber { color: var(--amber); }
+    .snap { background: rgba(255,255,255,.04); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .snap .h { font-size: 10px; font-weight: 600; letter-spacing: .6px; color: rgba(255,255,255,.38); margin-bottom: 6px; }
+    .snap-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 11px; }
+    .snap-row .k { color: rgba(255,255,255,.42); }
+    .snap-row .v { font-family: var(--mono); font-weight: 500; color: rgba(255,255,255,.88); }
+    .snap-row .v.ok { color: var(--green); }
+    .interfere { display: flex; gap: 6px; margin-bottom: 10px; }
+    .interfere button {
+      flex: 1; font-size: 11px; font-weight: 500; padding: 10px 6px; border-radius: 8px;
+      border: 0.5px solid var(--bd-input); color: var(--t2); background: rgba(255,255,255,.03);
+    }
+    .interfere button.on { color: var(--teal); border-color: rgba(0,229,192,.35); background: rgba(0,229,192,.08); }
+    .footer-bar { display: flex; gap: 8px; margin: 8px 0 4px; }
+    .footer-pill {
+      flex: 1; text-align: center; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.88);
+      padding: 10px 6px; border-radius: 8px; background: rgba(255,255,255,.06);
+      border: 0.5px solid rgba(255,255,255,.12);
+    }
+    .footer-pill:hover { background: rgba(255,255,255,.09); }
+    .footer-pill.danger { color: var(--red); border-color: rgba(239,68,68,.25); }
+
+    .banner {
+      display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px;
+      border-radius: var(--r-card); margin-bottom: 10px;
+      border: 0.5px solid rgba(0,229,192,.2); background: rgba(0,229,192,.06);
+    }
+    .banner.bad { border-color: rgba(239,68,68,.2); background: rgba(239,68,68,.06); }
+    .banner .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); margin-top: 3px; flex-shrink: 0; }
+    .banner.bad .dot { background: var(--red); }
+    .banner .lab { font-size: 10px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--teal); margin-bottom: 3px; }
+    .banner.bad .lab { color: var(--red); }
+    .banner .sent { font-size: 13px; line-height: 1.45; color: var(--teal); }
+    .banner.bad .sent { color: var(--red); }
+
+    .adh-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 0.5px solid rgba(255,255,255,.05); cursor: pointer; }
+    .adh-row:last-of-type { border-bottom: 0; }
+    .adh-mark {
+      width: 22px; height: 22px; border-radius: 6px; border: 0.5px solid var(--bd-input);
+      display: grid; place-items: center; font-size: 11px; color: var(--t3); flex-shrink: 0;
+    }
+    .adh-mark.yes { background: rgba(0,229,192,.15); border-color: rgba(0,229,192,.35); color: var(--teal); }
+
+    /* today (current) expanded — full sidebar app */
+    .today-shell {
+      display: none; position: absolute; top: 44px; left: 12px; right: 12px; bottom: 12px;
+      z-index: 25; border-radius: 16px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.08); background: var(--panel);
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    }
+    .desktop.expanded-on.today-mode .today-shell { display: flex; }
+    .desktop.expanded-on.today-mode .sheet.proposed { display: none; }
+    .plan-sb {
+      width: 192px; flex-shrink: 0; background: var(--sidebar);
+      border-right: 0.5px solid var(--bd); display: flex; flex-direction: column;
+    }
+    .plan-brand { padding: 16px; border-bottom: 0.5px solid var(--bd); }
+    .plan-brand .t { font-size: 13px; font-weight: 500; }
+    .plan-brand .s { font-size: 11px; color: var(--t3); margin-top: 2px; }
+    .plan-sec {
+      padding: 14px 16px 6px 18px; font-size: 10px; font-weight: 500;
+      letter-spacing: .08em; text-transform: uppercase; color: var(--labels);
+    }
+    .plan-nav {
+      display: flex; align-items: center; gap: 8px; margin: 1px 6px; padding: 6px 10px;
+      border-radius: var(--r-sm); font-size: 12px; color: #666; width: calc(100% - 12px); text-align: left;
+    }
+    .plan-nav.on { background: rgba(255,255,255,.07); color: var(--t1); font-weight: 500; }
+    .plan-nav .badge { margin-left: auto; font-size: 10px; padding: 2px 6px; border-radius: 999px; background: rgba(234,179,8,.2); color: var(--amber); }
+    .plan-nav .badge.hot { background: rgba(239,68,68,.2); color: var(--red); }
+    .strike { opacity: .45; }
+    .today-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .today-top {
+      display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+      background: var(--sidebar); border-bottom: 0.5px solid var(--bd); font-size: 14px; font-weight: 500;
+    }
+    .today-body { flex: 1; padding: 16px; overflow: auto; font-size: 13px; color: var(--t2); }
+    .xout {
+      display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--red); border: 1px solid rgba(239,68,68,.35);
+      padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle;
+    }
+
+    /* kill + dialog + toast */
+    .scrim {
+      display: none; position: absolute; inset: 28px 0 0; z-index: 60;
+      background: var(--scrim); backdrop-filter: blur(12px);
+      align-items: center; justify-content: center;
+    }
+    .scrim.on { display: flex; }
+    .dialog {
+      width: min(380px, calc(100% - 48px)); background: #0a0a0a;
+      border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 22px 20px 16px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+    }
+    .dialog h3 { font-size: 16px; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 8px; }
+    .dialog p { font-size: 13px; color: var(--t2); line-height: 1.45; margin-bottom: 18px; }
+    .dialog .row { display: flex; gap: 8px; }
+    .dialog .row button { flex: 1; padding: 11px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+    .dialog .cancel { background: rgba(255,255,255,.06); }
+    .dialog .kill { background: var(--red); color: #fff; }
+    .toast {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(12px);
+      z-index: 80; display: none; opacity: 0;
+      background: rgba(10,10,10,.92); border: 1px solid rgba(255,255,255,.12);
+      padding: 10px 16px; border-radius: 12px; font-size: 13px; font-weight: 500;
+      box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    }
+    .toast.on { display: block; opacity: 1; transform: translateX(-50%) translateY(0); transition: all 350ms var(--spring); }
+
+    /* Station window */
+    .station {
+      display: none; position: absolute; inset: 48px 36px 28px;
+      z-index: 20; border-radius: 12px; overflow: hidden;
+      background: #000; border: 0.5px solid rgba(255,255,255,.08);
+      box-shadow: 0 30px 80px rgba(0,0,0,.55); flex-direction: column;
+    }
+    .desktop.product-station .station { display: flex; }
+    .desktop.product-station .chart-label,
+    .desktop.product-station .candles { opacity: .12; }
+    .winbar {
+      height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+      background: var(--panel); border-bottom: 0.5px solid rgba(255,255,255,.05);
+    }
+    .tl { display: flex; gap: 6px; }
+    .tl i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .tl .c { background: #ff5f57; } .tl .m { background: #febc2e; } .tl .g { background: #28c840; }
+    .winbar .name { font-size: 12px; font-weight: 500; color: rgba(237,237,237,.7); }
+    .pulse {
+      height: 38px; display: flex; align-items: center; gap: 16px; padding: 0 16px;
+      background: var(--panel); border-bottom: 0.5px solid rgba(255,255,255,.05); font-size: 11px;
+    }
+    .pulse .lbl { color: var(--t2); }
+    .pulse .val { font-family: var(--mono); font-weight: 500; }
+    .pulse .val.pos { color: var(--green); }
+    .pulse .kill-chip {
+      margin-left: auto; font-size: 10px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--t2); padding: 4px 8px; border-radius: 6px;
+      border: 0.5px solid var(--bd);
+    }
+    .station-body { flex: 1; display: flex; min-height: 0; }
+    .ssb {
+      width: 220px; background: var(--sidebar); border-right: 1px solid rgba(255,255,255,.05);
+      padding: 8px 0 16px; overflow: auto;
+    }
+    .ssb .sec {
+      padding: 14px 16px 6px; font-size: 11px; font-weight: 500; letter-spacing: .04em;
+      text-transform: uppercase; color: rgba(255,255,255,.5);
+    }
+    .sitem {
+      display: flex; align-items: center; gap: 10px; margin: 1px 8px; padding: 7px 10px;
+      border-radius: 8px; font-size: 13px; font-weight: 500; color: #a1a1aa; width: calc(100% - 16px); text-align: left;
+    }
+    .sitem:hover { background: rgba(255,255,255,.04); color: #fff; }
+    .sitem.on { background: rgba(255,255,255,.08); color: #fff; }
+    .sitem.gone { opacity: .32; text-decoration: line-through; pointer-events: none; }
+    .smain { flex: 1; background: var(--panel); display: flex; flex-direction: column; min-width: 0; }
+    .stitle { height: 44px; display: flex; align-items: center; padding: 0 16px; border-bottom: 0.5px solid rgba(255,255,255,.05); }
+    .stitle h3 { font-size: 16px; font-weight: 500; letter-spacing: -0.02em; }
+    .sscroll { flex: 1; overflow: auto; padding: 16px; }
+    .hero { font-size: 40px; font-weight: 200; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; margin: 4px 0 16px; }
+    .hero.pos { color: var(--green); }
+    .broker-card {
+      display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 8px;
+      background: var(--card); border: 0.5px solid var(--bd-card); border-radius: 10px;
+    }
+    .broker-card h4 { font-size: 13px; font-weight: 500; }
+    .broker-card p { font-size: 11px; color: var(--t2); margin-top: 2px; }
+    .broker-card .spacer { flex: 1; }
+    .btn-sm {
+      font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: 8px;
+      border: 0.5px solid rgba(255,255,255,.15);
+    }
+    .btn-sm.teal { background: rgba(0,229,192,.12); color: var(--teal); border-color: rgba(0,229,192,.25); }
+    .note {
+      font-size: 12px; color: var(--t2); line-height: 1.45; padding: 12px 14px;
+      border-radius: 10px; background: rgba(255,255,255,.03); border: 0.5px solid var(--bd);
+    }
+
+    .hint {
+      margin-top: 14px; font-size: 11px; color: #888; font-family: var(--mono);
+    }
+    kbd {
+      font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 5px;
+      border: 1px solid var(--bd); color: rgba(255,255,255,.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="studio">
+    <div class="eyebrow">
+      <span class="tag">Proposed · Apple UX</span>
+      <p>StationDS tokens · Notch hangs off the pill · Station is the desk</p>
+    </div>
+    <h1 class="page">What changes</h1>
+    <p class="lede">
+      The Notch stops being a second app. It becomes the instrument cluster and the circuit breaker for this trade.
+      Station keeps setup and review. Console keeps history. Play the mock — then compare with Today.
+    </p>
+
+    <div class="deltas">
+      <div class="delta">
+        <div class="k">Notch chrome</div>
+        <div class="from">Branded sidebar · 9 destinations · “Behavioral trading OS”</div>
+        <div class="to">Phase title + 4-beat circuit. Analysis gone.</div>
+      </div>
+      <div class="delta">
+        <div class="k">Mental model</div>
+        <div class="from">Expanded Notch = mini Station window</div>
+        <div class="to">Sheet hangs from the pill, same path back. Over the chart.</div>
+      </div>
+      <div class="delta">
+        <div class="k">Station sidebar</div>
+        <div class="from">Today + Pre / Live / Post + Escrow / Patterns / Fidelity</div>
+        <div class="to">Today · Backend Box · Settings. Circuit lives on the Notch.</div>
+      </div>
+    </div>
+
+    <div class="switcher">
+      <div class="seg" role="tablist">
+        <button type="button" class="on" data-product="notch">Notch</button>
+        <button type="button" data-product="station">Station desk</button>
+      </div>
+      <button type="button" class="ghost on" id="btn-proposed">Proposed</button>
+      <button type="button" class="ghost" id="btn-today">Today</button>
+      <span style="flex:1"></span>
+      <button type="button" class="ghost" data-pill="intraday">Pill calm</button>
+      <button type="button" class="ghost" data-pill="intervention">Intervention</button>
+      <button type="button" class="ghost" id="btn-kill">Kill overlay</button>
+    </div>
+
+    <div class="desktop expanded-on" id="desktop">
+      <div class="menubar">
+        <span class="apple"> TradeAutopsy</span>
+        <span>NIFTY 50 · 5m</span>
+        <span class="clock">09:41</span>
+      </div>
+
+      <div class="chart" aria-hidden="true">
+        <div class="candles" id="candles"></div>
+        <div class="chart-label">Chart stays. Notch overlays.</div>
+      </div>
+
+      <div class="notch-anchor">
+        <div class="pill" id="pill" title="Click or Space — expand / collapse"></div>
+      </div>
+
+      <!-- PROPOSED SHEET -->
+      <div class="sheet proposed glass" id="sheet">
+        <div class="glow"></div>
+        <div class="toolbar">
+          <button type="button" class="icon-hit press" id="btn-collapse" aria-label="Collapse notch">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <h2 id="phase-title">Morning brief</h2>
+          <span class="score-chip">0.31</span>
+          <span class="chip" id="state-chip"><span class="d"></span>CALM</span>
+          <span class="chip"><span class="d"></span>Kotak · live</span>
+        </div>
+        <div class="phases" id="phases">
+          <button type="button" class="phase on press" data-phase="morning"><span class="n">1</span>Morning</button>
+          <button type="button" class="phase press" data-phase="pretrade"><span class="n">2</span>Pre-trade</button>
+          <button type="button" class="phase press" data-phase="live"><span class="n">3</span>Live</button>
+          <button type="button" class="phase press" data-phase="posttrade"><span class="n">4</span>Post</button>
+        </div>
+        <div class="body">
+          <div class="screen on" id="screen-morning">
+            <div class="date-line">Tuesday · before first trade</div>
+            <p class="brief">Yesterday you exited a <b>breakout trade early</b> — not because a rule triggered, but because one candle scared you. That exit cost <span class="cost">₹4,080</span> in missed target. This is the <b>4th time</b> this month.</p>
+            <div class="metrics">
+              <div class="metric"><div class="k">Session P&amp;L</div><div class="v neg">−₹3,240</div></div>
+              <div class="metric"><div class="k">Plan adherence</div><div class="v amber">57%</div></div>
+              <div class="metric"><div class="k">Win rate · breakout</div><div class="v">58%</div></div>
+              <div class="metric"><div class="k">Left on table</div><div class="v neg">−₹14,200</div></div>
+            </div>
+            <div class="nn">
+              <div class="k">Non-negotiable today</div>
+              <p>Invalidation means close — not wick. One candle body closing inside the range = exit. A wick = do nothing. You’ve broken this 4 times.</p>
+            </div>
+            <div class="caps">Your patterns</div>
+            <div class="patterns">
+              <div class="pat">
+                <div><div class="t">Scare-candle early exit</div><div class="s">4× this month</div></div>
+                <span class="cost">−₹14,200</span>
+              </div>
+              <div class="pat">
+                <div><div class="t">Stop movement on losing sessions</div><div class="s">2× this week</div></div>
+                <span class="cost">−₹6,800</span>
+              </div>
+              <div class="pat">
+                <div><div class="t">Post-win overconfidence</div><div class="s">Improving</div></div>
+                <span class="badge ok">+₹8,400</span>
+              </div>
+            </div>
+            <div class="sticky">
+              <button type="button" class="big primary press" id="btn-start">Start trading →</button>
+              <button type="button" class="quiet" id="btn-hide">Hide notch · ⌥Space brings it back</button>
+            </div>
+          </div>
+
+          <div class="screen" id="screen-pretrade">
+            <div class="card">
+              <h4>How are you feeling?</h4>
+              <p class="sub">Two readings. Answer honestly — it changes what the system flags.</p>
+              <div class="sec-label" style="padding-top:0">Psychological calm — 1 is best</div>
+              <div class="feel-row" id="calm-row">
+                <button type="button" class="feel on press" data-v="1"><strong>1</strong>Calm</button>
+                <button type="button" class="feel press" data-v="2"><strong>2</strong>Focused</button>
+                <button type="button" class="feel press" data-v="3"><strong>3</strong>Tense</button>
+                <button type="button" class="feel press" data-v="4"><strong>4</strong>Anxious</button>
+                <button type="button" class="feel press" data-v="5"><strong>5</strong>Angry</button>
+              </div>
+              <div class="sec-label">Confidence — 5 is best</div>
+              <div class="feel-row" id="conf-row">
+                <button type="button" class="feel press" data-v="1"><strong>1</strong>Low</button>
+                <button type="button" class="feel press" data-v="2"><strong>2</strong>Flat</button>
+                <button type="button" class="feel press" data-v="3"><strong>3</strong>Neutral</button>
+                <button type="button" class="feel on press" data-v="4"><strong>4</strong>Good</button>
+                <button type="button" class="feel press" data-v="5"><strong>5</strong>Sharp</button>
+              </div>
+            </div>
+            <div class="card">
+              <h4>Define the numbers</h4>
+              <p class="sub">Stop is required. Target is optional.</p>
+              <input class="field" placeholder="Entry price" value="24,580" />
+              <input class="field" placeholder="Stop loss — exact price" value="24,520" />
+              <input class="field" placeholder="Target price" value="24,720" />
+              <div class="side-row">
+                <button type="button" class="side on press">BUY</button>
+                <button type="button" class="side press">SELL</button>
+              </div>
+              <div class="rr"><span>Risk : Reward</span><span class="v">1 : 2.3</span></div>
+              <div class="sec-label">Setup</div>
+              <div class="chips" id="setups">
+                <button type="button" class="mini on press">Breakout</button>
+                <button type="button" class="mini press">Pullback</button>
+                <button type="button" class="mini press">Reversal</button>
+                <button type="button" class="mini press">Gap fill</button>
+                <button type="button" class="mini press">Mean reversion</button>
+              </div>
+              <div class="sec-label">Invalidation</div>
+              <div class="chips" id="invs">
+                <button type="button" class="mini on press">Time</button>
+                <button type="button" class="mini press">Behaviour</button>
+                <button type="button" class="mini press">Context</button>
+              </div>
+            </div>
+            <div class="sticky">
+              <button type="button" class="big primary press" id="btn-confirm">Confirm — enter trade →</button>
+              <button type="button" class="quiet" id="btn-limits">Limits live in Station Settings →</button>
+            </div>
+          </div>
+
+          <div class="screen" id="screen-live">
+            <div class="banner" id="live-banner">
+              <span class="dot"></span>
+              <div>
+                <div class="lab">Plan intact</div>
+                <div class="sent">Thesis known · stop resting at declared trigger.</div>
+              </div>
+            </div>
+            <div class="metrics">
+              <div class="metric"><div class="k">Unrealised P&amp;L</div><div class="v neg">−₹1,240</div></div>
+              <div class="metric"><div class="k">Max loss declared</div><div class="v">₹2,000</div></div>
+              <div class="metric"><div class="k">Risk used</div><div class="v amber">62%</div></div>
+              <div class="metric"><div class="k">Time in trade</div><div class="v amber">18 min</div></div>
+            </div>
+            <div class="snap">
+              <div class="h">Plan snapshot</div>
+              <div class="snap-row"><span class="k">Setup</span><span class="v">Breakout</span></div>
+              <div class="snap-row"><span class="k">Stop loss</span><span class="v ok">47,180 — holding</span></div>
+              <div class="snap-row"><span class="k">Target</span><span class="v">47,640</span></div>
+              <div class="snap-row"><span class="k">Invalidation</span><span class="v" style="color:var(--amber)">Time — expiring 10:30</span></div>
+              <div class="snap-row"><span class="k">Entry state</span><span class="v">Calm 2 · Conf 4</span></div>
+            </div>
+            <div class="card">
+              <h4>Are you thinking about changing anything?</h4>
+              <p class="sub">Interference is the warning channel — not a toast.</p>
+              <div class="interfere" id="interfere">
+                <button type="button" class="press on">No — following plan</button>
+                <button type="button" class="press">Maybe — unsure</button>
+                <button type="button" class="press">Yes — feeling it</button>
+              </div>
+              <textarea class="field" rows="2" placeholder="What are you thinking or feeling at this moment?" style="resize:vertical;min-height:56px"></textarea>
+            </div>
+            <div class="footer-bar">
+              <button type="button" class="footer-pill danger press" id="btn-exit">Exit trade</button>
+              <button type="button" class="footer-pill press" id="btn-sl">Move SL to entry</button>
+              <button type="button" class="footer-pill press" id="btn-hold">Hold and watch</button>
+            </div>
+          </div>
+
+          <div class="screen" id="screen-posttrade">
+            <div class="caps">Trade closed</div>
+            <p class="sub" style="color:var(--t2);font-size:12px;margin-bottom:12px;line-height:1.45">Three beats. The last step saves the debrief to Console journal.</p>
+            <div class="card">
+              <h4>Moment A — outcome</h4>
+              <p class="sub">Did the market prove the thesis wrong, or did you exit early?</p>
+              <input class="field" placeholder="Optional note" />
+            </div>
+            <div class="card">
+              <h4>Moment B — process</h4>
+              <p class="sub">Affirm each line — only honest yes advances.</p>
+              <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t" style="font-size:12px;font-weight:500">Stop as declared</div></div></div>
+              <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t" style="font-size:12px;font-weight:500">Size as declared</div></div></div>
+              <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t" style="font-size:12px;font-weight:500">Invalidation respected</div></div></div>
+              <div class="adh-row" data-adh><div class="adh-mark">—</div><div><div class="t" style="font-size:12px;font-weight:500">Exit per plan</div></div></div>
+            </div>
+            <div class="sticky">
+              <button type="button" class="big primary press" id="btn-save-debrief">Save debrief →</button>
+              <button type="button" class="quiet" id="btn-dismiss">Dismiss without save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TODAY (current) expanded -->
+      <div class="today-shell" id="today-shell">
+        <nav class="plan-sb">
+          <div class="plan-brand">
+            <div class="t">TradeAutopsy</div>
+            <div class="s">Behavioral trading OS <span class="xout">cut</span></div>
+          </div>
+          <div class="plan-sec">Session</div>
+          <div class="plan-nav on">☀ Morning brief <span class="badge">1</span></div>
+          <div class="plan-nav">☑ Pre-trade</div>
+          <div class="plan-nav">⚡ Live trade <span class="badge hot">!</span></div>
+          <div class="plan-nav">☰ Post-trade</div>
+          <div class="plan-sec">Analysis <span class="xout">off Notch</span></div>
+          <div class="plan-nav strike">🛡 Escrow match</div>
+          <div class="plan-nav strike">◉ Patterns</div>
+          <div class="plan-nav strike">▮ Fidelity score</div>
+          <div class="plan-nav strike">↓ Triage</div>
+          <div style="flex:1"></div>
+          <div class="plan-nav strike" style="margin-bottom:10px">⚙ Settings</div>
+        </nav>
+        <div class="today-main">
+          <div class="today-top">
+            Morning brief
+            <span style="flex:1"></span>
+            <span class="score-chip">score 0.31</span>
+            <span class="chip"><span class="d"></span>CALM</span>
+            <span style="font:500 12px/1 var(--sans);background:#ededed;color:#0a0a0a;padding:5px 12px;border-radius:6px">+ New trade</span>
+          </div>
+          <div class="today-body">
+            <p style="color:var(--t1);font-size:13px;line-height:1.5;margin-bottom:12px">
+              This is the current expanded Notch: a branded mini-app with nine destinations sitting on the chart.
+              Analysis and Settings compete with the trade you are in.
+            </p>
+            <div class="card">
+              <h4>Kept</h4>
+              <p>Morning → Pre → Live → Post content. Pill states. Kill overlay. Kotak status when it is real.</p>
+            </div>
+            <div class="card">
+              <h4>Removed from this surface</h4>
+              <p>Escrow, Patterns, Fidelity, Triage, Settings, “+ New trade” competing with Start, the lockup, the 192px sidebar.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Station -->
+      <div class="station" id="station">
+        <div class="winbar">
+          <div class="tl"><i class="c"></i><i class="m"></i><i class="g"></i></div>
+          <span class="name">Station</span>
+        </div>
+        <div class="pulse">
+          <span class="lbl">Today</span>
+          <span class="val pos">+₹12,480</span>
+          <span class="lbl">Score</span>
+          <span class="val">0.31</span>
+          <span class="lbl">Broker</span>
+          <span class="val" style="color:var(--teal)">Kotak · live</span>
+          <span class="kill-chip">Kill is on the Notch — not here</span>
+        </div>
+        <div class="station-body">
+          <nav class="ssb">
+            <div class="sec">Session</div>
+            <button type="button" class="sitem on press" data-s="today">Today</button>
+            <button type="button" class="sitem gone">Pre-trade</button>
+            <button type="button" class="sitem gone">Live trade</button>
+            <button type="button" class="sitem gone">Post-trade</button>
+            <div class="sec">Backend Box</div>
+            <button type="button" class="sitem press" data-s="brokers">Brokers</button>
+            <button type="button" class="sitem press" data-s="market">Market Data</button>
+            <button type="button" class="sitem press" data-s="ai">AI / Workflow</button>
+            <div class="sec">Desk</div>
+            <button type="button" class="sitem gone">Journal</button>
+            <button type="button" class="sitem gone">Escrow match</button>
+            <button type="button" class="sitem gone">Patterns</button>
+            <button type="button" class="sitem gone">Fidelity score</button>
+            <button type="button" class="sitem press" data-s="settings">Settings</button>
+          </nav>
+          <div class="smain">
+            <div class="stitle"><h3 id="stitle">Today</h3></div>
+            <div class="sscroll">
+              <div class="screen on" id="s-today">
+                <div class="caps">Net P&amp;L</div>
+                <div class="hero pos">+₹12,480</div>
+                <div class="note" style="margin-bottom:12px">
+                  The circuit breaker is the Notch — press <kbd>⌥Space</kbd> over the chart.
+                  Today is orientation: money, broker health, whether sync is paused. It is not a second Pre / Live / Post.
+                </div>
+                <div class="metrics">
+                  <div class="metric"><div class="k">Trades</div><div class="v">6</div></div>
+                  <div class="metric"><div class="k">Adherence</div><div class="v amber">57%</div></div>
+                  <div class="metric"><div class="k">Sync</div><div class="v teal">Live</div></div>
+                  <div class="metric"><div class="k">Stop</div><div class="v">Pauses sync only</div></div>
+                </div>
+              </div>
+              <div class="screen" id="s-brokers">
+                <div class="broker-card">
+                  <div>
+                    <h4>Kotak Neo</h4>
+                    <p>Live · TOTP settled</p>
+                  </div>
+                  <span class="spacer"></span>
+                  <button type="button" class="btn-sm press">Stop sync</button>
+                  <button type="button" class="btn-sm teal press">Connected</button>
+                </div>
+                <div class="broker-card">
+                  <div>
+                    <h4>Binance.US</h4>
+                    <p>Not connected</p>
+                  </div>
+                  <span class="spacer"></span>
+                  <button type="button" class="btn-sm press">Connect</button>
+                </div>
+                <div class="note">Stop pauses broker sync. It does not fire Kill. Kill is the Notch overlay — irreversible, confirmed.</div>
+              </div>
+              <div class="screen" id="s-market">
+                <div class="card"><h4>Market Data</h4><p>Keys live next to the feed they affect. No numbers invented when the agent is down.</p></div>
+              </div>
+              <div class="screen" id="s-ai">
+                <div class="card"><h4>AI / Workflow</h4><p>Keys and workflow bindings. Deep TAI stays on Console by deliberate action.</p></div>
+              </div>
+              <div class="screen" id="s-settings">
+                <div class="card">
+                  <h4>Loss limits</h4>
+                  <p class="sub">Moved off the Notch. Daily / weekly caps.</p>
+                  <input class="field" value="15,000" />
+                  <input class="field" value="40,000" />
+                </div>
+                <div class="card">
+                  <h4>Kill-switch domains</h4>
+                  <p>DNS sinkhole targets — configured here, fired from the Notch.</p>
+                </div>
+                <div class="card">
+                  <h4>Hide notch</h4>
+                  <p>⌥Space shows it again. Launch at login stays on Station.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scrim" id="scrim-kill">
+        <div class="dialog">
+          <h3>Kill switch</h3>
+          <p>Flatten and block new entries. This is not Stop. Stop only pauses sync.</p>
+          <div class="row">
+            <button type="button" class="cancel press" data-close-scrim>Cancel</button>
+            <button type="button" class="kill press" id="btn-kill-confirm">Kill</button>
+          </div>
+        </div>
+      </div>
+      <div class="scrim" id="scrim-exit">
+        <div class="dialog">
+          <h3>Exit this trade?</h3>
+          <p>Closes the position at market. You will land on post-trade debrief.</p>
+          <div class="row">
+            <button type="button" class="cancel press" data-close-scrim>Hold</button>
+            <button type="button" class="kill press" id="btn-exit-confirm">Exit trade</button>
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <p class="hint">
+      Space / pill / chevron = expand↔collapse · phases advance the circuit ·
+      Proposed vs Today shows the sidebar we are cutting · Station desk drops Pre/Live/Post
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      var desktop = document.getElementById("desktop");
+      var pill = document.getElementById("pill");
+      var toastEl = document.getElementById("toast");
+      var titles = { morning: "Morning brief", pretrade: "Pre-trade", live: "Live trade", posttrade: "Post-trade" };
+      var toastTimer;
+
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("on");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove("on"); }, 2400);
+      }
+
+      var pills = {
+        intraday: '<span class="dot"></span><span class="score">0.31</span><span class="label">CALM</span><span class="sep"></span><span class="pnl">+₹12,480</span>',
+        intervention: '<span class="kw">STOP — REVENGE</span><span class="dot bad" style="margin-left:12px"></span>'
+      };
+      function setPill(kind) {
+        pill.className = "pill" + (kind === "intervention" ? " intervention" : "");
+        pill.innerHTML = pills[kind];
+        document.querySelectorAll("[data-pill]").forEach(function (b) {
+          b.classList.toggle("on", b.getAttribute("data-pill") === kind);
+        });
+        if (kind === "intervention") setPhase("live");
+      }
+      setPill("intraday");
+
+      function setExpanded(on) {
+        desktop.classList.toggle("expanded-on", on);
+      }
+      function setPhase(id) {
+        document.querySelectorAll("#phases .phase").forEach(function (p) {
+          p.classList.toggle("on", p.getAttribute("data-phase") === id);
+        });
+        document.querySelectorAll("#sheet .screen").forEach(function (s) {
+          s.classList.toggle("on", s.id === "screen-" + id);
+        });
+        document.getElementById("phase-title").textContent = titles[id];
+        var chip = document.getElementById("state-chip");
+        if (id === "live") { chip.className = "chip warn"; chip.innerHTML = '<span class="d"></span>CAUTION'; }
+        else if (id === "posttrade") { chip.className = "chip"; chip.innerHTML = '<span class="d"></span>DEBRIEF'; }
+        else { chip.className = "chip"; chip.innerHTML = '<span class="d"></span>CALM'; }
+      }
+
+      document.querySelectorAll("[data-product]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.querySelectorAll("[data-product]").forEach(function (x) { x.classList.remove("on"); });
+          b.classList.add("on");
+          var prod = b.getAttribute("data-product");
+          desktop.classList.toggle("product-station", prod === "station");
+          if (prod === "station") {
+            desktop.classList.remove("expanded-on");
+            document.getElementById("btn-today").classList.remove("on");
+            document.getElementById("btn-proposed").classList.add("on");
+            desktop.classList.remove("today-mode");
+          }
+        });
+      });
+      document.getElementById("btn-proposed").addEventListener("click", function () {
+        this.classList.add("on");
+        document.getElementById("btn-today").classList.remove("on");
+        desktop.classList.remove("today-mode");
+        desktop.classList.remove("product-station");
+        document.querySelectorAll("[data-product]").forEach(function (x) {
+          x.classList.toggle("on", x.getAttribute("data-product") === "notch");
+        });
+        setExpanded(true);
+      });
+      document.getElementById("btn-today").addEventListener("click", function () {
+        this.classList.add("on");
+        document.getElementById("btn-proposed").classList.remove("on");
+        desktop.classList.add("today-mode");
+        desktop.classList.remove("product-station");
+        document.querySelectorAll("[data-product]").forEach(function (x) {
+          x.classList.toggle("on", x.getAttribute("data-product") === "notch");
+        });
+        setExpanded(true);
+      });
+
+      pill.addEventListener("click", function () {
+        desktop.classList.remove("product-station");
+        document.querySelectorAll("[data-product]").forEach(function (x) {
+          x.classList.toggle("on", x.getAttribute("data-product") === "notch");
+        });
+        setExpanded(!desktop.classList.contains("expanded-on"));
+      });
+      document.getElementById("btn-collapse").addEventListener("click", function () { setExpanded(false); });
+      document.addEventListener("keydown", function (e) {
+        if (e.code === "Space" && e.target === document.body) {
+          e.preventDefault();
+          setExpanded(!desktop.classList.contains("expanded-on"));
+        }
+      });
+
+      document.querySelectorAll("[data-pill]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          setPill(b.getAttribute("data-pill"));
+          desktop.classList.remove("product-station");
+          setExpanded(b.getAttribute("data-pill") === "intervention");
+        });
+      });
+      document.querySelectorAll("#phases .phase").forEach(function (p) {
+        p.addEventListener("click", function () { setPhase(p.getAttribute("data-phase")); });
+      });
+
+      document.getElementById("btn-start").addEventListener("click", function () { setPhase("pretrade"); });
+      document.getElementById("btn-confirm").addEventListener("click", function () {
+        setPhase("live");
+        toast("Plan armed — watching the stop");
+      });
+      document.getElementById("btn-hide").addEventListener("click", function () {
+        setExpanded(false);
+        toast("Notch hidden · ⌥Space to show");
+      });
+      document.getElementById("btn-limits").addEventListener("click", function () {
+        toast("Opens Station → Settings");
+      });
+      document.getElementById("btn-hold").addEventListener("click", function () {
+        toast("Logged: following plan");
+      });
+      document.getElementById("btn-sl").addEventListener("click", function () {
+        toast("Stop moved to entry");
+      });
+      document.getElementById("btn-exit").addEventListener("click", function () {
+        document.getElementById("scrim-exit").classList.add("on");
+      });
+      document.getElementById("btn-exit-confirm").addEventListener("click", function () {
+        document.getElementById("scrim-exit").classList.remove("on");
+        setPhase("posttrade");
+        toast("Trade closed");
+      });
+      document.getElementById("btn-save-debrief").addEventListener("click", function () {
+        setExpanded(false);
+        toast("Debrief saved to journal");
+      });
+      document.getElementById("btn-dismiss").addEventListener("click", function () {
+        setExpanded(false);
+      });
+
+      document.getElementById("btn-kill").addEventListener("click", function () {
+        document.getElementById("scrim-kill").classList.add("on");
+      });
+      document.getElementById("btn-kill-confirm").addEventListener("click", function () {
+        document.getElementById("scrim-kill").classList.remove("on");
+        setPill("intervention");
+        toast("Kill armed — entries blocked");
+      });
+      document.querySelectorAll("[data-close-scrim]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.querySelectorAll(".scrim").forEach(function (s) { s.classList.remove("on"); });
+        });
+      });
+
+      function groupToggle(sel) {
+        document.querySelectorAll(sel).forEach(function (row) {
+          row.querySelectorAll("button").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              row.querySelectorAll("button").forEach(function (x) { x.classList.remove("on"); });
+              btn.classList.add("on");
+            });
+          });
+        });
+      }
+      groupToggle("#calm-row");
+      groupToggle("#conf-row");
+      groupToggle("#setups");
+      groupToggle("#invs");
+      groupToggle(".side-row");
+      groupToggle("#interfere");
+
+      document.querySelectorAll("[data-adh]").forEach(function (row) {
+        row.addEventListener("click", function () {
+          var m = row.querySelector(".adh-mark");
+          m.classList.toggle("yes");
+          m.textContent = m.classList.contains("yes") ? "✓" : "—";
+        });
+      });
+
+      document.querySelectorAll("[data-s]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          document.querySelectorAll("[data-s]").forEach(function (x) { x.classList.remove("on"); });
+          b.classList.add("on");
+          var id = b.getAttribute("data-s");
+          document.getElementById("stitle").textContent = b.textContent;
+          ["today","brokers","market","ai","settings"].forEach(function (k) {
+            document.getElementById("s-" + k).classList.toggle("on", k === id);
+          });
+        });
+      });
+
+      var host = document.getElementById("candles");
+      var kinds = ["up","dn","up2","dn2","up","dn","up2","up","dn2","dn","up2","up","dn","up2","dn2","up","dn","up2","dn","up"];
+      kinds.forEach(function (k, i) {
+        var d = document.createElement("div");
+        d.className = "cndl " + k;
+        d.style.height = (22 + ((i * 17) % 48)) + "%";
+        host.appendChild(d);
+      });
+    })();
+  </script>
+</body>
+</html>

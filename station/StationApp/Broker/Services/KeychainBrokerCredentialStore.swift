@@ -56,7 +56,26 @@ public final class KeychainBrokerCredentialStore: BrokerCredentialStoring, @unch
     }
 
     public func hasCredentials(for identity: BrokerConnectionIdentity) -> Bool {
-        (try? read(for: identity)) != nil
+        accessGrant(for: identity) == .granted
+    }
+
+    /// Attributes-only + fail-closed UI. Does not fetch the secret blob and does not
+    /// present the login-password sheet. How we tell Always Allow stuck, without changing ACL.
+    public func accessGrant(for identity: BrokerConnectionIdentity) -> BrokerKeychainAccessGrant {
+        var query = baseQuery(for: identity)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            return .granted
+        case errSecItemNotFound:
+            return .missing
+        default:
+            return .needsAlwaysAllow
+        }
     }
 
     /// Best-effort SecAccess trusting this app + `tradeautopsy-agent` next to the executable.

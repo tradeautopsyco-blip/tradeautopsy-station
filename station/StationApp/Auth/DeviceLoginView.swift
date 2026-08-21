@@ -25,9 +25,11 @@ public struct DeviceLoginView: View {
                     Task { await viewModel.beginLogin() }
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(StationDS.Accent.teal)
 
             case .starting:
                 ProgressView("Starting device login…")
+                    .tint(StationDS.Accent.teal)
 
             case .awaitingBrowser:
                 if let userCode = viewModel.userCode {
@@ -45,6 +47,7 @@ public struct DeviceLoginView: View {
                         Task { await viewModel.completeLogin() }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(StationDS.Accent.teal)
                     Button("Open browser again") {
                         if let raw = viewModel.verificationURIComplete,
                            let url = URL(string: raw) {
@@ -56,6 +59,7 @@ public struct DeviceLoginView: View {
 
             case .completing:
                 ProgressView("Finishing sign-in…")
+                    .tint(StationDS.Accent.teal)
 
             case .signedIn:
                 if let email = viewModel.signedInEmail {
@@ -73,7 +77,7 @@ public struct DeviceLoginView: View {
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(StationDS.Accent.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

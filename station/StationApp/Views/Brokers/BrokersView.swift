@@ -18,6 +18,12 @@ public struct BrokersView: View {
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                     .foregroundStyle(StationDS.Text.muted)
 
+                if let keychainGrantHint = viewModel.keychainGrantHint {
+                    Text(keychainGrantHint)
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                        .foregroundStyle(StationDS.Text.muted)
+                }
+
                 if let syncActionMessage = viewModel.syncActionMessage {
                     Text(syncActionMessage)
                         .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))

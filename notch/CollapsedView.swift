@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct CollapsedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -6,6 +8,8 @@ struct CollapsedNotchView: View {
 
     /// Subtle pill feedback only — never expands the panel on hover.
     @State private var pillHoverFeedback: Bool = false
+    @State private var isPressing: Bool = false
+    @State private var dragReducer = CollapsedPillDragReducer()
 
     private var presentation: CollapsedNotchPresentation { viewModel.collapsedNotchPresentation }
 
@@ -22,186 +26,112 @@ struct CollapsedNotchView: View {
                 swingStrip(daysLabel: daysLabel, statusTitle: statusTitle, weeklyPnL: weeklyPnL)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .frame(height: BarNotchChrome.collapsedStripHeight)
     }
 
     private func interventionStrip(keyword: String) -> some View {
-        ZStack {
+        HStack(spacing: 12) {
             Text(keyword)
-                .font(BarNotchChrome.interventionKeywordFont())
+                .font(BarDS.bodyFont(13, weight: .bold))
                 .foregroundColor(.white)
-                .tracking(0.4)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                if viewModel.journalCaptureLastPendingCaptureId != nil {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.1))
-                        .frame(width: 0.5, height: 12)
-                    cameraCaptureBlock
-                }
-                connectionCluster
-            }
+            pillDot(BarDS.Accent.red)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Agent connection: \(viewModel.daemonConnectionLabel). \(keyword)")
     }
 
     private func intradayStrip(indicator: CollapsedNotchScoreIndicatorKind, behavioralLabel: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             scoreIndicator(for: indicator)
 
-            HStack(spacing: 6) {
-                Text(String(format: "%.2f", viewModel.compositeScore))
-                    .font(BarDS.monoFont(13, weight: .semibold))
-                    .foregroundColor(BarDS.Text.primary)
+            Text(String(format: "%.2f", viewModel.compositeScore))
+                .font(BarDS.monoFont(13, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(BarDS.Text.primary)
 
-                Text(behavioralLabel)
-                    .font(BarDS.bodyFont(10, weight: .medium))
-                    .foregroundColor(BarDS.Text.secondary)
-                    .tracking(0.5)
-            }
+            Text(behavioralLabel)
+                .font(BarDS.bodyFont(10, weight: .medium))
+                .foregroundColor(BarDS.Text.secondary)
+                .kerning(0.012 * 10)
 
             if viewModel.sessionPnL != 0 {
                 Rectangle()
-                    .fill(BarDS.Border.divider)
-                    .frame(width: BarDS.borderThin, height: 12)
+                    .fill(BarDS.Border.section)
+                    .frame(width: 1, height: 12)
 
                 Text(viewModel.formattedSessionPnL)
                     .font(BarDS.monoFont(11, weight: .medium))
                     .foregroundColor(
                         viewModel.sessionPnL > 0
-                            ? BarDS.Accent.teal
+                            ? BarDS.Accent.green
                             : BarDS.Accent.red
                     )
             }
-
-            if viewModel.journalCaptureLastPendingCaptureId != nil {
-                Rectangle()
-                    .fill(BarDS.Border.divider)
-                    .frame(width: BarDS.borderThin, height: 12)
-                cameraCaptureBlock
-            }
-
-            connectionCluster
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), score \(String(format: "%.2f", viewModel.compositeScore))"
+        )
     }
 
     private func scalperStrip(trades: String, loss: String?, timeRemaining: String?) -> some View {
         HStack(spacing: 10) {
             Text(trades)
-                .font(BarDS.monoFont(12, weight: .semibold))
+                .font(BarDS.monoFont(13, weight: .semibold))
                 .foregroundColor(BarDS.Text.primary)
 
             if let loss {
                 Text(loss)
-                    .font(BarDS.monoFont(10, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary.opacity(0.72))
+                    .font(BarDS.bodyFont(10, weight: .medium))
+                    .foregroundColor(Color.white.opacity(0.72))
                     .lineLimit(1)
             }
 
-            Spacer(minLength: 4)
-
             if let timeRemaining {
+                Rectangle()
+                    .fill(BarDS.Border.section)
+                    .frame(width: 1, height: 12)
                 Text(timeRemaining)
-                    .font(BarDS.monoFont(10, weight: .medium))
+                    .font(BarDS.bodyFont(10, weight: .medium))
                     .foregroundColor(BarDS.Text.secondary)
             }
 
-            if viewModel.journalCaptureLastPendingCaptureId != nil {
-                Rectangle()
-                    .fill(BarDS.Border.divider)
-                    .frame(width: BarDS.borderThin, height: 12)
-                cameraCaptureBlock
-            }
-
-            connectionCluster
+            pillDot(BarDS.Accent.amber)
         }
     }
 
     private func swingStrip(daysLabel: String, statusTitle: String, weeklyPnL: String?) -> some View {
         HStack(spacing: 10) {
             Text(daysLabel)
-                .font(BarDS.bodyFont(10, weight: .semibold))
-                .foregroundColor(BarDS.Text.secondary)
+                .font(BarDS.monoFont(13, weight: .semibold))
+                .foregroundColor(BarDS.Text.primary)
 
             Text(statusTitle)
-                .font(BarDS.bodyFont(10, weight: .bold))
-                .foregroundColor(BarDS.Text.primary)
-                .tracking(0.3)
+                .font(BarDS.bodyFont(10, weight: .medium))
+                .foregroundColor(BarDS.Text.secondary)
 
             if let weeklyPnL {
-                Text(weeklyPnL)
-                    .font(BarDS.monoFont(10, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary.opacity(0.72))
-            }
-
-            Spacer(minLength: 4)
-
-            if viewModel.journalCaptureLastPendingCaptureId != nil {
                 Rectangle()
-                    .fill(BarDS.Border.divider)
-                    .frame(width: BarDS.borderThin, height: 12)
-                cameraCaptureBlock
+                    .fill(BarDS.Border.section)
+                    .frame(width: 1, height: 12)
+                Text(weeklyPnL)
+                    .font(BarDS.monoFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.green)
             }
 
-            connectionCluster
+            pillDot(BarDS.Accent.green)
         }
     }
 
-    private var cameraCaptureBlock: some View {
-        Button {
-            Task { await viewModel.attachJournalCaptureScreenshotToPending() }
-        } label: {
-            Group {
-                if viewModel.journalCaptureScreenshotBusy {
-                    ProgressView()
-                        .scaleEffect(0.45)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 11, weight: .medium))
-                }
-            }
-            .foregroundColor(screenshotPillAccent(viewModel))
-        }
-        .buttonStyle(.plain)
-        .help("Attach screenshot to your last pending capture")
-        .accessibilityLabel("Attach screenshot to pending capture")
-        .disabled(viewModel.journalCaptureScreenshotBusy)
-    }
-
-    private var connectionCluster: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(viewModel.daemonConnectionColor)
-                .frame(width: 6, height: 6)
-                .accessibilityLabel("Agent connection: \(viewModel.daemonConnectionLabel)")
-            Image(systemName: "circle.fill")
-                .font(.system(size: 5))
-                .foregroundColor(brokerSyncDotColor(viewModel.brokerSyncClass))
-                .accessibilityLabel("Broker: \(viewModel.brokerSyncClass)")
-            Group {
-                if viewModel.daemonProtocolError == .protoVersion {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(BarDS.Accent.amber)
-                            .accessibilityHidden(true)
-                        Text("Update agent")
-                            .font(BarDS.bodyFont(9, weight: .semibold))
-                            .foregroundColor(BarDS.Accent.amber)
-                    }
-                    .accessibilityLabel("Agent update required — version mismatch")
-                } else {
-                    Text(viewModel.daemonConnectionLabel)
-                        .font(BarDS.bodyFont(9, weight: .medium))
-                        .foregroundColor(BarDS.Text.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.leading, 2)
+    private func pillDot(_ color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 6, height: 6)
+            .shadow(color: color.opacity(0.5), radius: 3, x: 0, y: 0)
+            .accessibilityHidden(true)
     }
 
     private func scoreIndicator(for kind: CollapsedNotchScoreIndicatorKind) -> some View {
@@ -234,74 +164,97 @@ struct CollapsedNotchView: View {
         return BarDS.Accent.red
     }
 
-    private func barScoreGlow(_ score: Double) -> Color {
-        barScoreColor(score).opacity(0.15)
-    }
-
     @ViewBuilder
     private func scoreIndicatorCore(kind: CollapsedNotchScoreIndicatorKind, scale: CGFloat) -> some View {
         switch kind {
         case .slMissingAmber:
-            ZStack {
-                Circle()
-                    .fill(BarDS.Accent.amber.opacity(0.15))
-                    .frame(width: 18, height: 18)
-                    .blur(radius: 4)
-                Circle()
-                    .fill(BarDS.Accent.amber)
-                    .frame(width: 8, height: 8)
-            }
-            .scaleEffect(scale)
+            pillDot(BarDS.Accent.amber)
+                .scaleEffect(scale)
         case .riskColored(let score):
-            ZStack {
-                Circle()
-                    .fill(barScoreGlow(score))
-                    .frame(width: 18, height: 18)
-                    .blur(radius: 4)
-                    .opacity(score > 0.20 ? 1 : 0)
-
-                Circle()
-                    .fill(barScoreColor(score))
-                    .frame(width: 8, height: 8)
-            }
-            .scaleEffect(scale)
+            pillDot(barScoreColor(score))
+                .scaleEffect(scale)
         }
     }
 
     var body: some View {
         let p = presentation
-        Button {
-            viewModel.expandFromCollapsedChromeTap()
-        } label: {
-            Group {
-                if viewModel.hasPhysicalNotch {
-                    coreStrip(p)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.black.opacity(0.0))
-                        )
-                } else {
-                    coreStrip(p)
-                        .padding(.horizontal, 4)
-                        .background(capsuleBackground(p))
-                        .overlay(tiltPulseRing(p))
-                }
+        Group {
+            if viewModel.hasPhysicalNotch {
+                coreStrip(p)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.black.opacity(0.0))
+                    )
+            } else {
+                coreStrip(p)
+                    .background(capsuleBackground(p))
+                    .overlay(tiltPulseRing(p))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
-                if viewModel.hasPhysicalNotch {
-                    tiltPulseRing(p)
-                }
-            }
-            .opacity(pillHoverFeedback ? 1.0 : 0.94)
         }
-        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.96))
-        .onHover { hovering in pillHoverFeedback = hovering }
+        .frame(maxHeight: .infinity)
+        .overlay {
+            if viewModel.hasPhysicalNotch {
+                tiltPulseRing(p)
+            }
+        }
+        .opacity(pillHoverFeedback ? 1.0 : 0.94)
+        .scaleEffect(isPressing ? 0.97 : 1)
+        .animation(
+            isPressing
+                ? .easeOut(duration: 0.08)
+                : .spring(response: 0.28, dampingFraction: 1.0),
+            value: isPressing
+        )
+        .contentShape(Capsule())
+        .gesture(collapsedPillPointerGesture)
+        .onHover { hovering in
+            pillHoverFeedback = hovering
+            if hovering {
+                NSCursor.openHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
         .accessibilityLabel(
             "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), score \(String(format: "%.2f", viewModel.compositeScore))"
         )
-        .accessibilityHint("Tap to expand. Option-Space toggles notch visibility.")
+        .accessibilityHint("Click to expand. Drag to move. Option-Space toggles notch visibility.")
+        .accessibilityAction(named: "Expand") {
+            viewModel.expandFromCollapsedChromeTap()
+        }
+        .onPasteCommand(of: [.png, .tiff, .jpeg]) { _ in
+            viewModel.ingestPastedImage()
+        }
+    }
+
+    private var collapsedPillPointerGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                isPressing = true
+                switch dragReducer.changed(translation: value.translation) {
+                case .move:
+                    NSCursor.closedHand.set()
+                    viewModel.applyCollapsedPillDragFromScreen()
+                case .none, .expand, .moveEnded:
+                    break
+                }
+            }
+            .onEnded { value in
+                isPressing = false
+                switch dragReducer.ended(translation: value.translation) {
+                case .expand:
+                    viewModel.expandFromCollapsedChromeTap()
+                case .moveEnded:
+                    viewModel.endCollapsedPillDrag()
+                    if pillHoverFeedback {
+                        NSCursor.openHand.set()
+                    }
+                case .none, .move:
+                    break
+                }
+            }
     }
 
     private func capsuleBackground(_ p: CollapsedNotchPresentation) -> some View {
@@ -315,16 +268,16 @@ struct CollapsedNotchView: View {
                     )
             } else {
                 Capsule(style: .continuous)
-                    .fill(Color(hex: "#0A0A0A").opacity(0.95))
+                    .fill(Color(hex: "#0A0A0A"))
                     .overlay(
                         Capsule(style: .continuous)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
                     )
             }
         }
         .shadow(
-            color: Color.black.opacity(0.6),
-            radius: 12, x: 0, y: 4
+            color: Color.black.opacity(0.45),
+            radius: 12, x: 0, y: 8
         )
     }
 
@@ -342,24 +295,6 @@ struct CollapsedNotchView: View {
                         .stroke(BarDS.Accent.amber.opacity(phase), lineWidth: 1.2)
                 }
             }
-        }
-    }
-
-    private func screenshotPillAccent(_ vm: NotchViewModel) -> Color {
-        let err = vm.journalCaptureScreenshotError?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !err.isEmpty {
-            return BarDS.Accent.red
-        }
-        return BarDS.Accent.teal
-    }
-
-    private func brokerSyncDotColor(_ s: String) -> Color {
-        switch s.lowercased() {
-        case "synced": return BarDS.Accent.teal
-        case "stale": return BarDS.Accent.amber
-        case "disconnected": return BarDS.Accent.red
-        case "not_connected": return Color.white.opacity(0.25)
-        default: return Color.white.opacity(0.25)
         }
     }
 }

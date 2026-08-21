@@ -120,7 +120,7 @@ struct NotchRootView: View {
         .clipShape(NotchShape(expansionProgress: expansion))
         .overlay {
             if vm.isExpanded, !vm.hasPhysicalNotch {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: BarDS.Radius.sheet, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [

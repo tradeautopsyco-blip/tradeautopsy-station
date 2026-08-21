@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Delete after a variant wins.
+  Question: what should the four risk layers look like?
+  Three variants of Station risk layers, switchable via ?variant=
+  A Blotter · B Notch flip · C Session tape
+  Run: ./station/prototypes/serve-prototype.sh
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — risk layers</title>
+  <style>
+    :root {
+      --void: #050505; --panel: #0a0a0a; --elev: #111; --fill: #1c1c1e;
+      --accent: #63E6E2; --gain: #30D158; --loss: #FF453A; --caution: #FF9F0A; --info: #0A84FF;
+      --label: #fff; --s: rgba(255,255,255,.62); --t: rgba(255,255,255,.34);
+      --line: rgba(255,255,255,.08); --glass: rgba(8,8,8,.78);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--sans); font-size: 13px; letter-spacing: -.006em;
+      background: #1a1a1c; color: var(--label); -webkit-font-smoothing: antialiased;
+      display: flex; flex-direction: column; align-items: center; padding: 20px 16px 88px;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+    .q {
+      width: min(1180px, 100%); color: var(--t); font-size: 11px; letter-spacing: .04em;
+      text-transform: uppercase; margin-bottom: 10px;
+    }
+    .q b { color: var(--s); font-weight: 600; text-transform: none; letter-spacing: -.006em; font-size: 13px; }
+
+    /* Mac chrome shared only as a frame — layouts inside disagree */
+    .mac {
+      width: min(1180px, 100%); height: 720px; background: var(--void);
+      border-radius: 16px; overflow: hidden; position: relative;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.06);
+      display: flex; flex-direction: column;
+    }
+    .pulse {
+      height: 36px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+      padding: 0 12px; border-bottom: .5px solid var(--line); background: #080808;
+      font-size: 11px; color: var(--s);
+    }
+    .pulse .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gain); }
+    .pulse .mono { font-family: var(--mono); color: var(--label); }
+    .gain { color: var(--gain); } .loss { color: var(--loss); } .caut { color: var(--caution); } .muted { color: var(--t); }
+    .pill { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: .5px solid var(--line); color: var(--s); }
+    .pill.warn { border-color: rgba(255,159,10,.4); color: var(--caution); }
+    .pill.bad { border-color: rgba(255,69,58,.4); color: var(--loss); }
+    .pill.ok { border-color: rgba(48,209,88,.35); color: var(--gain); }
+    .pill.teal { border-color: rgba(99,230,226,.35); color: var(--accent); }
+
+    /* A — blotter */
+    .a-body { flex: 1; display: grid; grid-template-columns: 200px 1fr; min-height: 0; }
+    .a-nav { border-right: .5px solid var(--line); padding: 14px 10px; background: var(--panel); }
+    .a-nav h1 { font-size: 15px; font-weight: 600; margin-bottom: 16px; padding: 0 6px; }
+    .a-nav .item { padding: 7px 8px; border-radius: 8px; color: var(--s); font-size: 13px; }
+    .a-nav .item.on { background: var(--fill); color: var(--label); }
+    .a-main { overflow: auto; padding: 16px 18px 24px; }
+    .a-hero { display: grid; grid-template-columns: repeat(3, 1fr) 220px; gap: 8px; margin-bottom: 14px; }
+    .tile { background: var(--elev); border: .5px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .tile .k { font-size: 10px; color: var(--t); letter-spacing: .08em; text-transform: uppercase; }
+    .tile .v { font-family: var(--mono); font-size: 22px; font-weight: 500; margin-top: 4px; letter-spacing: -.03em; }
+    .kpi { display: flex; flex-direction: column; justify-content: center; gap: 4px; font-size: 11px; color: var(--s); }
+    .kpi b { color: var(--label); font-weight: 600; }
+    .sec { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--t); margin: 16px 0 8px; }
+    table.blot { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.blot th { text-align: left; font-size: 10px; color: var(--t); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; padding: 6px 8px; border-bottom: .5px solid var(--line); }
+    table.blot td { padding: 9px 8px; border-bottom: .5px solid var(--line); vertical-align: top; }
+    table.blot tr { cursor: pointer; }
+    table.blot tr:hover td { background: rgba(255,255,255,.03); }
+    table.blot tr.sel td { background: rgba(99,230,226,.06); }
+    .sym { font-weight: 600; }
+    .hint { font-size: 11px; color: var(--s); margin-top: 2px; }
+    .row-act { display: flex; gap: 6px; }
+    .btn { padding: 5px 9px; border-radius: 7px; background: var(--fill); border: .5px solid var(--line); font-size: 11px; }
+    .btn.pri { background: var(--accent); color: #042; border: 0; font-weight: 600; }
+    .drawer {
+      position: absolute; top: 36px; right: 0; bottom: 0; width: 380px;
+      background: var(--glass); backdrop-filter: blur(24px);
+      border-left: .5px solid var(--line); padding: 16px; overflow: auto;
+    }
+    .card-detect {
+      position: absolute; left: 50%; top: 72px; transform: translateX(-50%);
+      width: 420px; background: #141416; border: .5px solid rgba(99,230,226,.28);
+      border-radius: 14px; padding: 16px 18px; box-shadow: 0 24px 60px rgba(0,0,0,.5); z-index: 5;
+    }
+    .card-detect h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .delta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+    .delta .box { background: var(--void); border-radius: 8px; padding: 8px 10px; border: .5px solid var(--line); }
+    .delta .box.better { border-color: rgba(48,209,88,.35); }
+
+    /* B — notch flip */
+    .b-body { flex: 1; display: flex; flex-direction: column; min-height: 0; background: radial-gradient(1200px 400px at 50% -10%, rgba(99,230,226,.07), transparent); }
+    .b-notch {
+      margin: 18px auto 0; width: min(920px, 94%); height: 520px;
+      background: var(--panel); border: .5px solid var(--line); border-radius: 18px;
+      display: grid; grid-template-columns: 1.35fr .9fr; overflow: hidden;
+    }
+    .b-box { background: #070708; position: relative; border-right: .5px solid var(--line); padding: 16px; }
+    .b-box.risk { background: #0b1010; }
+    .chart { height: 100%; display: flex; flex-direction: column; }
+    .bars { flex: 1; display: flex; align-items: flex-end; gap: 3px; padding: 8px 0 20px; }
+    .bars i { display: block; width: 8px; border-radius: 1px; background: #3a3a3c; }
+    .bars i.up { background: var(--gain); } .bars i.dn { background: var(--loss); }
+    .eq { height: 160px; margin-top: 12px; }
+    .b-form { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+    .fld { display: flex; flex-direction: column; gap: 4px; }
+    .fld span { font-size: 10px; color: var(--t); letter-spacing: .08em; text-transform: uppercase; }
+    .fld input, .fld select {
+      background: var(--fill); border: .5px solid var(--line); color: var(--label);
+      border-radius: 8px; padding: 8px 10px; font-family: var(--mono); font-size: 13px;
+    }
+    .b-strip {
+      height: 88px; margin: 12px 24px 0; display: flex; gap: 8px; overflow-x: auto;
+    }
+    .chip {
+      min-width: 168px; background: var(--elev); border: .5px solid var(--line);
+      border-radius: 10px; padding: 8px 10px; cursor: pointer; flex-shrink: 0;
+    }
+    .chip .n { font-size: 12px; font-weight: 600; }
+    .win2 {
+      position: absolute; right: 18px; top: 52px; width: 340px; height: 560px;
+      background: #0c0c0e; border-radius: 12px; border: .5px solid var(--line);
+      box-shadow: 0 20px 50px rgba(0,0,0,.45); padding: 14px; z-index: 4;
+    }
+
+    /* C — tape */
+    .c-body { flex: 1; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+    .tape { overflow: auto; padding: 16px 20px 32px; }
+    .pin {
+      background: rgba(255,159,10,.08); border: .5px solid rgba(255,159,10,.28);
+      border-radius: 12px; padding: 12px; margin-bottom: 14px;
+    }
+    .pin h3 { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--caution); margin-bottom: 8px; }
+    .carry { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .ev {
+      display: grid; grid-template-columns: 64px 1fr; gap: 12px; padding: 10px 0;
+      border-bottom: .5px solid var(--line); cursor: pointer;
+    }
+    .ev .tm { font-family: var(--mono); font-size: 11px; color: var(--t); padding-top: 2px; }
+    .ev.on { background: rgba(99,230,226,.05); margin: 0 -12px; padding: 10px 12px; border-radius: 8px; }
+    .insp { border-left: .5px solid var(--line); padding: 16px; background: var(--panel); overflow: auto; }
+    .fab {
+      position: absolute; right: 28px; bottom: 28px; width: 52px; height: 52px; border-radius: 50%;
+      background: var(--accent); color: #042; font-weight: 700; font-size: 18px;
+      box-shadow: 0 8px 24px rgba(99,230,226,.25);
+    }
+    .fab-sheet {
+      position: absolute; right: 20px; bottom: 92px; width: 300px;
+      background: var(--glass); backdrop-filter: blur(20px);
+      border: .5px solid var(--line); border-radius: 14px; padding: 14px; z-index: 5;
+    }
+
+    .state {
+      width: min(1180px, 100%); margin-top: 10px;
+      background: #000; color: #8bffce; font-family: var(--mono); font-size: 10px;
+      border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; max-height: 120px; overflow: auto;
+    }
+
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 10px; z-index: 50;
+      background: #f4f4f5; color: #111; padding: 8px 10px; border-radius: 999px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      font-size: 12px; font-weight: 600; letter-spacing: -.01em;
+    }
+    .switcher button {
+      width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; font-size: 14px;
+    }
+    .switcher .lab { min-width: 210px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="q">PROTOTYPE · throwaway · <b>What should the four risk layers look like?</b> — A blotter · B Notch flip · C session tape</div>
+  <div class="mac" id="mac"></div>
+  <pre class="state" id="state"></pre>
+  <div class="switcher" id="switcher"></div>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Blotter", blurb: "Today is the desk" },
+  { key: "B", name: "Notch flip", blurb: "Chart becomes risk" },
+  { key: "C", name: "Session tape", blurb: "Time is the desk" },
+];
+
+const BOOK = {
+  quote: "INR",
+  account: 200000,
+  hero: { pnl: 1240, trades: 1, winRate: 1 },
+  kpi: { archetype: "intraday", score: 0.31, state: "WATCH", slMissing: false },
+  open: [
+    { id: "rel", symbol: "RELIANCE", side: "LONG", qty: 50, entry: 1284, ltp: 1302, sl: 1150, plannedSl: 1100, mtmToday: 900, class: "swing", overnight: true, dayN: 3, checkIn: "CHECK TODAY", sentence: "Gap can print through SL — best case is the stop, not the worst." },
+    { id: "bn", symbol: "BANKNIFTY 24500 CE", side: "LONG", qty: 15, entry: 182, ltp: 96, sl: null, plannedSl: null, mtmToday: -1290, class: "intraday", overnight: true, sentence: "MIS leftover — should have been squared. Overnight is the leak." },
+    { id: "nf", symbol: "NIFTY FUT", side: "LONG", qty: 65, entry: 24110, ltp: 24040, sl: 23980, plannedSl: 23980, mtmToday: -4550, class: "futures", overnight: true, sentence: "Marked overnight. SL does not cancel MTM." },
+  ],
+  closed: [
+    { symbol: "INFY", side: "LONG", pnl: 1240, dur: "11m", class: "scalper", pct: 0.62, goal: "toward" },
+  ],
+};
+
+const S = {
+  variant: "A",
+  declared: false,
+  detection: null, // 'plan' | 'noform' | null
+  selected: "rel",
+  consoleOpen: false,
+  notchFab: false,
+  shallowExtra: true,
+};
+
+function money(n) {
+  const a = Math.abs(Math.round(n));
+  const s = n < 0 ? "−" : n > 0 ? "+" : "";
+  return s + "₹" + a.toLocaleString("en-IN");
+}
+function pct(n) { return (n * 100).toFixed(2) + "%"; }
+function accPct(rupees) { return pct(rupees / BOOK.account); }
+
+function plannedLoss(p) {
+  if (p.plannedSl == null) return null;
+  return p.qty * Math.abs(p.entry - p.plannedSl);
+}
+function actualLoss(p) {
+  if (p.sl == null) return null;
+  return p.qty * Math.abs(p.entry - p.sl);
+}
+
+function detectionCard() {
+  if (!S.detection) return "";
+  if (S.detection === "noform") {
+    return `<aside class="card-detect">
+      <div class="pill warn">No plan</div>
+      <h2>This fill has no stop yet</h2>
+      <p class="hint">Not a compliance nag — the book just changed. See the risk, then plan.</p>
+      <p class="hint" style="margin-top:8px">BANKNIFTY 24500 CE · leftover MIS · max loss is the premium still on, not a number we invent.</p>
+      <div class="row-act" style="margin-top:12px">
+        <button class="btn pri" data-act="open-notch">Plan in Notch</button>
+        <button class="btn" data-act="dismiss-detect">Not now</button>
+      </div>
+    </aside>`;
+  }
+  const planned = 50 * (1300 - 1100);
+  const actual = 50 * (1300 - 1150);
+  return `<aside class="card-detect">
+    <div class="pill ok">Tighter — better</div>
+    <h2>RELIANCE fill · 1,300</h2>
+    <p class="hint">Actual SL 1,150 vs planned 1,100. Both directions get a response.</p>
+    <div class="delta">
+      <div class="box"><div class="k muted">Planned SL max</div><div class="mono">${money(-planned)} · ${accPct(planned)}</div></div>
+      <div class="box better"><div class="k muted">Live SL max</div><div class="mono">${money(-actual)} · ${accPct(actual)}</div></div>
+    </div>
+    <p class="hint caut">Overnight scenario (not live remaining risk): a gap can print through 1,150. SL is the best case.</p>
+    <div class="row-act">
+      <button class="btn" data-act="dismiss-detect">Got it</button>
+      <button class="btn pri" data-act="open-console">Deeper</button>
+    </div>
+  </aside>`;
+}
+
+function equitySvg() {
+  return `<svg class="eq" viewBox="0 0 320 120" width="100%" height="120">
+    <polyline fill="none" stroke="#3a3a3c" stroke-width="1" points="0,40 40,38 80,36 120,34 160,32 200,30 240,28 280,26 320,24"/>
+    <polyline fill="none" stroke="#FF453A" stroke-width="2" points="200,30 240,62 280,78 320,96"/>
+    <text x="8" y="14" fill="#888" font-size="10">equity before this hold</text>
+    <text x="170" y="112" fill="#FF453A" font-size="10">if SL hits → ₹${(200000-7500).toLocaleString("en-IN")}</text>
+  </svg>`;
+}
+
+function consoleDeep(p) {
+  if (!p) return `<p class="muted">Select a row.</p>`;
+  const al = actualLoss(p);
+  const pl = plannedLoss(p);
+  return `
+    <div class="pill teal">Console · deep</div>
+    <h2 style="font-size:16px;margin:8px 0 4px">${p.symbol}</h2>
+    <p class="hint">Pre · live · post · notes. Equity impact of this hold — not a live remaining-risk tile.</p>
+    ${equitySvg()}
+    <div class="hint" style="margin-top:8px">
+      Today MTM ${money(p.mtmToday)} · ${accPct(Math.abs(p.mtmToday))} of account<br>
+      ${al != null ? `Live SL max ${money(-al)} (${accPct(al)})` : "No SL — do not invent a max"}<br>
+      ${pl != null ? `Planned SL max ${money(-pl)}` : "No form"}<br>
+      ${p.overnight ? p.sentence : ""}
+    </div>
+    <p class="hint" style="margin-top:10px">Journal: <i>“gap risk accepted, check-in tomorrow.”</i></p>
+  `;
+}
+
+function renderA() {
+  const sel = BOOK.open.find(x => x.id === S.selected);
+  const rows = BOOK.open.map(p => `
+    <tr class="${S.selected===p.id?"sel":""}" data-act="select" data-id="${p.id}">
+      <td><div class="sym">${p.symbol}</div><div class="hint">${p.side} ${p.qty} · ${p.class}</div></td>
+      <td class="${p.mtmToday>=0?"gain":"loss"}">${money(p.mtmToday)}<div class="hint">${accPct(Math.abs(p.mtmToday))} of account</div></td>
+      <td><span class="pill ${p.class==="intraday"?"bad":p.checkIn?"warn":"ok"}">${p.overnight ? (p.checkIn || "CARRY") : "TODAY"}</span>
+        <div class="hint">${p.sentence}</div></td>
+      <td><div class="row-act"><button class="btn" data-act="deeper" data-id="${p.id}">Deeper</button></div></td>
+    </tr>`).join("");
+  return `
+    <div class="pulse"><span class="dot"></span> Kotak · INR · Pulse P&amp;L ${money(BOOK.hero.pnl)} · positions ${BOOK.open.length}
+      <span style="margin-left:auto" class="muted">Notch pill · WATCH 0.31 · SL on</span></div>
+    <div class="a-body">
+      <nav class="a-nav">
+        <h1>Station</h1>
+        <div class="item on">Today</div>
+        <div class="item">Journal</div>
+        <div class="item">Backend Box</div>
+        <div class="item">Settings</div>
+      </nav>
+      <div class="a-main">
+        <div class="a-hero">
+          <div class="tile"><div class="k">P&amp;L today</div><div class="v gain">${money(BOOK.hero.pnl)}</div></div>
+          <div class="tile"><div class="k">Trades</div><div class="v">${BOOK.hero.trades}</div></div>
+          <div class="tile"><div class="k">Win rate</div><div class="v">100%</div></div>
+          <div class="tile kpi"><div>Intraday · <b>WATCH</b> 0.31</div><div>SL placed · hero is closed RTs only</div></div>
+        </div>
+        <div class="row-act">
+          <button class="btn pri" data-act="detect-plan">Simulate RELIANCE fill (plan vs SL)</button>
+          <button class="btn" data-act="detect-noform">Simulate fill with no form</button>
+        </div>
+        <div class="sec">Open now — including overnight</div>
+        <table class="blot">
+          <thead><tr><th>Position</th><th>Today MTM</th><th>Behavior</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="sec">Closed today</div>
+        <table class="blot">
+          <tbody>${BOOK.closed.map(c => `<tr><td class="sym">${c.symbol}</td><td class="gain">${money(c.pnl)}</td><td>${pct(c.pnl / BOOK.account)} of account</td><td class="hint">${c.dur} · ${c.goal} goal</td></tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </div>
+    ${S.consoleOpen ? `<aside class="drawer">${consoleDeep(sel)}<button class="btn" style="margin-top:12px" data-act="close-console">Close</button></aside>` : ""}
+    ${detectionCard()}
+  `;
+}
+
+function renderB() {
+  const face = S.declared ? `
+    <div class="chart">
+      <div class="pill teal">Risk box — declared</div>
+      <h2 style="font-size:18px;margin:10px 0 4px">If this trade goes against you</h2>
+      <p class="hint">Equity lands here. This trade’s max drawdown under the SL. Max risk of the plan.</p>
+      ${equitySvg()}
+      <div class="tile" style="margin-top:8px">
+        <div class="k">Live SL max</div>
+        <div class="v loss">${money(-7500)} · 3.75%</div>
+      </div>
+      <p class="hint caut" style="margin-top:10px">Scenario, not T8 truth: overnight gap can print through 1,150. Sized as if ~2× stop is possible.</p>
+    </div>` : `
+    <div class="chart">
+      <div class="pill">OHLCV · broker</div>
+      <div style="font-size:22px;font-weight:600;margin:8px 0 4px">RELIANCE <span class="muted" style="font-size:13px">1,300.00</span></div>
+      <div class="bars">${[40,55,48,62,70,66,80,74,88,60,52,71,90,84,78,95,70,62,58,80,88,92,70,64].map((h,i)=>`<i class="${i%3?"up":"dn"}" style="height:${h}%"></i>`).join("")}</div>
+      <p class="hint">Same box flips to account the instant the plan is declared.</p>
+    </div>`;
+  return `
+    <div class="pulse"><span class="dot"></span> Notch is the desk · Today is a filmstrip
+      <span style="margin-left:auto"><button class="btn" data-act="toggle-console">${S.consoleOpen?"Hide":"Open"} Console window</button></span></div>
+    <div class="b-body">
+      <div class="b-notch">
+        <div class="b-box ${S.declared?"risk":""}">${face}</div>
+        <div class="b-form">
+          <div class="pill">${S.declared ? "Post-form" : "Pre-trade"}</div>
+          <div class="fld"><span>Side</span><select disabled><option>LONG</option></select></div>
+          <div class="fld"><span>Entry</span><input value="1300" readonly></div>
+          <div class="fld"><span>Stop</span><input value="1150" readonly></div>
+          <div class="fld"><span>Target</span><input value="1380" readonly></div>
+          <label class="hint"><input type="checkbox" checked disabled> Accept overnight / gap risk</label>
+          ${S.declared
+            ? `<button class="btn" data-act="undeclare">Show price again</button>`
+            : `<button class="btn pri" data-act="declare">Declare — flip to risk</button>`}
+        </div>
+      </div>
+      <div class="b-strip">
+        ${BOOK.open.map(p => `<div class="chip" data-act="select" data-id="${p.id}">
+          <div class="n">${p.symbol}</div>
+          <div class="${p.mtmToday>=0?"gain":"loss"}">${money(p.mtmToday)}</div>
+          <div class="hint">${p.overnight ? (p.checkIn || p.class) : ""}</div>
+        </div>`).join("")}
+      </div>
+    </div>
+    ${S.consoleOpen ? `<div class="win2">${consoleDeep(BOOK.open.find(x=>x.id===S.selected))}<button class="btn" style="margin-top:10px" data-act="close-console">Close window</button></div>` : ""}
+    ${detectionCard()}
+  `;
+}
+
+function renderC() {
+  const sel = [...BOOK.open, { id: "infy", symbol: "INFY", mtmToday: 1240, sentence: "Closed scalp. Toward goal.", overnight: false, class: "scalper", sl: 1400, plannedSl: 1400, qty: 20, entry: 1420 }]
+    .find(x => x.id === S.selected) || BOOK.open[0];
+  return `
+    <div class="pulse"><span class="dot"></span> Friday 21 Aug · local day · carries pinned
+      <span style="margin-left:auto" class="muted">hero ${money(BOOK.hero.pnl)} · 1 closed RT</span></div>
+    <div class="c-body">
+      <div class="tape">
+        <div class="pin">
+          <h3>Still open overnight — first</h3>
+          <div class="carry">
+            ${BOOK.open.map(p => `<div class="chip" data-act="select" data-id="${p.id}">
+              <div class="n">${p.symbol}</div>
+              <div class="${p.mtmToday>=0?"gain":"loss"}">${money(p.mtmToday)}</div>
+              <div class="hint">${p.sentence}</div>
+            </div>`).join("")}
+          </div>
+        </div>
+        <div class="sec">Tape</div>
+        <div class="ev ${S.selected==="rel"?"on":""}" data-act="select" data-id="rel">
+          <div class="tm">09:21</div>
+          <div><b>RELIANCE still here · Day 3</b><div class="hint">CHECK TODAY · gap through SL is the swing problem</div></div>
+        </div>
+        <div class="ev" data-act="detect-plan">
+          <div class="tm">10:04</div>
+          <div><b>Detection · RELIANCE 1,300</b><div class="hint">SL tightened 1,100 → 1,150 · 5.00% → 3.75% of account</div></div>
+        </div>
+        <div class="ev ${S.selected==="bn"?"on":""}" data-act="select" data-id="bn">
+          <div class="tm">15:35</div>
+          <div><b>BANKNIFTY CE leaked overnight</b><div class="hint">No form · intercept to plan, don’t hide the row</div></div>
+        </div>
+        <div class="ev ${S.selected==="infy"?"on":""}" data-act="select" data-id="infy">
+          <div class="tm">11:18</div>
+          <div><b>INFY closed</b><div class="hint">${money(1240)} · ${pct(1240/200000)} of account · toward goal</div></div>
+        </div>
+        <div class="ev" data-act="detect-noform">
+          <div class="tm">15:49</div>
+          <div><b>Fill with no plan</b><div class="hint">Circle asks for a minimal form — help them see the risk</div></div>
+        </div>
+      </div>
+      <aside class="insp">${consoleDeep(sel)}</aside>
+    </div>
+    <button class="fab" data-act="toggle-fab">N</button>
+    ${S.notchFab ? `<div class="fab-sheet">
+      <div class="pill">Notch · mini</div>
+      <p style="margin:8px 0;font-weight:600">Declare to flip</p>
+      <p class="hint">OHLCV here until submit, then equity-if-SL.</p>
+      <button class="btn pri" style="margin-top:10px" data-act="declare">Declare</button>
+      <button class="btn" data-act="toggle-fab">Close</button>
+    </div>` : ""}
+    ${detectionCard()}
+  `;
+}
+
+function paint() {
+  const mac = document.getElementById("mac");
+  mac.innerHTML = S.variant === "B" ? renderB() : S.variant === "C" ? renderC() : renderA();
+  document.getElementById("state").textContent = "STATE " + JSON.stringify({
+    variant: S.variant, declared: S.declared, detection: S.detection,
+    selected: S.selected, consoleOpen: S.consoleOpen, notchFab: S.notchFab,
+    openIds: BOOK.open.map(p => p.id + (p.overnight ? ":overnight" : "")),
+    quote: BOOK.quote, remainingRisk: "NOT ON TODAY — T8",
+  }, null, 2);
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  const v = VARIANTS[i];
+  document.getElementById("switcher").innerHTML = `
+    <button type="button" data-act="prev" aria-label="Previous variant">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next" aria-label="Next variant">→</button>`;
+}
+
+function setVariant(key) {
+  S.variant = key;
+  const u = new URL(location.href);
+  u.searchParams.set("variant", key);
+  history.replaceState(null, "", u);
+  paint();
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].key);
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) return;
+  const act = t.getAttribute("data-act");
+  const id = t.getAttribute("data-id");
+  if (act === "prev") cycle(-1);
+  if (act === "next") cycle(1);
+  if (act === "select") { S.selected = id; }
+  if (act === "deeper") { S.selected = id; S.consoleOpen = true; }
+  if (act === "open-console" || act === "toggle-console") S.consoleOpen = !S.consoleOpen;
+  if (act === "close-console") S.consoleOpen = false;
+  if (act === "detect-plan") S.detection = "plan";
+  if (act === "detect-noform") S.detection = "noform";
+  if (act === "dismiss-detect") S.detection = null;
+  if (act === "open-notch") { S.detection = null; S.variant === "C" ? S.notchFab = true : S.declared = false; }
+  if (act === "declare") { S.declared = true; S.notchFab = false; }
+  if (act === "undeclare") S.declared = false;
+  if (act === "toggle-fab") S.notchFab = !S.notchFab;
+  paint();
+});
+
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+
+const boot = new URLSearchParams(location.search).get("variant") || "A";
+S.variant = VARIANTS.some(v => v.key === boot) ? boot : "A";
+paint();
+</script>
+</body>
+</html>
