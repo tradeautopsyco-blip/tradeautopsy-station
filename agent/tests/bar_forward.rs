@@ -3,7 +3,7 @@
 mod common;
 
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, patch, post};
+use axum::routing::{patch, post};
 use axum::{Json, Router};
 use std::sync::{Arc, Mutex};
 use common::{
@@ -12,55 +12,6 @@ use common::{
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{json, Value};
 use std::time::Duration;
-
-#[tokio::test]
-async fn bar_live_state_proxies_get_to_upstream() {
-    const AGENT_PORT: u16 = 39_601;
-    let upstream = Router::new().route(
-        "/api/bar/v1/live-state",
-        get(|| async {
-            Json(json!({
-                "schemaVersion": 1,
-                "notch": { "plan_state": "GREEN", "sync_state": "GREEN" }
-            }))
-        }),
-    );
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .expect("bind upstream");
-    let upstream_port = listener.local_addr().expect("addr").port();
-    tokio::spawn(async move {
-        axum::serve(listener, upstream)
-            .await
-            .expect("upstream serve");
-    });
-    tokio::time::sleep(Duration::from_millis(60)).await;
-
-    let mut opts = TestAgentOptions::default();
-    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
-    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
-    tokio::time::sleep(Duration::from_millis(320)).await;
-
-    let path = "/api/daemon/bar/live-state";
-    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
-    let resp = apply_wire_v1(
-        client().get(&url),
-        "GET",
-        path,
-        b"",
-        WireHeaderOverrides::default(),
-    )
-    .send()
-    .await
-    .expect("agent");
-
-    assert_eq!(resp.status(), 200);
-    let body: Value = resp.json().await.expect("json");
-    assert_eq!(body["schemaVersion"], 1);
-    assert_eq!(body["notch"]["plan_state"], "GREEN");
-
-    handle.abort();
-}
 
 #[tokio::test]
 async fn bar_declare_proxies_post_body_to_upstream() {

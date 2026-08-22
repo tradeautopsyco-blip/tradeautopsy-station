@@ -40,6 +40,12 @@ pub struct TestAgentOptions {
     pub station_token_store: Option<Arc<dyn tradeautopsy_agent::StationTokenStore>>,
     /// B2 — shared host vault so tests seed credentials without wire secrets.
     pub credential_vault: Option<Arc<dyn BrokerCredentialVault>>,
+    /// Slice 3 — plant a LiveBook snapshot before the first agent GET (no hydrate-on-sign-in).
+    pub live_book_snapshot: Option<serde_json::Value>,
+    /// Fact-plane boot — injectable online cadence (prod 20_000).
+    pub fact_online_interval_ms: Option<u64>,
+    /// Fact-plane boot — injectable clock so tests can pass the 15s coalesce without sleeping.
+    pub fact_clock_ms: Option<Arc<std::sync::atomic::AtomicI64>>,
 }
 
 impl Default for TestAgentOptions {
@@ -65,6 +71,9 @@ impl Default for TestAgentOptions {
             start_key_log: None,
             station_token_store: None,
             credential_vault: None,
+            live_book_snapshot: None,
+            fact_online_interval_ms: None,
+            fact_clock_ms: None,
         }
     }
 }
@@ -98,6 +107,11 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     if let Some(vault) = &opts.credential_vault {
         cfg.broker_credential_vault = Some(vault.clone());
     }
+    cfg.live_book_snapshot = opts.live_book_snapshot.clone();
+    if let Some(ms) = opts.fact_online_interval_ms {
+        cfg.fact_online_interval_ms = ms;
+    }
+    cfg.fact_clock_ms = opts.fact_clock_ms.clone();
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {
@@ -120,6 +134,7 @@ pub fn spawn_test_agent_with_options(
         remove_sqlite_files(&cfg.recent_trades_db_path);
     }
     remove_sqlite_files(&cfg.kill_switch_audit_db_path);
+    remove_sqlite_files(&cfg.fact_outbox_db_path);
     tokio::spawn(async move {
         tradeautopsy_agent::run_agent(cfg)
             .await
