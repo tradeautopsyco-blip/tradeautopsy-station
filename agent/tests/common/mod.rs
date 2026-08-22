@@ -151,6 +151,32 @@ pub fn spawn_test_agent(port: u16) -> tokio::task::JoinHandle<()> {
     spawn_test_agent_with_options(port, TestAgentOptions::default())
 }
 
+#[allow(dead_code)]
+pub async fn wait_ready(port: u16) {
+    let path = "/api/daemon/health";
+    let url = format!("http://127.0.0.1:{port}{path}");
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let Ok(resp) = apply_wire_v1(
+            client().get(&url),
+            "GET",
+            path,
+            b"",
+            WireHeaderOverrides::default(),
+        )
+        .timeout(Duration::from_millis(400))
+        .send()
+        .await
+        else {
+            continue;
+        };
+        if resp.status().is_success() {
+            return;
+        }
+    }
+    panic!("agent on port {port} did not become ready");
+}
+
 /// Apply wire v1 headers for a canonical request. `path` must match `Uri::path` (e.g. `/api/daemon/health`).
 pub fn apply_wire_v1(
     builder: reqwest::RequestBuilder,

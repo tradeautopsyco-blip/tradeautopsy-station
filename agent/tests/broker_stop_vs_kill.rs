@@ -8,7 +8,7 @@ mod common;
 
 use common::{
     apply_wire_v1, client, identity_start_body, seeded_hmac_vault, spawn_test_agent_with_options,
-    TestAgentOptions, WireHeaderOverrides,
+    wait_ready, TestAgentOptions, WireHeaderOverrides,
 };
 use futures::StreamExt;
 use serde_json::{json, Value};
@@ -133,7 +133,7 @@ async fn b3_stop_then_l1_kill_still_publishes_sse_sync_stays_paused() {
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
-    tokio::time::sleep(Duration::from_millis(220)).await;
+    wait_ready(PORT).await;
 
     assert_eq!(
         post_json(PORT, "/api/daemon/broker/sync/start", identity_start_body("binance_us"))
@@ -225,7 +225,7 @@ async fn b3_stop_then_l3_dns_audit_dismiss_leaves_sync_paused() {
         ..TestAgentOptions::default()
     };
     let handle = spawn_test_agent_with_options(PORT, opts);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(PORT).await;
 
     assert_eq!(
         post_json(PORT, "/api/daemon/broker/sync/start", identity_start_body("binance_us"))

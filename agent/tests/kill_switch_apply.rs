@@ -3,38 +3,13 @@
 mod common;
 
 use common::{
-    apply_wire_v1, client, spawn_test_agent, spawn_test_agent_with_options, TestAgentOptions,
-    WireHeaderOverrides,
+    apply_wire_v1, client, spawn_test_agent, spawn_test_agent_with_options, wait_ready,
+    TestAgentOptions, WireHeaderOverrides,
 };
 use futures::StreamExt;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tradeautopsy_agent::{KillPolicy, BLOCK_MARKER};
-
-async fn wait_ready(port: u16) {
-    let path = "/api/daemon/health";
-    let url = format!("http://127.0.0.1:{port}{path}");
-    for _ in 0..40 {
-        tokio::time::sleep(Duration::from_millis(80)).await;
-        let Ok(resp) = apply_wire_v1(
-            client().get(&url),
-            "GET",
-            path,
-            b"",
-            WireHeaderOverrides::default(),
-        )
-        .timeout(Duration::from_millis(400))
-        .send()
-        .await
-        else {
-            continue;
-        };
-        if resp.status().is_success() {
-            return;
-        }
-    }
-    panic!("agent on port {port} did not become ready");
-}
 
 async fn post_json(port: u16, path: &str, body: Value) -> reqwest::Response {
     let url = format!("http://127.0.0.1:{port}{path}");

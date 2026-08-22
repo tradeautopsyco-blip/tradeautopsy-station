@@ -2,9 +2,8 @@
 
 mod common;
 
-use common::{apply_wire_v1, client, spawn_test_agent, WireHeaderOverrides};
+use common::{apply_wire_v1, client, spawn_test_agent, wait_ready, WireHeaderOverrides};
 use serde_json::json;
-use std::time::Duration;
 use tradeautopsy_agent::{hosts_for_broker, plan_l3_dns, BLOCK_MARKER};
 
 #[test]
@@ -59,7 +58,7 @@ async fn kill_switch_level_3_writes_hosts_marker_and_dismiss_clears() {
     );
 
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     let fire_path = "/api/daemon/kill-switch";
     let fire_url = format!("http://127.0.0.1:{AGENT_PORT}{fire_path}");
@@ -128,7 +127,7 @@ async fn kill_switch_level_2_does_not_write_hosts_marker() {
     );
 
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     let path = "/api/daemon/kill-switch";
     let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
