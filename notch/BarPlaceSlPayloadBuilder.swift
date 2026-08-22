@@ -17,7 +17,8 @@ enum BarPlaceSlPayloadError: Error, LocalizedError {
     }
 }
 
-/// Pure `place_sl` trade leg resolution (#182) — declaration ticker wins over positions; never form field text.
+/// Pure trade-leg resolution (#182) — declaration ticker wins over positions; never form field text.
+/// T5 K3 — remains for Cancel / unit tests. Do not wire a Notch `place_sl` send.
 enum BarPlaceSlPayloadBuilder {
     struct TradeLeg: Equatable, Sendable {
         let symbol: String

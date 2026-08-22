@@ -165,8 +165,6 @@ async fn poll_and_execute(
             executed += 1;
             if cmd_type == "clear_fog" {
                 fog_active.store(false, Ordering::SeqCst);
-            } else if cmd_type == "fog_of_war" && level_from_payload(&payload) <= 1 {
-                fog_active.store(true, Ordering::SeqCst);
             }
         }
     }

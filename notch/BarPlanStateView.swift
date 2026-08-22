@@ -7,7 +7,6 @@ struct BarPlanStateView: View {
     var embedEscrow: Bool = true
 
     @State private var moveSlFallbackAlert: Bool = false
-    @State private var confirmPlaceProtectiveSl: Bool = false
     @State private var cancelSlWebBarAlert: Bool = false
     @State private var showExitGateSheet: Bool = false
     @State private var showRecalibrateSheet: Bool = false
@@ -108,14 +107,6 @@ struct BarPlanStateView: View {
             Text(
                 "Notch needs broker order sync for modify SL — complete this action in web Bar for now.",
             )
-        }
-        .alert("Place protective stop loss?", isPresented: $confirmPlaceProtectiveSl) {
-            Button("Cancel", role: .cancel) {}
-            Button("Place SL") {
-                Task { await viewModel.submitBarPlaceSlFromNotch() }
-            }
-        } message: {
-            Text("Confirms one protective order at the declared trigger price via the daemon.")
         }
         .alert("Cancel stop loss on broker?", isPresented: $cancelSlWebBarAlert) {
             Button("OK", role: .cancel) {}
@@ -973,13 +964,18 @@ struct BarPlanStateView: View {
 
     @ViewBuilder
     private var protectiveSlHintRow: some View {
-        let st = payload?.slStatus?.lowercased() ?? ""
-        if let reason = payload?.slFailureReason, !reason.isEmpty {
+        let chrome = BarProtectiveSlPlanChrome.presentation(
+            slStatus: payload?.slStatus,
+            slPrice: payload?.slPrice,
+            slFailureReason: payload?.slFailureReason,
+            formattedPrice: payload?.slPrice.map { formatDeskWhole($0) },
+        )
+        if let rejected = chrome.rejectedText {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.system(size: 12))
-                Text("SL rejected: \(reason)")
+                Text(rejected)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.red)
                     .lineLimit(2)
@@ -989,45 +985,26 @@ struct BarPlanStateView: View {
             .background(Color.red.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        if st == "missing", let px = payload?.slPrice {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Set SL at \(formatDeskWhole(px)) — not placed at broker yet.")
+        if let status = chrome.statusText {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(status)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.orange.opacity(0.85))
+                    .foregroundColor(
+                        chrome.showsCancelSlButton ? Color.green.opacity(0.8) : Color.orange.opacity(0.85)
+                    )
                     .fixedSize(horizontal: false, vertical: true)
-                if viewModel.canSubmitNotchPlaceSl {
+                if chrome.showsCancelSlButton {
                     Button {
-                        confirmPlaceProtectiveSl = true
+                        cancelSlWebBarAlert = true
                     } label: {
-                        HStack(spacing: 6) {
-                            if viewModel.barProtectiveBusy {
-                                ProgressView()
-                                    .scaleEffect(0.65)
-                            }
-                            Text(viewModel.barProtectiveBusy ? "Placing protective SL…" : "Set SL (confirm)…")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        }
+                        Text("Cancel SL (confirm)…")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                     }
                     .buttonStyle(.plain)
                     .foregroundColor(BarDS.Accent.teal)
                     .disabled(viewModel.barProtectiveBusy)
-                    .accessibilityHint("Requires confirmation before sending protective order")
+                    .accessibilityHint("Opens web Bar when a broker cancel is required")
                 }
-            }
-        } else if st == "placed" {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Protective SL is live at the broker.")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.green.opacity(0.8))
-                Button {
-                    cancelSlWebBarAlert = true
-                } label: {
-                    Text("Cancel SL (confirm)…")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(Color.white.opacity(0.75))
-                .accessibilityHint("Opens web Bar when a broker cancel is required")
             }
         }
     }
@@ -1261,25 +1238,6 @@ struct BarPlanStateView: View {
         switch acc {
         case .none:
             EmptyView()
-        case .placeProtectiveSl:
-            if viewModel.canSubmitNotchPlaceSl {
-                Button {
-                    confirmPlaceProtectiveSl = true
-                } label: {
-                    HStack(spacing: 6) {
-                        if viewModel.barProtectiveBusy {
-                            ProgressView()
-                                .scaleEffect(0.65)
-                        }
-                        Text(viewModel.barProtectiveBusy ? "Placing protective SL…" : "Place SL via daemon…")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(interactionsEnabled ? BarDS.Accent.teal : Color.white.opacity(0.35))
-                .disabled(!interactionsEnabled || viewModel.barProtectiveBusy)
-                .accessibilityHint("Confirms protective placement through the daemon")
-            }
         case .manageInWebBar:
             if interactionsEnabled {
                 Text(

@@ -1272,22 +1272,6 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// True when hosted live-state says SL is missing, we have a matched declaration id, and symbol/qty can be inferred.
-    var canSubmitNotchPlaceSl: Bool {
-        guard let p = barLiveState else { return false }
-        let st = p.slStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        guard st == "missing" else { return false }
-        guard let tid = p.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !tid.isEmpty else {
-            return false
-        }
-        guard let px = p.slPrice, px > 0 else { return false }
-        if !positions.isEmpty { return true }
-        if let pd = p.pendingDeclaration, !pd.symbol.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return true
-        }
-        return false
-    }
-
     /// Live-trade interference chips — POSTs choice to hosted `ingestSignal` via agent.
     func applyBarInterferenceTap(_ choice: String) {
         barInterferenceChoice = choice
@@ -1363,68 +1347,8 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Protective `place_sl` for matched declarations (Notch) — same daemon route as modify/cancel.
-    func submitBarPlaceSlFromNotch() async {
-        guard let payload = barLiveState else { return }
-        guard let declId = payload.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !declId.isEmpty
-        else {
-            barDeclarationLastError = "No matched declaration — open web Bar."
-            return
-        }
-        let trigger: Double
-        if let stop = payload.pendingDeclaration?.stopLoss, stop > 0 {
-            trigger = stop
-        } else if let sl = payload.slPrice, sl > 0 {
-            trigger = sl
-        } else {
-            barDeclarationLastError = "Stop price unknown — wait for live state."
-            return
-        }
-
-        let leg: BarPlaceSlPayloadBuilder.TradeLeg
-        switch BarPlaceSlPayloadBuilder.resolveTradeLeg(liveState: payload, positions: positions) {
-        case let .success(resolved):
-            leg = resolved
-        case let .failure(error):
-            barDeclarationLastError = error.localizedDescription
-            return
-        }
-
-        let symUpper = leg.symbol
-        let sideUpper = barOrderSideFromHint(leg.sideRaw)
-        let qty = leg.qty
-        let broker = barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !broker.isEmpty else {
-            barDeclarationLastError = "Broker slug not configured."
-            return
-        }
-
-        let placeBody: [String: Any] = [
-            "action": "place_sl",
-            "declaration_id": declId,
-            "symbol": symUpper,
-            "side": sideUpper,
-            "quantity": qty,
-            "trigger_price": trigger,
-            "broker": broker,
-            "product": "MIS",
-            "reason": "notch_place_sl",
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: placeBody) else {
-            barDeclarationLastError = "Could not build place_sl JSON."
-            return
-        }
-        print("[Notch] place_sl symbol=\(symUpper) qty=\(qty) trigger=\(trigger) broker=\(broker)")
-        await submitBarProtective(body: data)
-    }
-
-    private func barOrderSideFromHint(_ raw: String) -> String {
-        let u = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if u.contains("SELL") || u.contains("SHORT") { return "SELL" }
-        return "BUY"
-    }
-
     /// Forward modify/cancel protective SL JSON to hosted engine via agent (`ActiveSLRecord` body).
+    /// T5 K3 — PLAN must not call this with `action: place_sl`.
     func submitBarProtective(body: Data) async {
         guard let url = URL(string: baseURL() + "/api/daemon/bar/protective") else { return }
         barProtectiveBusy = true

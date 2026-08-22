@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
     AgentConfig, BrokerAdapter, BrokerCredentialVault, BrokerSyncConfig, CredentialBlob,
-    MemoryBrokerCredentialVault, WireVerifier, WIRE_PROTO_VERSION,
+    KillPolicy, MemoryBrokerCredentialVault, WireVerifier, WIRE_PROTO_VERSION,
 };
 
 pub const TEST_SECRET: &str = "integration-test-daemon-secret-min-32b";
@@ -46,6 +46,8 @@ pub struct TestAgentOptions {
     pub fact_online_interval_ms: Option<u64>,
     /// Fact-plane boot — injectable clock so tests can pass the 15s coalesce without sleeping.
     pub fact_clock_ms: Option<Arc<std::sync::atomic::AtomicI64>>,
+    /// Boot seed for the sqlite KillPolicy store (countdown / website_block / default_level).
+    pub kill_policy: KillPolicy,
 }
 
 impl Default for TestAgentOptions {
@@ -74,6 +76,7 @@ impl Default for TestAgentOptions {
             live_book_snapshot: None,
             fact_online_interval_ms: None,
             fact_clock_ms: None,
+            kill_policy: KillPolicy::default(),
         }
     }
 }
@@ -112,6 +115,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
         cfg.fact_online_interval_ms = ms;
     }
     cfg.fact_clock_ms = opts.fact_clock_ms.clone();
+    cfg.kill_policy = opts.kill_policy.clone();
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

@@ -5,7 +5,7 @@ mod common;
 use common::{apply_wire_v1, client, spawn_test_agent, WireHeaderOverrides};
 use serde_json::json;
 use std::time::Duration;
-use tradeautopsy_agent::{hosts_for_broker, BLOCK_MARKER};
+use tradeautopsy_agent::{hosts_for_broker, plan_l3_dns, BLOCK_MARKER};
 
 #[test]
 fn broker_slug_maps_to_expected_hosts() {
@@ -23,6 +23,23 @@ fn broker_slug_maps_to_expected_hosts() {
     assert!(com.contains(&"api.binance.com"));
     assert!(!com.iter().any(|h| h.contains("kotak")));
     assert!(hosts_for_broker("unknown_slug").is_empty());
+}
+
+#[test]
+fn r8_empty_host_map_refuses_l3_block() {
+    assert!(
+        plan_l3_dns(true, &[]).is_err(),
+        "website_block + empty map must refuse (R8)"
+    );
+    assert_eq!(
+        plan_l3_dns(false, &[]).expect("block off is ok"),
+        false,
+        "website_block=false must skip DNS even when the map is empty"
+    );
+    assert_eq!(
+        plan_l3_dns(true, &["kite.zerodha.com"]).expect("known hosts"),
+        true
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -103,10 +120,7 @@ async fn kill_switch_level_3_writes_hosts_marker_and_dismiss_clears() {
 async fn kill_switch_level_2_does_not_write_hosts_marker() {
     const AGENT_PORT: u16 = 39_609;
     let dir = std::env::temp_dir();
-    let hosts_path = dir.join(format!(
-        "rta-killswitch-l2-{}.hosts",
-        uuid::Uuid::new_v4()
-    ));
+    let hosts_path = dir.join(format!("rta-killswitch-l2-{}.hosts", uuid::Uuid::new_v4()));
     std::fs::write(&hosts_path, "127.0.0.1 localhost\n").expect("seed hosts");
     std::env::set_var(
         "TRADEAUTOPSY_HOSTS_FILE",

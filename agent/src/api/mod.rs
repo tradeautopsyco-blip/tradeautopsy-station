@@ -3,6 +3,7 @@ use crate::{
     broker_sync_control::BrokerSyncController,
     event_bus::EventBus,
     instruments::InstrumentStore,
+    kill_policy::KillPolicyStore,
     live_book::LiveBook,
     kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
     metrics::AgentMetrics,
@@ -27,6 +28,7 @@ pub mod daemon_commands;
 mod health;
 mod instruments;
 mod kill_switch;
+pub use kill_switch::{effective_level, plan_l3_dns};
 mod kotak_session;
 mod outbox_status;
 mod phase8;
@@ -52,11 +54,15 @@ pub struct AppState {
     pub broker_status: Arc<std::sync::Mutex<BrokerRuntimeState>>,
     pub broker_sync_control: Arc<BrokerSyncController>,
     pub broker_limits: BrokerSyncConfig,
-    /// L1 fog-of-war armed (#190).
+    /// L1 fog-of-war armed (#190). L1 apply must not set this (T5 / Q8).
     pub fog_active: Arc<AtomicBool>,
     pub kill_switch_audit: KillSwitchAuditStore,
     pub audit_signer: Arc<KillSwitchAuditSigner>,
     pub last_l3_broker: Arc<std::sync::Mutex<Option<String>>>,
+    /// Last fire level (1|2|3+) so dismiss audit is not hardcoded to 3.
+    pub last_applied_level: Arc<std::sync::Mutex<Option<u8>>>,
+    /// One sqlite row next to audit. Apply always loads this store.
+    pub kill_policy: KillPolicyStore,
     pub today_service: Arc<crate::today::TodayService>,
     /// In-flight WorkOS device grant (`device_code` never leaves this process).
     pub device_login_pending: Arc<std::sync::Mutex<Option<crate::DeviceLoginPending>>>,

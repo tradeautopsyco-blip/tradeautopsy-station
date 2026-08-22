@@ -9,8 +9,6 @@ import Foundation
 enum BarInterventionCardSpec {
     enum PrimaryAccessory: Equatable {
         case none
-        /// Routes through existing daemon protective confirm (`submitBarPlaceSlFromNotch`).
-        case placeProtectiveSl
         /// Kill / enforcement — web Bar until Notch has full override UX (#122).
         case manageInWebBar
     }
@@ -40,7 +38,8 @@ enum BarInterventionCardSpec {
     static func primaryAccessory(interventionType: String) -> PrimaryAccessory {
         switch canonical(interventionType) {
         case "bar_protective_sl", "naked_window":
-            return .placeProtectiveSl
+            // T5 K3 — intervention must not re-open Notch `place_sl`.
+            return .none
         case "bar_kill_switch", "kill_switch":
             return .manageInWebBar
         default:

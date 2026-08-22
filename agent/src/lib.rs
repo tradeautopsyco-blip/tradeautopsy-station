@@ -6,25 +6,26 @@ mod binance_com_spot_adapter;
 mod binance_com_spot_client;
 mod binance_com_validation;
 mod broker;
+mod broker_behavioral;
 mod broker_data_class;
+mod broker_redaction;
 mod broker_sync;
 mod broker_sync_control;
 mod broker_validation;
-mod broker_behavioral;
-mod broker_redaction;
 mod device_login;
 mod dns_block;
 mod event_bus;
+mod exchange_info;
 mod fact_outbox;
 mod live_book;
 mod instruments;
+mod kill_policy;
 mod kill_switch_audit;
 mod metrics;
 mod outbox;
-mod exchange_info;
 mod recent_trades;
-mod round_trip_engine;
 mod resolve_kill_switch_broker;
+mod round_trip_engine;
 mod sse_signing;
 mod station_tokens;
 mod today;
@@ -85,8 +86,13 @@ pub use broker_validation::{
 };
 pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
 pub use event_bus::{AgentEvent, EventBus};
+pub use exchange_info::{
+    is_usd_pegged_stablecoin, is_usd_quoted_symbol, live_com_filters_ready, resolve_symbol_assets,
+    ExchangeInfoSymbolCache, SymbolAssets, SymbolFilters,
+};
 pub use fact_outbox::{EnqueueOutcome, Fact, FactOutbox, FactRow};
 pub use instruments::InstrumentStore;
+pub use kill_policy::{KillPolicy, KillPolicyStore};
 pub use kill_switch_audit::{
     canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
     KillSwitchAuditSigner, KillSwitchAuditStore,
@@ -96,24 +102,21 @@ pub use outbox::{
     queued_response_json, CaptureOutbox, DeadLetterStatusItem, OutboxConfig, OutboxCounts,
     OutboxStatusSnapshot, ProcessNowResult,
 };
-pub use exchange_info::{
-    is_usd_pegged_stablecoin, is_usd_quoted_symbol, live_com_filters_ready, resolve_symbol_assets,
-    ExchangeInfoSymbolCache, SymbolAssets, SymbolFilters,
-};
 pub use recent_trades::RecentTradesStore;
+pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
 pub use round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, FillTimeFeePriceLookup, PairAssetFeeLookup,
     ReconstructResult, RoundTrip, RoundTripEngine, StablecoinAndBaseAssetFeeLookup, UnhandledFee,
 };
+pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use today::{
     TodayDegradedReason, TodayHeroPayload, TodayPayload, TodayService, TodayStore,
     open_inventory_from_fills, OpenInventoryRow,
 };
-pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
-pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
 
 pub use api::daemon_commands::{parse_daemon_command_type, DaemonCommandKind};
+pub use api::{effective_level, plan_l3_dns};
 
 use chrono::Utc;
 use std::net::SocketAddr;
@@ -265,6 +268,8 @@ pub struct AgentConfig {
     pub fact_online_interval_ms: u64,
     /// Injectable clock for tests (unix ms). `None` uses wall clock.
     pub fact_clock_ms: Option<Arc<AtomicI64>>,
+    /// Boot seed written into [`KillPolicyStore`]. Apply always loads the store.
+    pub kill_policy: KillPolicy,
 }
 
 impl AgentConfig {
@@ -351,6 +356,7 @@ impl AgentConfig {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(20_000),
             fact_clock_ms: None,
+            kill_policy: KillPolicy::default(),
         })
     }
 
@@ -393,6 +399,7 @@ impl AgentConfig {
             fact_outbox_db_path,
             fact_online_interval_ms: 20_000,
             fact_clock_ms: None,
+            kill_policy: KillPolicy::default(),
         }
     }
 }
@@ -513,6 +520,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let recent_trades = RecentTradesStore::open(&config.recent_trades_db_path)?;
     let today_store = TodayStore::open(&config.today_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
+    let kill_policy = KillPolicyStore::open(&config.kill_switch_audit_db_path)?;
+    kill_policy.load_or_insert_defaults()?;
+    kill_policy.save(&config.kill_policy)?;
     let audit_signer = Arc::new(KillSwitchAuditSigner::from_env_or_generate());
     let instruments = Arc::new(InstrumentStore::new(
         config
@@ -649,6 +659,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         kill_switch_audit,
         audit_signer,
         last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
+        last_applied_level: Arc::new(std::sync::Mutex::new(None)),
+        kill_policy,
         today_service: today_service.clone(),
         device_login_pending: Arc::new(std::sync::Mutex::new(None)),
         station_token_store,
