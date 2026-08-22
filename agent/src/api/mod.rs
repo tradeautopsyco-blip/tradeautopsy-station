@@ -3,6 +3,7 @@ use crate::{
     broker_sync_control::BrokerSyncController,
     event_bus::EventBus,
     instruments::InstrumentStore,
+    live_book::LiveBook,
     kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
     metrics::AgentMetrics,
     recent_trades::RecentTradesStore,
@@ -61,6 +62,8 @@ pub struct AppState {
     pub device_login_pending: Arc<std::sync::Mutex<Option<crate::DeviceLoginPending>>>,
     /// Station Caller tokens (Keychain in prod; memory in tests when injected).
     pub station_token_store: Arc<dyn crate::StationTokenStore>,
+    /// In-memory live-read book. After one snapshot, GET live-state serves this.
+    pub live_book: Arc<LiveBook>,
 }
 
 pub fn router(state: AppState) -> Router {

@@ -8,8 +8,24 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
 
+fn livebook_json(source: &'static str, book: Value) -> Response {
+    (
+        StatusCode::OK,
+        [(
+            axum::http::header::HeaderName::from_static("x-livebook"),
+            source,
+        )],
+        Json(book),
+    )
+        .into_response()
+}
+
 pub async fn live_state_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+
+    if let Some(book) = state.live_book.snapshot() {
+        return livebook_json("local", book);
+    }
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
@@ -21,7 +37,15 @@ pub async fn live_state_handler(State(state): State<AppState>, headers: HeaderMa
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
+        Ok((st, text)) => {
+            if st.is_success() {
+                if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                    state.live_book.hydrate(value.clone());
+                    return livebook_json("snapshot", value);
+                }
+            }
+            upstream_json_response(st, text)
+        }
         Err(msg) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({

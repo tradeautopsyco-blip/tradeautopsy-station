@@ -15,6 +15,8 @@ mod broker_redaction;
 mod device_login;
 mod dns_block;
 mod event_bus;
+mod fact_outbox;
+mod live_book;
 mod instruments;
 mod kill_switch_audit;
 mod metrics;
@@ -83,6 +85,7 @@ pub use broker_validation::{
 };
 pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
 pub use event_bus::{AgentEvent, EventBus};
+pub use fact_outbox::{EnqueueOutcome, Fact, FactOutbox, FactRow};
 pub use instruments::InstrumentStore;
 pub use kill_switch_audit::{
     canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
@@ -115,7 +118,7 @@ pub use api::daemon_commands::{parse_daemon_command_type, DaemonCommandKind};
 use chrono::Utc;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
@@ -202,18 +205,18 @@ impl UpstreamClient {
     /// Brain identity: Station Caller Bearer from Keychain (A8). Never x-user-id.
     pub fn brain_authorization_header(&self) -> anyhow::Result<String> {
         self.config.require_https_base()?;
-        if let Some(tokens) = KeyringStationTokenStore.load()? {
-            return Ok(bearer_authorization(&tokens));
-        }
-        // Test / bootstrap only — never a production identity rail (T1). Gated to the
-        // same loopback-http escape hatch as `require_https_base` so this can never
-        // apply against a real (https) Console, even if the env var is stray-set.
+        // Loopback bootstrap first so tests / wiremock never block on Keychain.
+        // Still gated to loopback-http + STATION_ACCESS_TOKEN (T1) — never a
+        // production identity rail against a real https Console.
         if self.config.is_loopback_http_bootstrap() {
             if let Ok(token) = std::env::var("STATION_ACCESS_TOKEN") {
                 if !token.trim().is_empty() {
                     return Ok(format!("Bearer {}", token.trim()));
                 }
             }
+        }
+        if let Some(tokens) = KeyringStationTokenStore.load()? {
+            return Ok(bearer_authorization(&tokens));
         }
         anyhow::bail!("No Station Caller tokens in Keychain — complete device login")
     }
@@ -254,6 +257,14 @@ pub struct AgentConfig {
     pub daemon_poll_user_id: Option<String>,
     /// Override Station token store (tests use memory; prod uses Keychain).
     pub station_token_store: Option<Arc<dyn StationTokenStore>>,
+    /// Optional planted LiveBook snapshot (tests). Prod starts empty until snapshot-once.
+    pub live_book_snapshot: Option<serde_json::Value>,
+    /// Sibling SQLite for typed facts — never the capture outbox.
+    pub fact_outbox_db_path: PathBuf,
+    /// Online cadence while JWT is valid. Prod **20_000** (PRD 5.1).
+    pub fact_online_interval_ms: u64,
+    /// Injectable clock for tests (unix ms). `None` uses wall clock.
+    pub fact_clock_ms: Option<Arc<AtomicI64>>,
 }
 
 impl AgentConfig {
@@ -307,6 +318,13 @@ impl AgentConfig {
             .ok()
             .or_else(|| std::env::var("AGENT_BAR_INGEST_USER_ID").ok())
             .filter(|s| uuid::Uuid::parse_str(s).is_ok());
+        let fact_outbox_db_path = std::env::var("AGENT_FACT_OUTBOX_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = std::env::temp_dir();
+                p.push("tradeautopsy-agent-fact-outbox.db");
+                p
+            });
         Ok(Self {
             port,
             daemon_secret,
@@ -326,6 +344,13 @@ impl AgentConfig {
             broker_credential_vault: None,
             daemon_poll_user_id,
             station_token_store: None,
+            live_book_snapshot: None,
+            fact_outbox_db_path,
+            fact_online_interval_ms: std::env::var("AGENT_FACT_ONLINE_INTERVAL_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(20_000),
+            fact_clock_ms: None,
         })
     }
 
@@ -340,6 +365,8 @@ impl AgentConfig {
         instruments_db_path.push(format!("rta-instruments-{port}.db"));
         let mut kill_switch_audit_db_path = std::env::temp_dir();
         kill_switch_audit_db_path.push(format!("rta-kill-switch-audit-{port}.db"));
+        let mut fact_outbox_db_path = std::env::temp_dir();
+        fact_outbox_db_path.push(format!("rta-fact-outbox-{port}.db"));
         Self {
             port,
             daemon_secret: daemon_secret.clone(),
@@ -362,6 +389,10 @@ impl AgentConfig {
             broker_credential_vault: Some(memory_credential_vault()),
             daemon_poll_user_id: None,
             station_token_store: None,
+            live_book_snapshot: None,
+            fact_outbox_db_path,
+            fact_online_interval_ms: 20_000,
+            fact_clock_ms: None,
         }
     }
 }
@@ -549,6 +580,57 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
 
     let fog_active = Arc::new(AtomicBool::new(false));
 
+    let live_book = Arc::new(crate::live_book::LiveBook::new());
+    if let Some(planted) = config.live_book_snapshot {
+        live_book.hydrate(planted);
+    }
+
+    let injected_station_tokens = config.station_token_store.is_some();
+    let station_token_store = config
+        .station_token_store
+        .unwrap_or_else(|| Arc::new(KeyringStationTokenStore));
+    let mut fact_outbox = crate::fact_outbox::FactOutbox::open(
+        &config.fact_outbox_db_path,
+        upstream.clone(),
+    )?;
+    if injected_station_tokens {
+        fact_outbox = fact_outbox.with_token_store(station_token_store.clone());
+    }
+    if let Some(clock) = config.fact_clock_ms.clone() {
+        fact_outbox = fact_outbox.with_clock(clock);
+    }
+    let fact_outbox = Arc::new(fact_outbox);
+
+    let jwt_loadable = if injected_station_tokens {
+        station_token_store.load().ok().flatten().is_some()
+    } else if upstream.config.is_loopback_http_bootstrap() {
+        std::env::var("STATION_ACCESS_TOKEN")
+            .ok()
+            .is_some_and(|t| !t.trim().is_empty())
+    } else {
+        tokio::task::spawn_blocking(|| {
+            KeyringStationTokenStore
+                .load()
+                .ok()
+                .flatten()
+                .is_some()
+        })
+        .await
+        .unwrap_or(false)
+    };
+    if jwt_loadable && live_book.snapshot().is_none() {
+        let url = format!("{}/api/bar/v1/live-state", upstream.config.base_url);
+        if let Ok(req) = upstream.authorize_brain(upstream.http.get(&url)) {
+            if let Ok(resp) = req.send().await {
+                if resp.status().is_success() {
+                    if let Ok(value) = resp.json::<serde_json::Value>().await {
+                        live_book.hydrate(value);
+                    }
+                }
+            }
+        }
+    }
+
     let state = api::AppState {
         event_bus: event_bus.clone(),
         runtime: runtime.clone(),
@@ -569,9 +651,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
         today_service: today_service.clone(),
         device_login_pending: Arc::new(std::sync::Mutex::new(None)),
-        station_token_store: config
-            .station_token_store
-            .unwrap_or_else(|| Arc::new(KeyringStationTokenStore)),
+        station_token_store,
+        live_book,
     };
     let router = api::router(state.clone());
 
@@ -600,6 +681,32 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             worker.run_worker_loop().await;
         });
     }
+
+    let fact_worker = fact_outbox.clone();
+    let fact_online_interval_ms = config.fact_online_interval_ms.max(1);
+    tokio::spawn(async move {
+        async fn publish_online(outbox: &Arc<crate::fact_outbox::FactOutbox>) {
+            let worker = outbox.clone();
+            let enqueued = tokio::task::spawn_blocking(move || {
+                worker.enqueue(crate::fact_outbox::Fact::StationOnline)
+            })
+            .await;
+            if matches!(
+                enqueued,
+                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Enqueued { .. }))
+            ) {
+                let _ = outbox.drain().await;
+            }
+        }
+        publish_online(&fact_worker).await;
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_millis(fact_online_interval_ms));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            publish_online(&fact_worker).await;
+        }
+    });
 
     if let Some(user_id) = config.daemon_poll_user_id.clone() {
         let poll_ms = std::env::var("AGENT_COMMAND_POLL_MS")

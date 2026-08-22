@@ -31,7 +31,7 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ulid = "1"
-uuid = "1"
+uuid = { version = "1", features = ["v4"] }
 futures = "0.3"
 chrono = { version = "0.4.44", features = ["clock", "std"] }
 hex = "0.4"

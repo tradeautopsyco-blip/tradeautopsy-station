@@ -845,7 +845,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func fetchBarLiveState() async {
-        guard let url = URL(string: baseURL() + "/api/daemon/bar/live-state") else { return }
+        guard let url = BarLiveStatePollingTarget.url(agentBase: baseURL()) else { return }
         let isFirstFetch = barLiveState == nil
         if isFirstFetch {
             barStateLoading = true
