@@ -2,7 +2,9 @@
 
 mod common;
 
-use common::{apply_wire_v1, client, spawn_test_agent, WireHeaderOverrides, TEST_SECRET};
+use common::{
+    apply_wire_v1, client, spawn_test_agent, wait_ready, WireHeaderOverrides, TEST_SECRET,
+};
 use futures::StreamExt;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -116,7 +118,7 @@ fn seed_hosts_file(label: &str) -> std::path::PathBuf {
 async fn policy_default_row_inserted_on_boot() {
     const AGENT_PORT: u16 = 39_620;
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     let store = policy_store_for_port(AGENT_PORT);
     let policy = store.load_or_insert_defaults().expect("load after boot");
@@ -137,7 +139,7 @@ async fn policy_default_row_inserted_on_boot() {
 async fn l2_countdown_uses_policy_when_not_90() {
     const AGENT_PORT: u16 = 39_621;
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     let store = policy_store_for_port(AGENT_PORT);
     store
@@ -170,7 +172,7 @@ async fn l3_website_block_on_writes_hosts() {
     const AGENT_PORT: u16 = 39_622;
     let hosts_path = seed_hosts_file("block-on");
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     let policy = policy_store_for_port(AGENT_PORT)
         .load_or_insert_defaults()
@@ -208,7 +210,7 @@ async fn l3_website_block_off_no_hosts_requires_ack_empty_audit() {
     const AGENT_PORT: u16 = 39_623;
     let hosts_path = seed_hosts_file("block-off");
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     policy_store_for_port(AGENT_PORT)
         .save(&KillPolicy {
@@ -247,7 +249,7 @@ async fn l3_website_block_off_no_hosts_requires_ack_empty_audit() {
 async fn omitted_level_uses_policy_default_level() {
     const AGENT_PORT: u16 = 39_624;
     let handle = spawn_test_agent(AGENT_PORT);
-    tokio::time::sleep(Duration::from_millis(280)).await;
+    wait_ready(AGENT_PORT).await;
 
     policy_store_for_port(AGENT_PORT)
         .save(&KillPolicy {
