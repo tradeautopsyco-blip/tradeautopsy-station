@@ -94,8 +94,8 @@ pub use outbox::{
     OutboxStatusSnapshot, ProcessNowResult,
 };
 pub use exchange_info::{
-    is_usd_pegged_stablecoin, is_usd_quoted_symbol, resolve_symbol_assets, ExchangeInfoSymbolCache,
-    SymbolAssets,
+    is_usd_pegged_stablecoin, is_usd_quoted_symbol, live_com_filters_ready, resolve_symbol_assets,
+    ExchangeInfoSymbolCache, SymbolAssets, SymbolFilters,
 };
 pub use recent_trades::RecentTradesStore;
 pub use round_trip_engine::{
@@ -537,7 +537,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         broker_status.clone(),
         broker_sync_control.clone(),
         config.broker_sync.clone(),
-        ExchangeInfoSymbolCache::empty(),
+        ExchangeInfoSymbolCache::empty(), // I-S4: empty ≠ filters ready; live COM degrades until loaded.
     ));
     *today_service_slot.lock().expect("today service slot") = Some(today_service.clone());
 

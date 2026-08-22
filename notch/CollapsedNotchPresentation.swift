@@ -1,33 +1,21 @@
 import Foundation
 
-// MARK: - #126 — collapsed pill archetype variants (unified notch reference §CollapsedView)
-
-/// Leading glyph for the collapsed strip — intraday uses risk coloring from `compositeScore` unless SL is missing.
-enum CollapsedNotchScoreIndicatorKind: Equatable {
-    case riskColored(compositeScore: Double)
-    case slMissingAmber
-}
+// MARK: - #36 — collapsed chip is account impact; intervention still wins
 
 enum CollapsedNotchLayout: Equatable {
     case intervention(keyword: String, chromeBackgroundHex: String, chromeBorderHex: String)
-    case intraday(scoreIndicator: CollapsedNotchScoreIndicatorKind, behavioralLabel: String)
-    case scalper(tradesProgressLabel: String, sessionLossLabel: String?, timeRemainingLabel: String?)
-    case swing(daysLabel: String, statusTitle: String, weeklyPnLLabel: String?)
+    case impact(AccountImpact)
 }
 
 struct CollapsedNotchPresentation: Equatable {
     var layout: CollapsedNotchLayout
-    /// Scalper session tilt — entire pill should pulse amber (UI honors Reduce Motion).
+    /// Intervention chrome may still pulse; impact chip does not.
     var pillPulseAmber: Bool
 
-    /// Pure presentation from hosted `notch` snapshot + client-resolved archetype. No extra server work.
+    /// Intervention replaces the strip. Otherwise the closed chip is account impact (#36).
     static func build(
         notch: BarLiveStateResponse?,
-        archetype: TraderArchetype,
-        compositeScore: Double,
-        behavioralStateLabel: String,
-        referenceNow: Date,
-        quoteCurrency: String = "INR",
+        impact: AccountImpact,
     ) -> CollapsedNotchPresentation {
         if let notch, let primary = BarInterventionCardSpec.sortedInterventions(notch.activeInterventions).first {
             let kw = collapsedInterventionKeyword(interventionType: primary.interventionType)
@@ -41,50 +29,8 @@ struct CollapsedNotchPresentation: Equatable {
                 pillPulseAmber: false,
             )
         }
-
-        switch archetype {
-        case .scalper where isScalperSessionActive(notch: notch):
-            let tilt = notch?.tiltSignal == true
-            return CollapsedNotchPresentation(
-                layout: .scalper(
-                    tradesProgressLabel: scalperTradesLabel(notch: notch),
-                    sessionLossLabel: scalperSessionLossLabel(notch: notch, quoteCurrency: quoteCurrency),
-                    timeRemainingLabel: scalperTimeRemainingLabel(
-                        windowEndsISO: notch?.sessionWindowEndsISO,
-                        referenceNow: referenceNow,
-                    ),
-                ),
-                pillPulseAmber: tilt,
-            )
-        case .swing:
-            let overdue = notch?.dailyCheckInRequired == true
-            let status = overdue ? "CHECK TODAY" : "INTACT"
-            let day = notch?.daysInTrade
-            let daysLabel: String
-            if let day, day > 0 {
-                daysLabel = "Day \(day)"
-            } else {
-                daysLabel = "Swing"
-            }
-            return CollapsedNotchPresentation(
-                layout: .swing(
-                    daysLabel: daysLabel,
-                    statusTitle: status,
-                    weeklyPnLLabel: weeklyPnLStripeLabel(notch?.weeklyPnL, quoteCurrency: quoteCurrency),
-                ),
-                pillPulseAmber: false,
-            )
-        case .scalper, .intraday:
-            let indicator: CollapsedNotchScoreIndicatorKind =
-                isSlMissing(notch?.slStatus) ? .slMissingAmber : .riskColored(compositeScore: compositeScore)
-            return CollapsedNotchPresentation(
-                layout: .intraday(scoreIndicator: indicator, behavioralLabel: behavioralStateLabel),
-                pillPulseAmber: false,
-            )
-        }
+        return CollapsedNotchPresentation(layout: .impact(impact), pillPulseAmber: false)
     }
-
-    // MARK: - Intervention keyword strip (COOLING / LIMIT / EXPIRED)
 
     static func collapsedInterventionKeyword(interventionType: String) -> String {
         let k = interventionType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -97,110 +43,4 @@ struct CollapsedNotchPresentation: Equatable {
             return "LIMIT"
         }
     }
-
-    // MARK: - Scalper
-
-    private static func isScalperSessionActive(notch: BarLiveStateResponse?) -> Bool {
-        guard let n = notch else { return false }
-        if n.isSessionLevel == true { return true }
-        if n.sessionTradeCount != nil { return true }
-        if n.sessionMaxTrades != nil { return true }
-        return false
-    }
-
-    private static func scalperTradesLabel(notch: BarLiveStateResponse?) -> String {
-        let c = notch?.sessionTradeCount
-        let m = notch?.sessionMaxTrades
-        if let c, let m {
-            return "\(c)/\(m)"
-        }
-        if let c {
-            return "\(c)"
-        }
-        return "—"
-    }
-
-    private static func scalperSessionLossLabel(notch: BarLiveStateResponse?, quoteCurrency: String) -> String? {
-        guard let amt = notch?.sessionLossAmount else { return nil }
-        let loss = formatMoneyWhole(-abs(amt), quoteCurrency: quoteCurrency)
-        if let lim = notch?.sessionLossLimit, lim > 0 {
-            let cap = formatMoneyWhole(lim, quoteCurrency: quoteCurrency)
-            return "\(loss) / \(cap)"
-        }
-        return loss
-    }
-
-    private static func scalperTimeRemainingLabel(windowEndsISO: String?, referenceNow: Date) -> String? {
-        guard let raw = windowEndsISO?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
-            return nil
-        }
-        let end =
-            iso8601Full.date(from: raw)
-            ?? iso8601Frac.date(from: raw)
-            ?? DateFormatter.wireBarSessionEnd.date(from: raw)
-        guard let end else { return nil }
-        let secs = max(0, end.timeIntervalSince(referenceNow))
-        if secs >= 3600 {
-            let h = Int(secs / 3600)
-            let m = Int((secs.truncatingRemainder(dividingBy: 3600)) / 60)
-            return "\(h)h \(m)m"
-        }
-        if secs >= 60 {
-            return "\(Int(secs / 60))m"
-        }
-        return "\(Int(secs))s"
-    }
-
-    // MARK: - Swing
-
-    private static func weeklyPnLStripeLabel(_ v: Double?, quoteCurrency: String) -> String? {
-        guard let v else { return nil }
-        let body = formatMoneyWhole(abs(v), quoteCurrency: quoteCurrency)
-        if v > 0 { return "+\(body)" }
-        if v < 0 { return "−\(body)" }
-        return body
-    }
-
-    // MARK: - Intraday SL
-
-    private static func isSlMissing(_ status: String?) -> Bool {
-        guard let s = status?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !s.isEmpty else {
-            return false
-        }
-        return s == "missing"
-    }
-
-    // MARK: - Formatting
-
-    private static func formatMoneyWhole(_ v: Double, quoteCurrency: String) -> String {
-        DeskMoneyFormatting.formatWhole(v, quoteCurrency: quoteCurrency)
-    }
-
-    private static let iso8601Full: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
-        return f
-    }()
-
-    private static let iso8601Frac: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [
-            .withInternetDateTime,
-            .withDashSeparatorInDate,
-            .withColonSeparatorInTime,
-            .withFractionalSeconds,
-        ]
-        return f
-    }()
-}
-
-private extension DateFormatter {
-    static let wireBarSessionEnd: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-        return formatter
-    }()
 }

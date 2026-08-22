@@ -127,6 +127,19 @@ pub fn fill_event_to_broker_fill(fill: &FillEvent) -> BrokerFill {
         broker: fill.broker_slug.clone(),
         fee_amount: fill.fee_amount,
         fee_asset: fill.fee_currency.clone(),
+        // I-N3: copy venue cash fields — dropping INR / nse_cm / CNC|MIS is a never-again.
+        currency: nonempty_owned(&fill.currency),
+        product: fill.product.clone().filter(|p| !p.is_empty()),
+        exchange_segment: fill.exchange_segment.clone().filter(|s| !s.is_empty()),
+    }
+}
+
+fn nonempty_owned(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
     }
 }
 
@@ -154,6 +167,26 @@ mod tests {
         }
     }
 
+    fn kotak_cash_event(product: &str) -> FillEvent {
+        FillEvent {
+            fill_id: "FILL-1".into(),
+            broker_slug: "kotak_neo".into(),
+            connection_id: "conn-1".into(),
+            asset_class: "equities".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 2500.0,
+            currency: "INR".into(),
+            filled_at_unix_ms: 1_784_968_500_000,
+            fee_amount: None,
+            fee_currency: None,
+            exchange_segment: Some("nse_cm".into()),
+            product: Some(product.into()),
+            trade_id: Some("NSE998877".into()),
+        }
+    }
+
     #[test]
     fn fill_event_maps_onto_poll_loop_fill() {
         let fill = fill_event_to_broker_fill(&sample_event());
@@ -162,6 +195,21 @@ mod tests {
         assert_eq!(fill.broker, "binance_com");
         assert_eq!(fill.fee_asset.as_deref(), Some("BNB"));
         assert_eq!(fill.filled_at.timestamp_millis(), 1_499_865_549_590);
+        assert_eq!(fill.currency.as_deref(), Some("USDT"));
+    }
+
+    #[test]
+    fn fill_event_does_not_drop_inr_cash_fields() {
+        // I-N3: INR + nse_cm + CNC/MIS must survive FillEvent → BrokerFill.
+        let cnc = fill_event_to_broker_fill(&kotak_cash_event("CNC"));
+        assert_eq!(cnc.currency.as_deref(), Some("INR"));
+        assert_eq!(cnc.exchange_segment.as_deref(), Some("nse_cm"));
+        assert_eq!(cnc.product.as_deref(), Some("CNC"));
+
+        let mis = fill_event_to_broker_fill(&kotak_cash_event("MIS"));
+        assert_eq!(mis.currency.as_deref(), Some("INR"));
+        assert_eq!(mis.exchange_segment.as_deref(), Some("nse_cm"));
+        assert_eq!(mis.product.as_deref(), Some("MIS"));
     }
 
     #[test]

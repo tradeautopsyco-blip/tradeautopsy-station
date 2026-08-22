@@ -20,7 +20,7 @@ struct BarExitGateView: View {
         .padding(18)
         .frame(maxWidth: 420)
         .onAppear { gateState = .initial }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(NotchOneSecondClock.publisher) { _ in
             if case let .coolOffVerdict(remaining, _) = gateState.flow, remaining > 0 {
                 gateState = BarExitGateReducer.reduce(state: gateState, action: .tickCountdown)
             }

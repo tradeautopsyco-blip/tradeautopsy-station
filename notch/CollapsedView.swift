@@ -18,112 +18,121 @@ struct CollapsedNotchView: View {
             switch p.layout {
             case .intervention(let keyword, _, _):
                 interventionStrip(keyword: keyword)
-            case .intraday(let indicator, let behavioralLabel):
-                intradayStrip(indicator: indicator, behavioralLabel: behavioralLabel)
-            case .scalper(let trades, let loss, let timeRemaining):
-                scalperStrip(trades: trades, loss: loss, timeRemaining: timeRemaining)
-            case .swing(let daysLabel, let statusTitle, let weeklyPnL):
-                swingStrip(daysLabel: daysLabel, statusTitle: statusTitle, weeklyPnL: weeklyPnL)
+            case .impact(let impact):
+                impactStrip(impact)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: BarNotchChrome.collapsedStripHeight)
+        .padding(.horizontal, viewModel.hasPhysicalNotch ? 0 : 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func interventionStrip(keyword: String) -> some View {
-        HStack(spacing: 12) {
+        let row = HStack(spacing: 8) {
+            pillDot(BarDS.Accent.red)
             Text(keyword)
                 .font(BarDS.bodyFont(13, weight: .bold))
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-            pillDot(BarDS.Accent.red)
+        }
+        return Group {
+            if viewModel.hasPhysicalNotch {
+                hangRow { row }
+            } else {
+                HStack(spacing: 12) {
+                    Text(keyword)
+                        .font(BarDS.bodyFont(13, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    pillDot(BarDS.Accent.red)
+                }
+            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Agent connection: \(viewModel.daemonConnectionLabel). \(keyword)")
     }
 
-    private func intradayStrip(indicator: CollapsedNotchScoreIndicatorKind, behavioralLabel: String) -> some View {
-        HStack(spacing: 8) {
-            scoreIndicator(for: indicator)
-
-            Text(String(format: "%.2f", viewModel.compositeScore))
-                .font(BarDS.monoFont(13, weight: .semibold))
+    private func impactStrip(_ impact: AccountImpact) -> some View {
+        let tone = impactTone(impact)
+        let row = HStack(alignment: .center, spacing: 8) {
+            Circle()
+                .fill(tone)
+                .frame(width: 6, height: 6)
+                .shadow(color: tone.opacity(0.7), radius: 3, x: 0, y: 0)
+                .accessibilityHidden(true)
+            centerZeroTrack(impact, tone: tone)
+            Text(impact.chipLabel)
+                .font(BarDS.monoFont(12, weight: .semibold))
                 .monospacedDigit()
-                .foregroundColor(BarDS.Text.primary)
-
-            Text(behavioralLabel)
-                .font(BarDS.bodyFont(10, weight: .medium))
-                .foregroundColor(BarDS.Text.secondary)
-                .kerning(0.012 * 10)
-
-            if viewModel.sessionPnL != 0 {
-                Rectangle()
-                    .fill(BarDS.Border.section)
-                    .frame(width: 1, height: 12)
-
-                Text(viewModel.formattedSessionPnL)
-                    .font(BarDS.monoFont(11, weight: .medium))
-                    .foregroundColor(
-                        viewModel.sessionPnL > 0
-                            ? BarDS.Accent.green
-                            : BarDS.Accent.red
-                    )
+                .foregroundColor(.white)
+                .frame(width: 34, alignment: .trailing)
+        }
+        return Group {
+            if viewModel.hasPhysicalNotch {
+                hangRow { row }
+            } else {
+                row
             }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), score \(String(format: "%.2f", viewModel.compositeScore))"
+            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), account impact \(impact.chipLabel)"
         )
     }
 
-    private func scalperStrip(trades: String, loss: String?, timeRemaining: String?) -> some View {
-        HStack(spacing: 10) {
-            Text(trades)
-                .font(BarDS.monoFont(13, weight: .semibold))
-                .foregroundColor(BarDS.Text.primary)
-
-            if let loss {
-                Text(loss)
-                    .font(BarDS.bodyFont(10, weight: .medium))
-                    .foregroundColor(Color.white.opacity(0.72))
-                    .lineLimit(1)
-            }
-
-            if let timeRemaining {
-                Rectangle()
-                    .fill(BarDS.Border.section)
-                    .frame(width: 1, height: 12)
-                Text(timeRemaining)
-                    .font(BarDS.bodyFont(10, weight: .medium))
-                    .foregroundColor(BarDS.Text.secondary)
-            }
-
-            pillDot(BarDS.Accent.amber)
+    /// Camera spacer on top; one centered row in the visible hang strip.
+    @ViewBuilder
+    private func hangRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: viewModel.notchTopInset)
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
         }
     }
 
-    private func swingStrip(daysLabel: String, statusTitle: String, weeklyPnL: String?) -> some View {
-        HStack(spacing: 10) {
-            Text(daysLabel)
-                .font(BarDS.monoFont(13, weight: .semibold))
-                .foregroundColor(BarDS.Text.primary)
-
-            Text(statusTitle)
-                .font(BarDS.bodyFont(10, weight: .medium))
-                .foregroundColor(BarDS.Text.secondary)
-
-            if let weeklyPnL {
-                Rectangle()
-                    .fill(BarDS.Border.section)
-                    .frame(width: 1, height: 12)
-                Text(weeklyPnL)
-                    .font(BarDS.monoFont(11, weight: .medium))
-                    .foregroundColor(BarDS.Accent.green)
-            }
-
-            pillDot(BarDS.Accent.green)
+    private func impactTone(_ impact: AccountImpact) -> Color {
+        switch impact {
+        case .unknown, .known(_, .zero):
+            return BarDS.Text.secondary
+        case .known(_, .down):
+            return Color(red: 196 / 255, green: 72 / 255, blue: 68 / 255)
+        case .known(_, .up):
+            return Color(red: 52 / 255, green: 168 / 255, blue: 96 / 255)
         }
+    }
+
+    private func centerZeroTrack(_ impact: AccountImpact, tone: Color) -> some View {
+        GeometryReader { geo in
+            let mid = geo.size.width / 2
+            let fill = CGFloat(impact.trackFill) * mid
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.28))
+                Capsule()
+                    .fill(Color.white.opacity(0.55))
+                    .frame(width: 1.5, height: 5)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                if case .known(_, .down) = impact, fill > 0 {
+                    Capsule()
+                        .fill(tone)
+                        .frame(width: fill)
+                        .offset(x: mid - fill)
+                }
+                if case .known(_, .up) = impact, fill > 0 {
+                    Capsule()
+                        .fill(tone)
+                        .frame(width: fill)
+                        .offset(x: mid)
+                }
+            }
+        }
+        .frame(minWidth: 48, maxWidth: .infinity)
+        .frame(height: 5)
+        .accessibilityHidden(true)
     }
 
     private func pillDot(_ color: Color) -> some View {
@@ -134,45 +143,12 @@ struct CollapsedNotchView: View {
             .accessibilityHidden(true)
     }
 
-    private func scoreIndicator(for kind: CollapsedNotchScoreIndicatorKind) -> some View {
-        Group {
-            if shouldPulse(kind: kind), !accessibilityReduceMotion {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let scale = 1.0 + 0.12 * sin(t * (2 * .pi / 1.2))
-                    scoreIndicatorCore(kind: kind, scale: scale)
-                }
-            } else {
-                scoreIndicatorCore(kind: kind, scale: 1.0)
-                    .animation(.spring(response: 0.3), value: viewModel.compositeScore)
-            }
-        }
-    }
-
-    private func shouldPulse(kind: CollapsedNotchScoreIndicatorKind) -> Bool {
-        switch kind {
-        case .slMissingAmber:
-            return false
-        case .riskColored(let score):
-            return score > 0.25
-        }
-    }
-
-    private func barScoreColor(_ score: Double) -> Color {
-        if score < 0.20 { return BarDS.Accent.teal }
-        if score < 0.30 { return BarDS.Accent.amber }
-        return BarDS.Accent.red
-    }
-
-    @ViewBuilder
-    private func scoreIndicatorCore(kind: CollapsedNotchScoreIndicatorKind, scale: CGFloat) -> some View {
-        switch kind {
-        case .slMissingAmber:
-            pillDot(BarDS.Accent.amber)
-                .scaleEffect(scale)
-        case .riskColored(let score):
-            pillDot(barScoreColor(score))
-                .scaleEffect(scale)
+    private func collapsedAccessibilityLabel(_ p: CollapsedNotchPresentation) -> String {
+        switch p.layout {
+        case .intervention(let keyword, _, _):
+            return "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), \(keyword)"
+        case .impact(let impact):
+            return "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), account impact \(impact.chipLabel)"
         }
     }
 
@@ -217,9 +193,7 @@ struct CollapsedNotchView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(
-            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), score \(String(format: "%.2f", viewModel.compositeScore))"
-        )
+        .accessibilityLabel(collapsedAccessibilityLabel(p))
         .accessibilityHint("Click to expand. Drag to move. Option-Space toggles notch visibility.")
         .accessibilityAction(named: "Expand") {
             viewModel.expandFromCollapsedChromeTap()
@@ -266,6 +240,14 @@ struct CollapsedNotchView: View {
                         Capsule(style: .continuous)
                             .stroke(Color(hex: borderHex).opacity(0.35), lineWidth: 0.5)
                     )
+            } else if case .impact(let impact) = p.layout {
+                Capsule(style: .continuous)
+                    .fill(Color(hex: "#0A0A0A"))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(impactTone(impact).opacity(0.22), lineWidth: 1)
+                    )
+                    .shadow(color: impactTone(impact).opacity(0.18), radius: 10, x: 0, y: 4)
             } else {
                 Capsule(style: .continuous)
                     .fill(Color(hex: "#0A0A0A"))

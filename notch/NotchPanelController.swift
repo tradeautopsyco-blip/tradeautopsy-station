@@ -119,6 +119,9 @@ final class NotchPanelController {
     private var pillDragStartMouse: NSPoint?
     private var pillDragStartOrigin: NSPoint?
     private var isDraggingCollapsedPill = false
+    /// True while `screencapture -i` runs — do not orderFront the HUD over the region picker.
+    private var chromeHiddenForCapture = false
+    private var windowsHiddenForCapture: [NSWindow] = []
 
     private let hostedExpandedContent: (() -> AnyView)?
 
@@ -140,7 +143,7 @@ final class NotchPanelController {
         self.panel = panel
 
         viewModel.onRequestOrderFront = { [weak self] in
-            guard let self else { return }
+            guard let self, !self.chromeHiddenForCapture else { return }
             if self.viewModel.isExpanded {
                 self.showCollapseBackdropIfNeeded()
             }
@@ -165,7 +168,8 @@ final class NotchPanelController {
         viewModel.$isExpanded
             .receive(on: DispatchQueue.main)
             .sink { [weak self] expanded in
-                guard let self else { return }
+                guard let self, !self.chromeHiddenForCapture else { return }
+                self.panel.acceptsMouseMovedEvents = !expanded
                 self.layoutPanel(animated: true)
                 if expanded {
                     self.showCollapseBackdropIfNeeded()
@@ -184,9 +188,10 @@ final class NotchPanelController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.layoutPanel(animated: false)
-                if self?.viewModel.isExpanded == true {
-                    self?.layoutCollapseBackdrop()
+                guard let self, !self.chromeHiddenForCapture else { return }
+                self.layoutPanel(animated: false)
+                if self.viewModel.isExpanded {
+                    self.layoutCollapseBackdrop()
                 }
             }
         }
@@ -217,6 +222,8 @@ final class NotchPanelController {
     }
 
     func show() {
+        guard !chromeHiddenForCapture else { return }
+        panel.acceptsMouseMovedEvents = !viewModel.isExpanded
         layoutPanel(animated: false)
         panel.orderFrontRegardless()
         if let view = panel.contentView {
@@ -244,6 +251,30 @@ final class NotchPanelController {
         hideCollapseBackdrop()
         removeEscCollapseMonitor()
         panel.orderOut(nil)
+    }
+
+    func hideChromeForInteractiveCapture() {
+        chromeHiddenForCapture = true
+        hideCollapseBackdrop()
+        windowsHiddenForCapture = NSApp.windows.filter(\.isVisible)
+        for w in windowsHiddenForCapture {
+            w.orderOut(nil)
+        }
+    }
+
+    func restoreChromeAfterInteractiveCapture() {
+        chromeHiddenForCapture = false
+        for w in windowsHiddenForCapture {
+            w.orderFrontRegardless()
+        }
+        windowsHiddenForCapture = []
+        layoutPanel(animated: false)
+        if viewModel.isExpanded {
+            showCollapseBackdropIfNeeded()
+            installEscCollapseMonitorIfNeeded()
+        }
+        panel.orderFrontRegardless()
+        panel.acceptsMouseMovedEvents = !viewModel.isExpanded
     }
 
     private func showCollapseBackdropIfNeeded() {
@@ -328,6 +359,7 @@ final class NotchPanelController {
     private func handlePanelMoved() {
         guard !isApplyingSnappedFrame, !isDraggingCollapsedPill else { return }
         guard !viewModel.isExpanded else { return }
+        if viewModel.hasPhysicalNotch { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
         let vf = screen.visibleFrame
         var f = panel.frame
@@ -343,6 +375,7 @@ final class NotchPanelController {
 
     private func applyCollapsedPillDragFromScreen() {
         guard !viewModel.isExpanded else { return }
+        if viewModel.hasPhysicalNotch { return }
         let mouse = NSEvent.mouseLocation
         if pillDragStartMouse == nil {
             pillDragStartMouse = mouse
@@ -458,6 +491,7 @@ final class NotchPanelController {
     }
 
     private func layoutPanel(animated: Bool) {
+        guard !chromeHiddenForCapture else { return }
         guard !isDraggingCollapsedPill else { return }
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
@@ -465,7 +499,11 @@ final class NotchPanelController {
         let inset = screen.safeAreaInsets
         let hasNotch = inset.top > 0
         let notchTopInset = inset.top
-        let notchWidth = max(0, frame.width - inset.left - inset.right)
+        let housing = BarNotchVolumeSlot.hardwareNotch(
+            screenFrame: frame,
+            leftMenu: screen.auxiliaryTopLeftArea ?? .zero,
+            rightMenu: screen.auxiliaryTopRightArea ?? .zero,
+        )
 
         let expanded = viewModel.isExpanded
         let expandedW: CGFloat
@@ -487,11 +525,18 @@ final class NotchPanelController {
         let collapsedX: CGFloat
         let collapsedY: CGFloat
         if hasNotch {
-            collapsedH = max(notchTopInset, BarNotchChrome.collapsedStripHeight)
-            collapsedW = BarNotchChrome.collapsedPillWidth
-            let notchLeft = frame.minX + inset.left
-            collapsedX = notchLeft + (notchWidth - collapsedW) / 2
-            collapsedY = min(vf.maxY, frame.maxY) - collapsedH
+            let slot = BarNotchVolumeSlot.collapsedFrame(
+                screenFrame: frame,
+                visibleFrame: vf,
+                notchLeft: housing?.minX ?? (frame.midX - BarNotchChrome.collapsedPillWidth / 2),
+                notchWidth: housing?.width ?? BarNotchChrome.collapsedPillWidth,
+                notchInset: notchTopInset,
+                fallbackWidth: BarNotchChrome.collapsedPillWidth,
+            )
+            collapsedH = slot.height
+            collapsedW = slot.width
+            collapsedX = slot.minX
+            collapsedY = slot.minY
         } else {
             collapsedH = BarNotchChrome.collapsedStripHeight
             collapsedW = BarNotchChrome.collapsedPillWidth
@@ -515,9 +560,13 @@ final class NotchPanelController {
         } else {
             rect = NSRect(x: collapsedX, y: collapsedY, width: collapsedW, height: collapsedH)
         }
-        var appliedRect = clampFrame(rect, to: vf)
-        // Pill remembers where the user put it. Expanded sheet still fills visibleFrame.
-        if !expanded, let saved = savedOrigin() {
+        var appliedRect = rect
+        if expanded || !hasNotch {
+            appliedRect = clampFrame(rect, to: vf)
+        }
+        // Notched collapsed chip stays in the volume HUD slot. Saved drag origin
+        // used to park it under the menu bar — a second blob.
+        if !expanded, !hasNotch, let saved = savedOrigin() {
             var candidate = appliedRect
             candidate.origin = snapOrigin(saved, in: vf)
             candidate = clampFrame(candidate, to: vf)
@@ -527,6 +576,7 @@ final class NotchPanelController {
         }
 
         viewModel.notchTopInset = hasNotch ? notchTopInset : 0
+        panel.level = hasNotch && !expanded ? .statusBar : .floating
 
         if animated {
             // Keep AppKit frame motion in sync with SwiftUI `NotchTheme.springExpand`

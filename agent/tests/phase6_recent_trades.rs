@@ -209,6 +209,7 @@ fn sample_fill(suffix: &str) -> BrokerFill {
         broker: "mock".to_string(),
         fee_amount: None,
         fee_asset: None,
+        ..Default::default()
     }
 }
 

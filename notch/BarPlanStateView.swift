@@ -98,7 +98,10 @@ struct BarPlanStateView: View {
             }
         }
         .padding(0)
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { interventionCountdownTick = $0 }
+        .onReceive(NotchOneSecondClock.publisher) { date in
+            guard needsLiveSecondClock else { return }
+            interventionCountdownTick = date
+        }
         .alert("Move SL to entry", isPresented: $moveSlFallbackAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -167,6 +170,11 @@ struct BarPlanStateView: View {
 
     private var shouldShowMetricStrip: Bool {
         shouldShowPlanSnapshot
+    }
+
+    private var needsLiveSecondClock: Bool {
+        shouldShowMetricStrip
+            || sortedActiveInterventions.contains { $0.expiresAt != nil }
     }
 
     private var shouldShowScalperSessionPanel: Bool {
@@ -1488,20 +1496,16 @@ private struct BarPlanThinProgressBar: View {
 }
 
 private struct NakedWindowInterventionDot: View {
-    @State private var pulsePhase: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Circle()
-            .fill(Color(hex: "#F5A524"))
-            .opacity(reduceMotion ? 1 : 0.48 + 0.52 * Double(pulsePhase))
-            .frame(width: 6, height: 6)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
-                    pulsePhase = 1
-                }
-            }
+        TimelineView(.periodic(from: .now, by: reduceMotion ? 3600 : 0.55)) { timeline in
+            let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.55) % 2 == 0
+            Circle()
+                .fill(Color(hex: "#F5A524"))
+                .opacity(reduceMotion ? 1 : (on ? 1 : 0.48))
+                .frame(width: 6, height: 6)
+        }
     }
 }
 

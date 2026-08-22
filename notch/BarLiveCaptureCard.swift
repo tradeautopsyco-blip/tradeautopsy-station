@@ -15,7 +15,7 @@ struct BarLiveCaptureCard: View {
                 .padding(.bottom, 4)
             Text(
                 viewModel.stagedCapturePreview == nil
-                    ? "Fn hold for voice. Paste a chart on the pill or this card — it stays on this Mac until you tap a trade."
+                    ? "Ctrl+⌘+Shift+4 a chart, or Screenshot and drag a region on the still. It stays on this Mac until you tap a trade."
                     : "On this Mac until you link a trade."
             )
             .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
@@ -116,6 +116,8 @@ struct BarLiveCaptureCard: View {
             viewModel.ingestPastedImage()
             return !providers.isEmpty
         }
+        .onAppear { viewModel.startCapturePasteboardWatch() }
+        .onDisappear { viewModel.stopCapturePasteboardWatch() }
     }
 
     private func captureToolChip(title: String, on: Bool, disabled: Bool, action: @escaping () -> Void) -> some View {

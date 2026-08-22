@@ -33,6 +33,7 @@ final class NotchOnDeviceDictationSession: NSObject {
     private var configObserver: NSObjectProtocol?
 
     private var lastSilenceTick: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
+    private var waveformPublishGate = WaveformPublishGate()
 
     var latchEngaged: Bool { recordingGate.latchEngaged }
 
@@ -257,7 +258,9 @@ final class NotchOnDeviceDictationSession: NSObject {
         let dt = max(0, wallTime - lastSilenceTick)
         lastSilenceTick = wallTime
         let levels = waveform.push(rms: rms, reduceMotion: reduceMotion)
-        onWaveform?(levels)
+        if waveformPublishGate.shouldPublish(levels, now: wallTime) {
+            onWaveform?(levels)
+        }
         if recordingGate.shouldRecord, silenceWatch.feed(rms: rms, deltaTime: dt) {
             stopAfterSilence()
         }
@@ -327,6 +330,7 @@ final class NotchOnDeviceDictationSession: NSObject {
         guard isEngineRunning || recognitionRequest != nil || recognitionTask != nil else {
             waveform = WaveformNineDotRing()
             silenceWatch.reset()
+            waveformPublishGate.reset()
             pushWaveformIdle()
             onRecordingState?(recordingGate.shouldRecord)
             return
@@ -342,6 +346,7 @@ final class NotchOnDeviceDictationSession: NSObject {
         recognitionTask = nil
         waveform = WaveformNineDotRing()
         silenceWatch.reset()
+        waveformPublishGate.reset()
         pushWaveformIdle()
         onRecordingState?(recordingGate.shouldRecord)
     }
@@ -361,7 +366,9 @@ final class NotchOnDeviceDictationSession: NSObject {
 
     private func pushWaveformIdle() {
         let levels = waveform.push(rms: 0, reduceMotion: reduceMotion)
-        onWaveform?(levels)
+        if waveformPublishGate.shouldPublish(levels, now: CFAbsoluteTimeGetCurrent(), force: true) {
+            onWaveform?(levels)
+        }
     }
 
     func stopAllForHostTeardown() {

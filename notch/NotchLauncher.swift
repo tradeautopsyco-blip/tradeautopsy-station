@@ -10,6 +10,13 @@ protocol NotchLauncherHost: AnyObject {
     func expandToPositions() async
     func expandToPlan() async
     func expandToCapture() async
+    func hideChromeForInteractiveCapture()
+    func restoreChromeAfterInteractiveCapture()
+}
+
+extension NotchLauncherHost {
+    func hideChromeForInteractiveCapture() {}
+    func restoreChromeAfterInteractiveCapture() {}
 }
 
 /// Owns `NSPanel` + view model; driven from Rust via C ABI.
@@ -221,6 +228,14 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
 
     func expandToCapture() async {
         await expandToTab(isHostedByStation ? .plan : .capture)
+    }
+
+    func hideChromeForInteractiveCapture() {
+        panelController?.hideChromeForInteractiveCapture()
+    }
+
+    func restoreChromeAfterInteractiveCapture() {
+        panelController?.restoreChromeAfterInteractiveCapture()
     }
 
     private func expandToTab(_ tab: NotchTab) async {

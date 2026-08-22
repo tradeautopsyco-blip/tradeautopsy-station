@@ -165,6 +165,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var tradesToday: Int = 0
     @Published var signals = SignalBreakdown()
     @Published public var positions: [NotchPosition] = []
+    @Published var dailyLossLimit: Double?
+    @Published var chipCatalog = NotchChipCatalogState()
 
     /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
     var hasOpenPositions: Bool { !positions.isEmpty }
@@ -261,6 +263,8 @@ public final class NotchViewModel: ObservableObject {
     private var stagedCaptureData: Data?
     private var stagedCaptureType: String = "image/png"
     private let unpostedStore = UnpostedCaptureStore(directory: UnpostedCaptureStore.defaultDirectory())
+    private var capturePasteboardWatch: Timer?
+    private var capturePasteboardChangeCount: Int = 0
     @Published var recentTrades: [RecentTradeRow] = []
 
     // MARK: - Bar / Plan (notch v1 — server projection only)
@@ -423,15 +427,19 @@ public final class NotchViewModel: ObservableObject {
         formatDeskMoney(sessionPnL)
     }
 
-    /// Collapsed macOS strip (#126) — derived from published `barLiveState` + archetype only.
+    var accountImpact: AccountImpact {
+        AccountImpact.compute(
+            positions: positions.map { (symbol: $0.symbol, unrealizedPnL: $0.unrealizedPnL) },
+            pinnedSymbols: chipCatalog.pinnedNameSymbols,
+            dailyLossLimit: dailyLossLimit,
+        )
+    }
+
+    /// Collapsed macOS strip (#36) — intervention wins; else account impact.
     var collapsedNotchPresentation: CollapsedNotchPresentation {
         CollapsedNotchPresentation.build(
             notch: barLiveState,
-            archetype: activeArchetype,
-            compositeScore: compositeScore,
-            behavioralStateLabel: behavioralState,
-            referenceNow: Date(),
-            quoteCurrency: deskQuoteCurrency ?? "INR",
+            impact: accountImpact,
         )
     }
 
@@ -563,6 +571,7 @@ public final class NotchViewModel: ObservableObject {
     private let barOptimisticArmedMaxPollFailures = BarOptimisticArmedReconcilePolicy.maxPollFailures
 
     private let barArchetypeStore: BarArchetypeStore
+    private let chipCatalogStore: NotchChipCatalogStoring
     private let barDeclareHTTPExecutor: BarDeclareHTTPExecuting
     /// Tests pass a no-op to avoid `fetchBarLiveState()` hitting `URLSession.shared` (#120).
     private let barDeclareSuccessFollowUp: (@MainActor () async -> Void)?
@@ -570,6 +579,7 @@ public final class NotchViewModel: ObservableObject {
     public convenience init() {
         self.init(
             barArchetypeStore: UserDefaultsBarArchetypeStore(),
+            chipCatalogStore: UserDefaultsNotchChipCatalogStore(),
             barDeclareHTTPExecutor: URLSessionBarDeclareHTTPExecutor(),
             barDeclareSuccessFollowUp: nil,
             planSurfaceOnly: false
@@ -578,22 +588,57 @@ public final class NotchViewModel: ObservableObject {
 
     init(
         barArchetypeStore: BarArchetypeStore = UserDefaultsBarArchetypeStore(),
+        chipCatalogStore: NotchChipCatalogStoring = UserDefaultsNotchChipCatalogStore(),
         barDeclareHTTPExecutor: BarDeclareHTTPExecuting = URLSessionBarDeclareHTTPExecutor(),
         barDeclareSuccessFollowUp: (@MainActor () async -> Void)? = nil,
         planSurfaceOnly: Bool = false
     ) {
         self.barArchetypeStore = barArchetypeStore
+        self.chipCatalogStore = chipCatalogStore
         self.barDeclareHTTPExecutor = barDeclareHTTPExecutor
         self.barDeclareSuccessFollowUp = barDeclareSuccessFollowUp
         self.planSurfaceOnly = planSurfaceOnly
         if planSurfaceOnly {
             activeTab = .plan
         }
+        chipCatalog = chipCatalogStore.load()
         restoreOptimisticArmedFromDefaults()
         refreshActiveArchetype()
         recomputeBarSurfacePhase()
         reloadUnpostedCaptures()
         loadChartTradeIds()
+    }
+
+    func toggleChipExtra(_ id: String) {
+        chipCatalog = NotchChipCatalogMutations.toggleExtra(id, in: chipCatalog)
+        chipCatalogStore.save(chipCatalog)
+    }
+
+    func applyDailyLossLimit(_ value: Double?) {
+        if let value, value > 0, value.isFinite {
+            dailyLossLimit = value
+        } else {
+            dailyLossLimit = nil
+        }
+    }
+
+    func fetchDailyLossLimit() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/profile/loss-limits") else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200 ... 299).contains(code),
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let limits = json["limits"] as? [String: Any]
+            else { return }
+            if let n = limits["dailyLossLimit"] as? NSNumber {
+                applyDailyLossLimit(n.doubleValue)
+            } else if let s = limits["dailyLossLimit"] as? String, let v = Double(s) {
+                applyDailyLossLimit(v)
+            }
+        } catch {
+            return
+        }
     }
 
     /// Station-hosted Notch: clamp navigation to PLAN (matches approved PLAN-only mock).
@@ -1494,6 +1539,10 @@ public final class NotchViewModel: ObservableObject {
             ingestImageData(data, hintedType: "image/tiff")
             return
         }
+        if let data = pb.data(forType: NSPasteboard.PasteboardType("public.jpeg")) {
+            ingestImageData(data, hintedType: "image/jpeg")
+            return
+        }
         if let url = pb.readObjects(forClasses: [NSURL.self], options: nil)?.first as? URL {
             let ext = url.pathExtension.lowercased()
             guard ext == "png" || ext == "jpg" || ext == "jpeg" else {
@@ -1507,19 +1556,51 @@ public final class NotchViewModel: ObservableObject {
         journalCaptureScreenshotError = "Paste a PNG or JPEG."
     }
 
+    func ingestPastedImageIfPresent() {
+        guard CapturePasteboard.containsImage(NSPasteboard.general) else { return }
+        ingestPastedImage()
+    }
+
+    func startCapturePasteboardWatch() {
+        stopCapturePasteboardWatch()
+        capturePasteboardChangeCount = NSPasteboard.general.changeCount
+        let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let pb = NSPasteboard.general
+                let count = pb.changeCount
+                guard count != self.capturePasteboardChangeCount else { return }
+                self.capturePasteboardChangeCount = count
+                self.ingestPastedImageIfPresent()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        capturePasteboardWatch = t
+    }
+
+    func stopCapturePasteboardWatch() {
+        capturePasteboardWatch?.invalidate()
+        capturePasteboardWatch = nil
+    }
+
     func stageScreenshotFromRegion() async {
         journalCaptureScreenshotBusy = true
         journalCaptureScreenshotError = nil
         defer { journalCaptureScreenshotBusy = false }
+        notchHost?.hideChromeForInteractiveCapture()
+        try? await Task.sleep(nanoseconds: 200_000_000)
         do {
             let captureURL = try await JournalInteractiveScreenshot.captureRegionToTempPNG()
             let data = try Data(contentsOf: captureURL)
             JournalInteractiveScreenshot.removeTempFile(at: captureURL)
             ingestImageData(data, hintedType: "image/png")
-        } catch is JournalInteractiveScreenshotError {
-            journalCaptureScreenshotError = "Screenshot cancelled or failed."
+            notchHost?.restoreChromeAfterInteractiveCapture()
+        } catch let err as JournalInteractiveScreenshotError {
+            journalCaptureScreenshotError = err.userMessage
+            notchHost?.restoreChromeAfterInteractiveCapture()
         } catch {
             journalCaptureScreenshotError = error.localizedDescription
+            notchHost?.restoreChromeAfterInteractiveCapture()
         }
     }
 
@@ -2006,8 +2087,8 @@ public final class NotchViewModel: ObservableObject {
             writeJournalCaptureDefaults()
             journalCaptureLastSuccess = "Screenshot attached · \(pid.prefix(8))…"
             journalCaptureLastError = nil
-        } catch is JournalInteractiveScreenshotError {
-            journalCaptureScreenshotError = "Screenshot cancelled or failed."
+        } catch let err as JournalInteractiveScreenshotError {
+            journalCaptureScreenshotError = err.userMessage
         } catch {
             journalCaptureScreenshotError = error.localizedDescription
         }
@@ -2050,7 +2131,7 @@ public final class NotchViewModel: ObservableObject {
         connectionTick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.daemonConnectionState = self.connectionFSM.onTick()
+                self.setIfChanged(\.daemonConnectionState, self.connectionFSM.onTick())
             }
         }
         pollFast = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -2093,6 +2174,7 @@ public final class NotchViewModel: ObservableObject {
 
         Task {
             await refreshBrokerSyncState()
+            await fetchDailyLossLimit()
             await fetchWorkflowStatus()
             await fetchMorningBriefIfNeeded()
             await fetchRecentTrades()
@@ -2122,7 +2204,8 @@ public final class NotchViewModel: ObservableObject {
         connectionTick?.invalidate()
         connectionTick = nil
         stopKillSwitchCountdownTimer()
-        daemonConnectionState = .idle
+        stopCapturePasteboardWatch()
+        setIfChanged(\.daemonConnectionState, .idle)
         daemonProtocolError = nil
         connectionFSM = DaemonConnectionFSM()
         pinnedAgentBootId = nil
@@ -2212,17 +2295,17 @@ public final class NotchViewModel: ObservableObject {
             guard let self else { return }
             while !Task.isCancelled {
                 self.connectionFSM.onConnectStart()
-                self.daemonConnectionState = self.connectionFSM.state
+                self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                 await self.refreshPinnedAgentTrust()
                 guard self.pinnedAgentSsePubKeyB64 != nil else {
                     self.connectionFSM.onTransportFailure()
-                    self.daemonConnectionState = self.connectionFSM.state
+                    self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                     continue
                 }
                 guard let url = URL(string: self.baseURL() + "/api/daemon/events/stream") else {
                     self.connectionFSM.onTransportFailure()
-                    self.daemonConnectionState = self.connectionFSM.state
+                    self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                     return
                 }
                 var req = self.authorizedRequest(url: url)
@@ -2241,27 +2324,27 @@ public final class NotchViewModel: ObservableObject {
                             statusCode: statusCode
                         )
                         self.connectionFSM.onTransportFailure()
-                        self.daemonConnectionState = self.connectionFSM.state
+                        self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                         try? await Task.sleep(nanoseconds: 2_000_000_000)
                         continue
                     }
                     self.daemonProtocolError = nil
                     self.connectionFSM.onStreamOpened()
-                    self.daemonConnectionState = self.connectionFSM.state
+                    self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                     for try await line in bytes.lines {
                         if Task.isCancelled { return }
                         guard line.hasPrefix("data:") else { continue }
                         let raw = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
                         if self.consumeDaemonEvent(raw) {
-                            self.daemonConnectionState = self.connectionFSM.state
+                            self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                         }
                     }
                     self.connectionFSM.onTransportFailure()
-                    self.daemonConnectionState = self.connectionFSM.state
+                    self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                 } catch {
                     self.connectionFSM.onTransportFailure()
-                    self.daemonConnectionState = self.connectionFSM.state
+                    self.setIfChanged(\.daemonConnectionState, self.connectionFSM.state)
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
             }
@@ -2283,7 +2366,7 @@ public final class NotchViewModel: ObservableObject {
                 daemonProtocolError = .sigInvalid
                 lastAlert = "SSE event missing signature fields."
                 connectionFSM.onTransportFailure()
-                daemonConnectionState = connectionFSM.state
+                setIfChanged(\.daemonConnectionState, connectionFSM.state)
                 return false
             }
             guard verifySseEd25519(
@@ -2296,7 +2379,7 @@ public final class NotchViewModel: ObservableObject {
                 daemonProtocolError = .sigInvalid
                 lastAlert = "Invalid SSE event signature."
                 connectionFSM.onTransportFailure()
-                daemonConnectionState = connectionFSM.state
+                setIfChanged(\.daemonConnectionState, connectionFSM.state)
                 return false
             }
         }
@@ -2624,7 +2707,7 @@ public final class NotchViewModel: ObservableObject {
         } else {
             daemonProtocolError = statusCode == 429 ? .rateLimited : .unknown
         }
-        daemonConnectionState = .disconnected
+        setIfChanged(\.daemonConnectionState, .disconnected)
     }
 
     /// Wire error text for toolbar screenshot flow without mutating SSE connection health.
@@ -2741,6 +2824,11 @@ public final class NotchViewModel: ObservableObject {
             }
             notePositionTransitionForBar(previousCount: previousPositionCount, newCount: out.count)
             positions = out
+            let remembered = NotchChipCatalogMutations.rememberSymbols(out.map(\.symbol), in: chipCatalog)
+            if remembered != chipCatalog {
+                chipCatalog = remembered
+                chipCatalogStore.save(chipCatalog)
+            }
             recomputeBarSurfacePhase()
             if killSwitchActive != oldKs {
                 checkKillSwitchTransition(from: oldKs, to: killSwitchActive)
@@ -3106,16 +3194,16 @@ public final class NotchViewModel: ObservableObject {
             self?.dictationApplyFullFieldText(t)
         }
         s.onWaveform = { [weak self] levels in
-            self?.dictationWaveform = levels
+            self?.setIfChanged(\.dictationWaveform, levels)
         }
         s.onPermissionBlocked = { [weak self] blocked in
-            self?.dictationPermissionDenied = blocked
+            self?.setIfChanged(\.dictationPermissionDenied, blocked)
         }
         s.onRequiresOnDeviceUnsupported = { [weak self] bad in
             self?.dictationOnDeviceOnlyUnsupported = bad
         }
         s.onRecordingState = { [weak self] on in
-            self?.isDictating = on
+            self?.setIfChanged(\.isDictating, on)
         }
         dictationSession = s
         s.preparePermissions()

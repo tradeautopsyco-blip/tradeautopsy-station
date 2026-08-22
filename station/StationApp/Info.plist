@@ -26,6 +26,8 @@
     <false/>
     <key>NSInputMonitoringUsageDescription</key>
     <string>TradeAutopsy Station needs Input Monitoring to register global hotkeys (⌥Space) for intervention from any app.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>TradeAutopsy Station needs Screen Recording so you can grab a chart region onto Live capture. Images stay on this Mac until you link them to a trade.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>TradeAutopsy uses your microphone to let you record voice journal entries about your trades, which are transcribed on-device into text.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

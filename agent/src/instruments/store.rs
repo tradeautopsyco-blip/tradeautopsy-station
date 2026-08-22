@@ -93,8 +93,8 @@ impl InstrumentStore {
             .from_reader(Cursor::new(bytes));
         let mut insert = tx.prepare(
             "INSERT INTO instruments (
-                instrument_token, trading_symbol, name, exchange, segment, instrument_type, expiry, last_price, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                instrument_token, trading_symbol, name, exchange, segment, instrument_type, expiry, last_price, lot_size, tick_size, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
         let mut batch: Vec<ZerodhaRow> = Vec::with_capacity(INSERT_BATCH_SIZE);
         let mut total = 0usize;
@@ -201,6 +201,26 @@ impl InstrumentStore {
         )?;
         Ok(())
     }
+
+    /// Venue lot/tick from instruments CSV (must not be dropped when the row has them).
+    pub fn lot_size_and_tick(
+        &self,
+        trading_symbol: &str,
+    ) -> anyhow::Result<Option<(f64, f64)>> {
+        let guard = self.conn.lock().expect("sqlite mutex poisoned");
+        guard
+            .query_row(
+                "SELECT lot_size, tick_size FROM instruments WHERE trading_symbol = ?1 LIMIT 1",
+                params![trading_symbol],
+                |r| {
+                    let lot: Option<f64> = r.get(0)?;
+                    let tick: Option<f64> = r.get(1)?;
+                    Ok((lot.unwrap_or(0.0), tick.unwrap_or(0.0)))
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
 }
 
 fn flush_batch(
@@ -218,6 +238,8 @@ fn flush_batch(
             row.instrument_type,
             row.expiry,
             row.last_price,
+            row.lot_size,
+            row.tick_size,
             updated_at,
         ])?;
     }
@@ -273,6 +295,34 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].trading_symbol, "RELIANCE");
     }
+
+    #[test]
+    fn csv_lot_and_tick_are_not_dropped() {
+        let dir = std::env::temp_dir().join(format!(
+            "ta-instruments-lot-tick-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("instruments.db");
+        let _ = std::fs::remove_file(&path);
+        let store = InstrumentStore::new(path.to_str().unwrap()).expect("open");
+        let csv = "instrument_token,tradingsymbol,name,exchange,segment,instrument_type,expiry,last_price,lot_size,tick_size\n\
+738561,RELIANCE,Reliance Industries Ltd,NSE,NSE,EQ,,2500.0,1,0.05\n";
+        store.load_csv(csv.as_bytes()).expect("load csv");
+        let (lot, tick) = store
+            .lot_size_and_tick("RELIANCE")
+            .expect("query")
+            .expect("row");
+        assert!(
+            (lot - 1.0).abs() < 1e-12,
+            "lot_size from venue CSV must be stored, got {lot}"
+        );
+        assert!(
+            (tick - 0.05).abs() < 1e-12,
+            "tick_size from venue CSV must be stored, got {tick}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -291,4 +341,8 @@ struct ZerodhaRow {
     expiry: String,
     #[serde(default)]
     last_price: f64,
+    #[serde(default)]
+    lot_size: f64,
+    #[serde(default)]
+    tick_size: f64,
 }

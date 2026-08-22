@@ -80,7 +80,7 @@ struct BarPostTradeView: View {
             noteC = ""
             tick = Date()
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { tick = $0 }
+        .onReceive(NotchOneSecondClock.publisher) { tick = $0 }
     }
 
     private var adherence: BarPostTradeAdherenceAnswers {

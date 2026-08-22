@@ -50,10 +50,12 @@ struct BarNotchShell: View {
         }
         .background(BarDS.Fill.appPanel)
         .onAppear {
-            syncActiveScreenFromPhase(animated: false)
-            syncDeclarationFormFlagToActiveScreen()
-            openAnalysisIfNeeded(for: activeScreen.wrappedValue)
-            Task { await viewModel.fetchBarLiveState() }
+            Task { @MainActor in
+                syncActiveScreenFromPhase(animated: false)
+                syncDeclarationFormFlagToActiveScreen()
+                openAnalysisIfNeeded(for: activeScreen.wrappedValue)
+                await viewModel.fetchBarLiveState()
+            }
         }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
             guard externalActiveScreen == nil else { return }
@@ -94,7 +96,7 @@ struct BarNotchShell: View {
 
     private func syncDeclarationFormFlagToActiveScreen(screen: BarNotchScreen? = nil) {
         let s = screen ?? activeScreen.wrappedValue
-        viewModel.showingDeclarationForm = (s == .pretrade)
+        viewModel.setIfChanged(\.showingDeclarationForm, s == .pretrade)
     }
 
     private func openAnalysisIfNeeded(for screen: BarNotchScreen) {

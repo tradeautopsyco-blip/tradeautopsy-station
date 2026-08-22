@@ -40,7 +40,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
     public var sfSymbol: String {
         switch self {
         case .today: return "sun.max"
-        case .preTrade: return "checkmark.clipboard"
+        case .preTrade: return "checkmark.square"
         case .liveTrade: return "bolt"
         case .postTrade: return "checklist"
         case .journal: return "book"

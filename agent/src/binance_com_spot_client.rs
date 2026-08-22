@@ -204,6 +204,9 @@ pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::Brok
         broker: "binance_com".to_string(),
         fee_amount: trade.commission.parse().ok(),
         fee_asset: Some(trade.commission_asset.clone()),
+        currency: Some("USDT".to_string()),
+        product: None,
+        exchange_segment: None,
     }
 }
 

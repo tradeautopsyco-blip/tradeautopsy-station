@@ -82,7 +82,7 @@ struct BarSettingsView: View {
             behaviorArchetype = mapBehaviorArchetype(from: viewModel.activeArchetype)
             Task { await fetchLossLimits() }
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { clock = $0 }
+        .onReceive(NotchOneSecondClock.publisher) { clock = $0 }
     }
 
     // MARK: - Tab row
@@ -443,6 +443,9 @@ struct BarSettingsView: View {
             BarSectionLabel(text: "Edit limits")
             editLimitsCard
 
+            BarSectionLabel(text: "Notch chip")
+            notchChipCatalogCard
+
             BarNonNegotiableCard(
                 label: "Kill switch rule",
                 text: "Arms automatically when daily loss exceeds limit or weekly loss exceeds limit. Requires manual reset.",
@@ -547,6 +550,70 @@ struct BarSettingsView: View {
             .disabled(limitsBusy)
             .opacity(limitsBusy ? 0.5 : 1)
         }
+    }
+
+    private var notchChipCatalogCard: some View {
+        BarCard {
+            Text("From the system. Impact stays. Cap 4 extras. No LTP.")
+                .font(BarDS.bodyFont(12, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 10)
+            catalogRow(
+                id: NotchChipCatalogState.impactId,
+                title: "Account impact",
+                meta: "Pinned names vs daily limit — locked",
+                locked: true,
+            )
+            ForEach(viewModel.chipCatalog.seenSymbols, id: \.self) { symbol in
+                catalogRow(
+                    id: symbol,
+                    title: symbol,
+                    meta: "Live P&L on the account",
+                    locked: false,
+                )
+            }
+            ForEach(NotchChipSystemSlot.allCases, id: \.self) { slot in
+                catalogRow(
+                    id: slot.rawValue,
+                    title: slot.title,
+                    meta: slot.meta,
+                    locked: false,
+                )
+            }
+        }
+    }
+
+    private func catalogRow(id: String, title: String, meta: String, locked: Bool) -> some View {
+        let on = viewModel.chipCatalog.isOn(id)
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(BarDS.bodyFont(12, weight: .medium))
+                    .foregroundColor(BarDS.Text.primary)
+                Text(meta)
+                    .font(BarDS.bodyFont(11, weight: .regular))
+                    .foregroundColor(BarDS.Text.hint)
+            }
+            Spacer(minLength: 8)
+            Button {
+                viewModel.toggleChipExtra(id)
+            } label: {
+                Text(locked ? "Locked" : on ? "On" : "Add")
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(locked || on ? BarDS.Accent.teal : BarDS.Text.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(locked || on ? BarDS.Accent.teal.opacity(0.16) : Color.white.opacity(0.08))
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(locked)
+            .opacity(locked ? 0.55 : 1)
+        }
+        .padding(.vertical, 6)
     }
 
     // MARK: - Behavior
@@ -679,6 +746,7 @@ struct BarSettingsView: View {
             }
             if let d = limits["dailyLossLimit"] as? String, !d.isEmpty { dailyLossLimit = d }
             else if let n = limits["dailyLossLimit"] as? NSNumber { dailyLossLimit = n.stringValue }
+            viewModel.applyDailyLossLimit(parsedDailyLimit)
             if let w = limits["weeklyLossLimit"] as? String, !w.isEmpty { weeklyLossLimit = w }
             else if let n = limits["weeklyLossLimit"] as? NSNumber { weeklyLossLimit = n.stringValue }
             if let m = limits["marginUtilizationCapPct"] as? String, !m.isEmpty { marginCapPct = m }
@@ -723,6 +791,7 @@ struct BarSettingsView: View {
                 return
             }
             limitsSaveMessage = "Saved"
+            viewModel.applyDailyLossLimit(daily)
             await fetchLossLimits()
         } catch {
             limitsSaveError = error.localizedDescription

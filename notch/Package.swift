@@ -24,6 +24,8 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("Speech"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("ScreenCaptureKit"),
             ]
         ),
         .testTarget(

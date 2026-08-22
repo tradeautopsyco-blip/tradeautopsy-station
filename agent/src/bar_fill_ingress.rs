@@ -42,20 +42,19 @@ impl BarBrokerFillIngressConfig {
             );
             return None;
         }
-        let default_product = std::env::var("AGENT_BAR_DEFAULT_PRODUCT")
-            .unwrap_or_else(|_| "MIS".to_string())
-            .to_uppercase();
-        if !matches!(default_product.as_str(), "MIS" | "NRML" | "CNC") {
-            tracing::warn!(
-                product = %default_product,
-                "AGENT_BAR_DEFAULT_PRODUCT must be MIS | NRML | CNC — defaulting to MIS"
-            );
-            return Some(Self {
-                user_id,
-                broker_connection_id,
-                default_product: "MIS".to_string(),
-            });
-        }
+        let raw_product = std::env::var("AGENT_BAR_DEFAULT_PRODUCT")
+            .unwrap_or_else(|_| "MIS".to_string());
+        // I-N4: v1 cash lock — CNC|MIS only. NRML/CO/FO must not re-enter via default_product.
+        let default_product = match v1_cash_product(&raw_product) {
+            Some(product) => product.to_string(),
+            None => {
+                tracing::warn!(
+                    product = %raw_product,
+                    "AGENT_BAR_DEFAULT_PRODUCT must be CNC | MIS (v1 cash lock) — refusing NRML/CO/FO"
+                );
+                return None;
+            }
+        };
         Some(Self {
             user_id,
             broker_connection_id,
@@ -111,6 +110,15 @@ struct BarBrokerFillIngressBody<'a> {
     fill: BarFillBodyJson<'a>,
 }
 
+/// I-N4: Station v1 cash lock. NRML/CO/BO/FO are not a default and must not re-enter.
+pub(crate) fn v1_cash_product(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_uppercase().as_str() {
+        "CNC" => Some("CNC"),
+        "MIS" => Some("MIS"),
+        _ => None,
+    }
+}
+
 pub(crate) fn bar_broker_fill_ingest_url(base_url: &str) -> String {
     format!("{}{}", base_url.trim_end_matches('/'), INGEST_PATH)
 }
@@ -140,6 +148,13 @@ pub(crate) fn build_bar_broker_fill_ingress_json(
     if !fill.qty.is_finite() || fill.qty <= 0.0 {
         return Err("quantity must be finite and positive");
     }
+    let product = v1_cash_product(&cfg.default_product)
+        .ok_or("v1 cash lock: default_product must be CNC or MIS")?;
+    if let Some(fill_product) = fill.product.as_deref() {
+        if v1_cash_product(fill_product).is_none() {
+            return Err("v1 cash lock: fill product NRML/CO/FO refused");
+        }
+    }
     let filled_at_ms = fill.filled_at.timestamp_millis();
     let broker_order_id = fill.fill_id.as_str();
     let body = BarBrokerFillIngressBody {
@@ -166,7 +181,7 @@ pub(crate) fn build_bar_broker_fill_ingress_json(
             side,
             quantity: fill.qty,
             fill_price: finite_fill_price(fill.price),
-            product: cfg.default_product.as_str(),
+            product,
             filled_at_ms,
             fee_amount: fill.fee_amount,
             fee_asset: fill.fee_asset.as_deref(),
@@ -309,6 +324,7 @@ mod tests {
             broker: "kotak".to_string(),
             fee_amount: None,
             fee_asset: None,
+            ..Default::default()
         }
     }
 
@@ -443,5 +459,60 @@ mod tests {
         assert_eq!(body["fill"]["side"], "BUY");
         assert_eq!(body["fingerprintParts"]["eventType"], "fill");
         std::env::remove_var("STATION_ACCESS_TOKEN");
+    }
+
+    #[test]
+    fn v1_cash_lock_allows_cnc_and_mis_only() {
+        // I-N4
+        assert_eq!(v1_cash_product("CNC"), Some("CNC"));
+        assert_eq!(v1_cash_product("mis"), Some("MIS"));
+        assert_eq!(v1_cash_product("NRML"), None);
+        assert_eq!(v1_cash_product("CO"), None);
+        assert_eq!(v1_cash_product("BO"), None);
+        assert_eq!(v1_cash_product("FO"), None);
+    }
+
+    #[test]
+    fn bar_fill_ingress_refuses_nrml_default_product() {
+        // I-N4: NRML must not re-enter Station via default_product (same as FO).
+        let mut cfg = fixture_cfg();
+        cfg.default_product = "NRML".to_string();
+        let err = build_bar_broker_fill_ingress_json(
+            &fixture_fill(),
+            &cfg,
+            BarFillIngestSource::Reconciliation,
+        )
+        .expect_err("NRML default must be refused");
+        assert!(err.contains("CNC or MIS"), "{err}");
+    }
+
+    #[test]
+    fn bar_fill_ingress_refuses_nrml_fill_product() {
+        // I-N4
+        let mut fill = fixture_fill();
+        fill.product = Some("NRML".to_string());
+        let err = build_bar_broker_fill_ingress_json(
+            &fill,
+            &fixture_cfg(),
+            BarFillIngestSource::Reconciliation,
+        )
+        .expect_err("NRML fill product must be refused");
+        assert!(err.contains("NRML") || err.contains("refused"), "{err}");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn from_env_refuses_nrml_default_product() {
+        // I-N4
+        std::env::set_var("AGENT_BAR_BROKER_FILL_INGEST", "1");
+        std::env::set_var("AGENT_BAR_INGEST_USER_ID", TEST_USER);
+        std::env::set_var("AGENT_BAR_BROKER_CONNECTION_ID", TEST_CONN);
+        std::env::set_var("AGENT_BAR_DEFAULT_PRODUCT", "NRML");
+        let cfg = BarBrokerFillIngressConfig::from_env();
+        std::env::remove_var("AGENT_BAR_BROKER_FILL_INGEST");
+        std::env::remove_var("AGENT_BAR_INGEST_USER_ID");
+        std::env::remove_var("AGENT_BAR_BROKER_CONNECTION_ID");
+        std::env::remove_var("AGENT_BAR_DEFAULT_PRODUCT");
+        assert!(cfg.is_none(), "NRML default_product must disable ingress");
     }
 }

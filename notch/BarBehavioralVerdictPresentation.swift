@@ -81,19 +81,18 @@ extension BarLiveStateResponse {
     @MainActor
     func applyBehavioralToViewModel(_ viewModel: NotchViewModel) {
         guard let score = behavioralScore, score.isFinite else { return }
-        viewModel.compositeScore = max(0, min(1, score))
-        if let verdict = BarBehavioralVerdictBand(wire: behavioralVerdict) {
-            viewModel.behavioralState = BarBehavioralVerdictPresentation.behavioralStateLabel(
+        viewModel.setIfChanged(\.compositeScore, max(0, min(1, score)))
+        let verdict = BarBehavioralVerdictBand(wire: behavioralVerdict)
+        viewModel.setIfChanged(
+            \.behavioralState,
+            BarBehavioralVerdictPresentation.behavioralStateLabel(
                 score: viewModel.compositeScore,
                 verdict: verdict
             )
-        } else {
-            viewModel.behavioralState = BarBehavioralVerdictPresentation.behavioralStateLabel(
-                score: viewModel.compositeScore,
-                verdict: nil
-            )
-        }
-        viewModel.barBehavioralMultiplierLabel =
+        )
+        viewModel.setIfChanged(
+            \.barBehavioralMultiplierLabel,
             BarBehavioralVerdictPresentation.multiplierDisplay(behavioralMultipliers)
+        )
     }
 }

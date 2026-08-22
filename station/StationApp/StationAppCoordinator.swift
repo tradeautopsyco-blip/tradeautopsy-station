@@ -326,8 +326,6 @@ public final class StationAppCoordinator: ObservableObject {
             todayViewModel.stopSessionMirrorPolling()
             pollingStoppedForUnhealthyAgent = true
         }
-
-        objectWillChange.send()
     }
 
     private func registerHotkeys() {

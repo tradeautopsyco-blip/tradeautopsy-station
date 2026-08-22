@@ -10,6 +10,8 @@ CREATE TABLE instruments (
   instrument_type TEXT,
   expiry         TEXT,
   last_price     REAL DEFAULT 0.0,
+  lot_size       REAL,
+  tick_size      REAL,
   updated_at     INTEGER NOT NULL
 );
 

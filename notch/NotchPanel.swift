@@ -83,7 +83,9 @@ struct NotchRootView: View {
     var body: some View {
         ZStack {
             Group {
-                if reduceTransparency {
+                if vm.hasPhysicalNotch, !vm.isExpanded {
+                    Color.black
+                } else if reduceTransparency {
                     Color(hex: "#0d0d0d").opacity(0.97)
                 } else {
                     NotchTheme.bgApp
@@ -117,7 +119,13 @@ struct NotchRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(NotchShape(expansionProgress: expansion))
+        .ignoresSafeArea()
+        .clipShape(
+            NotchShape(
+                expansionProgress: expansion,
+                hardwareChin: vm.hasPhysicalNotch && !vm.isExpanded,
+            )
+        )
         .overlay {
             if vm.isExpanded, !vm.hasPhysicalNotch {
                 RoundedRectangle(cornerRadius: BarDS.Radius.sheet, style: .continuous)

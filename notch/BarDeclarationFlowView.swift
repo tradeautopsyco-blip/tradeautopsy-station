@@ -106,8 +106,8 @@ struct BarDeclarationFlowView: View {
         .onAppear {
             if declarationStartedAt == nil {
                 declarationStartedAt = Date()
-                viewModel.declInvalidationType = ""
-                viewModel.declInvalidationCondition = ""
+                viewModel.setIfChanged(\.declInvalidationType, "")
+                viewModel.setIfChanged(\.declInvalidationCondition, "")
             }
             applyBrokerDeclarationPrefillIfNeeded()
         }
@@ -116,16 +116,16 @@ struct BarDeclarationFlowView: View {
                 viewModel.dismissSymbolSuggestions()
             }
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { recapClock = $0 }
-        .onChange(of: viewModel.declEmotionalCalm) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.declEmotionalConfidence) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: stopLossText) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: quantityText) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.barDeclarationSymbol) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.declSetupType) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.declInvalidationType) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.declInvalidationCondition) { _, _ in viewModel.barDeclarationLastError = nil }
-        .onChange(of: viewModel.declProtectiveSLConsent) { _, _ in viewModel.barDeclarationLastError = nil }
+        .onReceive(NotchOneSecondClock.publisher) { recapClock = $0 }
+        .onChange(of: viewModel.declEmotionalCalm) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declEmotionalConfidence) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: stopLossText) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: quantityText) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.barDeclarationSymbol) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declSetupType) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declInvalidationType) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declInvalidationCondition) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declProtectiveSLConsent) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
     }
 
     private var submitReadiness: (ready: Bool, hint: String?) {

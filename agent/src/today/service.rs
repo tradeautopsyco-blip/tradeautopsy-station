@@ -2,7 +2,7 @@
 
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 use crate::broker_sync_control::{BrokerRuntimeCardStatus, BrokerSyncController};
-use crate::exchange_info::ExchangeInfoSymbolCache;
+use crate::exchange_info::{live_com_filters_ready, ExchangeInfoSymbolCache};
 use crate::recent_trades::RecentTradesStore;
 use crate::round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, RoundTrip, RoundTripEngine,
@@ -21,6 +21,8 @@ pub enum TodayDegradedReason {
     SyncStale,
     /// Live adapter cannot produce fills (CountingPoll / test stub). Not a quiet day.
     StubAdapter,
+    /// I-S4: live COM started without LOT_SIZE / tickSize / notional filters loaded.
+    ExchangeFiltersNotReady,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +98,7 @@ pub struct TodayService {
     broker_status: Arc<Mutex<BrokerRuntimeState>>,
     broker_sync_control: Arc<BrokerSyncController>,
     broker_limits: BrokerSyncConfig,
+    exchange_cache: ExchangeInfoSymbolCache,
 }
 
 impl TodayService {
@@ -110,10 +113,11 @@ impl TodayService {
         Self {
             recent_trades,
             store,
-            engine: RoundTripEngine::with_exchange_info(exchange_cache, true),
+            engine: RoundTripEngine::with_exchange_info(exchange_cache.clone(), true),
             broker_status,
             broker_sync_control,
             broker_limits,
+            exchange_cache,
         }
     }
 
@@ -258,6 +262,10 @@ impl TodayService {
 
         if is_stub_fill_adapter(snap.backend_broker_label.as_deref()) {
             return Some(TodayDegradedReason::StubAdapter);
+        }
+
+        if !live_com_filters_ready(snap.active_broker_slug.as_deref(), &self.exchange_cache) {
+            return Some(TodayDegradedReason::ExchangeFiltersNotReady);
         }
 
         let sync_state = snap.sync_state_literal(
@@ -654,6 +662,19 @@ mod tests {
     }
 
     #[test]
+    fn live_com_empty_cache_is_not_filters_ready() {
+        // I-S4
+        assert_eq!(
+            serde_json::to_string(&TodayDegradedReason::ExchangeFiltersNotReady).unwrap(),
+            "\"exchange_filters_not_ready\""
+        );
+        assert!(!crate::exchange_info::live_com_filters_ready(
+            Some("binance_com"),
+            &ExchangeInfoSymbolCache::empty()
+        ));
+    }
+
+    #[test]
     fn open_inventory_omits_flat_symbols() {
         let fills = vec![
             crate::broker::BrokerFill {
@@ -667,6 +688,7 @@ mod tests {
                 broker: "binance_us".into(),
                 fee_amount: Some(0.5),
                 fee_asset: Some("USDT".into()),
+                ..Default::default()
             },
             crate::broker::BrokerFill {
                 fill_id: "s1".into(),
@@ -679,6 +701,7 @@ mod tests {
                 broker: "binance_us".into(),
                 fee_amount: Some(0.5),
                 fee_asset: Some("USDT".into()),
+                ..Default::default()
             },
         ];
         assert!(open_inventory_from_fills(&fills).is_empty());

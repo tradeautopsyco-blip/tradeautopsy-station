@@ -29,6 +29,7 @@ fn fill(id: &str, side: &str, qty: f64, price: f64, h: u32, m: u32) -> BrokerFil
         broker: "binance_us".to_string(),
         fee_amount: Some(0.5),
         fee_asset: Some("USDT".to_string()),
+        ..Default::default()
     }
 }
 

@@ -17,6 +17,7 @@ fn fill(id: &str, side: &str, qty: f64, price: f64) -> BrokerFill {
         broker: "binance_us".to_string(),
         fee_amount: Some(0.5),
         fee_asset: Some("USDT".to_string()),
+        ..Default::default()
     }
 }
 
@@ -37,6 +38,7 @@ fn hero_aggregate_excludes_unknown_basis() {
             broker: "binance_us".into(),
             fee_amount: None,
             fee_asset: None,
+            ..Default::default()
         },
     ]);
     let known: Vec<_> = result
@@ -73,6 +75,7 @@ fn today_trades_table_most_recent_first() {
             broker: "binance_us".to_string(),
             fee_amount: Some(0.5),
             fee_asset: Some("USDT".to_string()),
+            ..Default::default()
         }
     }
 
@@ -109,6 +112,14 @@ fn today_stub_adapter_serializes_snake_case() {
     let reason = tradeautopsy_agent::TodayDegradedReason::StubAdapter;
     let j = serde_json::to_string(&reason).unwrap();
     assert_eq!(j, "\"stub_adapter\"");
+}
+
+#[test]
+fn today_exchange_filters_not_ready_serializes_snake_case() {
+    // I-S4
+    let reason = tradeautopsy_agent::TodayDegradedReason::ExchangeFiltersNotReady;
+    let j = serde_json::to_string(&reason).unwrap();
+    assert_eq!(j, "\"exchange_filters_not_ready\"");
 }
 
 #[test]

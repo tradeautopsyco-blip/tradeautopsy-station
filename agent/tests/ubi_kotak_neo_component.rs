@@ -95,7 +95,7 @@ fn fno_segments_and_refused_products_are_dropped() {
 
     let (fills, _state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
 
-    // B6 §12: nse_fo/NRML and CO rows must not appear as equities cash fills.
+    // B6 §12 / I-N4: nse_fo/NRML and CO rows must not appear as equities cash fills.
     assert!(fills.iter().all(|f| f.exchange_segment.as_deref() == Some("nse_cm")));
     assert!(fills
         .iter()

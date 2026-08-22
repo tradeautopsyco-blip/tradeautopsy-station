@@ -177,7 +177,7 @@ impl<L: FillTimeFeePriceLookup> RoundTripEngine<L> {
             if is_buy(&fill.side) {
                 ledger.apply_buy(&fill, fee_outcome);
             } else if is_sell(&fill.side) {
-                let quote_not_usd = !self.fee_lookup.is_usd_quoted_symbol(&fill.symbol);
+                let quote_not_usd = fill_quote_not_usd(&self.fee_lookup, &fill);
                 ledger.apply_sell(&fill, fee_outcome, quote_not_usd, &mut round_trips);
             }
         }
@@ -374,6 +374,20 @@ fn is_sell(side: &str) -> bool {
     side.eq_ignore_ascii_case("SELL")
 }
 
+/// INR (and any non-USD-pegged venue currency) must stay blanked — never USD hero PnL.
+fn fill_quote_not_usd<L: FillTimeFeePriceLookup>(lookup: &L, fill: &BrokerFill) -> bool {
+    if let Some(ccy) = fill
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_ascii_uppercase())
+    {
+        return !is_usd_pegged_stablecoin(&ccy);
+    }
+    !lookup.is_usd_quoted_symbol(&fill.symbol)
+}
+
 #[cfg(test)]
 mod unit_tests {
     use super::*;
@@ -400,6 +414,7 @@ mod unit_tests {
             broker: "test".to_string(),
             fee_amount,
             fee_asset: fee_asset.map(str::to_string),
+            ..Default::default()
         }
     }
 

@@ -19,6 +19,32 @@ pub struct BrokerFill {
     pub broker: String,
     pub fee_amount: Option<f64>,
     pub fee_asset: Option<String>,
+    /// Venue quote currency (I-N3). Kotak cash is `INR` — must not be dropped.
+    pub currency: Option<String>,
+    /// Venue product (I-N3 / I-N4). v1 cash lock: `CNC` | `MIS` only.
+    pub product: Option<String>,
+    /// Venue segment (I-N3). Kotak cash is `nse_cm` / `bse_cm`.
+    pub exchange_segment: Option<String>,
+}
+
+impl Default for BrokerFill {
+    fn default() -> Self {
+        Self {
+            fill_id: String::new(),
+            trade_id: String::new(),
+            symbol: String::new(),
+            side: String::new(),
+            qty: 0.0,
+            price: 0.0,
+            filled_at: DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_else(Utc::now),
+            broker: String::new(),
+            fee_amount: None,
+            fee_asset: None,
+            currency: None,
+            product: None,
+            exchange_segment: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

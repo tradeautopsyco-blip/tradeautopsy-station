@@ -27,6 +27,7 @@ fn fill(
         broker: "binance_us".to_string(),
         fee_amount,
         fee_asset: fee_asset.map(str::to_string),
+        ..Default::default()
     }
 }
 
@@ -411,6 +412,55 @@ fn quote_not_usd_trip_has_no_fees_usd() {
     assert!(rt.realized_pnl_usd.is_none());
     assert!(rt.fees_usd.is_none());
     assert!(!is_aggregate_eligible(rt));
+}
+
+/// INR cash (Kotak RELIANCE) must stay labeled `quote_not_usd` — never USD hero PnL.
+#[test]
+fn inr_cash_reliance_is_quote_not_usd_not_usd_hero_pnl() {
+    let engine = RoundTripEngine::new();
+    let at_buy = t(10, 0);
+    let at_sell = t(11, 0);
+    let fills = vec![
+        BrokerFill {
+            fill_id: "b1".into(),
+            trade_id: "t-b1".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 2500.0,
+            filled_at: at_buy,
+            broker: "kotak_neo".into(),
+            fee_amount: None,
+            fee_asset: None,
+            currency: Some("INR".into()),
+            product: Some("CNC".into()),
+            exchange_segment: Some("nse_cm".into()),
+        },
+        BrokerFill {
+            fill_id: "s1".into(),
+            trade_id: "t-s1".into(),
+            symbol: "RELIANCE".into(),
+            side: "SELL".into(),
+            qty: 1.0,
+            price: 2510.0,
+            filled_at: at_sell,
+            broker: "kotak_neo".into(),
+            fee_amount: None,
+            fee_asset: None,
+            currency: Some("INR".into()),
+            product: Some("CNC".into()),
+            exchange_segment: Some("nse_cm".into()),
+        },
+    ];
+
+    let result = engine.reconstruct(fills);
+    assert_eq!(result.round_trips.len(), 1);
+    let rt = &result.round_trips[0];
+    assert!(rt.quote_not_usd, "INR cash must be blanked, not converted to USD");
+    assert!(rt.realized_pnl_usd.is_none());
+    assert!(rt.fees_usd.is_none());
+    assert!(!is_aggregate_eligible(rt));
+    assert_eq!(aggregate_known_pnl(&result.round_trips), 0.0);
 }
 
 /// 7. BNB fee → fee_unhandled, no P&L, excluded from aggregate (same as unknown_basis).
