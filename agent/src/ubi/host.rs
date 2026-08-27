@@ -1,5 +1,6 @@
-//! Wasmtime host for `tradeautopsy:ubi/broker-adapter`.
+//! Wasmtime host for `tradeautopsy:ubi-data/broker-adapter-data` (v0.2.0).
 //!
+//! `agent/wit/ubi.wit` v0.1.0 `fetch_fills` world is unchanged and is not merged here.
 //! Phase 1 fixture mode + Phase 3 live mode: the host attaches auth from the vault
 //! credential blob inside `broker_http_call`, so no secret ever enters component memory.
 
@@ -18,21 +19,16 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 pub use crate::ubi::http::HostCredentialBlob;
 
 wasmtime::component::bindgen!({
-    path: "wit",
-    world: "broker-adapter",
+    path: "../docs/contracts",
+    world: "broker-adapter-data",
 });
 
-pub use tradeautopsy::ubi::types::{
+pub use tradeautopsy::ubi_data::types::{
     BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, HttpHeader,
 };
 
 /// Headers a component must never set; host strips or rejects (R6).
-pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &[
-    "authorization",
-    "x-mbx-apikey",
-    "auth",
-    "sid",
-];
+pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &["authorization", "x-mbx-apikey", "auth", "sid"];
 
 /// Fixture response keyed by path (contract tests — no live HTTP).
 #[derive(Debug, Clone)]
@@ -143,9 +139,9 @@ impl UbiHostState {
     }
 }
 
-impl tradeautopsy::ubi::types::Host for UbiHostState {}
+impl tradeautopsy::ubi_data::types::Host for UbiHostState {}
 
-impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
+impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
     fn broker_http_call(
         &mut self,
         request: BrokerHttpRequest,
@@ -174,6 +170,35 @@ impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
             });
         }
 
+        let (capability_id, auth_mode) =
+            match crate::data::infer_capability(&request.method, &request.path) {
+                Ok(pair) => pair,
+                Err(refuse) => {
+                    return Ok(BrokerHttpResponse {
+                        status: 0,
+                        headers: vec![],
+                        body: String::new(),
+                        error_class: Some(refuse.as_str().to_string()),
+                    });
+                }
+            };
+        let attach_private = auth_mode == crate::data::AuthMode::PrivateRead;
+        if let Err(refuse) = crate::data::authorize_host_call(
+            &target_host,
+            &request.method,
+            &request.path,
+            capability_id,
+            auth_mode,
+            attach_private,
+        ) {
+            return Ok(BrokerHttpResponse {
+                status: 0,
+                headers: vec![],
+                body: String::new(),
+                error_class: Some(refuse.as_str().to_string()),
+            });
+        }
+
         self.calls.push(request.clone());
 
         let (status, headers, body, error_class) = match &self.mode {
@@ -185,8 +210,9 @@ impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
                     )
                 })?;
                 let mut headers = redact_response_headers(&fixture.headers);
-                // Prove the host *would* attach auth without exposing any value.
-                headers.push(("x-ubi-auth-attached".to_string(), "true".to_string()));
+                if attach_private {
+                    headers.push(("x-ubi-auth-attached".to_string(), "true".to_string()));
+                }
                 (
                     fixture.status,
                     headers,
@@ -208,16 +234,27 @@ impl tradeautopsy::ubi::broker_http::Host for UbiHostState {
                     .iter()
                     .map(|h| (h.name.clone(), h.value.clone()))
                     .collect();
-                let prepared = prepare_request(
-                    &request.method,
-                    &target_host,
-                    &request.path,
-                    &query,
-                    &headers,
-                    request.body.as_deref(),
-                    &self.config.credentials,
-                    chrono::Utc::now().timestamp_millis(),
-                );
+                let prepared = if attach_private {
+                    prepare_request(
+                        &request.method,
+                        &target_host,
+                        &request.path,
+                        &query,
+                        &headers,
+                        request.body.as_deref(),
+                        &self.config.credentials,
+                        chrono::Utc::now().timestamp_millis(),
+                    )
+                } else {
+                    crate::ubi::http::prepare_unsigned_request(
+                        &request.method,
+                        &target_host,
+                        &request.path,
+                        &query,
+                        &headers,
+                        request.body.as_deref(),
+                    )
+                };
                 match transport.send(&prepared) {
                     Ok(response) => {
                         let error_class = classify_response(response.status, &response.body);
@@ -257,20 +294,10 @@ pub fn run_fetch_fills(
     state: UbiHostState,
     cursor: FillCursor,
 ) -> Result<(Vec<FillEvent>, UbiHostState), UbiHostError> {
-    let mut config = wasmtime::Config::new();
-    config.wasm_component_model(true);
-    let engine = Engine::new(&config)?;
-    let component = Component::from_file(&engine, component_path)?;
-
-    let mut linker = Linker::new(&engine);
-    wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
-    BrokerAdapter::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
-
-    let mut store = Store::new(&engine, state);
-    let bindings = BrokerAdapter::instantiate(&mut store, &component, &linker)?;
+    let (mut store, bindings) = instantiate_adapter(component_path, state)?;
 
     let result = bindings
-        .tradeautopsy_ubi_adapter()
+        .tradeautopsy_ubi_data_adapter()
         .call_fetch_fills(&mut store, &cursor)?
         .map_err(UbiHostError::Adapter)?;
 
@@ -291,6 +318,53 @@ pub fn run_fetch_fills(
 
     let state = store.into_data();
     Ok((fills, state))
+}
+
+/// Call Wasm `describe`. Station loopback describe/obtain stays native (`enrich_obtain`).
+pub fn run_describe(
+    component_path: &Path,
+    state: UbiHostState,
+) -> Result<(String, UbiHostState), UbiHostError> {
+    let (mut store, bindings) = instantiate_adapter(component_path, state)?;
+    let result = bindings
+        .tradeautopsy_ubi_data_data_adapter()
+        .call_describe(&mut store)?
+        .map_err(UbiHostError::Adapter)?;
+    let state = store.into_data();
+    Ok((result, state))
+}
+
+/// Call Wasm `obtain`. Does not replace native Station `GET /api/station/history`.
+pub fn run_obtain(
+    component_path: &Path,
+    state: UbiHostState,
+    request_json: &str,
+) -> Result<(String, UbiHostState), UbiHostError> {
+    let (mut store, bindings) = instantiate_adapter(component_path, state)?;
+    let result = bindings
+        .tradeautopsy_ubi_data_data_adapter()
+        .call_obtain(&mut store, request_json)?
+        .map_err(UbiHostError::Adapter)?;
+    let state = store.into_data();
+    Ok((result, state))
+}
+
+fn instantiate_adapter(
+    component_path: &Path,
+    state: UbiHostState,
+) -> Result<(Store<UbiHostState>, BrokerAdapterData), UbiHostError> {
+    let mut config = wasmtime::Config::new();
+    config.wasm_component_model(true);
+    let engine = Engine::new(&config)?;
+    let component = Component::from_file(&engine, component_path)?;
+
+    let mut linker = Linker::new(&engine);
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
+    BrokerAdapterData::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
+
+    let mut store = Store::new(&engine, state);
+    let bindings = BrokerAdapterData::instantiate(&mut store, &component, &linker)?;
+    Ok((store, bindings))
 }
 
 #[cfg(test)]
@@ -323,7 +397,7 @@ mod tests {
             },
             HashMap::new(),
         );
-        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
@@ -350,7 +424,7 @@ mod tests {
             },
             HashMap::new(),
         );
-        let err = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let err = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
@@ -390,7 +464,7 @@ mod tests {
             },
             fixtures,
         );
-        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
@@ -419,16 +493,18 @@ mod tests {
             },
             transport.clone(),
         );
-        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
                 host: "api.binance.com".into(),
                 path: "/api/v3/myTrades".into(),
-                query: vec![crate::ubi::host::tradeautopsy::ubi::types::HttpQueryParam {
-                    name: "symbol".into(),
-                    value: "BTCUSDT".into(),
-                }],
+                query: vec![
+                    crate::ubi::host::tradeautopsy::ubi_data::types::HttpQueryParam {
+                        name: "symbol".into(),
+                        value: "BTCUSDT".into(),
+                    },
+                ],
                 headers: vec![],
                 body: None,
             },
@@ -436,7 +512,9 @@ mod tests {
         .expect("live ok");
 
         let sent = transport.last().expect("request sent");
-        assert!(sent.url.starts_with("https://api.binance.com/api/v3/myTrades?symbol=BTCUSDT"));
+        assert!(sent
+            .url
+            .starts_with("https://api.binance.com/api/v3/myTrades?symbol=BTCUSDT"));
         assert!(sent.url.contains("&signature="));
         assert!(sent
             .headers
@@ -465,7 +543,7 @@ mod tests {
             },
             transport,
         );
-        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
@@ -505,7 +583,7 @@ mod tests {
             },
             transport,
         );
-        let resp = tradeautopsy::ubi::broker_http::Host::broker_http_call(
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
             &mut state,
             BrokerHttpRequest {
                 method: "GET".into(),
@@ -520,5 +598,77 @@ mod tests {
         assert_eq!(resp.error_class.as_deref(), Some("network"));
         assert_eq!(resp.status, 0);
         assert!(resp.body.is_empty());
+    }
+
+    #[test]
+    fn post_order_is_mutation_forbidden_before_transport() {
+        let mut state = UbiHostState::new(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("k", "s"),
+            },
+            HashMap::new(),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "POST".into(),
+                host: "api.binance.com".into(),
+                path: "/api/v3/order".into(),
+                query: vec![],
+                headers: vec![],
+                body: Some("{\"symbol\":\"BTCUSDT\"}".into()),
+            },
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(resp.error_class.as_deref(), Some("mutation_forbidden"));
+        assert!(state.calls.is_empty());
+    }
+
+    #[test]
+    fn public_ticker_does_not_attach_hmac() {
+        let transport = Arc::new(RecordingTransport::ok(
+            200,
+            r#"{"symbol":"BTCUSDT","price":"1"}"#,
+        ));
+        let mut state = UbiHostState::live(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
+            },
+            transport.clone(),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "api.binance.com".into(),
+                path: "/api/v3/ticker/price".into(),
+                query: vec![
+                    crate::ubi::host::tradeautopsy::ubi_data::types::HttpQueryParam {
+                        name: "symbol".into(),
+                        value: "BTCUSDT".into(),
+                    },
+                ],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("live ok");
+        let sent = transport.last().expect("request sent");
+        assert_eq!(
+            sent.url,
+            "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        );
+        assert!(!sent.url.contains("signature="));
+        assert!(!sent
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("X-MBX-APIKEY")));
+        assert_eq!(resp.status, 200);
     }
 }

@@ -540,22 +540,38 @@ final class UserDefaultsBarArchetypeStore: BarArchetypeStore {
 // MARK: - Instrument search (#148)
 
 struct InstrumentResult: Codable, Identifiable, Equatable {
-    var id: String { trading_symbol }
+    /// Kotak dual-list uses `segment|token`; Binance falls back to exchange:ticker.
+    var id: String { tickBookInstrumentId ?? "\(exchange):\(trading_symbol)" }
     let trading_symbol: String
     let name: String
     let exchange: String
     let segment: String?
     let instrument_token: Int64?
     let last_price: Double
+
+    var tickBookInstrumentId: String? {
+        InstrumentTickBookId.make(segment: segment, instrumentToken: instrument_token)
+    }
+
+    /// Venue chip: `nse_cm` / `bse_cm` on Kotak, else catalog exchange (never invented `"NSE"`).
+    var venueLabel: String {
+        let seg = (segment ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if InstrumentTickBookId.kotakCashSegments.contains(seg.lowercased()) {
+            return seg.lowercased()
+        }
+        return exchange
+    }
 }
 
 struct InstrumentSearchResponse: Codable {
     let symbols: [InstrumentResult]
+    var master_status: String? = nil
 }
 
 struct LTPResponse: Codable {
     let ltp: Double?
     let source: String?
+    let quote_status: String?
     /// `session_expired` | `broker_error` when quote failed (#149).
     let error: String?
 }

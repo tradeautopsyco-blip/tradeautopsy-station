@@ -148,15 +148,24 @@ struct BarDeclarationFlowView: View {
     }
 
     private var archetypeTabRow: some View {
-        HStack(spacing: 5) {
-            BarTab(label: "Intraday", active: viewModel.activeArchetype == .intraday) {
-                viewModel.setUserDeclarationArchetype(.intraday)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                ForEach(BarDeclareAssetClass.allCases) { asset in
+                    BarTab(label: asset.label, active: viewModel.declareAssetClass == asset) {
+                        viewModel.declareAssetClass = asset
+                    }
+                }
             }
-            BarTab(label: "Scalper", active: viewModel.activeArchetype == .scalper) {
-                viewModel.setUserDeclarationArchetype(.scalper)
-            }
-            BarTab(label: "Swing", active: viewModel.activeArchetype == .swing) {
-                viewModel.setUserDeclarationArchetype(.swing)
+            HStack(spacing: 5) {
+                BarTab(label: "Intraday", active: viewModel.activeArchetype == .intraday) {
+                    viewModel.setUserDeclarationArchetype(.intraday)
+                }
+                BarTab(label: "Scalper", active: viewModel.activeArchetype == .scalper) {
+                    viewModel.setUserDeclarationArchetype(.scalper)
+                }
+                BarTab(label: "Swing", active: viewModel.activeArchetype == .swing) {
+                    viewModel.setUserDeclarationArchetype(.swing)
+                }
             }
         }
         .padding(.bottom, 4)
@@ -221,9 +230,13 @@ struct BarDeclarationFlowView: View {
                     .font(BarDS.bodyFont(11, weight: .medium))
                     .foregroundColor(BarDS.Accent.amber)
             }
+            deskGlanceStrip
             BarInputField(placeholder: "Stop loss — exact price", text: $stopLossText)
             BarInputField(placeholder: "Target price", text: $targetPriceText)
             symbolAutocompleteField
+            if viewModel.declareAssetClass == .options {
+                optionsShellFields
+            }
             HStack(spacing: 5) {
                 pretradeSidePill(title: "BUY", selected: sideBuy) { sideBuy = true }
                 pretradeSidePill(title: "SELL", selected: !sideBuy) { sideBuy = false }
@@ -582,48 +595,139 @@ struct BarDeclarationFlowView: View {
         }
     }
 
+    private var deskGlanceStrip: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            BarSectionLabel(text: "Desk extracts")
+            ForEach(visibleGlanceKinds, id: \.rawValue) { kind in
+                HStack {
+                    Text(kind.title)
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .foregroundColor(BarDS.Text.hint)
+                    Spacer()
+                    Text(glanceDetail(kind))
+                        .font(BarDS.monoFont(10, weight: .medium))
+                        .foregroundColor(BarDS.Text.muted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+        }
+        .padding(.bottom, 6)
+    }
+
+    private var visibleGlanceKinds: [BarDeskInstrumentKind] {
+        BarDeskTemplate.glanceKinds(for: viewModel.declareAssetClass).filter { kind in
+            switch kind {
+            case .chain: return viewModel.wantOptionsChain
+            case .openInterest: return viewModel.wantOptionsOI
+            default: return true
+            }
+        }
+    }
+
+    private func glanceDetail(_ kind: BarDeskInstrumentKind) -> String {
+        switch kind {
+        case .last:
+            return viewModel.deskLastStatus
+        case .history:
+            return BarDeskTemplate.historyGlanceLine(
+                licensedStatus: viewModel.deskHistoryStatus,
+                licensedIneligible: viewModel.deskHistoryIneligible,
+                yahooStatus: viewModel.deskYahooHistoryStatus,
+                yahooIneligible: viewModel.deskYahooHistoryIneligible,
+                stitchYahoo: false
+            )
+        case .chain:
+            return viewModel.deskChainStatus
+        case .openInterest:
+            return viewModel.deskOiStatus
+        }
+    }
+
+    private var optionsShellFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            BarSectionLabel(text: "Options template")
+            BarInputField(placeholder: "Expiry (YYYY-MM-DD)", text: $viewModel.declOptionExpiry)
+            BarInputField(placeholder: "Strike", text: $viewModel.declOptionStrike)
+            HStack(spacing: 5) {
+                BarChip(label: "Chain", selected: viewModel.wantOptionsChain) {
+                    viewModel.wantOptionsChain.toggle()
+                }
+                BarChip(label: "OI", selected: viewModel.wantOptionsOI) {
+                    viewModel.wantOptionsOI.toggle()
+                }
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     private var symbolAutocompleteField: some View {
         VStack(alignment: .leading, spacing: 0) {
             BarInputField(
-                placeholder: "Symbol (e.g. RELIANCE)",
+                placeholder: "Symbol (e.g. BTC or RELIANCE)",
                 text: $viewModel.barDeclarationSymbol,
-                marginBottom: viewModel.showSymbolSuggestions ? 0 : 7,
+                marginBottom: (viewModel.showSymbolSuggestions
+                    || !(viewModel.symbolSearchHint ?? "").isEmpty) ? 0 : 7,
             )
             .onChange(of: viewModel.barDeclarationSymbol) { _, newValue in
                 viewModel.searchSymbols(newValue)
             }
 
             if viewModel.showSymbolSuggestions {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(viewModel.symbolSuggestions.prefix(5)) { result in
-                            Button(action: { viewModel.selectSymbol(result) }) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(result.trading_symbol)
-                                            .font(.system(size: 13, weight: .medium))
-                                        Text(result.name)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                    Text(result.exchange)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
+                // No nested ScrollView — parent page already scrolls, and a nested
+                // one plus a focused TextField swallows the first click on macOS.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(viewModel.symbolSuggestions.prefix(5))) { result in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(result.trading_symbol)
+                                    .font(.system(size: 13, weight: .medium))
+                                Text(result.name)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
-                            .buttonStyle(.plain)
-                            Divider()
+                            Spacer()
+                            Text(result.venueLabel)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .highPriorityGesture(
+                            TapGesture().onEnded { viewModel.selectSymbol(result) }
+                        )
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityLabel("\(result.trading_symbol) \(result.venueLabel)")
+                        Divider()
                     }
                 }
-                .frame(maxHeight: 160)
                 .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.1)))
+                .padding(.bottom, 7)
+                .zIndex(1)
+            } else if let hint = viewModel.symbolSearchHint, !hint.isEmpty {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(hint)
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    if hint == "Catalog failed"
+                        || (DeskCapabilityChrome.showsRetryInstruments(
+                            status: viewModel.deskInstrumentsCapability
+                        ) && viewModel.symbolSuggestions.isEmpty)
+                    {
+                        Button("Retry instruments") {
+                            Task { await viewModel.retryInstruments() }
+                        }
+                        .buttonStyle(.plain)
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .foregroundStyle(BarDS.Accent.teal)
+                    }
+                }
+                .padding(.top, 4)
                 .padding(.bottom, 7)
             }
         }

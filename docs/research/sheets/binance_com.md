@@ -1,10 +1,10 @@
 # B6 · Broker capability sheet — `binance_com`
 
-**Status:** `SIGNED` — research pass 2026-07-24 · **approved for Phase 1+**  
+**Status:** `SIGNED` — research pass 2026-07-24 · **approved for Phase 1+** · market-history amendment 2026-08-26 (public klines / `historical_series`; **not** Kotak)  
 **Slug:** `binance_com`  
 **Display:** Binance.com (en-IN / global)  
 **Dogfood role:** First crypto integration (your venue) — not “only broker forever”  
-**Sources:** [binance spot REST](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) · Station `docs/reference/crypto/binance-global/spot/REST.md` (snapshot 2026-07-02) · live code `binance_com_spot_*.rs` · site https://www.binance.com/en-IN
+**Sources:** [binance spot REST](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) · Station [`docs/reference/crypto/binance-global/spot/REST.md`](../../reference/crypto/binance-global/spot/REST.md) (snapshot 2026-07-02; klines re-fetched 2026-08-26) · live code `binance_com_spot_*.rs` · site https://www.binance.com/en-IN
 
 ---
 
@@ -23,7 +23,7 @@
 | 10 | Secrets shape | HMAC `api_key` + `api_secret` in Keychain; never Console DB as live SoT |
 | 11 | Dogfood role | **Enabled** first crypto · your real venue |
 | 12 | Refuse list v1 | Binance.US conflation; futures/USDM; withdraw-enabled keys for dogfood; treating COM as US; inventing multi-symbol history in one call |
-| 13 | Sources + date | binance-spot-api-docs rest-api.md (fetched 2026-07-24); Station REST.md 2026-07-02; code `DEFAULT_BASE_URL = https://api.binance.com` |
+| 13 | Sources + date | binance-spot-api-docs rest-api.md (fetched 2026-07-24; klines + General API Information re-fetched **2026-08-26**); Station REST.md 2026-07-02 / klines 2026-08-26; code `DEFAULT_BASE_URL = https://api.binance.com` |
 
 ---
 
@@ -34,6 +34,23 @@
 | **COM vs US** | Product + Station code = **COM only**. No US adapter as dogfood. Founder keys for live Start must be COM; Phase 2 connect validates against `api.binance.com`. |
 | **Bootstrap symbols** | **Not a fixed founder list.** Adapter derives `{ASSET}USDT` from non-zero account balances (skips stables). Typical dogfood: `BTCUSDT`, `ETHUSDT` when those balances exist. Empty balances → empty fills until funded or explicit symbol config later. |
 | **Desk currency** | Always `crypto_spot_usd` for this connection — never INR chrome for COM fills. |
+
+---
+
+## Research amendments (2026-08-26) — market history (`ohlcv` / `historical_series`)
+
+Does **not** change Phase 1 fills (`GET /api/v3/myTrades`). This is **market** `ohlcv` / `historical_series`, not account trade history — **row 5 stays `myTrades`**. Kotak is a **different slug** (`kotak_neo`): no history capability there. Do not invent stitch / Yahoo as a Binance.com capability. Citations fetched 2026-08-26: [rest-api.md](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) (Kline/Candlestick + General API Information + Request Security) · [Market Data Only FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md) · [errors.md](https://github.com/binance/binance-spot-api-docs/blob/master/errors.md). Full array indexes: Station [`spot/REST.md`](../../reference/crypto/binance-global/spot/REST.md).
+
+| # | Field | Answer |
+|---|-------|--------|
+| H1 | Path / host | Public **`GET /api/v3/klines`** on COM host **`https://api.binance.com`**. **Not** `api.binance.us`. Weight **2**. Data Source: Database. |
+| H2 | Auth | Security **NONE** (unsigned / public). Heading has no `(USER_DATA)` / `(TRADE)` suffix; Request Security: unspecified ⇒ `NONE` = public market data. **Not HMAC USER_DATA.** Do not attach private credentials (`X-MBX-APIKEY`, `signature`, Keychain secret) — that is **`PrivateCredentialOnPublicCall`**. Market Data Only FAQ: API key is not necessary on this path (also listed on `data-api.binance.vision`). |
+| H3 | Intervals | Source enum (case-sensitive): `1s`, `1m`, `3m`, `5m`, `15m`, `30m`, `1h`, `2h`, `4h`, `6h`, `8h`, `12h`, `1d`, `3d`, `1w`, `1M`. Unsupported interval → later S2 code ineligible **`unsupported_interval`**. Exchange reject `-1120 BAD_INTERVAL` does not add intervals. |
+| H4 | Range / limit | `limit` default **500**, maximum **1000**. Beyond that documented max → **`unsupported_range`**. No documented max hours between `startTime` and `endTime` on this path (`-1127` exists generally; **not** cited on klines). Empty range → most recent klines up to limit. |
+| H5 | Retention | **NOT SPECIFIED IN SOURCE.** How far back klines are kept is not in rest-api.md / Market Data Only FAQ / errors.md (2026-08-26). Do **not** emit **`insufficient_retention`** until a cited source distinguishes it from unspecified. |
+| H6 | vs row 5 | Market candles ≠ account `myTrades`. Row 5 remains per-symbol trade list (USER_DATA). Klines identity: family market, capability `ohlcv`, physics `historical_series`. |
+| H7 | Kotak | Different slug. `kotak_neo` has **no** `history` / klines capability (FAQ 2026-08-26). Do not copy this path onto Kotak. |
+| H8 | Refuse | Place / modify / cancel are **not data**. Yahoo / stitch / caller `source=yahoo` is **not** a Binance.com klines capability. `GET /api/v3/uiKlines` is a presentation sibling, not this S2 path. S2 code has **not** allowlisted `/api/v3/klines` yet. |
 
 ---
 

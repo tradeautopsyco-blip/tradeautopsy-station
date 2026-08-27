@@ -9,15 +9,19 @@ Decisions live in [docs/adr/](./docs/adr/).
 Station-native system letting TradeAutopsy and third parties (including AI
 authors) supply broker adapters, each a sandboxed Wasm component behind one
 WIT contract. Replaces the broker portion of "Backend Box." See [ADR
-0001](./docs/adr/0001-uniform-wasm-sandboxed-broker-adapters.md).
+0001](./docs/adr/0001-uniform-wasm-sandboxed-broker-adapters.md) and the
+multi-capability read amendment [ADR
+0002](./docs/adr/0002-direct-broker-multi-capability-runtime.md).
 _Avoid:_ Backend Box (broker section only — non-broker Backend Box sections,
 e.g. Market Data Keys, are unaffected by this rename), web UBI (Console's old
 registry — removed)
 
 **Broker Adapter (Adapter Component)**:
 A Wasm component — first-party or community/AI-authored, no execution
-distinction — that exports `fetch_fills(cursor) -> FillEvent[]` and imports
-`broker_http_call`. Never holds a raw credential.
+distinction — that declares account, market, reference, and provider-derived read
+capabilities through one `SourceManifest`, then satisfies the versioned WIT read
+interface. v0.1 exports only `fetch_fills`; ADR 0002 supersedes that limitation. The
+adapter imports host-mediated network operations and never holds a raw credential.
 _Avoid:_ connector (Console's legacy term for its removed TS classes),
 "native adapter" (no such tier exists post-ADR-0001)
 
@@ -46,9 +50,32 @@ not just discouraged)
 
 **BrokerDescriptor**:
 Catalog entry for a broker: `slug, displayName, assetClass, quoteCurrency,
-authScheme, calcProfileId, complianceProfileId, availability, origin`.
+authScheme, calcProfileId, complianceProfileId, availability, origin, manifestId`.
+It points to a versioned source manifest; it is not the capability list itself.
 _Avoid:_ conflating with the WIT interface — this is catalog/UI metadata, the
 WIT interface is the execution contract
+
+**SourceManifest**:
+Versioned declaration of every read binding one installed adapter actually implements:
+identity (`family + capability ID + physics`), venues/assets, pull/stream support,
+public/private auth mode, rights, limits, coverage, and handler. One connected broker may
+declare both account and market/reference bindings; each keeps separate identity, health,
+cache, and authorization.
+_Avoid:_ `supports_market_data: true`; inferring support from a broker name; claiming an
+OpenAlgo operation merely because it exists in the compatibility vocabulary
+
+**Connected-broker primary**:
+Per-capability selection policy after eligibility: fresh broker local projection →
+connected broker stream → connected broker REST → explicit broker-gap adapter → typed
+unavailable. Specialized non-broker domains route directly to their declaring adapters.
+_Avoid:_ “broker always last”; vendor key preempts broker; one broker must provide every
+domain
+
+**OpenAlgo compatibility baseline**:
+OpenAlgo Data + Accounts nouns define Station's normalized read operation vocabulary.
+Station does not require OpenAlgo, its API key, ports 5000/8765, Python SDK, MCP, or UI.
+A future optional OpenAlgo-compatible adapter occupies the same source-adapter seam.
+_Avoid:_ spawning OpenAlgo as a second Station control plane
 
 **Origin (adapter provenance)**:
 `first_party | community_reviewed | community_unreviewed` on
@@ -84,6 +111,19 @@ editing a Station copy as if it were SoT
 The Rust agent that hosts the Wasm adapter sandbox, mediates all broker HTTP
 calls and Keychain access, and is the sole execution authority for adapter
 components.
+
+**TickBook**:
+In-memory Market Plane last-price book (`market/quote/latest_state`). S1 desk
+currently proves public Binance `@trade` → extract → Notch. ADR 0002 migrates that
+transport under the connected `binance_com` quote binding. TickBook stores the selected
+binding's latest normalized value. Not depth, not Neon, not `ingestSignal`.
+_Avoid:_ keeping `binance_public` as a permanent parallel adapter; putting depth on
+LiveBook; treating account snapshots as quotes
+
+**LiveBook**:
+In-memory copy of hosted BAR live-state JSON. Declarations and plan — not
+quotes. `GET /api/daemon/bar/live-state`.
+_Avoid:_ using LiveBook as a last-price cache
 
 **Kill Switch**:
 Escalating protections culminating in an always-on DNS-level block of broker

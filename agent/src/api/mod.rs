@@ -1,11 +1,14 @@
 use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
     broker_sync_control::BrokerSyncController,
+    data::{BrokerConnectionRuntime, DepthBook, HistoryBook, Registry, SourceManifest, TickBook},
     event_bus::EventBus,
+    exchange_info::ExchangeInfoSymbolCache,
     instruments::InstrumentStore,
     kill_policy::KillPolicyStore,
-    live_book::LiveBook,
     kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
+    kotak_scrip_master::KotakScripMaster,
+    live_book::LiveBook,
     metrics::AgentMetrics,
     recent_trades::RecentTradesStore,
     sse_signing::SseSigner,
@@ -16,8 +19,10 @@ use axum::{
     routing::{get, patch, post},
     Router,
 };
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 mod bar;
 mod broker_credentials;
@@ -25,14 +30,22 @@ mod broker_sync;
 mod broker_sync_state;
 mod capture;
 pub mod daemon_commands;
+pub(crate) mod desk;
 mod health;
 mod instruments;
 mod kill_switch;
-pub use kill_switch::{effective_level, plan_l3_dns};
+pub use kill_switch::{
+    effective_level, plan_l3_dns, resolve_clear_fog, resolve_kill_apply, KillApplyDecision,
+    KillClearDecision,
+};
+mod glance;
+mod history;
 mod kotak_session;
+mod manifest;
 mod outbox_status;
 mod phase8;
 mod positions;
+mod quote;
 mod recent_trades;
 mod sse;
 mod station_auth;
@@ -69,7 +82,45 @@ pub struct AppState {
     /// Station Caller tokens (Keychain in prod; memory in tests when injected).
     pub station_token_store: Arc<dyn crate::StationTokenStore>,
     /// In-memory live-read book. After one snapshot, GET live-state serves this.
+    /// BAR hosted live-state — not quote TickBook.
     pub live_book: Arc<LiveBook>,
+    /// S1 quote registry (family + id + physics). Fail-closed at boot.
+    pub quote_registry: Arc<Registry>,
+    /// Market Plane last-price book. Not LiveBook, not broker account REST.
+    pub tickbook: Arc<Mutex<TickBook>>,
+    /// REST depth bounded snapshots. Not TickBook, not an ordered replica.
+    pub depthbook: Arc<Mutex<DepthBook>>,
+    /// Licensed historical_series. Not TickBook, not Yahoo.
+    pub historybook: Arc<Mutex<HistoryBook>>,
+    pub quote_freshness: Duration,
+    pub s1_desk_symbol: Option<String>,
+    /// First-party S0 manifests. Fail-closed at boot.
+    pub source_manifests: Arc<Vec<SourceManifest>>,
+    /// Persistent connected-broker runtimes. Handles only — never raw secrets.
+    pub broker_connections: Arc<Mutex<HashMap<String, BrokerConnectionRuntime>>>,
+    /// Local COM instrument master from unsigned `GET /api/v3/exchangeInfo`.
+    pub instrument_master: Arc<Mutex<ExchangeInfoSymbolCache>>,
+    /// Kotak cash scrip master. Separate from `instrument_master` (do not blend).
+    pub kotak_scrip_master: Arc<Mutex<KotakScripMaster>>,
+    /// Instruments that already have a public `@trade` stream task.
+    pub quote_streams: Arc<Mutex<HashSet<String>>>,
+    /// Instrument+interval keys already kicked for public klines → HistoryBook.
+    pub klines_inflight: Arc<Mutex<HashSet<String>>>,
+    /// Start-time env + connection_id for Kotak PrivateRead quotes (handles only).
+    pub kotak_session_locator: crate::kotak_rest_quotes::SessionLocator,
+    /// In-flight Kotak REST quote GETs (not book.subscribe — REST must stay open).
+    pub kotak_quote_inflight: Arc<Mutex<HashSet<String>>>,
+    /// In-flight Kotak REST depth GETs (`quote_type=depth` only).
+    pub kotak_depth_inflight: Arc<Mutex<HashSet<String>>>,
+    /// Shared catalog fetch status (not an ObtainStatus variant).
+    pub instrument_master_status: Arc<Mutex<crate::data::InstrumentMasterStatus>>,
+    /// Stop / re-Start cancels in-flight catalog retries.
+    pub instrument_master_cancel: Arc<AtomicBool>,
+    pub instrument_master_cache_dir: std::path::PathBuf,
+    /// Last quote GET that passed connected-broker id validation. Quote pill keys off this.
+    pub selected_quote_instrument: Arc<Mutex<Option<String>>>,
+    /// Per-instrument quote fetch class (`quotes_http` / `session` / `quotes_unusable`) — never URLs or bodies.
+    pub quote_fetch_error: Arc<Mutex<HashMap<String, String>>>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -196,5 +247,15 @@ pub fn router(state: AppState) -> Router {
             wire::verify_middleware,
         ));
 
-    Router::new().merge(protected).with_state(state)
+    // Loopback extract so the founder can curl last price without HMAC.
+    // Bind remains 127.0.0.1. TickBook ≠ LiveBook. No ingestSignal.
+    Router::new()
+        .route("/api/station/quote", get(quote::handler))
+        .route("/api/station/history", get(history::handler))
+        .route("/api/station/chain", get(glance::chain_handler))
+        .route("/api/station/oi", get(glance::oi_handler))
+        .route("/api/station/manifest", get(manifest::manifest_handler))
+        .route("/api/station/obtain", get(manifest::obtain_handler))
+        .merge(protected)
+        .with_state(state)
 }

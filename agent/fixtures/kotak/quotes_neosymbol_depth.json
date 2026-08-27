@@ -1,0 +1,19 @@
+{
+  "message": [
+    {
+      "instrument_token": "2885",
+      "exchange_segment": "nse_cm",
+      "trading_symbol": "RELIANCE-EQ",
+      "depth": {
+        "buy": [
+          {"price": "1400.00", "quantity": "120", "orders": "3"},
+          {"price": "1399.50", "quantity": "80", "orders": "2"}
+        ],
+        "sell": [
+          {"price": "1400.50", "quantity": "90", "orders": "4"},
+          {"price": "1401.00", "quantity": "150", "orders": "5"}
+        ]
+      }
+    }
+  ]
+}

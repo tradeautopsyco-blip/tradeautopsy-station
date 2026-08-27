@@ -1,0 +1,10 @@
+{
+  "data": {
+    "filesPaths": [
+      "https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-27/transformed-v1/bse_cm-v1.csv",
+      "https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-27/transformed/cde_fo.csv",
+      "https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-27/transformed/nse_fo.csv",
+      "https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-27/transformed-v1/nse_cm-v1.csv"
+    ]
+  }
+}

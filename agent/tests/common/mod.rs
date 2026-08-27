@@ -48,6 +48,10 @@ pub struct TestAgentOptions {
     pub fact_clock_ms: Option<Arc<std::sync::atomic::AtomicI64>>,
     /// Boot seed for the sqlite KillPolicy store (countdown / website_block / default_level).
     pub kill_policy: KillPolicy,
+    /// Slice F — plant cash CSV + quote JSON (no live Kotak session).
+    pub plant_kotak_s1k_fixtures: bool,
+    /// S2 — plant committed Binance klines JSON (no live Binance).
+    pub plant_binance_s2_history: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -77,6 +81,8 @@ impl Default for TestAgentOptions {
             fact_online_interval_ms: None,
             fact_clock_ms: None,
             kill_policy: KillPolicy::default(),
+            plant_kotak_s1k_fixtures: false,
+            plant_binance_s2_history: false,
         }
     }
 }
@@ -116,6 +122,8 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     }
     cfg.fact_clock_ms = opts.fact_clock_ms.clone();
     cfg.kill_policy = opts.kill_policy.clone();
+    cfg.plant_kotak_s1k_fixtures = opts.plant_kotak_s1k_fixtures;
+    cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {
@@ -139,6 +147,7 @@ pub fn spawn_test_agent_with_options(
     }
     remove_sqlite_files(&cfg.kill_switch_audit_db_path);
     remove_sqlite_files(&cfg.fact_outbox_db_path);
+    remove_sqlite_files(&cfg.history_db_path);
     tokio::spawn(async move {
         tradeautopsy_agent::run_agent(cfg)
             .await
@@ -233,10 +242,7 @@ pub fn client() -> reqwest::Client {
 pub const TEST_BROKER_CONNECTION_ID: &str = "00000000-0000-4000-8000-000000000001";
 
 /// Shared memory vault + seed HMAC credentials for B2 identity-only Start tests.
-pub fn seeded_hmac_vault(
-    broker_slug: &str,
-    api_key: &str,
-) -> Arc<MemoryBrokerCredentialVault> {
+pub fn seeded_hmac_vault(broker_slug: &str, api_key: &str) -> Arc<MemoryBrokerCredentialVault> {
     let vault = Arc::new(MemoryBrokerCredentialVault::new());
     vault
         .save(

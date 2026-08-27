@@ -215,6 +215,12 @@ public final class NotchViewModel: ObservableObject {
     }
     /// User click + programmatic expansion (never hover-to-expand).
     @Published var isExpanded: Bool = false
+    /// Set by `NotchPanelController`: the `NSPanel` currently sits at the expanded frame.
+    /// True during the collapse exit fade — the pill must not render centered in the big frame.
+    @Published var summonPanelAtExpandedFrame: Bool = false
+    /// Expanded panel size from `NotchPanelController.layoutPanel` — lets the expanded surface
+    /// pre-warm its layout at final size while the window is still the collapsed pill.
+    @Published var expandedSurfaceSize: CGSize = .zero
     /// One-shot ring scale pulse after smart trigger (0.3s).
     @Published var scoreRingPulseScale: CGFloat = 1.0
     /// Full-panel tint pulse (smart triggers).
@@ -281,6 +287,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var barLastFetched: Date?
     @Published var barSurfacePhase: BarSurfacePhase = .declaration
     @Published var barDebriefPending: Bool = false
+    @Published var planKillPhase: BarPlanKillPhase = .idle
     @Published var stopMeStep: Int = 0
     /// Exit trade / cancel declaration — 0 hidden, 1 confirm, 2 submitting (#144).
     @Published var cancelDeclStep: Int = 0
@@ -325,6 +332,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var barDeclarationSymbol: String = ""
     @Published var symbolSuggestions: [InstrumentResult] = []
     @Published var showSymbolSuggestions: Bool = false
+    @Published var symbolSearchHint: String?
 
     /// Derived from pending declaration kind, then persisted last-known, then `intraday` (#114).
     @Published private(set) var activeArchetype: TraderArchetype = .intraday
@@ -343,6 +351,30 @@ public final class NotchViewModel: ObservableObject {
     @Published var declInvalidationType: String = ""
     @Published var declInvalidationCondition: String = ""
     @Published var declProtectiveSLConsent: Bool = true
+
+    /// Spot / equity / options — not the Intraday/Swing style tabs.
+    @Published var declareAssetClass: BarDeclareAssetClass = .spot
+    @Published var declOptionStrike: String = ""
+    @Published var declOptionExpiry: String = ""
+    @Published var wantOptionsChain: Bool = true
+    @Published var wantOptionsOI: Bool = true
+    @Published var deskLastStatus: String = "unavailable"
+    @Published var deskHistoryStatus: String = "unavailable"
+    @Published var deskHistoryIneligible: [String] = []
+    @Published var deskYahooHistoryStatus: String = "unavailable"
+    @Published var deskYahooHistoryIneligible: [String] = []
+    @Published var deskChainStatus: String = "unavailable"
+    @Published var deskOiStatus: String = "unavailable"
+    /// Desk-level `capabilities.quote` from sync-state — independent of funds/fills.
+    @Published var deskQuoteCapability: String = "unavailable"
+    /// Desk-level `capabilities.funds` from sync-state — independent of quote.
+    @Published var deskFundsCapability: String = "unavailable"
+    /// Desk-level `capabilities.fills` from sync-state — independent of quote.
+    @Published var deskFillsCapability: String = "unavailable"
+    /// Desk-level `capabilities.instruments` from sync-state — independent of quote/account.
+    @Published var deskInstrumentsCapability: String = "unavailable"
+    /// Last selected TickBook id (`nse_cm|2885` or Binance pair).
+    @Published var deskSelectedInstrumentId: String = ""
 
     /// Called from `NotchPanelController` to front the panel when expanding explicitly.
     var onRequestOrderFront: (() -> Void)?
@@ -805,6 +837,22 @@ public final class NotchViewModel: ObservableObject {
         stopMeReason = ""
     }
 
+    var planKillAgentUp: Bool { daemonConnectionState == .connected }
+
+    func presentPlanKillWarning() {
+        guard planKillAgentUp else { return }
+        planKillPhase = .warning
+    }
+
+    func cancelPlanKillWarning() {
+        planKillPhase = .idle
+    }
+
+    func confirmPlanKill() async {
+        await activateKillSwitch()
+        planKillPhase = .idle
+    }
+
     func resetCancelDecl() {
         cancelDeclStep = 0
         cancelDeclError = nil
@@ -836,7 +884,13 @@ public final class NotchViewModel: ObservableObject {
         }
         RunLoop.main.add(t, forMode: .common)
         barLiveStatePollTimer = t
-        Task { await fetchBarLiveState() }
+        Task {
+            // Defer the first fetch until the summon spring settles — decode work must not
+            // land in the first frames of the intro (content is pre-warmed at start()).
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard isExpanded, activeTab == .plan else { return }
+            await fetchBarLiveState()
+        }
     }
 
     private func stopBarLiveStatePolling() {
@@ -991,6 +1045,7 @@ public final class NotchViewModel: ObservableObject {
         guard query.count >= 2 else {
             symbolSuggestions = []
             showSymbolSuggestions = false
+            symbolSearchHint = nil
             return
         }
         symbolSearchTask = Task { @MainActor [weak self] in
@@ -1005,8 +1060,23 @@ public final class NotchViewModel: ObservableObject {
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
                 let resp = try JSONDecoder().decode(InstrumentSearchResponse.self, from: data)
-                self.symbolSuggestions = resp.symbols
-                self.showSymbolSuggestions = !resp.symbols.isEmpty
+                let filtered = DeskCatalogAllowlist.filterSymbols(
+                    resp.symbols,
+                    deskSlug: self.resolvedDeskSlug
+                )
+                self.symbolSuggestions = filtered
+                self.showSymbolSuggestions = !filtered.isEmpty
+                if filtered.isEmpty {
+                    let master = (resp.master_status?.isEmpty == false)
+                        ? resp.master_status
+                        : self.deskInstrumentsCapability
+                    self.symbolSearchHint = DeskCapabilityChrome.emptySearchHint(
+                        masterStatus: master,
+                        connectedInstrumentDesk: self.connectedInstrumentCatalogDesk
+                    )
+                } else {
+                    self.symbolSearchHint = nil
+                }
             } catch {
                 // silent — don't surface search errors to user
             }
@@ -1016,10 +1086,26 @@ public final class NotchViewModel: ObservableObject {
     func selectSymbol(_ result: InstrumentResult) {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
+        if DeskCatalogAllowlist.refusesKotakSelection(result, deskSlug: resolvedDeskSlug) {
+            barDeclarationLastError = "Select a Kotak cash instrument"
+            showSymbolSuggestions = false
+            symbolSuggestions = []
+            symbolSearchHint = nil
+            return
+        }
         guard let ticker = BarBrokerTicker.normalize(raw: result.trading_symbol) else {
             barDeclarationLastError = "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
             showSymbolSuggestions = false
             symbolSuggestions = []
+            symbolSearchHint = nil
+            return
+        }
+        let kotakDesk = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        if kotakDesk, result.tickBookInstrumentId == nil {
+            barDeclarationLastError = "Select a Kotak cash instrument"
+            showSymbolSuggestions = false
+            symbolSuggestions = []
+            symbolSearchHint = nil
             return
         }
         barDeclarationSymbol = ticker
@@ -1027,16 +1113,68 @@ public final class NotchViewModel: ObservableObject {
         barLtpFetchError = nil
         showSymbolSuggestions = false
         symbolSuggestions = []
+        symbolSearchHint = nil
+        if result.last_price > 0 {
+            applyLTP(result.last_price)
+        }
+        if kotakDesk, let tickId = result.tickBookInstrumentId {
+            deskSelectedInstrumentId = tickId
+            fetchStationQuote(instrument: tickId)
+            refreshDeskExtracts(symbol: ticker, instrumentId: tickId)
+            return
+        }
+        let exchangeNorm = result.exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
+            || exchangeNorm == "binance_com"
+            || exchangeNorm == "binance"
+        {
+            deskSelectedInstrumentId = ticker
+            fetchStationQuote(instrument: ticker)
+            refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
+            return
+        }
+        deskSelectedInstrumentId = result.tickBookInstrumentId ?? ticker
         fetchLTP(
             symbol: ticker,
             exchange: result.exchange,
             segment: result.segment ?? result.exchange
         )
+        refreshDeskExtracts(symbol: ticker, instrumentId: deskSelectedInstrumentId)
+    }
+
+    /// Active catalog slug for desk-honest Last/history routing.
+    var resolvedDeskSlug: String? {
+        let raw = (activeBrokerSlug ?? barProtectiveBrokerSlug)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw.isEmpty ? nil : raw
+    }
+
+    /// Live Kotak/Binance desk — empty slug still counts when session is up (bridge defaults kotak_neo).
+    var connectedInstrumentCatalogDesk: Bool {
+        let connected = brokerSessionActive || brokerSyncClass == "syncing"
+        guard connected else { return false }
+        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+            || DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
+        {
+            return true
+        }
+        if resolvedDeskSlug == nil {
+            return BarDeskTemplate.isKotakNeoDesk(slug: resolvedBrokerSlugForBridge)
+                || DeskCatalogAllowlist.isBinanceDesk(resolvedBrokerSlugForBridge)
+        }
+        return false
     }
 
     func fetchLTP(symbol: String, exchange: String, segment: String) {
+        let exchangeNorm = exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
+            return
+        }
+        if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug), exchangeNorm == "nse" {
+            return
+        }
+        let sym = InstrumentTickBookId.queryEncode(symbol)
         guard
-            let sym = symbol.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
             let exc = exchange.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
             let seg = segment.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
             let url = URL(string: "\(baseURL())/instruments/ltp?symbol=\(sym)&exchange=\(exc)&segment=\(seg)")
@@ -1054,12 +1192,83 @@ public final class NotchViewModel: ObservableObject {
                     barLtpFetchError = nil
                     if let ltp = resp.ltp, ltp > 0 {
                         applyLTP(ltp)
+                        deskLastStatus = resp.quote_status ?? resp.source ?? "fresh"
+                    } else {
+                        deskLastStatus = resp.quote_status ?? resp.source ?? "unavailable"
                     }
                 }
             } catch {
                 // silent — LTP failure must not block declaration
             }
         }
+    }
+
+    func fetchStationQuote(instrument: String) {
+        let encoded = InstrumentTickBookId.queryEncode(instrument)
+        guard let url = URL(string: "\(baseURL())/api/station/quote?instrument=\(encoded)") else {
+            return
+        }
+        Task {
+            let req = authorizedRequest(url: url)
+            do {
+                let (data, _) = try await URLSession.shared.data(for: req)
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return
+                }
+                await MainActor.run {
+                    applyStationQuoteEnvelope(json)
+                }
+            } catch {
+                // silent — quote failure must not block declaration
+            }
+        }
+    }
+
+    /// Bind Last from a Station quote extract (testable without network).
+    func applyStationQuoteEnvelope(_ json: [String: Any]) {
+        let adapter = ((json["provenance"] as? [String: Any])?["adapter_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug), adapter == "binance_com" {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+            return
+        }
+        let status = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "unavailable"
+        if status == "unavailable" {
+            let ineligible = stringList(json["ineligible"])
+            if ineligible.contains("quotes_http") {
+                deskLastStatus = "quotes_http"
+            } else if ineligible.contains("session") {
+                deskLastStatus = "session"
+            } else if ineligible.contains("quotes_unusable") {
+                deskLastStatus = "quotes_unusable"
+            } else {
+                deskLastStatus = status
+            }
+        } else {
+            deskLastStatus = status
+        }
+        deskQuoteCapability = deskLastStatus
+        if let data = json["data"] as? [String: Any], let last = Self.parseQuoteLast(data), last > 0 {
+            barLtpFetchError = nil
+            applyLTP(last)
+        }
+    }
+
+    static func parseQuoteLast(_ data: [String: Any]) -> Double? {
+        if let s = data["last"] as? String {
+            return Double(s)
+        }
+        if let d = data["last"] as? Double {
+            return d
+        }
+        if let i = data["last"] as? Int {
+            return Double(i)
+        }
+        return nil
     }
 
     func applyLTP(_ ltp: Double) {
@@ -1070,12 +1279,98 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Bind History from a Station history extract (testable without network).
+    /// Pre-trade stays a status string — never candles, never Yahoo stitch.
+    func applyStationHistoryEnvelope(_ json: [String: Any]) {
+        deskYahooHistoryStatus = "unavailable"
+        deskYahooHistoryIneligible = []
+
+        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
+            deskHistoryStatus = "unsupported"
+            deskHistoryIneligible = []
+            return
+        }
+
+        let adapter = ((json["provenance"] as? [String: Any])?["adapter_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let dataSource = ((json["data"] as? [String: Any])?["source"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let status = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? "unavailable"
+        if adapter == "yahoo" || adapter == "yahoo_chart"
+            || dataSource == "yahoo" || dataSource == "yahoo_chart"
+            || status == "research_segment"
+        {
+            return
+        }
+
+        deskHistoryStatus = status
+        deskHistoryIneligible = stringList(json["ineligible"]).filter {
+            $0 != "rights_forbid_canonical"
+        }
+    }
+
+    func refreshDeskExtracts(symbol: String, instrumentId: String? = nil) {
+        let selected = deskSelectedInstrumentId
+        let raw: String
+        if let instrumentId, !instrumentId.isEmpty {
+            raw = instrumentId
+        } else if !selected.isEmpty {
+            raw = selected
+        } else {
+            raw = symbol
+        }
+        let encoded = InstrumentTickBookId.queryEncode(raw)
+        let kotak = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        Task { [weak self] in
+            guard let self else { return }
+            async let chain = self.getExtractJSON("/api/station/chain?instrument=\(encoded)")
+            async let oi = self.getExtractJSON("/api/station/oi?instrument=\(encoded)")
+            let licensedJSON: [String: Any]?
+            if kotak {
+                licensedJSON = await self.getExtractJSON(
+                    "/api/station/obtain?adapter=kotak_neo&operation=history"
+                )
+            } else {
+                licensedJSON = await self.getExtractJSON(
+                    "/api/station/history?instrument=\(encoded)"
+                )
+            }
+            let chainJSON = await chain
+            let oiJSON = await oi
+            await MainActor.run {
+                self.applyStationHistoryEnvelope(licensedJSON ?? [:])
+                self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
+                self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
+            }
+        }
+    }
+
+    private func getExtractJSON(_ pathAndQuery: String) async -> [String: Any]? {
+        guard let url = URL(string: baseURL() + pathAndQuery) else { return nil }
+        let req = authorizedRequest(url: url)
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } catch {
+            return nil
+        }
+    }
+
+    private func stringList(_ raw: Any?) -> [String] {
+        (raw as? [Any])?.compactMap { $0 as? String } ?? []
+    }
+
     func dismissSymbolSuggestions() {
         symbolSearchTask?.cancel()
         symbolSearchTask = nil
         ignoreSymbolSearchUntilEdit = false
         showSymbolSuggestions = false
         symbolSuggestions = []
+        symbolSearchHint = nil
     }
 
     /// Broker-backed defaults for the declare form — wire ticker + open qty, not display names.
@@ -2144,7 +2439,8 @@ public final class NotchViewModel: ObservableObject {
 
     func expandFromCollapsedChromeTap() {
         guard !isExpanded else { return }
-        NotchHaptics.play(.light)
+        // `.now` — haptic on the same frame as the first pixels, not the next draw.
+        NotchHaptics.play(.light, at: .now)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = true
         }
@@ -2163,7 +2459,7 @@ public final class NotchViewModel: ObservableObject {
 
     public func collapseExpandedFromChromeTap() {
         guard isExpanded else { return }
-        NotchHaptics.play(.light)
+        NotchHaptics.play(.light, at: .now)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = false
         }
@@ -2409,6 +2705,7 @@ public final class NotchViewModel: ObservableObject {
             brokerSyncClass = c
             brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             applyDeskHonesty(from: payload)
+            applyDeskCapabilities(from: payload)
             if brokerSyncClass == "synced" || brokerSyncClass == "syncing" || brokerSyncClass == "stale" {
                 brokerSyncLastPollAtMs = Int(Date().timeIntervalSince1970 * 1000)
             }
@@ -3283,6 +3580,32 @@ extension NotchViewModel {
             brokerSyncLastPollAtMs = Int(Date().timeIntervalSince1970 * 1000)
         }
         applyDeskHonesty(from: json)
+        applyDeskCapabilities(from: json)
+    }
+
+    /// Quote vs funds/fills stay independent — one broker pill is not enough.
+    func applyDeskCapabilities(from payload: [String: Any]) {
+        let caps = payload["capabilities"] as? [String: Any]
+        if let q = caps?["quote"] as? String, !q.isEmpty {
+            deskQuoteCapability = q.lowercased()
+        }
+        if let funds = caps?["funds"] as? String, !funds.isEmpty {
+            deskFundsCapability = funds.lowercased()
+        }
+        if let fills = caps?["fills"] as? String, !fills.isEmpty {
+            deskFillsCapability = fills.lowercased()
+        }
+        if let instruments = caps?["instruments"] as? String, !instruments.isEmpty {
+            deskInstrumentsCapability = instruments.lowercased()
+        }
+        if caps == nil,
+           brokerSyncClass == "not_connected" || brokerSyncClass == "disconnected"
+        {
+            deskQuoteCapability = "unavailable"
+            deskFundsCapability = "unavailable"
+            deskFillsCapability = "unavailable"
+            deskInstrumentsCapability = "unavailable"
+        }
     }
 
     /// Poll Enforcer sync-state so Notch mirrors Station Brokers Start (SSE alone is not enough).
@@ -3371,6 +3694,24 @@ extension NotchViewModel {
         }
     }
 
+    func retryInstruments() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/broker/sync/retry") else { return }
+        do {
+            let (_, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: Data())
+            )
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                return
+            }
+            await refreshBrokerSyncState()
+            if barDeclarationSymbol.count >= 2 {
+                searchSymbols(barDeclarationSymbol)
+            }
+        } catch {
+            return
+        }
+    }
+
     func disconnectBrokerSync() async {
         brokerActionError = nil
         brokerActionResultMessage = nil
@@ -3389,6 +3730,10 @@ extension NotchViewModel {
             activeBrokerSlug = nil
             brokerSessionActive = false
             brokerSyncLastPollAtMs = nil
+            deskQuoteCapability = "unavailable"
+            deskFundsCapability = "unavailable"
+            deskFillsCapability = "unavailable"
+            deskInstrumentsCapability = "unavailable"
             brokerActionResultMessage = "Disconnected"
         } catch {
             brokerActionError = "Agent offline — Retry in Station"

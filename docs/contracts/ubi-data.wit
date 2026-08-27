@@ -1,0 +1,89 @@
+/// Universal Broker Interface — additive data reads (ADR 0002 / R0).
+///
+/// Kept **outside** `agent/wit/` so Wasmtime bindgen continues to load only v0.1.0
+/// `fetch-fills`. This world is the S0 contract target; it is not wired yet.
+package tradeautopsy:ubi-data@0.2.0;
+
+interface types {
+    record fill-event {
+        fill-id: string,
+        broker-slug: string,
+        connection-id: string,
+        asset-class: string,
+        symbol: string,
+        side: string,
+        qty: f64,
+        price: f64,
+        currency: string,
+        filled-at-unix-ms: s64,
+        fee-amount: option<f64>,
+        fee-currency: option<string>,
+        exchange-segment: option<string>,
+        product: option<string>,
+        trade-id: option<string>,
+    }
+
+    record fill-cursor {
+        since-unix-ms: option<s64>,
+        from-id: option<string>,
+        symbol: option<string>,
+    }
+
+    record http-header {
+        name: string,
+        value: string,
+    }
+
+    record http-query-param {
+        name: string,
+        value: string,
+    }
+
+    record broker-http-request {
+        method: string,
+        host: string,
+        path: string,
+        query: list<http-query-param>,
+        headers: list<http-header>,
+        body: option<string>,
+    }
+
+    record broker-http-response {
+        status: u16,
+        headers: list<http-header>,
+        body: string,
+        error-class: option<string>,
+    }
+
+    /// JSON SourceManifest from `describe`. Host validates before use.
+    record obtain-request {
+        family: string,
+        capability-id: string,
+        physics: string,
+        instrument-id: string,
+        product-use: string,
+    }
+}
+
+interface broker-http {
+    use types.{broker-http-request, broker-http-response};
+    broker-http-call: func(request: broker-http-request) -> result<broker-http-response, string>;
+}
+
+interface adapter {
+    use types.{fill-event, fill-cursor};
+    fetch-fills: func(cursor: fill-cursor) -> result<list<fill-event>, string>;
+}
+
+interface data-adapter {
+    /// Returns JSON SourceManifest. Host refuses execution nouns and identity mismatches.
+    describe: func() -> result<string, string>;
+    /// Bounded typed obtain. Unsupported must not become empty success.
+    obtain: func(request: string) -> result<string, string>;
+}
+
+world broker-adapter-data {
+    import broker-http;
+    export adapter;
+    export data-adapter;
+}

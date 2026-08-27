@@ -50,6 +50,22 @@ signal weights, ship-it pipeline)
    withdrawal permission enabled.
 9. **Station product code lives in this repo** (`agent/`, `notch/`, `station/`) — not in
    `FExEVIL/tradeautopsy` `src-tauri`.
+10. **Station Data runtime is this agent** — S0 registry, S1 TickBook, and later
+    stages ship and are tested here (port 9137). Console `crates/agent` is a CI
+    mirror only. Do not run both on 9137. One connected broker adapter is primary
+    for every market/reference/account capability it declares; specialized adapters
+    cover non-broker domains and explicit gaps. TickBook ≠ BAR LiveBook ≠ account
+    store. No market/reference/account packets on `ingestSignal`. No Neon as quote
+    store. Founder tests through this Station app so happening vs not is visible on
+    one process.
+11. **No required OpenAlgo runtime** — OpenAlgo Data + Accounts define normalized
+    read vocabulary only. Do not spawn or require ports 5000/8765, Python SDK, MCP,
+    UI, a second broker session, credential store, supervisor, or health authority.
+    A future OpenAlgo-compatible adapter must occupy the same source-adapter seam.
+12. **UBI remains read-only and host-mediated** — public market calls receive no
+    private credentials; private reads use Keychain via broker-bound capability/path
+    allowlists. Place/modify/cancel, withdrawals, transfers, and key management are
+    forbidden from the data interface. See ADR 0002.
 
 ### Required env (device login)
 

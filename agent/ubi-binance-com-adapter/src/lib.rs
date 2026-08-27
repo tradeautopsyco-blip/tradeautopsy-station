@@ -7,13 +7,14 @@
 #![allow(clippy::all)]
 
 wit_bindgen::generate!({
-    world: "broker-adapter",
-    path: "../wit",
+    world: "broker-adapter-data",
+    path: "../../docs/contracts",
 });
 
-use crate::exports::tradeautopsy::ubi::adapter::Guest;
-use crate::tradeautopsy::ubi::broker_http;
-use crate::tradeautopsy::ubi::types::{
+use crate::exports::tradeautopsy::ubi_data::adapter::Guest as AdapterGuest;
+use crate::exports::tradeautopsy::ubi_data::data_adapter::Guest as DataAdapterGuest;
+use crate::tradeautopsy::ubi_data::broker_http;
+use crate::tradeautopsy::ubi_data::types::{
     BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, HttpQueryParam,
 };
 
@@ -21,8 +22,18 @@ use crate::tradeautopsy::ubi::types::{
 const HOST: &str = "api.binance.com";
 const ACCOUNT_PATH: &str = "/api/v3/account";
 const MY_TRADES_PATH: &str = "/api/v3/myTrades";
-/// B6 §4: limit default 500, max 1000.
+/// Public klines only (`GET /api/v3/klines`). Not uiKlines. Not api.binance.us.
+const KLINES_PATH: &str = "/api/v3/klines";
+/// B6 §4: limit default 500, max 1000. Same documented max as klines.
 const TRADES_LIMIT: &str = "500";
+const KLINE_LIMIT_DEFAULT: u32 = 500;
+const KLINE_LIMIT_MAX: u32 = 1000;
+const DEFAULT_HISTORY_INTERVAL: &str = "1m";
+/// Documented interval enum (case-sensitive). REST.md Kline/Candlestick.
+const KLINE_INTERVALS: &[&str] = &[
+    "1s", "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w",
+    "1M",
+];
 /// Quote assets recognised for `currency`; longest suffix wins.
 const QUOTE_ASSETS: &[&str] = &[
     "USDT", "USDC", "FDUSD", "TUSD", "BUSD", "BTC", "ETH", "BNB", "EUR", "TRY", "BRL", "INR",
@@ -34,7 +45,7 @@ struct BinanceComAdapter;
 
 export!(BinanceComAdapter);
 
-impl Guest for BinanceComAdapter {
+impl AdapterGuest for BinanceComAdapter {
     fn fetch_fills(cursor: FillCursor) -> Result<Vec<FillEvent>, String> {
         // myTrades requires a symbol (B6 §4); with none pinned we derive the traded set
         // from balances, same bootstrap the native reference client used.
@@ -53,6 +64,16 @@ impl Guest for BinanceComAdapter {
         }
         fills.sort_by_key(|f: &FillEvent| f.filled_at_unix_ms);
         Ok(fills)
+    }
+}
+
+impl DataAdapterGuest for BinanceComAdapter {
+    fn describe() -> Result<String, String> {
+        Ok(describe_json())
+    }
+
+    fn obtain(request: String) -> Result<String, String> {
+        obtain_json(&request)
     }
 }
 
@@ -237,7 +258,9 @@ fn is_digits(value: &str) -> bool {
 
 fn parse_f64(value: Option<&serde_json::Value>) -> Result<f64, String> {
     match value {
-        Some(serde_json::Value::Number(n)) => n.as_f64().ok_or_else(|| "number not f64".to_string()),
+        Some(serde_json::Value::Number(n)) => {
+            n.as_f64().ok_or_else(|| "number not f64".to_string())
+        }
         Some(serde_json::Value::String(s)) => {
             s.parse().map_err(|e| format!("parse f64 '{s}': {e}"))
         }
@@ -247,4 +270,182 @@ fn parse_f64(value: Option<&serde_json::Value>) -> Result<f64, String> {
 
 fn parse_f64_opt(value: Option<&serde_json::Value>) -> Option<f64> {
     parse_f64(value).ok()
+}
+
+fn describe_json() -> String {
+    serde_json::json!({
+        "manifest_id": "binance_com.s1.v1",
+        "adapter_id": "binance_com",
+        "implemented": ["tradebook", "history"],
+        "bindings": [
+            {
+                "operation": "tradebook",
+                "adapter_id": "binance_com",
+                "family": "account",
+                "capability_id": "fills",
+                "physics": "bounded_snapshot",
+            },
+            {
+                "operation": "history",
+                "adapter_id": "binance_com",
+                "family": "market",
+                "capability_id": "ohlcv",
+                "physics": "historical_series",
+                "coverage": { "intervals": KLINE_INTERVALS },
+            },
+        ],
+    })
+    .to_string()
+}
+
+fn obtain_json(request: &str) -> Result<String, String> {
+    let req: serde_json::Value =
+        serde_json::from_str(request).map_err(|e| format!("obtain json: {e}"))?;
+    if is_yahoo_request(&req) {
+        return Err("yahoo is not a binance_com capability".into());
+    }
+    let family = json_str(&req, &["family"]).unwrap_or_default();
+    let capability = json_str(&req, &["capability-id", "capability_id"]).unwrap_or_default();
+    let physics = json_str(&req, &["physics"]).unwrap_or_default();
+    let instrument = json_str(&req, &["instrument-id", "instrument_id"]).unwrap_or_default();
+    if family != "market" || capability != "ohlcv" || physics != "historical_series" {
+        return Err(format!(
+            "binance_com obtain unsupported: {family}/{capability}/{physics}"
+        ));
+    }
+    obtain_history(&req, &instrument)
+}
+
+fn obtain_history(req: &serde_json::Value, instrument: &str) -> Result<String, String> {
+    let symbol = instrument.trim().to_ascii_uppercase();
+    if symbol.is_empty() {
+        return Err("binance_com history missing instrument-id".into());
+    }
+    let interval = json_str(req, &["interval"]).unwrap_or_else(|| DEFAULT_HISTORY_INTERVAL.into());
+    if !KLINE_INTERVALS.iter().any(|allowed| *allowed == interval) {
+        return Err("unsupported_interval".into());
+    }
+    let limit = json_u32(req, "limit").unwrap_or(KLINE_LIMIT_DEFAULT);
+    if limit == 0 || limit > KLINE_LIMIT_MAX {
+        return Err("unsupported_range".into());
+    }
+
+    let response = call(
+        KLINES_PATH,
+        vec![
+            HttpQueryParam {
+                name: "symbol".into(),
+                value: symbol.clone(),
+            },
+            HttpQueryParam {
+                name: "interval".into(),
+                value: interval.clone(),
+            },
+            HttpQueryParam {
+                name: "limit".into(),
+                value: limit.to_string(),
+            },
+        ],
+    )?;
+    let body = require_ok("klines", &response)?;
+    map_klines_obtain(&body, &symbol, &interval)
+}
+
+fn map_klines_obtain(body: &str, symbol: &str, interval: &str) -> Result<String, String> {
+    let rows: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("klines json: {e}"))?;
+    let rows = rows.as_array().ok_or("klines body is not an array")?;
+    let mut candles = Vec::new();
+    for row in rows {
+        candles.push(candle_from_array(row)?);
+    }
+    if candles.is_empty() {
+        return Err("klines empty".into());
+    }
+    let last_close = candles
+        .last()
+        .and_then(|c| c.get("close").cloned())
+        .ok_or("klines missing close")?;
+    Ok(serde_json::json!({
+        "identity": {
+            "family": "market",
+            "capability_id": "ohlcv",
+            "physics": "historical_series",
+        },
+        "instrument_id": symbol,
+        "interval": interval,
+        "candles": candles,
+        "last_close": last_close,
+        "source": "binance_klines",
+    })
+    .to_string())
+}
+
+fn candle_from_array(row: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let arr = row.as_array().ok_or("kline row is not an array")?;
+    if arr.len() < 7 {
+        return Err("kline row missing documented indexes 0-6".into());
+    }
+    Ok(serde_json::json!({
+        "open_time_ms": json_i64(&arr[0]).ok_or("kline open time")?,
+        "open": json_dec(&arr[1]).ok_or("kline open")?,
+        "high": json_dec(&arr[2]).ok_or("kline high")?,
+        "low": json_dec(&arr[3]).ok_or("kline low")?,
+        "close": json_dec(&arr[4]).ok_or("kline close")?,
+        "volume": json_dec(&arr[5]).ok_or("kline volume")?,
+        "close_time_ms": json_i64(&arr[6]).ok_or("kline close time")?,
+    }))
+}
+
+fn is_yahoo_request(req: &serde_json::Value) -> bool {
+    for key in [
+        "product-use",
+        "product_use",
+        "source",
+        "source_id",
+        "adapter_id",
+    ] {
+        if let Some(s) = req.get(key).and_then(|v| v.as_str()) {
+            let n = s.trim().to_ascii_lowercase();
+            if n == "yahoo" || n == "yahoo_chart" {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn json_str(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(s) = value.get(*key).and_then(|v| v.as_str()) {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn json_u32(value: &serde_json::Value, key: &str) -> Option<u32> {
+    let v = value.get(key)?;
+    v.as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
+fn json_i64(value: &serde_json::Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|n| i64::try_from(n).ok()))
+        .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+        .or_else(|| value.as_f64().map(|n| n as i64))
+}
+
+fn json_dec(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
 }

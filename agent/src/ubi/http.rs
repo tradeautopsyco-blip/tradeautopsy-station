@@ -125,10 +125,16 @@ pub trait BrokerHttpTransport: Send + Sync {
 /// so the component's placeholder host is replaced before the allowlist check.
 pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) -> String {
     match credentials {
-        HostCredentialBlob::KotakSession { base_url, .. } => host_of(base_url)
-            .unwrap_or_else(|| component_host.trim().to_ascii_lowercase()),
+        HostCredentialBlob::KotakSession { base_url, .. } => {
+            host_of(base_url).unwrap_or_else(|| component_host.trim().to_ascii_lowercase())
+        }
         HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
     }
+}
+
+/// Host from a Kotak session `baseUrl`, without scheme, userinfo, or `:port`.
+pub fn kotak_base_host(base_url: &str) -> Option<String> {
+    host_of(base_url)
 }
 
 fn host_of(base_url: &str) -> Option<String> {
@@ -136,11 +142,20 @@ fn host_of(base_url: &str) -> Option<String> {
         .trim()
         .trim_start_matches("https://")
         .trim_start_matches("http://");
-    let host = without_scheme.split('/').next()?.trim();
+    let hostport = without_scheme.split('/').next()?.trim();
+    let hostport = hostport
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(hostport);
+    let host = match hostport.rsplit_once(':') {
+        Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => name,
+        _ => hostport,
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() {
         None
     } else {
-        Some(host.to_ascii_lowercase())
+        Some(host)
     }
 }
 
@@ -248,6 +263,131 @@ pub fn prepare_request(
                 body: body.map(|b| b.to_string()),
             }
         }
+    }
+}
+
+/// Scrip-master file-paths and REST quotes GET (`scrip_master_api.py` /
+/// `quotes_neo_symbol_api.py`): `Authorization` = consumer key, Auth+Sid for the
+/// completed 2FA session, **no** trade-book `sId`. Extra `sId` on this GET is
+/// unspecified and can 400 the catalog so cash CSVs never start.
+pub fn prepare_kotak_catalog_get(
+    path: &str,
+    credentials: &HostCredentialBlob,
+) -> Result<PreparedHttpRequest, String> {
+    let HostCredentialBlob::KotakSession {
+        consumer_key,
+        trade_token,
+        sid,
+        base_url,
+        ..
+    } = credentials
+    else {
+        return Err("kotak catalog GET requires Kotak session credentials".into());
+    };
+    let host = host_of(base_url).ok_or_else(|| "kotak baseUrl has no host".to_string())?;
+    let prefix = base_path_prefix(base_url);
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    Ok(PreparedHttpRequest {
+        method: "GET".into(),
+        url: format!("https://{host}{prefix}{path}"),
+        headers: vec![
+            ("Authorization".into(), consumer_key.clone()),
+            (
+                "Content-Type".into(),
+                "application/x-www-form-urlencoded".into(),
+            ),
+            ("Auth".into(), trade_token.clone()),
+            ("Sid".into(), sid.clone()),
+            ("Accept".into(), "application/json".into()),
+        ],
+        body: None,
+    })
+}
+
+/// Scrip-master file-paths GET — SDK first (`scrip_master_api.py`): consumer-key
+/// `Authorization` only. No Auth, Sid, or trade-book `sId`. Host from `kotak_base_host`
+/// (port already stripped). REST quotes keep [`prepare_kotak_catalog_get`].
+pub fn prepare_kotak_file_paths_get(
+    path: &str,
+    credentials: &HostCredentialBlob,
+) -> Result<PreparedHttpRequest, String> {
+    let HostCredentialBlob::KotakSession {
+        consumer_key,
+        base_url,
+        ..
+    } = credentials
+    else {
+        return Err("kotak file-paths GET requires Kotak session credentials".into());
+    };
+    let host = host_of(base_url).ok_or_else(|| "kotak baseUrl has no host".to_string())?;
+    let prefix = base_path_prefix(base_url);
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    Ok(PreparedHttpRequest {
+        method: "GET".into(),
+        url: format!("https://{host}{prefix}{path}"),
+        headers: vec![
+            ("Authorization".into(), consumer_key.clone()),
+            (
+                "Content-Type".into(),
+                "application/x-www-form-urlencoded".into(),
+            ),
+            ("Accept".into(), "application/json".into()),
+        ],
+        body: None,
+    })
+}
+
+/// One retry after SDK 401/403 / "Complete the 2fa process": attach Auth+Sid, still no `sId`.
+pub fn attach_kotak_file_paths_session(
+    mut prepared: PreparedHttpRequest,
+    credentials: &HostCredentialBlob,
+) -> Result<PreparedHttpRequest, String> {
+    let HostCredentialBlob::KotakSession {
+        trade_token, sid, ..
+    } = credentials
+    else {
+        return Err("kotak file-paths session attach requires Kotak session credentials".into());
+    };
+    prepared.headers.retain(|(name, _)| {
+        !name.eq_ignore_ascii_case("Auth") && !name.eq_ignore_ascii_case("Sid")
+    });
+    prepared.headers.push(("Auth".into(), trade_token.clone()));
+    prepared.headers.push(("Sid".into(), sid.clone()));
+    Ok(prepared)
+}
+
+/// Public market call: no Keychain material. Host still allowlists host/path.
+pub fn prepare_unsigned_request(
+    method: &str,
+    host: &str,
+    path: &str,
+    query: &[(String, String)],
+    headers: &[(String, String)],
+    body: Option<&str>,
+) -> PreparedHttpRequest {
+    let canonical = query
+        .iter()
+        .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+    let url = if canonical.is_empty() {
+        format!("https://{host}{path}")
+    } else {
+        format!("https://{host}{path}?{canonical}")
+    };
+    PreparedHttpRequest {
+        method: method.to_ascii_uppercase(),
+        url,
+        headers: headers.to_vec(),
+        body: body.map(|b| b.to_string()),
     }
 }
 
@@ -469,12 +609,33 @@ mod tests {
         let expected_sig = sign_query("secret", expected_query);
         assert_eq!(
             prepared.url,
-            format!("https://api.binance.com/api/v3/myTrades?{expected_query}&signature={expected_sig}")
+            format!(
+                "https://api.binance.com/api/v3/myTrades?{expected_query}&signature={expected_sig}"
+            )
         );
         assert!(prepared
             .headers
             .iter()
             .any(|(n, v)| n == "X-MBX-APIKEY" && v == "KEY123"));
+    }
+
+    #[test]
+    fn unsigned_public_call_has_no_signature_or_api_key() {
+        let prepared = prepare_unsigned_request(
+            "GET",
+            "api.binance.com",
+            "/api/v3/ticker/price",
+            &[("symbol".into(), "BTCUSDT".into())],
+            &[],
+            None,
+        );
+        assert_eq!(
+            prepared.url,
+            "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+        );
+        assert!(!prepared.url.contains("signature="));
+        assert!(!prepared.url.contains("timestamp="));
+        assert!(prepared.headers.is_empty());
     }
 
     #[test]
@@ -492,7 +653,9 @@ mod tests {
             &hmac_creds(),
             42,
         );
-        assert!(prepared.url.contains("limit=500&symbol=BTCUSDT&timestamp=42"));
+        assert!(prepared
+            .url
+            .contains("limit=500&symbol=BTCUSDT&timestamp=42"));
     }
 
     #[test]
@@ -520,7 +683,10 @@ mod tests {
             .headers
             .iter()
             .any(|(n, v)| n == "Auth" && v == "tt-token"));
-        assert!(prepared.headers.iter().any(|(n, v)| n == "Sid" && v == "sid-1"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Sid" && v == "sid-1"));
         assert!(!prepared.url.contains("tt-token"));
     }
 
@@ -559,6 +725,146 @@ mod tests {
     }
 
     #[test]
+    fn kotak_catalog_get_uses_consumer_key_and_omits_tradebook_sid() {
+        let prepared =
+            prepare_kotak_catalog_get("/script-details/1.0/masterscrip/file-paths", &kotak_creds())
+                .unwrap();
+        assert_eq!(
+            prepared.url,
+            "https://cis.kotaksecurities.com/trading/script-details/1.0/masterscrip/file-paths"
+        );
+        assert!(!prepared.url.contains("sId"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Authorization" && v == "ck"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Auth" && v == "tt-token"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Sid" && v == "sid-1"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Content-Type" && v == "application/x-www-form-urlencoded"));
+    }
+
+    #[test]
+    fn kotak_file_paths_sdk_omits_sid_auth_and_session_headers() {
+        let prepared = prepare_kotak_file_paths_get(
+            "/script-details/1.0/masterscrip/file-paths",
+            &kotak_creds(),
+        )
+        .unwrap();
+        assert_eq!(
+            prepared.url,
+            "https://cis.kotaksecurities.com/trading/script-details/1.0/masterscrip/file-paths"
+        );
+        assert!(!prepared.url.contains("sId"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Authorization" && v == "ck"));
+        assert!(!prepared
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Auth")));
+        assert!(!prepared
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Sid")));
+        assert!(!prepared
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("sId")));
+    }
+
+    #[test]
+    fn kotak_file_paths_session_fallback_attaches_auth_sid_not_sid_query() {
+        let sdk = prepare_kotak_file_paths_get(
+            "/script-details/1.0/masterscrip/file-paths",
+            &kotak_creds(),
+        )
+        .unwrap();
+        let prepared = attach_kotak_file_paths_session(sdk, &kotak_creds()).unwrap();
+        assert!(!prepared.url.contains("sId"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Auth" && v == "tt-token"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Sid" && v == "sid-1"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Authorization" && v == "ck"));
+    }
+
+    #[test]
+    fn kotak_file_paths_get_strips_port_from_v2_base_url() {
+        let creds = HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://e21.kotaksecurities.com:443/trading".into(),
+            hs_server_id: "server4".into(),
+        };
+        let prepared =
+            prepare_kotak_file_paths_get("/script-details/1.0/masterscrip/file-paths", &creds)
+                .unwrap();
+        assert_eq!(
+            prepared.url,
+            "https://e21.kotaksecurities.com/trading/script-details/1.0/masterscrip/file-paths"
+        );
+        assert!(!prepared.url.contains(":443"));
+        assert!(!prepared.url.contains("sId"));
+    }
+
+    #[test]
+    fn kotak_catalog_get_strips_port_from_v2_base_url() {
+        let creds = HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://e21.kotaksecurities.com:443/trading".into(),
+            hs_server_id: "server4".into(),
+        };
+        let prepared =
+            prepare_kotak_catalog_get("/script-details/1.0/masterscrip/file-paths", &creds)
+                .unwrap();
+        assert_eq!(
+            prepared.url,
+            "https://e21.kotaksecurities.com/trading/script-details/1.0/masterscrip/file-paths"
+        );
+        assert!(!prepared.url.contains(":443"));
+        assert!(!prepared.url.contains("sId"));
+        assert_eq!(
+            kotak_base_host("https://e21.kotaksecurities.com:443/trading").as_deref(),
+            Some("e21.kotaksecurities.com")
+        );
+    }
+
+    #[test]
+    fn kotak_base_url_strips_port_and_accepts_v2_data_center() {
+        let creds = HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://e21.kotaksecurities.com:443/".into(),
+            hs_server_id: String::new(),
+        };
+        assert_eq!(
+            effective_host("cis.kotaksecurities.com", &creds),
+            "e21.kotaksecurities.com"
+        );
+    }
+
+    #[test]
     fn classify_maps_rate_limit_unauthorized_and_kotak_session() {
         assert_eq!(classify_response(200, "[]"), None);
         assert_eq!(classify_response(429, ""), Some("rate_limited".into()));
@@ -578,7 +884,10 @@ mod tests {
             ("X-MBX-USED-WEIGHT-1M".into(), "12".into()),
             ("Authorization".into(), "Bearer x".into()),
         ]);
-        assert_eq!(redacted, vec![("x-mbx-used-weight-1m".to_string(), "12".to_string())]);
+        assert_eq!(
+            redacted,
+            vec![("x-mbx-used-weight-1m".to_string(), "12".to_string())]
+        );
     }
 
     #[test]
@@ -600,7 +909,9 @@ mod tests {
 
     #[test]
     fn network_error_strings_never_leak_the_signed_url() {
-        let redacted = redact_url("error sending request for url (https://api.binance.com/x?signature=deadbeef)");
+        let redacted = redact_url(
+            "error sending request for url (https://api.binance.com/x?signature=deadbeef)",
+        );
         assert!(!redacted.contains("signature"));
     }
 }

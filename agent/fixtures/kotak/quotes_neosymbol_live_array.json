@@ -1,0 +1,14 @@
+[
+  {
+    "ltp": "3224.50",
+    "exchange": "nse_cm",
+    "exchange_token": "11536",
+    "display_symbol": "TCS",
+    "ohlc": {
+      "open": "3200.00",
+      "high": "3235.00",
+      "low": "3195.00",
+      "close": "3210.00"
+    }
+  }
+]

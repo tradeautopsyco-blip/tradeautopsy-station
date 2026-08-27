@@ -1,0 +1,17 @@
+{
+  "message": [
+    {
+      "last_traded_time": "26/08/2026 15:29:59",
+      "last_traded_price": "1400.50",
+      "instrument_token": "2885",
+      "exchange_segment": "nse_cm",
+      "trading_symbol": "RELIANCE-EQ",
+      "ohlc": {
+        "open": "1390.00",
+        "high": "1410.25",
+        "low": "1385.10",
+        "close": "1400.50"
+      }
+    }
+  ]
+}

@@ -12,15 +12,18 @@ mod broker_redaction;
 mod broker_sync;
 mod broker_sync_control;
 mod broker_validation;
+mod data;
 mod device_login;
 mod dns_block;
 mod event_bus;
 mod exchange_info;
 mod fact_outbox;
-mod live_book;
 mod instruments;
 mod kill_policy;
 mod kill_switch_audit;
+mod kotak_rest_quotes;
+mod kotak_scrip_master;
+mod live_book;
 mod metrics;
 mod outbox;
 mod recent_trades;
@@ -32,14 +35,6 @@ mod today;
 mod ubi;
 mod wire;
 
-pub use station_tokens::{
-    bearer_authorization, KeyringStationTokenStore, MemoryStationTokenStore, StationTokenStore,
-    StationTokens,
-};
-pub use device_login::{
-    begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
-    DeviceLoginPublic, StationSessionIdentity,
-};
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
 pub use binance_com_spot_adapter::BinanceComSpotBrokerAdapter;
 pub use binance_com_spot_client::{
@@ -53,20 +48,6 @@ pub use binance_com_validation::{
 pub use broker::{
     BrokerAdapter, BrokerError, BrokerFill, ConfigurableDataClassAdapter, CountingPollAdapter,
     DataClassPollRound, SeqMockBrokerAdapter,
-};
-pub use ubi::{
-    calc_profile, catalog_v1, classify_response, component_candidate_paths, component_crate_dir,
-    component_file_name, component_path_for_slug, compliance_profile, decode_credential_blob,
-    descriptor_for_slug, effective_host, fill_event_to_broker_fill, host_allowed, prepare_request,
-    redact_response_headers, run_fetch_fills, AdapterOrigin, AuthScheme, BrokerAvailability,
-    BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, BrokerHttpMode,
-    BrokerHttpTransport, CalcProfile, ComplianceProfile, CredentialBlob, FillCursor,
-    FillEvent as UbiFillEvent, HostCredentialBlob, KeyringBrokerCredentialVault,
-    MemoryBrokerCredentialVault, PreparedHttpRequest, RecordingTransport,
-    ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig, UbiHostError, UbiHostState,
-    WasmBrokerAdapter, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE,
-    COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, RESPONSE_HEADER_ALLOWLIST,
-    KOTAK_SESSION_KEYCHAIN_SERVICE, keychain_service_for,
 };
 pub use broker_behavioral::{BrokerBehavioralRecorder, BrokerConnectionIdentityFields};
 pub use broker_data_class::{
@@ -84,6 +65,21 @@ pub use broker_validation::{
     BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,
     PermissionPosture, ValidationFailure, ValidationResult,
 };
+pub use data::{
+    apply_quote, authorize_host_call, authorize_inferred_call, binance_com_quote_descriptor,
+    extract_chain, extract_depth, extract_history, extract_licensed_history, extract_open_interest,
+    extract_quote, extract_quote_for, fixture_quote_descriptor, infer_capability,
+    kotak_neo_quote_descriptor, kotak_neo_s1k_manifest, normalize_quote_instrument, obtain,
+    quote_tick_from_binance_json, quote_tick_from_kotak_json, resolve_desk_instrument, ApplyError,
+    AuthMode, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope, HistoryBook, HistoryEnvelope,
+    HistoryStatus, HostRefuse, InstrumentMasterPhase, InstrumentMasterStatus, ObtainEnvelope,
+    ObtainStatus, Physics, QuoteEnvelope, QuoteStatus, QuoteTick, Registry, TickBook, Transport,
+    BINANCE_COM_ADAPTER_ID, KOTAK_NEO_ADAPTER_ID, R0_ALLOWED_HOSTS,
+};
+pub use device_login::{
+    begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
+    DeviceLoginPublic, StationSessionIdentity,
+};
 pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
 pub use event_bus::{AgentEvent, EventBus};
 pub use exchange_info::{
@@ -91,7 +87,7 @@ pub use exchange_info::{
     ExchangeInfoSymbolCache, SymbolAssets, SymbolFilters,
 };
 pub use fact_outbox::{EnqueueOutcome, Fact, FactOutbox, FactRow};
-pub use instruments::InstrumentStore;
+pub use instruments::{zerodha_instruments_enabled, InstrumentStore};
 pub use kill_policy::{KillPolicy, KillPolicyStore};
 pub use kill_switch_audit::{
     canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
@@ -109,14 +105,35 @@ pub use round_trip_engine::{
     ReconstructResult, RoundTrip, RoundTripEngine, StablecoinAndBaseAssetFeeLookup, UnhandledFee,
 };
 pub use sse_signing::{verify_sse_event_signature, SseSigner, SseSigningPubKey};
+pub use station_tokens::{
+    bearer_authorization, KeyringStationTokenStore, MemoryStationTokenStore, StationTokenStore,
+    StationTokens,
+};
 pub use today::{
-    TodayDegradedReason, TodayHeroPayload, TodayPayload, TodayService, TodayStore,
-    open_inventory_from_fills, OpenInventoryRow,
+    open_inventory_from_fills, OpenInventoryRow, TodayDegradedReason, TodayHeroPayload,
+    TodayPayload, TodayService, TodayStore,
+};
+pub use ubi::{
+    calc_profile, catalog_v1, classify_response, compliance_profile, component_candidate_paths,
+    component_crate_dir, component_file_name, component_path_for_slug, decode_credential_blob,
+    descriptor_for_slug, effective_host, fill_event_to_broker_fill, host_allowed,
+    keychain_service_for, prepare_kotak_file_paths_get, prepare_request, prepare_unsigned_request,
+    redact_response_headers, run_describe, run_fetch_fills, run_obtain, AdapterOrigin, AuthScheme,
+    BrokerAvailability, BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, BrokerHttpMode,
+    BrokerHttpTransport, CalcProfile, ComplianceProfile, CredentialBlob, FillCursor,
+    FillEvent as UbiFillEvent, HostCredentialBlob, KeyringBrokerCredentialVault,
+    MemoryBrokerCredentialVault, PreparedHttpRequest, RecordingTransport,
+    ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig, UbiHostError, UbiHostState,
+    WasmBrokerAdapter, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE, COMPONENT_DIR_ENV,
+    FORBIDDEN_COMPONENT_HEADERS, KOTAK_SESSION_KEYCHAIN_SERVICE, RESPONSE_HEADER_ALLOWLIST,
 };
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
 
 pub use api::daemon_commands::{parse_daemon_command_type, DaemonCommandKind};
-pub use api::{effective_level, plan_l3_dns};
+pub use api::{
+    effective_level, plan_l3_dns, resolve_clear_fog, resolve_kill_apply, KillApplyDecision,
+    KillClearDecision,
+};
 
 use chrono::Utc;
 use std::net::SocketAddr;
@@ -245,6 +262,8 @@ pub struct AgentConfig {
     pub upstream: UpstreamConfig,
     pub outbox: OutboxConfig,
     pub recent_trades_db_path: PathBuf,
+    /// Licensed Binance HistoryBook coverage (`AGENT_HISTORY_DB_PATH`). Not TickBook.
+    pub history_db_path: PathBuf,
     pub today_db_path: PathBuf,
     pub instruments_db_path: PathBuf,
     pub kill_switch_audit_db_path: PathBuf,
@@ -270,6 +289,16 @@ pub struct AgentConfig {
     pub fact_clock_ms: Option<Arc<AtomicI64>>,
     /// Boot seed written into [`KillPolicyStore`]. Apply always loads the store.
     pub kill_policy: KillPolicy,
+    /// S1 desk: public Binance last-price stream (`AGENT_S1_DESK_SYMBOL`). `None` = no WS.
+    pub s1_desk_symbol: Option<String>,
+    /// Quote extract freshness window (`AGENT_S1_FRESHNESS_MS`, default 2000).
+    pub quote_freshness: Duration,
+    /// Slice F CI: plant cash CSV + quote JSON into TickBook / scrip master. No live session.
+    pub plant_kotak_s1k_fixtures: bool,
+    /// S2 CI: plant committed klines JSON into HistoryBook. No live Binance.
+    pub plant_binance_s2_history: bool,
+    /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
+    pub instrument_master_cache_dir: PathBuf,
 }
 
 impl AgentConfig {
@@ -293,6 +322,13 @@ impl AgentConfig {
             .unwrap_or_else(|_| {
                 let mut p = std::env::temp_dir();
                 p.push("tradeautopsy-agent-recent-trades.db");
+                p
+            });
+        let history_db_path = std::env::var("AGENT_HISTORY_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = std::env::temp_dir();
+                p.push("tradeautopsy-agent-history.db");
                 p
             });
         let today_db_path = std::env::var("AGENT_TODAY_DB_PATH")
@@ -338,6 +374,7 @@ impl AgentConfig {
             upstream,
             outbox,
             recent_trades_db_path,
+            history_db_path,
             today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
@@ -357,6 +394,18 @@ impl AgentConfig {
                 .unwrap_or(20_000),
             fact_clock_ms: None,
             kill_policy: KillPolicy::default(),
+            s1_desk_symbol: std::env::var("AGENT_S1_DESK_SYMBOL")
+                .ok()
+                .map(|s| crate::data::normalize_quote_instrument(&s))
+                .filter(|s| !s.is_empty()),
+            quote_freshness: std::env::var("AGENT_S1_FRESHNESS_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .map(Duration::from_millis)
+                .unwrap_or_else(|| Duration::from_millis(2000)),
+            plant_kotak_s1k_fixtures: false,
+            plant_binance_s2_history: false,
+            instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
 
@@ -365,6 +414,8 @@ impl AgentConfig {
         let daemon_secret = daemon_secret.into();
         let mut recent_trades_db_path = std::env::temp_dir();
         recent_trades_db_path.push(format!("rta-recent-{port}.db"));
+        let mut history_db_path = std::env::temp_dir();
+        history_db_path.push(format!("rta-history-{port}.db"));
         let mut today_db_path = std::env::temp_dir();
         today_db_path.push(format!("rta-today-{port}.db"));
         let mut instruments_db_path = std::env::temp_dir();
@@ -373,6 +424,8 @@ impl AgentConfig {
         kill_switch_audit_db_path.push(format!("rta-kill-switch-audit-{port}.db"));
         let mut fact_outbox_db_path = std::env::temp_dir();
         fact_outbox_db_path.push(format!("rta-fact-outbox-{port}.db"));
+        let mut instrument_master_cache_dir = std::env::temp_dir();
+        instrument_master_cache_dir.push(format!("rta-instrument-master-{port}"));
         Self {
             port,
             daemon_secret: daemon_secret.clone(),
@@ -384,6 +437,7 @@ impl AgentConfig {
             upstream: UpstreamConfig::from_env(&daemon_secret),
             outbox: OutboxConfig::from_env(),
             recent_trades_db_path,
+            history_db_path,
             today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
@@ -400,8 +454,27 @@ impl AgentConfig {
             fact_online_interval_ms: 20_000,
             fact_clock_ms: None,
             kill_policy: KillPolicy::default(),
+            s1_desk_symbol: None,
+            quote_freshness: Duration::from_millis(2000),
+            plant_kotak_s1k_fixtures: false,
+            plant_binance_s2_history: false,
+            instrument_master_cache_dir,
         }
     }
+}
+
+fn instrument_master_cache_dir_from_env() -> PathBuf {
+    if let Some(dir) = std::env::var_os("AGENT_INSTRUMENT_MASTER_CACHE_DIR") {
+        return PathBuf::from(dir);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let mut p = PathBuf::from(home);
+        p.push("Library/Application Support/tradeautopsy/instrument-master");
+        return p;
+    }
+    let mut p = std::env::temp_dir();
+    p.push("tradeautopsy-instrument-master");
+    p
 }
 
 #[cfg(test)]
@@ -469,16 +542,22 @@ pub struct AgentRuntime {
     boot_id: String,
     build: String,
     version: String,
+    git_sha: String,
     started_at: Instant,
     seq: AtomicU64,
 }
 
 impl AgentRuntime {
     fn new() -> Self {
+        let git_sha = option_env!("GIT_SHA").unwrap_or("unknown").to_string();
         Self {
             boot_id: ulid::Ulid::new().to_string(),
-            build: format!("tradeautopsy-agent/{}", env!("CARGO_PKG_VERSION")),
+            build: format!(
+                "tradeautopsy-agent/{} ({git_sha})",
+                env!("CARGO_PKG_VERSION")
+            ),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            git_sha,
             started_at: Instant::now(),
             seq: AtomicU64::new(0),
         }
@@ -490,6 +569,10 @@ impl AgentRuntime {
 
     pub fn build(&self) -> &str {
         &self.build
+    }
+
+    pub fn git_sha(&self) -> &str {
+        &self.git_sha
     }
 
     pub fn version(&self) -> &str {
@@ -506,6 +589,63 @@ impl AgentRuntime {
 }
 
 /// Headless agent: loopback HTTP + SSE; wire v1 verification on bar routes (issue #58).
+/// Slice F: load committed cash CSV + quote JSON. Does not mint a Kotak session.
+fn plant_kotak_s1k_fixtures(
+    registry: &crate::data::Registry,
+    tickbook: &Arc<Mutex<crate::data::TickBook>>,
+    depthbook: &Arc<Mutex<crate::data::DepthBook>>,
+    master: &Arc<Mutex<crate::kotak_scrip_master::KotakScripMaster>>,
+    broker_status: &Arc<Mutex<crate::broker_sync::BrokerRuntimeState>>,
+    instrument_master_status: &Arc<Mutex<crate::data::InstrumentMasterStatus>>,
+) {
+    let csv = include_str!("../fixtures/kotak/nse_cm_cash.csv");
+    match crate::kotak_scrip_master::KotakScripMaster::from_csv_bytes(csv.as_bytes(), None) {
+        Ok(loaded) => {
+            let n = loaded.len();
+            *master.lock().expect("kotak scrip master mutex poisoned") = loaded;
+            instrument_master_status
+                .lock()
+                .expect("instrument master status poisoned")
+                .mark_loaded(crate::data::KOTAK_NEO_ADAPTER_ID, n);
+        }
+        Err(err) => tracing::warn!(error = %err, "s1k fixture: cash CSV plant failed"),
+    }
+    let json = include_str!("../fixtures/kotak/quotes_neosymbol.json");
+    if let Some(tick) = crate::data::quote_tick_from_kotak_json(json, Utc::now()) {
+        let mut book = tickbook.lock().expect("tickbook mutex poisoned");
+        if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
+            tracing::warn!(error = %err, "s1k fixture: quote plant refused");
+        }
+    }
+    let depth_json = include_str!("../fixtures/kotak/quotes_neosymbol_depth.json");
+    if let Some(snapshot) = crate::data::depth_snapshot_from_kotak_json(depth_json, Utc::now()) {
+        depthbook
+            .lock()
+            .expect("depthbook mutex poisoned")
+            .upsert(snapshot);
+    }
+    // Slug only — not broker_connected. Search uses the Kotak master; no live poll.
+    broker_status
+        .lock()
+        .expect("broker_status mutex poisoned")
+        .active_broker_slug = Some(crate::data::KOTAK_NEO_ADAPTER_ID.to_string());
+}
+
+fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+    let json = include_str!("../fixtures/binance/klines.json");
+    let series = crate::data::series_from_klines_json(
+        json,
+        "BTCUSDT",
+        crate::data::DEFAULT_HISTORY_INTERVAL,
+        crate::data::Transport::Fixture,
+    )
+    .expect("committed klines fixture must parse");
+    crate::data::apply_history_series(
+        &mut historybook.lock().expect("historybook mutex poisoned"),
+        series,
+    );
+}
+
 pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let event_bus = EventBus::new(2048);
     let runtime = Arc::new(AgentRuntime::new());
@@ -518,6 +658,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let upstream = Arc::new(UpstreamClient::new(config.upstream)?);
     let outbox = Arc::new(CaptureOutbox::new(config.outbox, upstream.clone())?);
     let recent_trades = RecentTradesStore::open(&config.recent_trades_db_path)?;
+    let historybook = Arc::new(std::sync::Mutex::new(crate::data::HistoryBook::open(
+        &config.history_db_path,
+    )?));
     let today_store = TodayStore::open(&config.today_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
     let kill_policy = KillPolicyStore::open(&config.kill_switch_audit_db_path)?;
@@ -530,17 +673,19 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("instruments db path is not valid UTF-8"))?,
     )?);
-    let inst_clone = instruments.clone();
-    tokio::spawn(async move {
-        match inst_clone.needs_refresh() {
-            Ok(true) => match inst_clone.refresh_from_zerodha().await {
-                Ok(n) => tracing::info!("instruments refreshed: {n} rows"),
-                Err(e) => tracing::warn!("instrument refresh failed: {e}"),
-            },
-            Ok(false) => tracing::debug!("instruments cache still fresh"),
-            Err(e) => tracing::warn!("instrument refresh check failed: {e}"),
-        }
-    });
+    if crate::zerodha_instruments_enabled() {
+        let inst_clone = instruments.clone();
+        tokio::spawn(async move {
+            match inst_clone.needs_refresh() {
+                Ok(true) => match inst_clone.refresh_from_zerodha().await {
+                    Ok(n) => tracing::info!("instruments refreshed: {n} rows"),
+                    Err(e) => tracing::warn!("instrument refresh failed: {e}"),
+                },
+                Ok(false) => tracing::debug!("instruments cache still fresh"),
+                Err(e) => tracing::warn!("instrument refresh check failed: {e}"),
+            }
+        });
+    }
 
     let broker_status = Arc::new(std::sync::Mutex::new(BrokerRuntimeState::default()));
 
@@ -595,14 +740,85 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         live_book.hydrate(planted);
     }
 
+    let quote_registry = Arc::new(
+        crate::data::Registry::load(&[
+            crate::data::binance_com_quote_descriptor(),
+            crate::data::kotak_neo_quote_descriptor(),
+            crate::data::fixture_quote_descriptor(),
+        ])
+        .map_err(|rejects| anyhow::anyhow!("quote registry refused: {rejects:?}"))?,
+    );
+    let source_manifests = Arc::new(
+        crate::data::load_first_party_manifests()
+            .map_err(|rejects| anyhow::anyhow!("S1 manifests refused: {rejects:?}"))?,
+    );
+    let broker_connections = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let quote_streams = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let klines_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let instrument_master = Arc::new(std::sync::Mutex::new(ExchangeInfoSymbolCache::empty()));
+    let kotak_scrip_master = Arc::new(std::sync::Mutex::new(
+        crate::kotak_scrip_master::KotakScripMaster::empty(),
+    ));
+    let kotak_session_locator = Arc::new(std::sync::Mutex::new(None));
+    let kotak_quote_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let kotak_depth_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let instrument_master_status = Arc::new(std::sync::Mutex::new(
+        crate::data::InstrumentMasterStatus::default(),
+    ));
+    let instrument_master_cancel = Arc::new(AtomicBool::new(false));
+    let instrument_master_cache_dir = config.instrument_master_cache_dir.clone();
+    let tickbook = Arc::new(std::sync::Mutex::new(crate::data::TickBook::new()));
+    let depthbook = Arc::new(std::sync::Mutex::new(crate::data::DepthBook::new()));
+    if config.plant_kotak_s1k_fixtures {
+        plant_kotak_s1k_fixtures(
+            quote_registry.as_ref(),
+            &tickbook,
+            &depthbook,
+            &kotak_scrip_master,
+            &broker_status,
+            &instrument_master_status,
+        );
+    }
+    if config.plant_binance_s2_history {
+        plant_binance_s2_history(&historybook);
+    }
+    if let Some(symbol) = config.s1_desk_symbol.clone() {
+        tracing::info!(
+            instrument = %symbol,
+            "s1 desk: public last-price stream (TickBook, not LiveBook); env is a dev default"
+        );
+        crate::data::ensure_binance_com_trade_stream(
+            quote_registry.clone(),
+            tickbook.clone(),
+            &quote_streams,
+            &symbol,
+        );
+        crate::api::desk::spawn_binance_klines_refresh(historybook.clone(), symbol);
+        crate::api::desk::try_load_binance_cache(
+            &instrument_master_cache_dir,
+            &instrument_master,
+            &instrument_master_status,
+        );
+        crate::api::desk::spawn_exchange_info_refresh(
+            instrument_master.clone(),
+            instrument_master_status.clone(),
+            instrument_master_cancel.clone(),
+            instrument_master_cache_dir.clone(),
+            broker_connections.clone(),
+            false,
+        );
+    } else {
+        tracing::info!(
+            "s1 desk: no runtime subscription yet — TickBook empty until Start or quote resolve"
+        );
+    }
+
     let injected_station_tokens = config.station_token_store.is_some();
     let station_token_store = config
         .station_token_store
         .unwrap_or_else(|| Arc::new(KeyringStationTokenStore));
-    let mut fact_outbox = crate::fact_outbox::FactOutbox::open(
-        &config.fact_outbox_db_path,
-        upstream.clone(),
-    )?;
+    let mut fact_outbox =
+        crate::fact_outbox::FactOutbox::open(&config.fact_outbox_db_path, upstream.clone())?;
     if injected_station_tokens {
         fact_outbox = fact_outbox.with_token_store(station_token_store.clone());
     }
@@ -618,15 +834,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             .ok()
             .is_some_and(|t| !t.trim().is_empty())
     } else {
-        tokio::task::spawn_blocking(|| {
-            KeyringStationTokenStore
-                .load()
-                .ok()
-                .flatten()
-                .is_some()
-        })
-        .await
-        .unwrap_or(false)
+        tokio::task::spawn_blocking(|| KeyringStationTokenStore.load().ok().flatten().is_some())
+            .await
+            .unwrap_or(false)
     };
     if jwt_loadable && live_book.snapshot().is_none() {
         let url = format!("{}/api/bar/v1/live-state", upstream.config.base_url);
@@ -665,6 +875,26 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         device_login_pending: Arc::new(std::sync::Mutex::new(None)),
         station_token_store,
         live_book,
+        quote_registry,
+        tickbook,
+        depthbook,
+        historybook,
+        quote_freshness: config.quote_freshness,
+        s1_desk_symbol: config.s1_desk_symbol.clone(),
+        source_manifests,
+        broker_connections,
+        instrument_master,
+        kotak_scrip_master,
+        quote_streams,
+        klines_inflight,
+        kotak_session_locator,
+        kotak_quote_inflight,
+        kotak_depth_inflight,
+        instrument_master_status,
+        instrument_master_cancel,
+        instrument_master_cache_dir,
+        selected_quote_instrument: Arc::new(std::sync::Mutex::new(None)),
+        quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let router = api::router(state.clone());
 

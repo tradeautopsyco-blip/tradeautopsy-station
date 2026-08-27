@@ -8,7 +8,7 @@ mod ubi_support;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
-    host_allowed, run_fetch_fills, BrokerHttpFixture, FillCursor, RecordingTransport,
+    host_allowed, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
     TransportResponse, UbiHostConfig, UbiHostState,
 };
 use ubi_support::{
@@ -17,6 +17,7 @@ use ubi_support::{
 
 const ACCOUNT_PATH: &str = "/api/v3/account";
 const MY_TRADES_PATH: &str = "/api/v3/myTrades";
+const KLINES_PATH: &str = "/api/v3/klines";
 
 fn config() -> UbiHostConfig {
     UbiHostConfig {
@@ -218,7 +219,8 @@ fn rate_limited_response_reaches_the_component_as_error_class() {
         (MY_TRADES_PATH, 429, "{\"code\":-1003}".to_string()),
     ]);
 
-    let err = run_fetch_fills(&wasm, state, empty_cursor()).map(|_| ())
+    let err = run_fetch_fills(&wasm, state, empty_cursor())
+        .map(|_| ())
         .expect_err("rate limited");
     assert!(
         err.to_string().contains("rate_limited"),
@@ -259,8 +261,7 @@ fn live_mode_host_signs_requests_the_component_never_sees() {
         assert!(request
             .headers
             .iter()
-            .any(|(n, v)| n == "X-MBX-APIKEY"
-                && v == "TEST_API_KEY_SHOULD_NEVER_REACH_COMPONENT"));
+            .any(|(n, v)| n == "X-MBX-APIKEY" && v == "TEST_API_KEY_SHOULD_NEVER_REACH_COMPONENT"));
         // The signing secret itself never travels, even host-side.
         assert!(!request
             .url
@@ -299,4 +300,116 @@ fn unroutable_host_is_blocked_before_any_transport_call() {
         headers: vec![],
         body: String::new(),
     };
+}
+
+fn history_obtain_request(instrument: &str, interval: Option<&str>) -> String {
+    let mut req = serde_json::json!({
+        "family": "market",
+        "capability-id": "ohlcv",
+        "physics": "historical_series",
+        "instrument-id": instrument,
+        "product-use": "research",
+    });
+    if let Some(interval) = interval {
+        req["interval"] = serde_json::Value::String(interval.to_string());
+    }
+    req.to_string()
+}
+
+fn read_klines_fixture() -> String {
+    std::fs::read_to_string(ubi_support::agent_dir().join("fixtures/binance/klines.json"))
+        .expect("klines fixture")
+}
+
+#[test]
+fn obtain_history_maps_klines_fixture_without_secrets() {
+    let wasm = component_wasm("binance_com");
+    let state = fixture_state(vec![(KLINES_PATH, 200, read_klines_fixture())]);
+
+    let (body, state) =
+        run_obtain(&wasm, state, &history_obtain_request("BTCUSDT", None)).expect("obtain history");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("obtain json");
+    let candles = json["candles"].as_array().expect("candles");
+    assert_eq!(candles.len(), 2);
+    assert_eq!(candles[0]["open_time_ms"], 1_499_040_000_000_i64);
+    assert_eq!(candles[0]["close"], "0.01577100");
+    assert_eq!(candles[0]["close_time_ms"], 1_499_644_799_999_i64);
+    assert_eq!(json["last_close"], "0.01590000");
+    assert_eq!(json["source"], "binance_klines");
+    assert_eq!(json["interval"], "1m");
+    assert_eq!(state.calls.len(), 1);
+    assert_eq!(state.calls[0].method, "GET");
+    assert_eq!(state.calls[0].host, "api.binance.com");
+    assert_eq!(state.calls[0].path, KLINES_PATH);
+    assert!(state.calls[0].headers.is_empty());
+    let query: HashMap<&str, &str> = state.calls[0]
+        .query
+        .iter()
+        .map(|q| (q.name.as_str(), q.value.as_str()))
+        .collect();
+    assert_eq!(query.get("symbol"), Some(&"BTCUSDT"));
+    assert_eq!(query.get("interval"), Some(&"1m"));
+    assert_eq!(query.get("limit"), Some(&"500"));
+    assert_component_never_saw_secrets(&state, &wasm);
+}
+
+#[test]
+fn obtain_history_klines_is_unsigned_public_get() {
+    let wasm = component_wasm("binance_com");
+    let transport = Arc::new(RecordingTransport::routed(vec![
+        RecordingTransport::json_route(KLINES_PATH, 200, &read_klines_fixture()),
+    ]));
+
+    let (body, state) = run_obtain(
+        &wasm,
+        UbiHostState::live(config(), transport.clone()),
+        &history_obtain_request("BTCUSDT", Some("1m")),
+    )
+    .expect("live obtain history");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("obtain json");
+    assert_eq!(json["last_close"], "0.01590000");
+    assert!(!json["candles"].as_array().unwrap().is_empty());
+
+    let sent = transport.last().expect("klines request sent");
+    assert!(sent
+        .url
+        .starts_with("https://api.binance.com/api/v3/klines?"));
+    assert!(sent.url.contains("symbol=BTCUSDT"));
+    assert!(sent.url.contains("interval=1m"));
+    assert!(!sent.url.contains("signature="));
+    assert!(!sent.url.contains("timestamp="));
+    assert!(!sent
+        .headers
+        .iter()
+        .any(|(n, _)| n.eq_ignore_ascii_case("X-MBX-APIKEY")));
+    assert_component_never_saw_secrets(&state, &wasm);
+}
+
+#[test]
+fn obtain_history_unsupported_interval_is_not_empty_success() {
+    let wasm = component_wasm("binance_com");
+    let state = fixture_state(vec![(KLINES_PATH, 200, "[]".into())]);
+
+    let err = run_obtain(&wasm, state, &history_obtain_request("BTCUSDT", Some("2m")))
+        .map(|_| ())
+        .expect_err("unsupported interval");
+    let message = err.to_string();
+    assert!(
+        message.contains("unsupported_interval"),
+        "unexpected error: {message}"
+    );
+    assert!(!message.contains("\"candles\":[]"));
+}
+
+#[test]
+fn describe_claims_history_among_implemented_ops() {
+    let wasm = component_wasm("binance_com");
+    let state = fixture_state(vec![]);
+    let (body, _state) = tradeautopsy_agent::run_describe(&wasm, state).expect("describe");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("describe json");
+    let implemented = json["implemented"].as_array().cloned().unwrap_or_default();
+    assert!(
+        implemented.iter().any(|v| v.as_str() == Some("history")),
+        "binance describe must claim history: {body}"
+    );
 }

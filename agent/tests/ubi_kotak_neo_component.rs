@@ -8,7 +8,8 @@ mod ubi_support;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
-    run_fetch_fills, BrokerHttpFixture, FillCursor, RecordingTransport, UbiHostConfig, UbiHostState,
+    run_describe, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
+    UbiHostConfig, UbiHostState,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_kotak_session,
@@ -96,7 +97,9 @@ fn fno_segments_and_refused_products_are_dropped() {
     let (fills, _state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
 
     // B6 §12 / I-N4: nse_fo/NRML and CO rows must not appear as equities cash fills.
-    assert!(fills.iter().all(|f| f.exchange_segment.as_deref() == Some("nse_cm")));
+    assert!(fills
+        .iter()
+        .all(|f| f.exchange_segment.as_deref() == Some("nse_cm")));
     assert!(fills
         .iter()
         .all(|f| matches!(f.product.as_deref(), Some("CNC") | Some("MIS"))));
@@ -132,7 +135,9 @@ fn dead_session_surfaces_as_session_expired() {
         r#"{"stat":"Not_Ok","stCode":1003,"errMsg":"Invalid Session"}"#.to_string(),
     );
 
-    let err = run_fetch_fills(&wasm, state, empty_cursor()).map(|_| ()).expect_err("session expired");
+    let err = run_fetch_fills(&wasm, state, empty_cursor())
+        .map(|_| ())
+        .expect_err("session expired");
     assert!(
         err.to_string().contains("session_expired"),
         "unexpected error: {err}"
@@ -160,9 +165,10 @@ fn live_mode_host_attaches_session_headers_and_blob_base_url() {
     assert_eq!(fills.len(), 2);
     let sent = transport.last().expect("request sent");
     // Base URL (including its /trading prefix) comes from the credential blob, not Wasm.
+    // Host attaches trade-book `sId` = hsServerId outside the component (SDK TradeReportAPI).
     assert_eq!(
         sent.url,
-        "https://cis.kotaksecurities.com/trading/quick/user/trades"
+        "https://cis.kotaksecurities.com/trading/quick/user/trades?sId=TEST_HS_SERVER_NEVER_IN_COMPONENT"
     );
     assert!(sent
         .headers
@@ -174,4 +180,54 @@ fn live_mode_host_attaches_session_headers_and_blob_base_url() {
         .any(|(n, v)| n == "Sid" && v == "TEST_SID_NEVER_IN_COMPONENT"));
     assert!(state.calls[0].headers.is_empty());
     assert_component_never_saw_secrets(&state, &wasm);
+}
+
+fn history_obtain_request() -> String {
+    serde_json::json!({
+        "family": "market",
+        "capability-id": "ohlcv",
+        "physics": "historical_series",
+        "instrument-id": "RELIANCE",
+        "product-use": "research",
+        "operation": "history",
+    })
+    .to_string()
+}
+
+#[test]
+fn obtain_history_is_unsupported_not_empty_success() {
+    let wasm = component_wasm("kotak_neo");
+    let state = fixture_state(200, read_fixture("kotak_neo_trade_book.json"));
+
+    let (body, state) = run_obtain(&wasm, state, &history_obtain_request()).expect("obtain json");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("obtain json");
+    assert_eq!(json["status"], "unsupported");
+    assert_ne!(json["status"], "success");
+    assert!(json.get("candles").is_none());
+    assert!(json.get("data").is_none() || json["data"].is_null());
+    assert!(
+        state.calls.is_empty(),
+        "kotak history must not call the host network"
+    );
+    assert!(state
+        .calls
+        .iter()
+        .all(|c| c.path != "/api/v3/klines" && !c.path.contains("klines")));
+    assert_component_never_saw_secrets(&state, &wasm);
+}
+
+#[test]
+fn describe_does_not_claim_history() {
+    let wasm = component_wasm("kotak_neo");
+    let state = fixture_state(200, read_fixture("kotak_neo_trade_book.json"));
+
+    let (body, _state) = run_describe(&wasm, state).expect("describe");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("describe json");
+    let implemented = json["implemented"].as_array().cloned().unwrap_or_default();
+    assert!(
+        !implemented.iter().any(|v| v.as_str() == Some("history")),
+        "kotak describe must not claim history: {body}"
+    );
+    let bindings = json["bindings"].as_array().cloned().unwrap_or_default();
+    assert!(bindings.iter().all(|b| b["operation"] != "history"));
 }

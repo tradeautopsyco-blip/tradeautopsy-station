@@ -8,13 +8,14 @@
 #![allow(clippy::all)]
 
 wit_bindgen::generate!({
-    world: "broker-adapter",
-    path: "../wit",
+    world: "broker-adapter-data",
+    path: "../../docs/contracts",
 });
 
-use crate::exports::tradeautopsy::ubi::adapter::Guest;
-use crate::tradeautopsy::ubi::broker_http;
-use crate::tradeautopsy::ubi::types::{
+use crate::exports::tradeautopsy::ubi_data::adapter::Guest as AdapterGuest;
+use crate::exports::tradeautopsy::ubi_data::data_adapter::Guest as DataAdapterGuest;
+use crate::tradeautopsy::ubi_data::broker_http;
+use crate::tradeautopsy::ubi_data::types::{
     BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent,
 };
 
@@ -34,7 +35,7 @@ struct KotakNeoAdapter;
 
 export!(KotakNeoAdapter);
 
-impl Guest for KotakNeoAdapter {
+impl AdapterGuest for KotakNeoAdapter {
     fn fetch_fills(cursor: FillCursor) -> Result<Vec<FillEvent>, String> {
         let response = broker_http::broker_http_call(&BrokerHttpRequest {
             method: "GET".to_string(),
@@ -55,6 +56,16 @@ impl Guest for KotakNeoAdapter {
         }
         fills.sort_by_key(|f: &FillEvent| f.filled_at_unix_ms);
         Ok(fills)
+    }
+}
+
+impl DataAdapterGuest for KotakNeoAdapter {
+    fn describe() -> Result<String, String> {
+        Ok(describe_json())
+    }
+
+    fn obtain(request: String) -> Result<String, String> {
+        obtain_json(&request)
     }
 }
 
@@ -179,10 +190,7 @@ fn parse_ist_timestamp(raw: &str) -> Result<i64, String> {
     let mut time_parts = time.split(':');
     let hour: i64 = next_num(&mut time_parts, "hour")?;
     let minute: i64 = next_num(&mut time_parts, "minute")?;
-    let second: i64 = time_parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let second: i64 = time_parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
 
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return Err(format!("bad trade date '{raw}'"));
@@ -227,10 +235,7 @@ fn parse_month(raw: &str) -> Result<i64, String> {
     Ok(month)
 }
 
-fn next_num<'a>(
-    parts: &mut impl Iterator<Item = &'a str>,
-    label: &str,
-) -> Result<i64, String> {
+fn next_num<'a>(parts: &mut impl Iterator<Item = &'a str>, label: &str) -> Result<i64, String> {
     parts
         .next()
         .ok_or_else(|| format!("timestamp missing {label}"))?
@@ -259,10 +264,68 @@ fn string_field(row: &serde_json::Value, key: &str) -> Option<String> {
 
 fn parse_f64(value: Option<&serde_json::Value>) -> Result<f64, String> {
     match value {
-        Some(serde_json::Value::Number(n)) => n.as_f64().ok_or_else(|| "number not f64".to_string()),
-        Some(serde_json::Value::String(s)) => {
-            s.trim().parse().map_err(|e| format!("parse f64 '{s}': {e}"))
+        Some(serde_json::Value::Number(n)) => {
+            n.as_f64().ok_or_else(|| "number not f64".to_string())
         }
+        Some(serde_json::Value::String(s)) => s
+            .trim()
+            .parse()
+            .map_err(|e| format!("parse f64 '{s}': {e}")),
         _ => Err("missing number".to_string()),
     }
+}
+
+/// Honest Wasm describe: this component exports fills. Kotak has no history capability
+/// (FAQ 2026-08-26: historical market data unavailable). Do not claim `history`.
+fn describe_json() -> String {
+    serde_json::json!({
+        "manifest_id": "kotak_neo.s1k.v1",
+        "adapter_id": "kotak_neo",
+        "implemented": ["tradebook"],
+        "bindings": [
+            {
+                "operation": "tradebook",
+                "adapter_id": "kotak_neo",
+                "family": "account",
+                "capability_id": "fills",
+                "physics": "bounded_snapshot",
+            },
+        ],
+    })
+    .to_string()
+}
+
+fn obtain_json(request: &str) -> Result<String, String> {
+    let req: serde_json::Value =
+        serde_json::from_str(request).map_err(|e| format!("obtain json: {e}"))?;
+    let family = json_str(&req, &["family"]).unwrap_or_default();
+    let capability = json_str(&req, &["capability-id", "capability_id"]).unwrap_or_default();
+    let physics = json_str(&req, &["physics"]).unwrap_or_default();
+    let operation = json_str(&req, &["operation"]).unwrap_or_default();
+    let is_history = operation == "history"
+        || (family == "market" && capability == "ohlcv" && physics == "historical_series");
+    if is_history {
+        // Never invent a klines path. Never empty success.
+        return Ok(serde_json::json!({
+            "status": "unsupported",
+            "operation": "history",
+            "reason": "historical market data unavailable",
+        })
+        .to_string());
+    }
+    Err(format!(
+        "kotak_neo obtain unsupported: {family}/{capability}/{physics}"
+    ))
+}
+
+fn json_str(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(s) = value.get(*key).and_then(|v| v.as_str()) {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
 }

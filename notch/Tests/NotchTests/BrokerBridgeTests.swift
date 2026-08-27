@@ -133,4 +133,187 @@ struct BrokerBridgeTests {
         )
         #expect(pill.label == "No broker · offline")
     }
+
+    @Test func applyBrokerSyncStatePayloadQuoteIndependentOfFundsFills() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "kotak_neo",
+            "quoteCurrency": "INR",
+            "capabilities": [
+                "quote": "fresh",
+                "funds": "unavailable",
+                "fills": "stale",
+                "instruments": "fresh",
+            ],
+        ])
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.deskFundsCapability == "unavailable")
+        #expect(vm.deskFillsCapability == "stale")
+        #expect(vm.deskQuoteCapability != vm.deskFundsCapability)
+        let account = DeskCapabilityChrome.accountStatus(
+            funds: vm.deskFundsCapability,
+            fills: vm.deskFillsCapability
+        )
+        #expect(account == "stale")
+        #expect(DeskCapabilityChrome.dotName(forStatus: vm.deskQuoteCapability) == "teal")
+        #expect(DeskCapabilityChrome.dotName(forStatus: account) != "teal")
+        #expect(vm.deskInstrumentsCapability == "fresh")
+        #expect(vm.deskQuoteCurrency == "INR")
+    }
+
+    @Test func applyBrokerSyncStatePayloadLoadsInstrumentsCapability() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        #expect(vm.deskInstrumentsCapability == "unavailable")
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "binance_com",
+            "capabilities": [
+                "quote": "fresh",
+                "funds": "fresh",
+                "fills": "fresh",
+                "instruments": "loading",
+            ],
+        ])
+        #expect(vm.deskInstrumentsCapability == "loading")
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(DeskCapabilityChrome.dotName(forStatus: vm.deskInstrumentsCapability) == "amber")
+        #expect(DeskCapabilityChrome.dotName(forStatus: vm.deskQuoteCapability) == "teal")
+    }
+
+    @Test func applyStationQuoteEnvelopeBindsKotakLastNotBinancePair() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "nse_cm|2885",
+            "data": ["last": "2910.50"],
+            "provenance": ["adapter_id": "kotak_neo"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.declEntryPrice == "2910.50")
+    }
+
+    @Test func applyStationQuoteEnvelopeRejectsBinanceAdapterOnKotakDesk() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "btcusdt",
+            "data": ["last": "65000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.declEntryPrice.isEmpty)
+    }
+
+    @Test func applyStationQuoteEnvelopeUnavailableQuotesHttpSetsLastStatus() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationQuoteEnvelope([
+            "status": "unavailable",
+            "ineligible": ["quotes_http"],
+            "instrument_id": "nse_cm|2885",
+            "provenance": ["adapter_id": "kotak_neo"],
+        ])
+        #expect(vm.deskLastStatus == "quotes_http")
+        #expect(vm.deskQuoteCapability == "quotes_http")
+    }
+
+    @Test func applyStationQuoteEnvelopeUnavailableQuotesUnusableSetsLastStatus() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationQuoteEnvelope([
+            "status": "unavailable",
+            "ineligible": ["quotes_unusable"],
+            "instrument_id": "nse_cm|2885",
+            "provenance": ["adapter_id": "kotak_neo"],
+        ])
+        #expect(vm.deskLastStatus == "quotes_unusable")
+        #expect(vm.deskQuoteCapability == "quotes_unusable")
+    }
+
+    @Test func selectSymbolKotakCashSetsTickBookId() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.showSymbolSuggestions = true
+        let cash = InstrumentResult(
+            trading_symbol: "NMDC",
+            name: "NMDC Limited",
+            exchange: "kotak_neo",
+            segment: "nse_cm",
+            instrument_token: 11532,
+            last_price: 0
+        )
+        vm.symbolSuggestions = [cash]
+        vm.selectSymbol(cash)
+        #expect(vm.barDeclarationLastError == nil)
+        #expect(vm.deskSelectedInstrumentId == "nse_cm|11532")
+        #expect(vm.barDeclarationSymbol == "NMDC")
+        #expect(vm.symbolSuggestions.isEmpty)
+        #expect(vm.showSymbolSuggestions == false)
+    }
+
+    @Test func selectSymbolRefusesNseOnKotakDesk() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.deskSelectedInstrumentId = ""
+        vm.barDeclarationSymbol = "RE"
+        let nse = InstrumentResult(
+            trading_symbol: "RELIANCE",
+            name: "Reliance Industries",
+            exchange: "NSE",
+            segment: "NSE",
+            instrument_token: 2885,
+            last_price: 0
+        )
+        vm.selectSymbol(nse)
+        #expect(vm.barDeclarationLastError == "Select a Kotak cash instrument")
+        #expect(vm.deskSelectedInstrumentId.isEmpty)
+        #expect(vm.barDeclarationSymbol == "RE")
+    }
+
+    @Test func emptySlugWhileSessionActiveIsCatalogDesk() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = nil
+        vm.barProtectiveBrokerSlug = ""
+        vm.brokerSessionActive = true
+        #expect(vm.connectedInstrumentCatalogDesk)
+        vm.brokerSessionActive = false
+        vm.brokerSyncClass = "not_connected"
+        #expect(!vm.connectedInstrumentCatalogDesk)
+    }
+
+    @Test func applyBrokerSyncStatePayloadOfflineClearsCapabilitiesWithoutBlendingFx() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "kotak_neo",
+            "quoteCurrency": "INR",
+            "capabilities": [
+                "quote": "fresh",
+                "funds": "fresh",
+                "fills": "fresh",
+                "instruments": "loading",
+            ],
+        ])
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "not_connected",
+            "brokerSlug": "kotak_neo",
+        ])
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.deskFundsCapability == "unavailable")
+        #expect(vm.deskInstrumentsCapability == "unavailable")
+        #expect(vm.deskQuoteCurrency == "INR")
+    }
 }

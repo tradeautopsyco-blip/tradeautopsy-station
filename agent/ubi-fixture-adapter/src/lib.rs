@@ -5,13 +5,14 @@
 #![allow(clippy::all)]
 
 wit_bindgen::generate!({
-    world: "broker-adapter",
-    path: "../wit",
+    world: "broker-adapter-data",
+    path: "../../docs/contracts",
 });
 
-use crate::exports::tradeautopsy::ubi::adapter::Guest;
-use crate::tradeautopsy::ubi::broker_http;
-use crate::tradeautopsy::ubi::types::{
+use crate::exports::tradeautopsy::ubi_data::adapter::Guest as AdapterGuest;
+use crate::exports::tradeautopsy::ubi_data::data_adapter::Guest as DataAdapterGuest;
+use crate::tradeautopsy::ubi_data::broker_http;
+use crate::tradeautopsy::ubi_data::types::{
     BrokerHttpRequest, FillCursor, FillEvent, HttpQueryParam,
 };
 
@@ -19,7 +20,7 @@ struct FixtureAdapter;
 
 export!(FixtureAdapter);
 
-impl Guest for FixtureAdapter {
+impl AdapterGuest for FixtureAdapter {
     fn fetch_fills(cursor: FillCursor) -> Result<Vec<FillEvent>, String> {
         let fixture_kind = cursor.from_id.as_deref().unwrap_or("binance_com");
 
@@ -27,6 +28,19 @@ impl Guest for FixtureAdapter {
             "kotak_neo" => fetch_kotak(cursor),
             _ => fetch_binance_com(cursor),
         }
+    }
+}
+
+impl DataAdapterGuest for FixtureAdapter {
+    fn describe() -> Result<String, String> {
+        Ok(
+            r#"{"manifest_id":"fixture.v1","adapter_id":"fixture","implemented":["tradebook"]}"#
+                .into(),
+        )
+    }
+
+    fn obtain(_request: String) -> Result<String, String> {
+        Err("fixture obtain unsupported".into())
     }
 }
 
@@ -210,12 +224,12 @@ fn map_kotak_body(body: &str) -> Result<Vec<FillEvent>, String> {
 
 fn parse_f64(v: Option<&serde_json::Value>) -> Result<f64, String> {
     match v {
-        Some(serde_json::Value::Number(n)) => n
-            .as_f64()
-            .ok_or_else(|| "number not f64".to_string()),
-        Some(serde_json::Value::String(s)) => s
-            .parse()
-            .map_err(|e| format!("parse f64 '{s}': {e}")),
+        Some(serde_json::Value::Number(n)) => {
+            n.as_f64().ok_or_else(|| "number not f64".to_string())
+        }
+        Some(serde_json::Value::String(s)) => {
+            s.parse().map_err(|e| format!("parse f64 '{s}': {e}"))
+        }
         _ => Err("missing number".into()),
     }
 }
