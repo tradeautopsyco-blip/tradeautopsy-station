@@ -3,10 +3,10 @@
 use super::AppState;
 use crate::data::{
     apply_history_series, authorize_inferred_call, binance_exchange_info_cache_path,
-    ensure_binance_com_trade_stream, extract_quote_for, normalize_quote_instrument, resolve_among,
-    series_from_klines_json, validate_kline_request, write_raw_cache, HistoryBook,
-    InstrumentMasterErrorClass, InstrumentMasterFetchError, InstrumentMasterStatus, QuoteStatus,
-    Transport, DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT,
+    ensure_binance_com_depth_stream, ensure_binance_com_trade_stream, extract_quote_for,
+    normalize_quote_instrument, resolve_among, series_from_klines_json, validate_kline_request,
+    write_raw_cache, HistoryBook, InstrumentMasterErrorClass, InstrumentMasterFetchError,
+    InstrumentMasterStatus, QuoteStatus, Transport, DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -209,6 +209,7 @@ impl AppState {
                 &self.quote_streams,
                 &id,
             );
+            ensure_binance_com_depth_stream(self.depthbook.clone(), &self.depth_streams, &id);
             // REST.md: unsigned GET /api/v3/klines on api.binance.com (NONE). Not uiKlines.
             ensure_binance_klines(self.historybook.clone(), &self.klines_inflight, &id);
         }

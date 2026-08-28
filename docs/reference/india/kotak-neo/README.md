@@ -5,8 +5,10 @@ Live quotes, scrip-master file-paths, and subscribe. Session mint and the day tr
 | File | Topic |
 | ---- | ----- |
 | [REST.md](./REST.md) | Scrip master file-paths + REST quotes (`quote_type`) |
+| [NFO-SCRIP-MASTER.md](./NFO-SCRIP-MASTER.md) | NFO / F&O CSV schema + `reference/expiry` / `reference/option_symbol` (v1 refused; research only) |
+| [MARGIN-CALCULATOR.md](./MARGIN-CALCULATOR.md) | `account/margin_estimate` — calculator path unspecified; dark envelope |
 | [WEBSOCKET.md](./WEBSOCKET.md) | Subscribe live feed (later s1k stream) |
 
 **B6 sheet:** [`docs/research/sheets/kotak_neo.md`](../../../research/sheets/kotak_neo.md)
 
-**Snapshot:** 2026-08-26. No historical market candles. **S2:** Kotak `obtain(history)` remains unsupported. No place/modify/cancel as data.
+**Snapshot:** 2026-08-27. No historical market candles. **S2:** Kotak `obtain(history)` remains unsupported. No place/modify/cancel as data. F&O master remains v1-refused.

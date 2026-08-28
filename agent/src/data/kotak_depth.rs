@@ -57,7 +57,10 @@ pub struct DepthEnvelope {
     pub provenance: DepthProvenance,
 }
 
-/// Stored REST ladder. Completeness/bounds are metadata, not a delta replica.
+/// Stored REST/stream ladder. Completeness/bounds are metadata, not a delta replica.
+/// `sequence` is Binance `lastUpdateId` when present. Kotak REST has no sequence field
+/// (NOT SPECIFIED IN SOURCE) → `None`. A missing sequence is a valid bounded snapshot,
+/// not Unusable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepthSnapshot {
     pub instrument_id: String,
@@ -68,6 +71,7 @@ pub struct DepthSnapshot {
     pub bound_levels: usize,
     pub as_of: DateTime<Utc>,
     pub transport: Transport,
+    pub sequence: Option<u64>,
 }
 
 pub fn order_book_bounded_snapshot() -> Identity {
@@ -130,6 +134,7 @@ fn snapshot_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<Dep
         bound_levels,
         as_of: received_at,
         transport: Transport::Rest,
+        sequence: None,
     })
 }
 
@@ -282,6 +287,7 @@ mod tests {
         assert_eq!(snap.instrument_id, "nse_cm|2885");
         assert_eq!(snap.adapter_id, KOTAK_NEO_ADAPTER_ID);
         assert_eq!(snap.transport, Transport::Rest);
+        assert!(snap.sequence.is_none());
         assert!(snap.completeness);
         assert!(!snap.bids.is_empty());
         assert!(!snap.asks.is_empty());
@@ -331,5 +337,18 @@ mod tests {
         assert_eq!(snap.instrument_id, "nse_cm|11536");
         assert_eq!(snap.adapter_id, KOTAK_NEO_ADAPTER_ID);
         assert!(!snap.bids.is_empty());
+    }
+
+    #[test]
+    fn complete_snapshot_with_no_sequence_is_success_not_unusable() {
+        let snap = depth_snapshot_from_kotak_json(FIXTURE, received()).expect("fixture depth");
+        assert!(snap.sequence.is_none());
+        assert!(snap.completeness);
+        let mut book = DepthBook::new();
+        book.upsert(snap);
+        let envelope = extract_depth(&book, "nse_cm|2885", Some(KOTAK_NEO_ADAPTER_ID));
+        assert_eq!(envelope.status, DepthStatus::Success);
+        assert_ne!(envelope.status, DepthStatus::Unusable);
+        assert!(envelope.data.is_some());
     }
 }

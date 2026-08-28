@@ -87,6 +87,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
     match (capability_id, method.as_str(), auth_mode) {
         ("quote", "GET", AuthMode::Public) if path == "/api/v3/ticker/price" => true,
         ("ohlcv", "GET", AuthMode::Public) if path == "/api/v3/klines" => true,
+        ("order_book", "GET", AuthMode::Public) if path == "/api/v3/depth" => true,
         ("instrument_master", "GET", AuthMode::Public)
             if path == "/api/v3/exchangeInfo" || is_kotak_cash_scrip_csv_path(path) =>
         {
@@ -119,6 +120,7 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
     match (method.as_str(), path) {
         ("GET", "/api/v3/ticker/price") => Ok(("quote", AuthMode::Public)),
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
+        ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
         ("GET", "/api/v3/exchangeInfo") => Ok(("instrument_master", AuthMode::Public)),
         ("GET", "/api/v3/myTrades") => Ok(("fills", AuthMode::PrivateRead)),
         ("GET", "/api/v3/account") => Ok(("funds", AuthMode::PrivateRead)),
@@ -202,8 +204,10 @@ pub fn authorize_host_call(
         return Err(HostRefuse::HostNotAllowed);
     }
     let host_norm = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    // Public klines are COM-only. Not api.binance.us, not data-api.binance.vision.
-    if path.trim() == "/api/v3/klines" && host_norm != "api.binance.com" {
+    // Public klines / depth are COM-only. Not api.binance.us, not data-api.binance.vision.
+    if (path.trim() == "/api/v3/klines" || path.trim() == "/api/v3/depth")
+        && host_norm != "api.binance.com"
+    {
         return Err(HostRefuse::HostNotAllowed);
     }
     if is_kotak_cash_scrip_csv_path(path) && host_norm != "lapi.kotaksecurities.com" {
@@ -637,6 +641,40 @@ mod tests {
             )
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn binance_depth_is_unsigned_public_order_book_on_com_only() {
+        let (cap, mode) = infer_capability("GET", "/api/v3/depth").unwrap();
+        assert_eq!(cap, "order_book");
+        assert_eq!(mode, AuthMode::Public);
+        authorize_inferred_call("api.binance.com", "GET", "/api/v3/depth", false)
+            .expect("unsigned COM depth is allowlisted");
+        assert_eq!(
+            authorize_inferred_call("api.binance.com", "GET", "/api/v3/depth", true).unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            authorize_host_call(
+                "api.binance.com",
+                "GET",
+                "/api/v3/depth",
+                "order_book",
+                AuthMode::Public,
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            authorize_inferred_call("gw-napi.kotaksecurities.com", "GET", "/api/v3/depth", false)
+                .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_inferred_call("api.binance.us", "GET", "/api/v3/depth", false).unwrap_err(),
+            HostRefuse::HostNotAllowed
         );
     }
 }

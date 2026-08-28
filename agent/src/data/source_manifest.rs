@@ -255,7 +255,12 @@ fn history_binding(adapter_id: &str, coverage: Coverage) -> ManifestBinding {
     }
 }
 
-fn depth_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> ManifestBinding {
+fn depth_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+    transports: Vec<TransportKind>,
+) -> ManifestBinding {
     ManifestBinding {
         operation: "depth".into(),
         adapter_id: adapter_id.to_string(),
@@ -263,7 +268,7 @@ fn depth_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> M
         capability_id: "order_book".into(),
         physics: Physics::BoundedSnapshot,
         auth_mode,
-        transports: vec![TransportKind::Rest],
+        transports,
         rights: Rights::research_fetch_only(),
         limits: Limits::default(),
         coverage,
@@ -272,7 +277,8 @@ fn depth_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> M
 }
 
 /// Binance.com S1 + S2 history: public `@trade` quotes + exchangeInfo master
-/// + private fills/funds + public klines `historical_series`.
+/// + private fills/funds + public klines `historical_series` + public `@depth`
+/// bounded snapshot (not ordered_state).
 pub fn binance_com_s1_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["binance.com".into()],
@@ -302,6 +308,7 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
             "tradebook".into(),
             "funds".into(),
             "history".into(),
+            "depth".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
@@ -313,8 +320,20 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
                 coverage.clone(),
                 fills_limits.clone(),
             ),
-            account_binding("binance_com", "funds", "funds", coverage, fills_limits),
+            account_binding(
+                "binance_com",
+                "funds",
+                "funds",
+                coverage.clone(),
+                fills_limits,
+            ),
             history_binding("binance_com", history_coverage),
+            depth_binding(
+                "binance_com",
+                coverage,
+                AuthMode::Public,
+                vec![TransportKind::Stream, TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -347,7 +366,12 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
-            depth_binding("kotak_neo", coverage, AuthMode::PrivateRead),
+            depth_binding(
+                "kotak_neo",
+                coverage,
+                AuthMode::PrivateRead,
+                vec![TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -456,7 +480,14 @@ mod tests {
         assert_eq!(manifest.manifest_id, "binance_com.s1.v1");
         assert_eq!(
             manifest.implemented,
-            vec!["quotes", "instruments", "tradebook", "funds", "history"]
+            vec![
+                "quotes",
+                "instruments",
+                "tradebook",
+                "funds",
+                "history",
+                "depth"
+            ]
         );
         let history_bind = manifest
             .bindings
@@ -471,6 +502,20 @@ mod tests {
         assert!(history_bind.coverage.history_range.is_none());
         assert!(history_bind.coverage.intervals.contains(&"1m".into()));
         assert!(history_bind.coverage.intervals.contains(&"1M".into()));
+        let depth_bind = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "depth")
+            .expect("depth binding");
+        assert_eq!(depth_bind.family, Family::Market);
+        assert_eq!(depth_bind.capability_id, "order_book");
+        assert_eq!(depth_bind.physics, Physics::BoundedSnapshot);
+        assert_ne!(depth_bind.physics, Physics::OrderedState);
+        assert_eq!(depth_bind.auth_mode, AuthMode::Public);
+        assert_eq!(
+            depth_bind.transports,
+            vec![TransportKind::Stream, TransportKind::Rest]
+        );
         let history = obtain(&manifest, "history");
         assert_eq!(history.status, ObtainStatus::Unavailable);
         assert!(history.data.is_none());
@@ -483,6 +528,10 @@ mod tests {
         let funds = obtain(&manifest, "funds");
         assert_eq!(funds.status, ObtainStatus::Unavailable);
         assert_eq!(funds.provenance_adapter_id.as_deref(), Some("binance_com"));
+        let depth = obtain(&manifest, "depth");
+        assert_eq!(depth.status, ObtainStatus::Unavailable);
+        assert!(depth.data.is_none());
+        assert!(!is_empty_success(&depth));
         let place = obtain(&manifest, "placeorder");
         assert_eq!(place.status, ObtainStatus::Unsupported);
         assert!(place.data.is_none());

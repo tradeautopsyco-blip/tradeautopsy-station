@@ -62,46 +62,58 @@ struct BarDeclarationFlowView: View {
 
                 archetypeTabRow
 
-                BarSectionLabel(text: "State check")
-                stateCheckCard
+                if BarOptionsDeclareSurface.usesThreeZone(for: viewModel.declareAssetClass) {
+                    BarOptionsDeclareView(
+                        viewModel: viewModel,
+                        sideBuy: $sideBuy,
+                        stopLossText: $stopLossText,
+                        targetPriceText: $targetPriceText,
+                        submitReady: submitReadiness.ready,
+                        submitHint: submitReadiness.hint,
+                        onConfirm: { Task { await submit() } },
+                    )
+                } else {
+                    BarSectionLabel(text: "State check")
+                    stateCheckCard
 
-                BarSectionLabel(text: "Numbers")
-                riskNumbersCard
+                    BarSectionLabel(text: "Numbers")
+                    riskNumbersCard
 
-                BarSectionLabel(text: "Setup & invalidation")
-                setupAndInvalidationCard
+                    BarSectionLabel(text: "Setup & invalidation")
+                    setupAndInvalidationCard
 
-                BarSectionLabel(text: "Review")
-                BarToggleRow(
-                    label: "Auto-place stop loss on fill",
-                    sub: "Pre-authorized — placed within 500ms of broker fill",
-                    isOn: $viewModel.declProtectiveSLConsent,
-                )
-                .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
+                    BarSectionLabel(text: "Review")
+                    BarToggleRow(
+                        label: "Auto-place stop loss on fill",
+                        sub: "Pre-authorized — placed within 500ms of broker fill",
+                        isOn: $viewModel.declProtectiveSLConsent,
+                    )
+                    .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
 
-                BarBigButton(
-                    label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
-                    style: .primary,
-                ) {
-                    Task { await submit() }
+                    BarBigButton(
+                        label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
+                        style: .primary,
+                    ) {
+                        Task { await submit() }
+                    }
+                    .disabled(!submitReadiness.ready || viewModel.barDeclarationBusy)
+                    .opacity(submitReadiness.ready && !viewModel.barDeclarationBusy ? 1 : 0.3)
+
+                    if !submitReadiness.ready,
+                       viewModel.barDeclarationLastError == nil,
+                       let hint = submitReadiness.hint,
+                       !viewModel.barDeclarationBusy {
+                        Text(hint)
+                            .font(BarDS.bodyFont(10, weight: .medium))
+                            .foregroundColor(BarDS.Text.hint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Text("Completed in \(elapsedLiveSeconds)s")
+                        .font(BarDS.bodyFont(10, weight: .regular))
+                        .foregroundColor(BarDS.Text.labels)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .disabled(!submitReadiness.ready || viewModel.barDeclarationBusy)
-                .opacity(submitReadiness.ready && !viewModel.barDeclarationBusy ? 1 : 0.3)
-
-                if !submitReadiness.ready,
-                   viewModel.barDeclarationLastError == nil,
-                   let hint = submitReadiness.hint,
-                   !viewModel.barDeclarationBusy {
-                    Text(hint)
-                        .font(BarDS.bodyFont(10, weight: .medium))
-                        .foregroundColor(BarDS.Text.hint)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Text("Completed in \(elapsedLiveSeconds)s")
-                    .font(BarDS.bodyFont(10, weight: .regular))
-                    .foregroundColor(BarDS.Text.labels)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         .onAppear {
             if declarationStartedAt == nil {
@@ -121,6 +133,7 @@ struct BarDeclarationFlowView: View {
         .onChange(of: viewModel.declEmotionalConfidence) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: stopLossText) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: quantityText) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.declLots) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: viewModel.barDeclarationSymbol) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: viewModel.declSetupType) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: viewModel.declInvalidationType) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
@@ -143,6 +156,10 @@ struct BarDeclarationFlowView: View {
                 invalidationCondition: viewModel.declInvalidationCondition,
                 declarationKindWire: declarationKindWire(for: viewModel.activeArchetype),
                 scalperSessionId: scalperSessionId,
+                lotsText: viewModel.declLots,
+                isOptions: viewModel.declareAssetClass == .options,
+                optionLegCount: viewModel.optionLegs.count,
+                maxPlannedLossText: viewModel.declMaxPlannedLossText,
             ),
         )
     }
@@ -158,13 +175,13 @@ struct BarDeclarationFlowView: View {
             }
             HStack(spacing: 5) {
                 BarTab(label: "Intraday", active: viewModel.activeArchetype == .intraday) {
-                    viewModel.setUserDeclarationArchetype(.intraday)
+                    selectArchetype(.intraday)
                 }
                 BarTab(label: "Scalper", active: viewModel.activeArchetype == .scalper) {
-                    viewModel.setUserDeclarationArchetype(.scalper)
+                    selectArchetype(.scalper)
                 }
                 BarTab(label: "Swing", active: viewModel.activeArchetype == .swing) {
-                    viewModel.setUserDeclarationArchetype(.swing)
+                    selectArchetype(.swing)
                 }
             }
         }
@@ -236,16 +253,22 @@ struct BarDeclarationFlowView: View {
             symbolAutocompleteField
             if viewModel.declareAssetClass == .options {
                 optionsShellFields
+            } else {
+                horizonRow
             }
             HStack(spacing: 5) {
                 pretradeSidePill(title: "BUY", selected: sideBuy) { sideBuy = true }
                 pretradeSidePill(title: "SELL", selected: !sideBuy) { sideBuy = false }
             }
             .padding(.bottom, 4)
-            BarInputField(placeholder: "Quantity", text: $quantityText)
+            if viewModel.declareAssetClass != .options {
+                BarInputField(placeholder: "Quantity", text: $quantityText)
+            }
 
-            if let loss = maxPlannedLossINR {
-                Text(loss)
+            if viewModel.declareAssetClass == .options {
+                BarPlanLadderView(rung1: planRung1, declaredMaxLossINR: planMaxLossINR)
+            } else if let loss = planMaxLossINR {
+                Text(String(format: "MAX LOSS (plan): ₹%.0f", loss))
                     .font(BarDS.monoFont(10, weight: .semibold))
                     .foregroundColor(BarDS.Text.hint)
             }
@@ -454,8 +477,11 @@ struct BarDeclarationFlowView: View {
     }
 
     private func buildJsonBody() -> Data? {
+        let isOptions = viewModel.declareAssetClass == .options
         guard viewModel.barLiveState?.blocksDeclarationSubmit != true else { return nil }
-        guard viewModel.declProtectiveSLConsent else { return nil }
+        if !isOptions {
+            guard viewModel.declProtectiveSLConsent else { return nil }
+        }
         guard (1 ... 5).contains(viewModel.declEmotionalCalm),
               (1 ... 5).contains(viewModel.declEmotionalConfidence) else { return nil }
         guard BarIntradayDeclareValidator.stickyPreTradeConfirmEnabled(
@@ -464,10 +490,21 @@ struct BarDeclarationFlowView: View {
             stopLossText: stopLossText,
         ) else { return nil }
         guard let sym = BarBrokerTicker.normalize(raw: viewModel.barDeclarationSymbol) else { return nil }
-        guard let qty = Double(quantityText.trimmingCharacters(in: .whitespaces)), qty > 0,
-              let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)) else { return nil }
-        guard !viewModel.declSetupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        guard selectedInvalidationKind != nil else { return nil }
+        let lotsParsed = Int(viewModel.declLots.trimmingCharacters(in: .whitespacesAndNewlines))
+        let qty: Double
+        if isOptions {
+            guard !viewModel.optionLegs.isEmpty else { return nil }
+            qty = Double(viewModel.optionLegs[0].lots)
+        } else if let parsedQty = Double(quantityText.trimmingCharacters(in: .whitespaces)), parsedQty > 0 {
+            qty = parsedQty
+        } else {
+            return nil
+        }
+        guard let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)) else { return nil }
+        if !isOptions {
+            guard !viewModel.declSetupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            guard selectedInvalidationKind != nil else { return nil }
+        }
         let invTrim = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !invTrim.isEmpty else { return nil }
         let wireKind = declarationKindWire(for: viewModel.activeArchetype)
@@ -480,39 +517,74 @@ struct BarDeclarationFlowView: View {
         let conf = viewModel.declEmotionalConfidence
         let entryTrim = viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetTrim = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let includeEntryTarget = wireKind == "swing" || wireKind == "positional"
+        let includeEntryTarget = isOptions || wireKind == "swing" || wireKind == "positional"
         let entryOpt = includeEntryTarget && !entryTrim.isEmpty ? Double(entryTrim) : nil
-        let targetOpt = includeEntryTarget && !targetTrim.isEmpty ? Double(targetTrim) : nil
+        let targetOpt = !targetTrim.isEmpty ? Double(targetTrim) : nil
+        let typedMax = Double(viewModel.declMaxPlannedLossText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let maxLoss = isOptions ? typedMax : planMaxLossINR
+        if isOptions, typedMax == nil { return nil }
 
+        let first = viewModel.optionLegs.first
         let obj = BarIntradayDeclarationPayload.buildJSONObject(
-            symbol: sym,
-            sideBuy: sideBuy,
+            symbol: first?.underlying ?? sym,
+            sideBuy: first?.sideBuy ?? sideBuy,
             quantity: qty,
             stopLoss: sl,
             declarationKind: wireKind,
             moodStress: Double(calm),
             moodImpulse: Double(conf),
             invalidationNote: invTrim,
-            protectiveSlConsent: viewModel.declProtectiveSLConsent,
+            protectiveSlConsent: isOptions ? true : viewModel.declProtectiveSLConsent,
             entryPrice: entryOpt,
             targetPrice: targetOpt,
             scalperSessionId: wireKind == "scalper_session" ? scalperSessionId : nil,
             isSessionLevel: wireKind == "scalper_session",
-            setupTypeLabel: viewModel.declSetupType.isEmpty ? nil : viewModel.declSetupType,
-            invalidationTypeWire: selectedInvalidationKind?.rawValue,
+            setupTypeLabel: isOptions ? nil : (viewModel.declSetupType.isEmpty ? nil : viewModel.declSetupType),
+            invalidationTypeWire: isOptions ? nil : selectedInvalidationKind?.rawValue,
+            optionLeg: isOptions ? nil : optionLeg(symbol: sym, lots: lotsParsed),
+            optionLegs: isOptions ? viewModel.optionLegs : [],
+            horizonDays: viewModel.declHorizonDays,
+            maxPlannedLossINR: maxLoss,
         )
         return try? JSONSerialization.data(withJSONObject: obj, options: [])
     }
 
-    private var maxPlannedLossINR: String? {
-        guard let e = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespaces)),
-              let sl = Double(stopLossText.trimmingCharacters(in: .whitespaces)),
-              let q = Double(quantityText.trimmingCharacters(in: .whitespaces)), q > 0
-        else { return nil }
-        let per = abs(e - sl)
-        guard per > 0 else { return nil }
-        let inr = per * q
-        return String(format: "MAX LOSS (plan): ₹%.0f", inr)
+    private func optionLeg(symbol: String, lots: Int?) -> BarIntradayDeclarationPayload.OptionLeg? {
+        guard viewModel.declareAssetClass == .options, let lots, lots > 0 else { return nil }
+        let right = viewModel.declOptionRight == "PE" ? "PE" : "CE"
+        return BarIntradayDeclarationPayload.OptionLeg(
+            underlying: symbol,
+            expiry: viewModel.declOptionExpiry.trimmingCharacters(in: .whitespacesAndNewlines),
+            strike: viewModel.declOptionStrike.trimmingCharacters(in: .whitespacesAndNewlines),
+            right: right,
+            sideBuy: sideBuy,
+            lots: lots,
+        )
+    }
+
+    private var planUnits: Double? {
+        if viewModel.declareAssetClass == .options {
+            let t = viewModel.declLots.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let lots = Int(t), lots > 0 else { return nil }
+            return Double(lots)
+        }
+        guard let q = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), q > 0 else {
+            return nil
+        }
+        return q
+    }
+
+    private var planRung1: Double? {
+        BarPlanLadder.rung1(
+            units: planUnits,
+            entry: Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines)),
+            stop: Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines)),
+            sideBuy: sideBuy,
+        )
+    }
+
+    private var planMaxLossINR: Double? {
+        BarPlanLadder.maxPlannedLossINR(rung1: planRung1)
     }
 
     private func pretradeSidePill(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -604,11 +676,15 @@ struct BarDeclarationFlowView: View {
                         .font(BarDS.bodyFont(11, weight: .medium))
                         .foregroundColor(BarDS.Text.hint)
                     Spacer()
-                    Text(glanceDetail(kind))
-                        .font(BarDS.monoFont(10, weight: .medium))
-                        .foregroundColor(BarDS.Text.muted)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.trailing)
+                    if let honesty = glanceHonesty(kind) {
+                        HonestyChip(status: honesty)
+                    } else {
+                        Text(glanceDetail(kind))
+                            .font(BarDS.monoFont(10, weight: .medium))
+                            .foregroundColor(BarDS.Text.muted)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
             }
         }
@@ -622,6 +698,17 @@ struct BarDeclarationFlowView: View {
             case .openInterest: return viewModel.wantOptionsOI
             default: return true
             }
+        }
+    }
+
+    private func glanceHonesty(_ kind: BarDeskInstrumentKind) -> HonestyStatus? {
+        switch kind {
+        case .chain:
+            return HonestyStatus.fromWire(viewModel.deskChainStatus)
+        case .openInterest:
+            return HonestyStatus.fromWire(viewModel.deskOiStatus)
+        case .last, .history:
+            return nil
         }
     }
 
@@ -650,6 +737,16 @@ struct BarDeclarationFlowView: View {
             BarInputField(placeholder: "Expiry (YYYY-MM-DD)", text: $viewModel.declOptionExpiry)
             BarInputField(placeholder: "Strike", text: $viewModel.declOptionStrike)
             HStack(spacing: 5) {
+                BarChip(label: "CE", selected: viewModel.declOptionRight == "CE") {
+                    viewModel.declOptionRight = "CE"
+                }
+                BarChip(label: "PE", selected: viewModel.declOptionRight == "PE") {
+                    viewModel.declOptionRight = "PE"
+                }
+            }
+            BarInputField(placeholder: "Lots", text: $viewModel.declLots)
+            horizonRow
+            HStack(spacing: 5) {
                 BarChip(label: "Chain", selected: viewModel.wantOptionsChain) {
                     viewModel.wantOptionsChain.toggle()
                 }
@@ -659,6 +756,29 @@ struct BarDeclarationFlowView: View {
             }
         }
         .padding(.bottom, 4)
+    }
+
+    private var horizonRow: some View {
+        HStack(spacing: 8) {
+            Text("Horizon: \(viewModel.declHorizonDays) days")
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(BarDS.Text.hint)
+            Spacer(minLength: 8)
+            Stepper(
+                "",
+                value: $viewModel.declHorizonDays,
+                in: BarPlanHorizon.dayRange,
+            )
+            .labelsHidden()
+            .fixedSize()
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func selectArchetype(_ archetype: TraderArchetype) {
+        viewModel.setUserDeclarationArchetype(archetype)
+        viewModel.declHorizonDays = BarPlanHorizon.defaultFor(declarationKindWire(for: archetype))
+        viewModel.declHorizonMode = BarPlanHorizon.mode(forDays: viewModel.declHorizonDays, dte: nil)
     }
 
     private var symbolAutocompleteField: some View {

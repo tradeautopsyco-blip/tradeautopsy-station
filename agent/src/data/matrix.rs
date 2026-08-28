@@ -101,6 +101,7 @@ pub fn known_physics(family: Family, capability_id: &str) -> Option<&'static [Ph
         (Family::Reference, "instrument_search") => Some(&[Physics::BoundedSnapshot]),
         (Family::Reference, "expiry") => Some(&[Physics::BoundedSnapshot]),
         (Family::Reference, "option_symbol") => Some(&[Physics::BoundedSnapshot]),
+        (Family::Reference, "derivative_contracts") => Some(&[Physics::BoundedSnapshot]),
         (Family::Reference, "market_timings") => Some(&[Physics::BoundedSnapshot]),
         (Family::Derived, "ohlcv") => Some(&[Physics::HistoricalSeries]),
         (Family::Derived, "greeks") => Some(&[Physics::BoundedSnapshot]),
@@ -251,5 +252,20 @@ mod tests {
             "open_interest",
             Physics::OrderedState
         ));
+    }
+
+    #[test]
+    fn derivative_contracts_is_reference_bounded_snapshot() {
+        assert!(known_id_physics_ok(
+            Family::Reference,
+            "derivative_contracts",
+            Physics::BoundedSnapshot
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Reference,
+            "derivative_contracts",
+            Physics::OrderedState
+        ));
+        assert!(known_physics(Family::Market, "derivative_contracts").is_none());
     }
 }

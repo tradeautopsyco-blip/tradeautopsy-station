@@ -358,6 +358,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var declOptionExpiry: String = ""
     @Published var wantOptionsChain: Bool = true
     @Published var wantOptionsOI: Bool = true
+    @Published var declOptionRight: String = "CE"
+    @Published var declLots: String = ""
+    @Published var declHorizonDays: Int = 1
+    @Published var declHorizonMode: BarPlanHorizon.Mode = .today
+    @Published var declMaxPlannedLossText: String = ""
+    @Published var optionLegs: [BarIntradayDeclarationPayload.OptionLeg] = []
     @Published var deskLastStatus: String = "unavailable"
     @Published var deskHistoryStatus: String = "unavailable"
     @Published var deskHistoryIneligible: [String] = []

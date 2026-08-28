@@ -104,6 +104,8 @@ pub struct AppState {
     pub kotak_scrip_master: Arc<Mutex<KotakScripMaster>>,
     /// Instruments that already have a public `@trade` stream task.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,
+    /// Instruments that already have a public `@depth` stream task.
+    pub depth_streams: Arc<Mutex<HashSet<String>>>,
     /// Instrument+interval keys already kicked for public klines → HistoryBook.
     pub klines_inflight: Arc<Mutex<HashSet<String>>>,
     /// Start-time env + connection_id for Kotak PrivateRead quotes (handles only).

@@ -26,6 +26,11 @@ struct BarIntradayDeclarationSubmitInput: Equatable, Sendable {
     var invalidationCondition: String
     var declarationKindWire: String
     var scalperSessionId: String
+    /// Options lots — when set, satisfies the quantity confirm gate (lots is the unit until lot size exists).
+    var lotsText: String = ""
+    var isOptions: Bool = false
+    var optionLegCount: Int = 0
+    var maxPlannedLossText: String = ""
 }
 
 /// Pure validation helpers for the intraday Bar declaration flow (#116). Observable UI wires selections into these functions.
@@ -48,7 +53,7 @@ enum BarIntradayDeclareValidator {
         if input.blocksDeclarationSubmit {
             return (false, "Circuit active — finish or clear the web Bar intervention before declaring.")
         }
-        if !input.protectiveSlConsent {
+        if !input.isOptions, !input.protectiveSlConsent {
             return (false, "Turn on auto-place stop loss in Step 4.")
         }
         let calmOpt: Int? = (1 ... 5).contains(input.calm) ? input.calm : nil
@@ -66,8 +71,24 @@ enum BarIntradayDeclareValidator {
             }
             return (false, "Symbol must be a broker ticker (e.g. RELIANCE), not a company name.")
         }
-        guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
-            return (false, "Enter quantity in Step 2.")
+        if input.isOptions {
+            if input.optionLegCount < 1 {
+                return (false, "Add a leg.")
+            }
+            guard let max = Double(input.maxPlannedLossText.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  max > 0
+            else {
+                return (false, "Enter max planned loss.")
+            }
+            guard !input.invalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return (false, "Write what would prove this trade wrong.")
+            }
+            return (true, nil)
+        }
+        if !lotsSatisfyQuantity(input) {
+            guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
+                return (false, input.isOptions ? "Enter lots in Step 2." : "Enter quantity in Step 2.")
+            }
         }
         guard !input.setupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return (false, "Pick a setup type in Step 3.")
@@ -84,6 +105,15 @@ enum BarIntradayDeclareValidator {
             return (false, "Enter scalper session id.")
         }
         return (true, nil)
+    }
+
+    /// Options lots populate quantity until lot size exists. Spot/equity ignore lots.
+    static func lotsSatisfyQuantity(_ input: BarIntradayDeclarationSubmitInput) -> Bool {
+        guard input.isOptions else { return false }
+        guard let lots = Int(input.lotsText.trimmingCharacters(in: .whitespacesAndNewlines)), lots > 0 else {
+            return false
+        }
+        return true
     }
 
     /// Reward ÷ risk using absolute plan distances. Returns `nil` if risk or reward is non-positive (invalid geometry).

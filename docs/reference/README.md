@@ -40,6 +40,7 @@ How brokers actually compute P&L, fees, margin, and settlement.
   broker help-center pages.
 - What belongs here: fill price mechanics, fee calculation formulas, margin call rules,
   settlement timelines, open-order semantics, rate limits.
+- [`india/kotak-neo/MARGIN-CALCULATOR.md`](./india/kotak-neo/MARGIN-CALCULATOR.md) — Kotak Neo `account/margin_estimate` (calculator path unspecified; dark envelope).
 
 ### `market-structure/`
 
@@ -49,6 +50,8 @@ Order types, fill mechanics, settlement cycles, and market hours as defined by e
   SEC investor education, exchange trading hour notices.
 - What belongs here: order type definitions, partial fill semantics, T+1/T+2 settlement,
   trading session boundaries, circuit-breaker rules.
+- [`india/nfo/OPTIONS-PRICING.md`](./india/nfo/OPTIONS-PRICING.md) — NFO options pricing / greeks (named model unspecified; no fixture ΔΓΘ).
+- India F&O instrument master (Kotak Neo, **v1 refused**): [`india/kotak-neo/NFO-SCRIP-MASTER.md`](./india/kotak-neo/NFO-SCRIP-MASTER.md).
 
 ### `accounting-standards/`
 

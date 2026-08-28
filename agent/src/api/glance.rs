@@ -1,4 +1,4 @@
-//! Options chain / OI holes. Unavailable until S3 ordered-state.
+//! Options chain / OI holes. Wire `status` is unavailable until those extracts exist.
 
 use crate::api::AppState;
 use crate::data::{extract_chain, extract_open_interest, GlanceEnvelope};

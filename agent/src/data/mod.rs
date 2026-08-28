@@ -1,24 +1,31 @@
 //! Canonical Station Data runtime (this agent). Console `crates/agent` is a CI mirror only.
 
 mod apply;
+mod binance_depth;
 mod binance_klines;
 mod binance_public;
 mod connection;
+mod contracts;
 mod depthbook;
 mod descriptor;
 mod extract;
 mod glance;
+mod greeks;
 mod history;
 mod history_store;
 mod historybook;
+mod honesty;
 mod host_policy;
 mod identity;
+mod inherit;
 mod instrument_master_status;
 mod klines_pager;
 mod kotak_depth;
 mod kotak_quotes;
+mod margin_estimate;
 mod matrix;
 mod operations;
+mod provenance;
 mod registry;
 mod resolve;
 mod rights;
@@ -28,6 +35,11 @@ mod tick;
 mod tickbook;
 
 pub use apply::{apply_quote, ApplyError};
+#[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
+pub use binance_depth::{
+    depth_snapshot_from_binance_json, ensure_binance_com_depth_stream, validate_depth_delta,
+    DepthDelta, DepthDeltaDecision, DepthSyncPhase, DEPTH_COM_HOST, DEPTH_PATH,
+};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_klines::{
     candles_from_klines_json, klines_time_query, klines_url, HistoryCandle, KlineRequestRefuse,
@@ -41,6 +53,7 @@ pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
 };
 pub use connection::BrokerConnectionRuntime;
+pub use contracts::extract_contracts;
 pub use depthbook::DepthBook;
 pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
@@ -48,17 +61,20 @@ pub use descriptor::{
 };
 pub use extract::{extract_quote, extract_quote_for, QuoteEnvelope, QuoteStatus};
 pub use glance::{extract_chain, extract_open_interest, GlanceEnvelope};
+pub use greeks::extract_greeks;
 pub use history::{
     apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
     HistoryEnvelope, HistoryStatus,
 };
 pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;
+pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
     authorize_host_call, authorize_inferred_call, infer_capability, is_kotak_cash_scrip_csv_path,
     AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
+pub use inherit::{capital_may_light, inherit};
 pub use instrument_master_status::{
     binance_exchange_info_cache_path, json_array_first_object_keys, json_field_object_keys,
     json_first_nested_object_keys, json_object_keys, kotak_csv_cache_path, truncate_body,
@@ -78,6 +94,8 @@ pub use kotak_quotes::{
     quote_tick_from_kotak_json, quote_ticks_from_kotak_json, quotes_neosymbol_path, QUOTE_TYPE_ALL,
     QUOTE_TYPE_DEPTH,
 };
+pub use margin_estimate::extract_margin_estimate;
+pub use provenance::ProvenanceLine;
 pub use registry::Registry;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use source_manifest::{

@@ -177,7 +177,7 @@ CSV GET remains unsigned `AuthMode::Public` on `lapi.kotaksecurities.com` only (
 
 > **OUR INTERPRETATION**
 >
-> - Station v1 / s1k instrument master: **cash `nse_cm` and `bse_cm` only**. Allow SDK sample `{nse,bse}_cm.csv` and live `{nse,bse}_cm-v1.csv`. Refuse F&O URLs (`nse_fo`, `bse_fo`, `cde_fo`, `mcx_fo`, `nse_fo-v1.csv`, …) even if the file-paths payload lists them (B6).
+> - Station v1 / s1k instrument master: **cash `nse_cm` and `bse_cm` only**. Allow SDK sample `{nse,bse}_cm.csv` and live `{nse,bse}_cm-v1.csv`. Refuse F&O URLs (`nse_fo`, `bse_fo`, `cde_fo`, `mcx_fo`, `nse_fo-v1.csv`, …) even if the file-paths payload lists them (B6). F&O CSV schema and identity mapping (`reference/expiry`, `reference/option_symbol`, lot size as a contract field): [`NFO-SCRIP-MASTER.md`](./NFO-SCRIP-MASTER.md) — **v1 refuse unchanged**.
 > - File-paths GET auth mode is **PrivateRead session attach**, not `AuthMode::Public`. Wrapper requires 2FA; HTTP uses the application consumer key. This is not Binance unsigned public and not HMAC.
 > - Cash CSV GET on `lapi.kotaksecurities.com` is unsigned **Public** (OpenAlgo public CDN GET). Do not attach `Sid` / `Auth`. Do not add hosts.
 > - Live cash CSV (observed 2026-08-27): `pSymbol` is the instrument token, `pSymbolName` is the ticker, `pDesc` is the name. Fixture `pToken`+text-`pSymbol` remains valid for tests.

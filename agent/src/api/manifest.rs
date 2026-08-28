@@ -5,7 +5,7 @@ use crate::api::AppState;
 use crate::data::{
     depth_obtain_data, describe, extract_depth, extract_licensed_history, extract_quote_for,
     history_obtain_data, obtain, DepthStatus, ObtainEnvelope, ObtainStatus, QuoteStatus,
-    SourceManifest, DEFAULT_HISTORY_INTERVAL, KOTAK_NEO_ADAPTER_ID,
+    SourceManifest, DEFAULT_HISTORY_INTERVAL,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -142,17 +142,21 @@ fn enrich_obtain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelo
                 envelope.provenance_adapter_id = Some(quote.provenance.adapter_id);
             }
         }
-        "depth" if envelope.adapter_id == "kotak_neo" => {
+        "depth" if envelope.adapter_id == "kotak_neo" || envelope.adapter_id == "binance_com" => {
+            let adapter = envelope.adapter_id.clone();
             let book = state.depthbook.lock().expect("depthbook mutex poisoned");
             let mut instrument = state
                 .resolve_candidates()
                 .first()
                 .cloned()
                 .unwrap_or_else(|| state.s1_desk_symbol.clone().unwrap_or_default());
+            if adapter == "binance_com" {
+                instrument = crate::data::normalize_quote_instrument(&instrument);
+            }
             if instrument.is_empty() || book.get(&instrument).is_none() {
                 if let Some((id, _)) = book
                     .iter()
-                    .find(|(_, row)| row.adapter_id == KOTAK_NEO_ADAPTER_ID && row.completeness)
+                    .find(|(_, row)| row.adapter_id == adapter && row.completeness)
                 {
                     instrument = id.clone();
                 }
@@ -160,7 +164,7 @@ fn enrich_obtain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelo
             if instrument.is_empty() {
                 return envelope;
             }
-            let depth = extract_depth(&book, &instrument, Some(KOTAK_NEO_ADAPTER_ID));
+            let depth = extract_depth(&book, &instrument, Some(adapter.as_str()));
             if depth.status == DepthStatus::Success {
                 if let Some(data) = depth_obtain_data(&depth) {
                     envelope.status = ObtainStatus::Success;
@@ -308,6 +312,7 @@ fn tickbook_quote_obtain_data(quote: &crate::data::QuoteEnvelope) -> Option<serd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::KOTAK_NEO_ADAPTER_ID;
     use crate::kotak_scrip_master::KotakScripMaster;
 
     #[test]

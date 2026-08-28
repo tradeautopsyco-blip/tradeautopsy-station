@@ -131,7 +131,14 @@ async fn s0_manifest_and_obtain_are_host_owned() {
     assert_eq!(list[0]["manifest_id"], "binance_com.s1.v1");
     assert_eq!(
         list[0]["implemented"],
-        serde_json::json!(["quotes", "instruments", "tradebook", "funds", "history"])
+        serde_json::json!([
+            "quotes",
+            "instruments",
+            "tradebook",
+            "funds",
+            "history",
+            "depth"
+        ])
     );
     assert_eq!(list[1]["manifest_id"], "kotak_neo.s1k.v1");
     assert_eq!(
