@@ -70,6 +70,12 @@ pub struct BrokerRuntimeState {
     pub data_classes: BrokerDataClassCompleteness,
     #[serde(skip)]
     pub last_sync_sse_class: String,
+    /// Last successful balances poll. Obtain(funds) only — never TickBook.
+    #[serde(skip)]
+    pub last_balances: Option<BrokerBalancesSnapshot>,
+    /// Count from the last successful fills poll. Obtain(tradebook) only.
+    #[serde(skip)]
+    pub last_fills_count: Option<usize>,
 }
 
 impl Default for BrokerRuntimeState {
@@ -85,6 +91,8 @@ impl Default for BrokerRuntimeState {
             active_broker_slug: None,
             data_classes: BrokerDataClassCompleteness::default(),
             last_sync_sse_class: String::new(),
+            last_balances: None,
+            last_fills_count: None,
         }
     }
 }
@@ -370,27 +378,49 @@ pub fn spawn_broker_poll_loop(
                 st.last_poll_at_ms = Some(ok_ms);
 
                 if fills_result.is_ok() {
-                    mark_class_success(&mut st.data_classes, BrokerDataClass::FillsTradeHistory, ok_ms);
+                    mark_class_success(
+                        &mut st.data_classes,
+                        BrokerDataClass::FillsTradeHistory,
+                        ok_ms,
+                    );
                     class_failures.insert(BrokerDataClass::FillsTradeHistory, 0);
+                    st.last_fills_count = fills_result.as_ref().ok().map(|fills| fills.len());
                 } else if let Err(e) = &fills_result {
                     any_class_error = true;
                     last_err_msg = Some(broker_err_as_str(e));
                     let count = class_failures
                         .entry(BrokerDataClass::FillsTradeHistory)
                         .or_insert(0);
-                    mark_class_failure(&mut st.data_classes, BrokerDataClass::FillsTradeHistory, e, &cfg, count);
+                    mark_class_failure(
+                        &mut st.data_classes,
+                        BrokerDataClass::FillsTradeHistory,
+                        e,
+                        &cfg,
+                        count,
+                    );
                 }
 
                 if balances_result.is_ok() {
-                    mark_class_success(&mut st.data_classes, BrokerDataClass::BalancesHoldings, ok_ms);
+                    mark_class_success(
+                        &mut st.data_classes,
+                        BrokerDataClass::BalancesHoldings,
+                        ok_ms,
+                    );
                     class_failures.insert(BrokerDataClass::BalancesHoldings, 0);
+                    st.last_balances = balances_result.as_ref().ok().cloned();
                 } else if let Err(e) = &balances_result {
                     any_class_error = true;
                     last_err_msg = Some(broker_err_as_str(e));
                     let count = class_failures
                         .entry(BrokerDataClass::BalancesHoldings)
                         .or_insert(0);
-                    mark_class_failure(&mut st.data_classes, BrokerDataClass::BalancesHoldings, e, &cfg, count);
+                    mark_class_failure(
+                        &mut st.data_classes,
+                        BrokerDataClass::BalancesHoldings,
+                        e,
+                        &cfg,
+                        count,
+                    );
                 }
 
                 if open_orders_result.is_ok() {
@@ -402,7 +432,13 @@ pub fn spawn_broker_poll_loop(
                     let count = class_failures
                         .entry(BrokerDataClass::OpenOrders)
                         .or_insert(0);
-                    mark_class_failure(&mut st.data_classes, BrokerDataClass::OpenOrders, e, &cfg, count);
+                    mark_class_failure(
+                        &mut st.data_classes,
+                        BrokerDataClass::OpenOrders,
+                        e,
+                        &cfg,
+                        count,
+                    );
                 }
 
                 if any_class_error {

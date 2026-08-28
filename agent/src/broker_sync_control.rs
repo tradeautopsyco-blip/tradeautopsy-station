@@ -168,6 +168,10 @@ impl BrokerSyncController {
             st.circuit_open = false;
             st.consecutive_failures = 0;
             st.last_error = None;
+            st.last_success_at_ms = None;
+            st.last_poll_at_ms = None;
+            st.last_fills_count = None;
+            st.last_balances = None;
             st.last_sync_sse_class.clear();
             st.data_classes = crate::broker_data_class::BrokerDataClassCompleteness::default();
             st.active_broker_slug = broker_slug.map(|s| s.to_ascii_lowercase());
@@ -191,7 +195,10 @@ impl BrokerSyncController {
             self.upstream.clone(),
             self.bar_fill_ingress.clone(),
             Some(cancel.clone()),
-            self.today_service.lock().expect("today service slot").clone(),
+            self.today_service
+                .lock()
+                .expect("today service slot")
+                .clone(),
         );
 
         *self.active.lock().expect("active sync") = Some(ActiveSync {
@@ -207,20 +214,14 @@ impl BrokerSyncController {
         let blob = self.resolve_credentials(request)?;
         if let Some(log) = &self.test_start_key_log {
             if let Some(key) = blob.api_key_for_tests() {
-                log.lock()
-                    .expect("start key log")
-                    .push(key.to_string());
+                log.lock().expect("start key log").push(key.to_string());
             }
         }
 
         let adapter = if let Some(fixed) = &self.test_runtime_adapter {
             fixed.clone()
         } else {
-            build_runtime_adapter(
-                &request.broker_slug,
-                &request.broker_connection_id,
-                &blob,
-            )?
+            build_runtime_adapter(&request.broker_slug, &request.broker_connection_id, &blob)?
         };
         self.start_with_adapter_for_slug(adapter, Some(&request.broker_slug))
     }
@@ -259,9 +260,12 @@ impl BrokerSyncController {
             st.broker_connected = false;
             st.active_broker_slug = None;
             st.last_sync_sse_class.clear();
-            self.bus.publish(crate::event_bus::AgentEvent::BrokerSyncState {
-                payload: serde_json::to_value(&*st).unwrap_or_else(|_| json!({})),
-            });
+            st.last_fills_count = None;
+            st.last_balances = None;
+            self.bus
+                .publish(crate::event_bus::AgentEvent::BrokerSyncState {
+                    payload: serde_json::to_value(&*st).unwrap_or_else(|_| json!({})),
+                });
         }
         Ok(())
     }
@@ -494,19 +498,12 @@ mod b5_enforcer_sot_tests {
 
     #[test]
     fn unsupported_slug_still_fails_closed() {
-        let result = build_runtime_adapter(
-            "zerodha_kite",
-            "conn-b5-z",
-            &CredentialBlob::hmac("k", "s"),
-        );
+        let result =
+            build_runtime_adapter("zerodha_kite", "conn-b5-z", &CredentialBlob::hmac("k", "s"));
         let err = match result {
             Err(e) => e,
             Ok(_) => panic!("unsigned slug must fail closed"),
         };
-        assert!(
-            err.to_string().contains("unsupported broker"),
-            "{}",
-            err
-        );
+        assert!(err.to_string().contains("unsupported broker"), "{}", err);
     }
 }

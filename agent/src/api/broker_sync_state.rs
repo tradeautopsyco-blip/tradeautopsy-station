@@ -19,6 +19,15 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
     );
     let now_ms = Utc::now().timestamp_millis();
     let desk = crate::ubi::desk_profile_for_slug(snap.active_broker_slug.as_deref());
+    let quote = state.quote_capability_status();
+    let funds = crate::api::desk::class_freshness_wire(
+        snap.data_classes.balances_holdings.current,
+        snap.data_classes.balances_holdings.last_success_at_ms,
+    );
+    let fills = crate::api::desk::class_freshness_wire(
+        snap.data_classes.fills_trade_history.current,
+        snap.data_classes.fills_trade_history.last_success_at_ms,
+    );
 
     Json(json!({
         "syncState": sync_state,
@@ -37,5 +46,11 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         "requiresManualRetry": snap.data_classes.any_requires_manual_retry(),
         "rateLimitRetryAtMs": snap.data_classes.earliest_rate_limit_retry_ms(now_ms),
         "failingDataClasses": snap.data_classes.failing_class_labels(),
+        "capabilities": {
+            "quote": quote,
+            "funds": funds,
+            "fills": fills,
+            "instruments": state.instrument_master_wire(),
+        },
     }))
 }
