@@ -129,6 +129,7 @@ async fn s0_manifest_and_obtain_are_host_owned() {
     let list = manifests["manifests"].as_array().unwrap();
     assert_eq!(list.len(), 2);
     assert_eq!(list[0]["manifest_id"], "binance_com.s1.v1");
+    assert_eq!(list[0]["book_id"], "binance-com-spot");
     assert_eq!(
         list[0]["implemented"],
         serde_json::json!([
@@ -141,6 +142,7 @@ async fn s0_manifest_and_obtain_are_host_owned() {
         ])
     );
     assert_eq!(list[1]["manifest_id"], "kotak_neo.s1k.v1");
+    assert_eq!(list[1]["book_id"], "kotak-nse-bse-cash");
     assert_eq!(
         list[1]["implemented"],
         serde_json::json!(["quotes", "instruments", "tradebook", "depth"])
@@ -170,7 +172,64 @@ async fn s0_manifest_and_obtain_are_host_owned() {
     assert_eq!(quotes["status"], "unavailable");
     assert!(quotes["data"].is_null());
     assert_eq!(quotes["adapter_id"], "binance_com");
+    assert_eq!(quotes["book_id"], "binance-com-spot");
     assert_eq!(quotes["operation"], "quotes");
+
+    let quotes_by_book: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=binance-com-spot&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quotes_by_book["status"], quotes["status"]);
+    assert_eq!(quotes_by_book["adapter_id"], "binance_com");
+    assert_eq!(quotes_by_book["book_id"], "binance-com-spot");
+
+    let quotes_both: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-spot&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quotes_both["status"], quotes["status"]);
+    assert_eq!(quotes_both["adapter_id"], "binance_com");
+    assert_eq!(quotes_both["book_id"], "binance-com-spot");
+
+    let usdm: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=binance-com-usdm&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(usdm["status"], "unsupported");
+
+    let disagree: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=kotak-nse-bse-cash&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(disagree["status"], "unsupported");
 
     let funds: serde_json::Value = client
         .get(format!(

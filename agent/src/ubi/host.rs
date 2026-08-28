@@ -4,7 +4,6 @@
 //! Phase 1 fixture mode + Phase 3 live mode: the host attaches auth from the vault
 //! credential blob inside `broker_http_call`, so no secret ever enters component memory.
 
-use crate::ubi::allowlist::host_allowed;
 use crate::ubi::http::{
     classify_response, effective_host, prepare_request, redact_response_headers,
     BrokerHttpTransport,
@@ -161,43 +160,27 @@ impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
 
         // Kotak's real host comes from the credential blob, not the component (R6 §3.4).
         let target_host = effective_host(&request.host, &self.config.credentials);
-        if !host_allowed(&target_host) {
-            return Ok(BrokerHttpResponse {
-                status: 0,
-                headers: vec![],
-                body: String::new(),
-                error_class: Some("host_blocked".to_string()),
-            });
-        }
-
-        let (capability_id, auth_mode) =
-            match crate::data::infer_capability(&request.method, &request.path) {
-                Ok(pair) => pair,
-                Err(refuse) => {
-                    return Ok(BrokerHttpResponse {
-                        status: 0,
-                        headers: vec![],
-                        body: String::new(),
-                        error_class: Some(refuse.as_str().to_string()),
-                    });
-                }
-            };
-        let attach_private = auth_mode == crate::data::AuthMode::PrivateRead;
-        if let Err(refuse) = crate::data::authorize_host_call(
+        let book_id = crate::ubi::catalog::descriptor_for_slug(&self.config.broker_slug)
+            .map(|d| d.book_id)
+            .unwrap_or_default();
+        let (_capability_id, auth_mode) = match crate::data::authorize_book_call(
+            &book_id,
             &target_host,
             &request.method,
             &request.path,
-            capability_id,
-            auth_mode,
-            attach_private,
+            false,
         ) {
-            return Ok(BrokerHttpResponse {
-                status: 0,
-                headers: vec![],
-                body: String::new(),
-                error_class: Some(refuse.as_str().to_string()),
-            });
-        }
+            Ok(pair) => pair,
+            Err(refuse) => {
+                return Ok(BrokerHttpResponse {
+                    status: 0,
+                    headers: vec![],
+                    body: String::new(),
+                    error_class: Some(refuse.as_str().to_string()),
+                });
+            }
+        };
+        let attach_private = auth_mode == crate::data::AuthMode::PrivateRead;
 
         self.calls.push(request.clone());
 

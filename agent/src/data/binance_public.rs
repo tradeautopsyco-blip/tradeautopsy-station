@@ -104,7 +104,7 @@ pub fn spawn_binance_com_trade_loop(
         let instrument = normalize_quote_instrument(&symbol);
         {
             let mut guard = book.lock().expect("tickbook mutex poisoned");
-            guard.subscribe(&instrument);
+            guard.subscribe(BINANCE_COM_ADAPTER_ID, &instrument);
         }
         let url = binance_public_trade_stream_url(&instrument);
         tracing::info!(instrument = %instrument, url = %url, "s1 desk: binance_com trade stream");
@@ -223,7 +223,7 @@ mod tests {
     fn stream_applies_and_rest_closes_when_subscribed() {
         let registry = desk_registry();
         let mut book = TickBook::new();
-        book.subscribe("btcusdt");
+        book.subscribe(BINANCE_COM_ADAPTER_ID, "btcusdt");
 
         let trade = quote_tick_from_binance_json(
             r#"{"e":"trade","E":1,"s":"BTCUSDT","p":"100.00","T":1672515782136}"#,
@@ -232,7 +232,8 @@ mod tests {
         .unwrap();
         apply_quote(&registry, &mut book, trade).unwrap();
         assert_eq!(
-            book.get("btcusdt").map(|row| row.last.as_str()),
+            book.get(BINANCE_COM_ADAPTER_ID, "btcusdt")
+                .map(|row| row.last.as_str()),
             Some("100.00")
         );
 
@@ -247,7 +248,8 @@ mod tests {
             }
         );
         assert_eq!(
-            book.get("btcusdt").map(|row| row.last.as_str()),
+            book.get(BINANCE_COM_ADAPTER_ID, "btcusdt")
+                .map(|row| row.last.as_str()),
             Some("100.00")
         );
 

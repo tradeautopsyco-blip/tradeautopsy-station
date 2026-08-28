@@ -63,7 +63,9 @@ pub fn apply_quote(
     if !registered_quote_adapter(registry, &tick.adapter_id) {
         return Err(ApplyError::UnregisteredBinding);
     }
-    if tick.transport == Transport::Rest && book.is_subscribed(&tick.instrument_id) {
+    if tick.transport == Transport::Rest
+        && book.is_subscribed(&tick.adapter_id, &tick.instrument_id)
+    {
         return Err(ApplyError::RestClosed {
             instrument_id: tick.instrument_id,
         });
@@ -115,7 +117,7 @@ mod tests {
     fn rest_closed_when_subscribed() {
         let registry = lab_registry();
         let mut book = TickBook::new();
-        book.subscribe(INSTRUMENT);
+        book.subscribe("fixture_equity_quote", INSTRUMENT);
 
         let err = apply_quote(
             &registry,
@@ -135,7 +137,7 @@ mod tests {
                 instrument_id: INSTRUMENT.to_string()
             }
         );
-        assert!(book.get(INSTRUMENT).is_none());
+        assert!(book.get("fixture_equity_quote", INSTRUMENT).is_none());
 
         apply_quote(
             &registry,
@@ -148,8 +150,11 @@ mod tests {
             ),
         )
         .unwrap();
-        book.subscribe(INSTRUMENT);
-        let before = book.get(INSTRUMENT).cloned().unwrap();
+        book.subscribe("fixture_equity_quote", INSTRUMENT);
+        let before = book
+            .get("fixture_equity_quote", INSTRUMENT)
+            .cloned()
+            .unwrap();
         let err = apply_quote(
             &registry,
             &mut book,
@@ -162,14 +167,14 @@ mod tests {
         )
         .expect_err("REST still closed with a stored row");
         assert!(matches!(err, ApplyError::RestClosed { .. }));
-        assert_eq!(book.get(INSTRUMENT), Some(&before));
+        assert_eq!(book.get("fixture_equity_quote", INSTRUMENT), Some(&before));
     }
 
     #[test]
     fn stream_applies_when_subscribed() {
         let registry = lab_registry();
         let mut book = TickBook::new();
-        book.subscribe(INSTRUMENT);
+        book.subscribe("fixture_equity_quote", INSTRUMENT);
 
         let outcome = apply_quote(
             &registry,
@@ -184,7 +189,8 @@ mod tests {
         .unwrap();
         assert_eq!(outcome, ApplyOutcome::Applied);
         assert_eq!(
-            book.get(INSTRUMENT).map(|row| row.last.as_str()),
+            book.get("fixture_equity_quote", INSTRUMENT)
+                .map(|row| row.last.as_str()),
             Some(LAST)
         );
     }
@@ -215,7 +221,8 @@ mod tests {
             ApplyOutcome::Applied
         );
         assert_eq!(
-            book.get(INSTRUMENT).map(|row| row.last.as_str()),
+            book.get("fixture_equity_quote", INSTRUMENT)
+                .map(|row| row.last.as_str()),
             Some(LAST)
         );
 
@@ -227,10 +234,15 @@ mod tests {
         .unwrap();
         assert_eq!(outcome, ApplyOutcome::IgnoredOlder);
         assert_eq!(
-            book.get(INSTRUMENT).map(|row| row.last.as_str()),
+            book.get("fixture_equity_quote", INSTRUMENT)
+                .map(|row| row.last.as_str()),
             Some(LAST)
         );
-        assert_eq!(book.get(INSTRUMENT).map(|row| row.as_of), Some(newer_at));
+        assert_eq!(
+            book.get("fixture_equity_quote", INSTRUMENT)
+                .map(|row| row.as_of),
+            Some(newer_at)
+        );
     }
 
     #[test]
@@ -244,7 +256,7 @@ mod tests {
         )
         .expect_err("empty registry must refuse");
         assert_eq!(err, ApplyError::UnregisteredBinding);
-        assert!(book.get(INSTRUMENT).is_none());
+        assert!(book.get("fixture_equity_quote", INSTRUMENT).is_none());
 
         let account_only =
             Registry::load(&[crate::data::descriptor::fixture_account_descriptor()]).unwrap();
@@ -255,5 +267,39 @@ mod tests {
         )
         .expect_err("account binding is not quote");
         assert_eq!(err, ApplyError::UnregisteredBinding);
+    }
+
+    #[test]
+    fn rest_closed_is_per_adapter_and_instrument() {
+        use crate::data::descriptor::binance_com_quote_descriptor;
+        let registry = Registry::load(&[binance_com_quote_descriptor()]).expect("spot quote");
+        let mut book = TickBook::new();
+        book.subscribe("other", "btcusdt");
+        let rest = QuoteTick {
+            instrument_id: "btcusdt".to_string(),
+            last: "1".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "binance_com".to_string(),
+            session_ohlc: None,
+        };
+        apply_quote(&registry, &mut book, rest).unwrap();
+        assert_eq!(book.get("binance_com", "btcusdt").unwrap().last, "1");
+        book.subscribe("binance_com", "btcusdt");
+        let rest2 = QuoteTick {
+            instrument_id: "btcusdt".to_string(),
+            last: "2".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "binance_com".to_string(),
+            session_ohlc: None,
+        };
+        let err = apply_quote(&registry, &mut book, rest2).unwrap_err();
+        assert!(matches!(err, ApplyError::RestClosed { .. }));
+        assert_eq!(book.get("binance_com", "btcusdt").unwrap().last, "1");
     }
 }

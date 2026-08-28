@@ -186,10 +186,7 @@ pub fn extract_depth(
 ) -> DepthEnvelope {
     let identity = order_book_bounded_snapshot();
     let wanted = adapter_id.unwrap_or(KOTAK_NEO_ADAPTER_ID);
-    let Some(row) = book
-        .get(instrument_id)
-        .filter(|row| row.adapter_id == wanted)
-    else {
+    let Some(row) = book.get(wanted, instrument_id) else {
         return DepthEnvelope {
             identity,
             instrument_id: instrument_id.to_string(),

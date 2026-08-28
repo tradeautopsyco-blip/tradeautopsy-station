@@ -87,10 +87,7 @@ pub fn ensure_kotak_rest_quote(
     }
     {
         let guard = book.lock().expect("tickbook mutex poisoned");
-        if guard
-            .get(&instrument)
-            .is_some_and(|row| row.adapter_id == KOTAK_NEO)
-        {
+        if guard.get(KOTAK_NEO, &instrument).is_some() {
             clear_quote_fetch_class(&quote_fetch_error, &instrument);
             return;
         }
@@ -128,10 +125,7 @@ pub async fn await_kotak_rest_quote(
     }
     {
         let guard = book.lock().expect("tickbook mutex poisoned");
-        if guard
-            .get(&instrument)
-            .is_some_and(|row| row.adapter_id == KOTAK_NEO)
-        {
+        if guard.get(KOTAK_NEO, &instrument).is_some() {
             clear_quote_fetch_class(&quote_fetch_error, &instrument);
             return;
         }
@@ -206,10 +200,7 @@ async fn wait_for_inflight_quote(
         tokio::time::sleep(Duration::from_millis(50)).await;
         {
             let guard = book.lock().expect("tickbook mutex poisoned");
-            if guard
-                .get(instrument)
-                .is_some_and(|row| row.adapter_id == KOTAK_NEO)
-            {
+            if guard.get(KOTAK_NEO, instrument).is_some() {
                 return;
             }
         }
@@ -278,8 +269,8 @@ pub fn ensure_kotak_rest_depth(
     {
         let guard = book.lock().expect("depthbook mutex poisoned");
         if guard
-            .get(&instrument)
-            .is_some_and(|row| row.adapter_id == KOTAK_NEO && row.completeness)
+            .get(KOTAK_NEO, &instrument)
+            .is_some_and(|row| row.completeness)
         {
             return;
         }
@@ -481,7 +472,7 @@ mod tests {
         let json = include_str!("../fixtures/kotak/quotes_neosymbol.json");
         let n = apply_kotak_quote_body(&registry, &mut book, json, Utc::now());
         assert_eq!(n, 1);
-        let row = book.get("nse_cm|2885").unwrap();
+        let row = book.get(KOTAK_NEO, "nse_cm|2885").unwrap();
         assert!(row.last.parse::<f64>().unwrap() > 0.0);
         assert_eq!(row.adapter_id, KOTAK_NEO);
         let tick = quote_tick_from_kotak_json(json, Utc::now()).unwrap();
@@ -498,9 +489,9 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut ticks, json, Utc::now()),
             0
         );
-        assert!(ticks.get("nse_cm|2885").is_none());
+        assert!(ticks.get(KOTAK_NEO, "nse_cm|2885").is_none());
         assert_eq!(apply_kotak_depth_body(&mut depth, json, Utc::now()), 1);
-        let row = depth.get("nse_cm|2885").unwrap();
+        let row = depth.get(KOTAK_NEO, "nse_cm|2885").unwrap();
         assert!(row.completeness);
         assert!(!row.bids.is_empty());
         let snap = depth_snapshot_from_kotak_json(json, Utc::now()).unwrap();
@@ -526,7 +517,7 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
             0
         );
-        assert!(book.get("nse_cm|2885").is_none());
+        assert!(book.get(KOTAK_NEO, "nse_cm|2885").is_none());
         assert_eq!(
             class_for_unusable_quotes_body(json),
             QuoteFetchErrorClass::Session
@@ -552,7 +543,7 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
             0
         );
-        assert!(book.get("nse_cm|3721").is_none());
+        assert!(book.get(KOTAK_NEO, "nse_cm|3721").is_none());
         assert_eq!(
             class_for_unusable_quotes_body(json),
             QuoteFetchErrorClass::QuotesUnusable
@@ -588,7 +579,11 @@ mod tests {
         )
         .await;
         assert!(errors.lock().expect("errors").is_empty());
-        assert!(book.lock().expect("book").get("nse_cm|2885").is_some());
+        assert!(book
+            .lock()
+            .expect("book")
+            .get(KOTAK_NEO, "nse_cm|2885")
+            .is_some());
     }
 
     #[tokio::test]

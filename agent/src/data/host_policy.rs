@@ -148,6 +148,64 @@ pub fn authorize_inferred_call(
     Ok((capability_id, auth_mode))
 }
 
+fn normalize_request_path(path: &str) -> String {
+    let trimmed = path.trim();
+    let without_query = trimmed.split('?').next().unwrap_or(trimmed);
+    without_query.trim_end_matches('/').to_string()
+}
+
+fn is_kotak_r0_host(host: &str) -> bool {
+    let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    host_allowed(&normalized) && normalized != "api.binance.com"
+}
+
+/// Fence is (book, host, path prefix). Global R0 still gates which hosts this
+/// process may ever dial — do not add fapi/dapi/eapi here.
+///
+/// Planned (host: None — never add to R0_ALLOWED_HOSTS until a named book + Skill A):
+/// binance-com-usdm     fapi.binance.com
+/// binance-com-coinm    dapi.binance.com
+/// binance-com-options  eapi.binance.com
+/// binance-com-stocks   api.binance.com + /sapi/v1/equity/  (same host, blocked by prefix)
+///
+/// Locks: locks/binance-com-spot.md + locks/kotak-nse-bse-cash.md (fetch 2026-08-22 IST).
+pub fn authorize_book_call(
+    book_id: &str,
+    host: &str,
+    method: &str,
+    path: &str,
+    attach_private: bool,
+) -> Result<(&'static str, AuthMode), HostRefuse> {
+    if !host_allowed(host) {
+        return Err(HostRefuse::HostNotAllowed);
+    }
+    authorize_book_fence(book_id, host, path)?;
+    authorize_inferred_call(host, method, path, attach_private)
+}
+
+fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(), HostRefuse> {
+    let host_norm = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let path_norm = normalize_request_path(path);
+    match book_id {
+        "binance-com-spot" => {
+            if host_norm != "api.binance.com" {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !path_norm.to_ascii_lowercase().starts_with("/api/v3/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "kotak-nse-bse-cash" => {
+            if !is_kotak_r0_host(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            Ok(())
+        }
+        _ => Err(HostRefuse::PathNotAllowlisted),
+    }
+}
+
 fn is_kotak_depth_path(path: &str) -> bool {
     super::kotak_quotes::is_kotak_depth_path(path)
 }
@@ -675,6 +733,58 @@ mod tests {
         assert_eq!(
             authorize_inferred_call("api.binance.us", "GET", "/api/v3/depth", false).unwrap_err(),
             HostRefuse::HostNotAllowed
+        );
+    }
+
+    #[test]
+    fn spot_book_refuses_equity_sapi_and_other_binance_clusters() {
+        // Locks/binance-com-spot.md (fetch 2026-08-22 IST): /api/v3 on api.binance.com only.
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-spot",
+                "api.binance.com",
+                "GET",
+                "/sapi/v1/equity/market/quote",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        for host in ["fapi.binance.com", "dapi.binance.com", "eapi.binance.com"] {
+            assert!(!host_allowed(host), "{host} must stay off R0_ALLOWED_HOSTS");
+            assert_eq!(
+                authorize_book_call(
+                    "binance-com-spot",
+                    host,
+                    "GET",
+                    "/fapi/v1/premiumIndex",
+                    false
+                )
+                .unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "{host}"
+            );
+        }
+        authorize_book_call(
+            "binance-com-spot",
+            "api.binance.com",
+            "GET",
+            "/api/v3/ticker/price",
+            false,
+        )
+        .expect("public spot ticker remains allowlisted");
+        let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
+        assert!(!is_kotak_cash_scrip_csv_path(fo));
+        assert_eq!(
+            authorize_book_call(
+                "kotak-nse-bse-cash",
+                "lapi.kotaksecurities.com",
+                "GET",
+                fo,
+                false
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
         );
     }
 }

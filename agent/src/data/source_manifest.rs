@@ -54,6 +54,8 @@ pub struct ManifestBinding {
 pub struct SourceManifest {
     pub manifest_id: String,
     pub adapter_id: String,
+    /// Lock book id (locks/binance-com-spot.md, locks/kotak-nse-bse-cash.md; fetch 2026-08-22 IST).
+    pub book_id: String,
     pub implemented: Vec<String>,
     pub bindings: Vec<ManifestBinding>,
 }
@@ -141,6 +143,8 @@ pub enum ObtainStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObtainEnvelope {
     pub adapter_id: String,
+    /// Lock book id copied from the manifest. Empty when the target is unknown.
+    pub book_id: String,
     pub operation: String,
     pub status: ObtainStatus,
     pub data: Option<serde_json::Value>,
@@ -153,6 +157,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
     if catalog_row(operation).is_some_and(|row| row.kind == OperationKind::ExecutionForbidden) {
         return ObtainEnvelope {
             adapter_id: manifest.adapter_id.clone(),
+            book_id: manifest.book_id.clone(),
             operation: operation.to_string(),
             status: ObtainStatus::Unsupported,
             data: None,
@@ -162,6 +167,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
     if !manifest.implemented.iter().any(|noun| noun == operation) {
         return ObtainEnvelope {
             adapter_id: manifest.adapter_id.clone(),
+            book_id: manifest.book_id.clone(),
             operation: operation.to_string(),
             status: ObtainStatus::Unsupported,
             data: None,
@@ -170,6 +176,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
     }
     ObtainEnvelope {
         adapter_id: manifest.adapter_id.clone(),
+        book_id: manifest.book_id.clone(),
         operation: operation.to_string(),
         status: ObtainStatus::Unavailable,
         data: None,
@@ -302,6 +309,7 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
     SourceManifest {
         manifest_id: "binance_com.s1.v1".into(),
         adapter_id: "binance_com".into(),
+        book_id: "binance-com-spot".into(),
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
@@ -350,6 +358,7 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
     SourceManifest {
         manifest_id: "kotak_neo.s1k.v1".into(),
         adapter_id: "kotak_neo".into(),
+        book_id: "kotak-nse-bse-cash".into(),
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
@@ -384,6 +393,12 @@ pub fn manifest_for_slug(slug: &str) -> Option<SourceManifest> {
     first_party_s0_manifests()
         .into_iter()
         .find(|manifest| manifest.adapter_id == slug)
+}
+
+pub fn manifest_for_book_id(book_id: &str) -> Option<SourceManifest> {
+    first_party_s0_manifests()
+        .into_iter()
+        .find(|manifest| manifest.book_id == book_id)
 }
 
 pub fn load_first_party_manifests() -> Result<Vec<SourceManifest>, Vec<ManifestReject>> {
@@ -433,6 +448,7 @@ mod tests {
         let manifest = SourceManifest {
             manifest_id: "fixture.quotes".into(),
             adapter_id: "binance_com".into(),
+            book_id: String::new(),
             implemented: vec!["quotes".into()],
             bindings: vec![quotes_binding()],
         };
@@ -444,6 +460,7 @@ mod tests {
         let manifest = SourceManifest {
             manifest_id: "fixture.chain".into(),
             adapter_id: "binance_com".into(),
+            book_id: String::new(),
             implemented: vec!["optionchain".into()],
             bindings: vec![ManifestBinding {
                 operation: "optionchain".into(),
@@ -467,6 +484,7 @@ mod tests {
         let manifest = SourceManifest {
             manifest_id: "fixture.exec".into(),
             adapter_id: "binance_com".into(),
+            book_id: String::new(),
             implemented: vec!["placeorder".into()],
             bindings: vec![],
         };
@@ -478,6 +496,7 @@ mod tests {
         let manifest = binance_com_s1_manifest();
         assert!(describe(&manifest).is_ok());
         assert_eq!(manifest.manifest_id, "binance_com.s1.v1");
+        assert_eq!(manifest.book_id, "binance-com-spot");
         assert_eq!(
             manifest.implemented,
             vec![
@@ -489,6 +508,12 @@ mod tests {
                 "depth"
             ]
         );
+        assert!(!manifest.implemented.iter().any(|op| {
+            matches!(
+                op.as_str(),
+                "optionchain" | "equity" | "fapi" | "premiumIndex" | "mark" | "stocks"
+            )
+        }));
         let history_bind = manifest
             .bindings
             .iter()
@@ -518,15 +543,18 @@ mod tests {
         );
         let history = obtain(&manifest, "history");
         assert_eq!(history.status, ObtainStatus::Unavailable);
+        assert_eq!(history.book_id, "binance-com-spot");
         assert!(history.data.is_none());
         assert!(!is_empty_success(&history));
         let quotes = obtain(&manifest, "quotes");
         assert_eq!(quotes.status, ObtainStatus::Unavailable);
+        assert_eq!(quotes.book_id, "binance-com-spot");
         assert!(quotes.data.is_none());
         assert!(!is_empty_success(&quotes));
         assert_eq!(quotes.provenance_adapter_id.as_deref(), Some("binance_com"));
         let funds = obtain(&manifest, "funds");
         assert_eq!(funds.status, ObtainStatus::Unavailable);
+        assert_eq!(funds.book_id, "binance-com-spot");
         assert_eq!(funds.provenance_adapter_id.as_deref(), Some("binance_com"));
         let depth = obtain(&manifest, "depth");
         assert_eq!(depth.status, ObtainStatus::Unavailable);
@@ -535,6 +563,10 @@ mod tests {
         let place = obtain(&manifest, "placeorder");
         assert_eq!(place.status, ObtainStatus::Unsupported);
         assert!(place.data.is_none());
+        assert_eq!(
+            obtain(&manifest, "optionchain").status,
+            ObtainStatus::Unsupported
+        );
     }
 
     #[test]
@@ -542,6 +574,7 @@ mod tests {
         let manifest = kotak_neo_s1k_manifest();
         assert!(validate_manifest(&manifest).is_empty());
         assert_eq!(manifest.manifest_id, "kotak_neo.s1k.v1");
+        assert_eq!(manifest.book_id, "kotak-nse-bse-cash");
         assert_eq!(
             manifest.implemented,
             vec!["quotes", "instruments", "tradebook", "depth"]
@@ -609,10 +642,23 @@ mod tests {
     fn first_party_manifests_load_fail_closed() {
         let loaded = load_first_party_manifests().expect("S0 first-party manifests must validate");
         assert_eq!(loaded.len(), 2);
+        assert!(manifest_for_book_id("binance-com-usdm").is_none());
+        assert!(manifest_for_book_id("binance-com-coinm").is_none());
+        assert!(manifest_for_book_id("binance-com-options").is_none());
+        assert!(manifest_for_book_id("binance-com-stocks").is_none());
         assert_eq!(
             manifest_for_slug("binance_com").unwrap().manifest_id,
             "binance_com.s1.v1"
         );
+        assert_eq!(
+            manifest_for_slug("binance_com").unwrap().book_id,
+            "binance-com-spot"
+        );
+        assert_eq!(
+            manifest_for_book_id("binance-com-spot").unwrap().adapter_id,
+            "binance_com"
+        );
+        assert!(manifest_for_book_id("binance-com-usdm").is_none());
         assert_eq!(
             manifest_for_slug("kotak_neo").unwrap().manifest_id,
             "kotak_neo.s1k.v1"
@@ -625,6 +671,7 @@ mod tests {
     fn unsupported_is_not_empty_success() {
         let envelope = ObtainEnvelope {
             adapter_id: "binance_com".into(),
+            book_id: String::new(),
             operation: "quotes".into(),
             status: ObtainStatus::Unsupported,
             data: None,
@@ -633,6 +680,7 @@ mod tests {
         assert!(!is_empty_success(&envelope));
         assert!(is_empty_success(&ObtainEnvelope {
             adapter_id: "binance_com".into(),
+            book_id: "binance-com-spot".into(),
             operation: "funds".into(),
             status: ObtainStatus::Success,
             data: None,

@@ -509,7 +509,7 @@ async fn run_one_depth_connection(
     let mut local = {
         let guard = book.lock().expect("depthbook mutex poisoned");
         guard
-            .get(symbol)
+            .get(BINANCE_COM_ADAPTER_ID, symbol)
             .and_then(|row| row.sequence)
             .ok_or_else(|| anyhow::anyhow!("depth book missing sequence after apply"))?
     };
@@ -530,7 +530,7 @@ async fn run_one_depth_connection(
             DepthDeltaDecision::Discard => {}
             DepthDeltaDecision::Accept => {
                 let mut guard = book.lock().expect("depthbook mutex poisoned");
-                if let Some(row) = guard.get(symbol).cloned() {
+                if let Some(row) = guard.get(BINANCE_COM_ADAPTER_ID, symbol).cloned() {
                     let mut next = row;
                     apply_accepted_delta(&mut next, &update);
                     local = update.final_update_id;

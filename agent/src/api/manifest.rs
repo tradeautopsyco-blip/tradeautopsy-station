@@ -17,6 +17,7 @@ use serde_json::json;
 #[derive(Debug, Deserialize)]
 pub struct ManifestQuery {
     pub adapter: Option<String>,
+    pub book: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -27,32 +28,77 @@ pub struct ManifestList {
 #[derive(Debug, Deserialize)]
 pub struct ObtainQuery {
     pub adapter: Option<String>,
+    pub book: Option<String>,
     pub operation: Option<String>,
+}
+
+fn query_id(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Resolve `?adapter=` / `?book=` to one first-party manifest.
+/// Both set and disagree (different manifests, or slug book_id ≠ book) → None.
+pub(crate) fn resolve_manifest<'a>(
+    manifests: &'a [SourceManifest],
+    adapter: Option<&str>,
+    book: Option<&str>,
+) -> Option<&'a SourceManifest> {
+    let adapter = query_id(adapter);
+    let book = query_id(book);
+    let by_adapter = adapter.and_then(|slug| {
+        manifests
+            .iter()
+            .find(|manifest| manifest.adapter_id == slug && describe(manifest).is_ok())
+    });
+    let by_book = book.and_then(|id| {
+        manifests
+            .iter()
+            .find(|manifest| manifest.book_id == id && describe(manifest).is_ok())
+    });
+    match (adapter.is_some(), book.is_some(), by_adapter, by_book) {
+        (true, true, Some(from_adapter), Some(from_book))
+            if from_adapter.adapter_id == from_book.adapter_id
+                && from_adapter.book_id == from_book.book_id
+                && from_adapter.book_id == book.unwrap_or("") =>
+        {
+            Some(from_adapter)
+        }
+        (true, true, _, _) => None,
+        (true, false, Some(from_adapter), _) => Some(from_adapter),
+        (false, true, _, Some(from_book)) => Some(from_book),
+        _ => None,
+    }
+}
+
+fn unsupported_obtain(adapter_id: &str, book_id: &str, operation: &str) -> ObtainEnvelope {
+    ObtainEnvelope {
+        adapter_id: adapter_id.to_string(),
+        book_id: book_id.to_string(),
+        operation: operation.to_string(),
+        status: ObtainStatus::Unsupported,
+        data: None,
+        provenance_adapter_id: None,
+    }
 }
 
 pub async fn manifest_handler(
     State(state): State<AppState>,
     Query(query): Query<ManifestQuery>,
 ) -> Json<ManifestList> {
-    let adapter = query
-        .adapter
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let manifests = match adapter {
-        Some(slug) => state
-            .source_manifests
-            .iter()
-            .filter(|manifest| manifest.adapter_id == slug)
-            .filter(|manifest| describe(manifest).is_ok())
-            .cloned()
-            .collect(),
-        None => state
+    let adapter = query_id(query.adapter.as_deref());
+    let book = query_id(query.book.as_deref());
+    let manifests = if adapter.is_none() && book.is_none() {
+        state
             .source_manifests
             .iter()
             .filter(|manifest| describe(manifest).is_ok())
             .cloned()
-            .collect(),
+            .collect()
+    } else {
+        resolve_manifest(state.source_manifests.as_ref(), adapter, book)
+            .cloned()
+            .into_iter()
+            .collect()
     };
     Json(ManifestList { manifests })
 }
@@ -61,40 +107,18 @@ pub async fn obtain_handler(
     State(state): State<AppState>,
     Query(query): Query<ObtainQuery>,
 ) -> Json<ObtainEnvelope> {
-    let adapter = query
-        .adapter
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_default();
-    let operation = query
-        .operation
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or_default();
-    if adapter.is_empty() || operation.is_empty() {
-        return Json(ObtainEnvelope {
-            adapter_id: adapter.to_string(),
-            operation: operation.to_string(),
-            status: ObtainStatus::Unsupported,
-            data: None,
-            provenance_adapter_id: None,
-        });
+    let adapter = query_id(query.adapter.as_deref()).unwrap_or_default();
+    let book = query_id(query.book.as_deref()).unwrap_or_default();
+    let operation = query_id(query.operation.as_deref()).unwrap_or_default();
+    if operation.is_empty() || (adapter.is_empty() && book.is_empty()) {
+        return Json(unsupported_obtain(adapter, book, operation));
     }
-    let Some(manifest) = state
-        .source_manifests
-        .iter()
-        .find(|manifest| manifest.adapter_id == adapter)
-        .filter(|manifest| describe(manifest).is_ok())
-    else {
-        return Json(ObtainEnvelope {
-            adapter_id: adapter.to_string(),
-            operation: operation.to_string(),
-            status: ObtainStatus::Unsupported,
-            data: None,
-            provenance_adapter_id: None,
-        });
+    let Some(manifest) = resolve_manifest(
+        state.source_manifests.as_ref(),
+        query_id(query.adapter.as_deref()),
+        query_id(query.book.as_deref()),
+    ) else {
+        return Json(unsupported_obtain(adapter, book, operation));
     };
     let mut envelope = obtain(manifest, operation);
     if envelope.status == ObtainStatus::Unavailable {
@@ -103,175 +127,203 @@ pub async fn obtain_handler(
     Json(envelope)
 }
 
-fn enrich_obtain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    match envelope.operation.as_str() {
-        "quotes" if envelope.adapter_id == "binance_com" || envelope.adapter_id == "kotak_neo" => {
-            let adapter = envelope.adapter_id.clone();
-            let mut instrument = state
-                .selected_quote_instrument
-                .lock()
-                .expect("selected quote instrument poisoned")
-                .clone()
-                .unwrap_or_default();
-            let book = state.tickbook.lock().expect("tickbook mutex poisoned");
-            let selected_ok = !instrument.is_empty()
-                && book
-                    .get(&instrument)
-                    .is_some_and(|row| row.adapter_id == adapter);
-            if !selected_ok {
-                if let Some((id, _)) = book.iter().find(|(_, row)| row.adapter_id == adapter) {
-                    instrument = id.clone();
-                } else {
-                    instrument.clear();
-                }
-            }
-            if instrument.is_empty() {
-                return envelope;
-            }
-            let quote = extract_quote_for(
-                state.quote_registry.as_ref(),
-                &book,
-                &instrument,
-                Utc::now(),
-                state.quote_freshness,
-                Some(&adapter),
-            );
-            if let Some(data) = tickbook_quote_obtain_data(&quote) {
-                envelope.status = ObtainStatus::Success;
-                envelope.data = Some(data);
-                envelope.provenance_adapter_id = Some(quote.provenance.adapter_id);
-            }
+fn enrich_obtain(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    match enricher(&envelope.book_id, &envelope.operation) {
+        Some(apply) => apply(state, envelope),
+        None => envelope,
+    }
+}
+
+fn enricher(
+    book_id: &str,
+    operation: &str,
+) -> Option<fn(&AppState, ObtainEnvelope) -> ObtainEnvelope> {
+    match (book_id, operation) {
+        ("binance-com-spot", "quotes") => Some(enrich_tickbook_quotes),
+        ("binance-com-spot", "depth") => Some(enrich_depth),
+        ("binance-com-spot", "instruments") => Some(enrich_binance_instruments),
+        ("binance-com-spot", "history") => Some(enrich_binance_history),
+        ("binance-com-spot", "funds") => Some(enrich_binance_funds),
+        ("binance-com-spot", "tradebook") => Some(enrich_tradebook),
+        ("kotak-nse-bse-cash", "quotes") => Some(enrich_tickbook_quotes),
+        ("kotak-nse-bse-cash", "depth") => Some(enrich_depth),
+        ("kotak-nse-bse-cash", "instruments") => Some(enrich_kotak_instruments),
+        ("kotak-nse-bse-cash", "tradebook") => Some(enrich_tradebook),
+        _ => None,
+    }
+}
+
+fn enrich_tickbook_quotes(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let adapter = envelope.adapter_id.clone();
+    let mut instrument = state
+        .selected_quote_instrument
+        .lock()
+        .expect("selected quote instrument poisoned")
+        .clone()
+        .unwrap_or_default();
+    let book = state.tickbook.lock().expect("tickbook mutex poisoned");
+    let selected_ok = !instrument.is_empty() && book.get(&adapter, &instrument).is_some();
+    if !selected_ok {
+        if let Some((_, row)) = book.iter().find(|(_, row)| row.adapter_id == adapter) {
+            instrument = row.instrument_id.clone();
+        } else {
+            instrument.clear();
         }
-        "depth" if envelope.adapter_id == "kotak_neo" || envelope.adapter_id == "binance_com" => {
-            let adapter = envelope.adapter_id.clone();
-            let book = state.depthbook.lock().expect("depthbook mutex poisoned");
-            let mut instrument = state
-                .resolve_candidates()
-                .first()
-                .cloned()
-                .unwrap_or_else(|| state.s1_desk_symbol.clone().unwrap_or_default());
-            if adapter == "binance_com" {
-                instrument = crate::data::normalize_quote_instrument(&instrument);
-            }
-            if instrument.is_empty() || book.get(&instrument).is_none() {
-                if let Some((id, _)) = book
-                    .iter()
-                    .find(|(_, row)| row.adapter_id == adapter && row.completeness)
-                {
-                    instrument = id.clone();
-                }
-            }
-            if instrument.is_empty() {
-                return envelope;
-            }
-            let depth = extract_depth(&book, &instrument, Some(adapter.as_str()));
-            if depth.status == DepthStatus::Success {
-                if let Some(data) = depth_obtain_data(&depth) {
-                    envelope.status = ObtainStatus::Success;
-                    envelope.data = Some(data);
-                    envelope.provenance_adapter_id = Some(depth.provenance.adapter_id);
-                }
-            }
+    }
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let quote = extract_quote_for(
+        state.quote_registry.as_ref(),
+        &book,
+        &instrument,
+        Utc::now(),
+        state.quote_freshness,
+        Some(&adapter),
+    );
+    if let Some(data) = tickbook_quote_obtain_data(&quote) {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = Some(data);
+        envelope.provenance_adapter_id = Some(quote.provenance.adapter_id);
+    }
+    envelope
+}
+
+fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let adapter = envelope.adapter_id.clone();
+    let book = state.depthbook.lock().expect("depthbook mutex poisoned");
+    let mut instrument = state
+        .resolve_candidates()
+        .first()
+        .cloned()
+        .unwrap_or_else(|| state.s1_desk_symbol.clone().unwrap_or_default());
+    if envelope.book_id == "binance-com-spot" {
+        instrument = crate::data::normalize_quote_instrument(&instrument);
+    }
+    if instrument.is_empty() || book.get(&adapter, &instrument).is_none() {
+        if let Some((_, row)) = book
+            .iter()
+            .find(|(_, row)| row.adapter_id == adapter && row.completeness)
+        {
+            instrument = row.instrument_id.clone();
         }
-        "funds" if envelope.adapter_id == "binance_com" => {
-            let snap = state
-                .broker_status
-                .lock()
-                .expect("broker_status mutex poisoned");
-            let Some(balances) = snap.last_balances.as_ref() else {
-                return envelope;
-            };
+    }
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let depth = extract_depth(&book, &instrument, Some(adapter.as_str()));
+    if depth.status == DepthStatus::Success {
+        if let Some(data) = depth_obtain_data(&depth) {
             envelope.status = ObtainStatus::Success;
-            envelope.data = Some(json!({
-                "identity": account_identity("funds"),
-                "holdings": balances
-                    .holdings
-                    .iter()
-                    .map(|h| json!({
-                        "asset": h.asset,
-                        "free": h.free,
-                        "locked": h.locked,
-                    }))
-                    .collect::<Vec<_>>(),
-                "unrealized_pnl": balances.unrealized_pnl,
-                "as_of_ms": snap.data_classes.balances_holdings.last_success_at_ms,
-            }));
+            envelope.data = Some(data);
+            envelope.provenance_adapter_id = Some(depth.provenance.adapter_id);
         }
-        "tradebook" => {
-            let snap = state
-                .broker_status
-                .lock()
-                .expect("broker_status mutex poisoned");
-            if snap.active_broker_slug.as_deref() != Some(envelope.adapter_id.as_str())
-                && snap.last_fills_count.is_none()
-            {
-                return envelope;
-            }
-            let Some(count) = snap.last_fills_count else {
-                return envelope;
-            };
-            envelope.status = ObtainStatus::Success;
-            envelope.data = Some(json!({
-                "identity": account_identity("fills"),
-                "fill_count": count,
-                "as_of_ms": snap.data_classes.fills_trade_history.last_success_at_ms,
-            }));
-        }
-        "instruments" if envelope.adapter_id == "binance_com" => {
-            let master = state
-                .instrument_master
-                .lock()
-                .expect("instrument master mutex poisoned");
-            if master.is_empty() {
-                return envelope;
-            }
-            envelope.status = ObtainStatus::Success;
-            envelope.data = Some(json!({
-                "identity": reference_identity(),
-                "symbol_count": master.len(),
-            }));
-        }
-        "instruments" if envelope.adapter_id == "kotak_neo" => {
-            let master = state
-                .kotak_scrip_master
-                .lock()
-                .expect("kotak scrip master mutex poisoned");
-            if let Some(data) = kotak_instruments_data(&master) {
-                envelope.status = ObtainStatus::Success;
-                envelope.data = Some(data);
-            }
-        }
-        "history" if envelope.adapter_id == "binance_com" => {
-            let instrument = {
-                let selected = state
-                    .selected_quote_instrument
-                    .lock()
-                    .expect("selected quote instrument poisoned")
-                    .clone()
-                    .filter(|s| !s.is_empty());
-                let desk = state
-                    .s1_desk_symbol
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string);
-                selected.or(desk).unwrap_or_default()
-            };
-            let book = state
-                .historybook
-                .lock()
-                .expect("historybook mutex poisoned");
-            // Empty id may use first_for_adapter inside extract (boot/CI).
-            // A selected/desk id that misses stays unavailable — never another pair.
-            let history =
-                extract_licensed_history(&book, &instrument, Some(DEFAULT_HISTORY_INTERVAL), None);
-            if let Some(data) = history_obtain_data(&history) {
-                envelope.status = ObtainStatus::Success;
-                envelope.data = Some(data);
-                envelope.provenance_adapter_id = Some(history.provenance.adapter_id);
-            }
-        }
-        _ => {}
+    }
+    envelope
+}
+
+fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let snap = state
+        .broker_status
+        .lock()
+        .expect("broker_status mutex poisoned");
+    let Some(balances) = snap.last_balances.as_ref() else {
+        return envelope;
+    };
+    envelope.status = ObtainStatus::Success;
+    envelope.data = Some(json!({
+        "identity": account_identity("funds"),
+        "holdings": balances
+            .holdings
+            .iter()
+            .map(|h| json!({
+                "asset": h.asset,
+                "free": h.free,
+                "locked": h.locked,
+            }))
+            .collect::<Vec<_>>(),
+        "unrealized_pnl": balances.unrealized_pnl,
+        "as_of_ms": snap.data_classes.balances_holdings.last_success_at_ms,
+    }));
+    envelope
+}
+
+fn enrich_tradebook(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let snap = state
+        .broker_status
+        .lock()
+        .expect("broker_status mutex poisoned");
+    if snap.active_broker_slug.as_deref() != Some(envelope.adapter_id.as_str())
+        && snap.last_fills_count.is_none()
+    {
+        return envelope;
+    }
+    let Some(count) = snap.last_fills_count else {
+        return envelope;
+    };
+    envelope.status = ObtainStatus::Success;
+    envelope.data = Some(json!({
+        "identity": account_identity("fills"),
+        "fill_count": count,
+        "as_of_ms": snap.data_classes.fills_trade_history.last_success_at_ms,
+    }));
+    envelope
+}
+
+fn enrich_binance_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let master = state
+        .instrument_master
+        .lock()
+        .expect("instrument master mutex poisoned");
+    if master.is_empty() {
+        return envelope;
+    }
+    envelope.status = ObtainStatus::Success;
+    envelope.data = Some(json!({
+        "identity": reference_identity(),
+        "symbol_count": master.len(),
+    }));
+    envelope
+}
+
+fn enrich_kotak_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let master = state
+        .kotak_scrip_master
+        .lock()
+        .expect("kotak scrip master mutex poisoned");
+    if let Some(data) = kotak_instruments_data(&master) {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = Some(data);
+    }
+    envelope
+}
+
+fn enrich_binance_history(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let instrument = {
+        let selected = state
+            .selected_quote_instrument
+            .lock()
+            .expect("selected quote instrument poisoned")
+            .clone()
+            .filter(|s| !s.is_empty());
+        let desk = state
+            .s1_desk_symbol
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        selected.or(desk).unwrap_or_default()
+    };
+    let book = state
+        .historybook
+        .lock()
+        .expect("historybook mutex poisoned");
+    let history =
+        extract_licensed_history(&book, &instrument, Some(DEFAULT_HISTORY_INTERVAL), None);
+    if let Some(data) = history_obtain_data(&history) {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = Some(data);
+        envelope.provenance_adapter_id = Some(history.provenance.adapter_id);
     }
     envelope
 }
@@ -306,6 +358,8 @@ fn tickbook_quote_obtain_data(quote: &crate::data::QuoteEnvelope) -> Option<serd
         "session_ohlc": data.session_ohlc.as_ref(),
         "quote_status": quote_status_wire(quote.status),
         "source": "tickbook",
+        "quote_kind": "last",
+        "mark": serde_json::Value::Null,
     }))
 }
 
@@ -342,6 +396,8 @@ mod tests {
         assert_eq!(quote.provenance.adapter_id, "kotak_neo");
         assert!(data["session_ohlc"].is_object());
         assert_eq!(data["source"], "tickbook");
+        assert_eq!(data["quote_kind"], "last");
+        assert!(data["mark"].is_null());
         assert!(!book.has_positive_tick_for("binance_com"));
         assert!(book.has_positive_tick_for("kotak_neo"));
     }
@@ -418,7 +474,9 @@ mod tests {
         assert_ne!(data["identity"]["physics"], "ordered_state");
         assert_eq!(data["source"], "rest_snapshot");
         assert!(data.get("synced").is_none());
-        assert!(TickBook::new().get("nse_cm|2885").is_none());
+        assert!(TickBook::new()
+            .get(KOTAK_NEO_ADAPTER_ID, "nse_cm|2885")
+            .is_none());
         assert!(depth_obtain_data(&extract_depth(
             &DepthBook::new(),
             "nse_cm|2885",
@@ -444,7 +502,7 @@ mod tests {
         let data = history_obtain_data(&envelope).expect("licensed series");
         assert_eq!(data["last_close"], "0.01590000");
         assert_eq!(data["source"], "binance_klines");
-        assert!(TickBook::new().get("btcusdt").is_none());
+        assert!(TickBook::new().get("binance_com", "btcusdt").is_none());
         assert!(history_obtain_data(&extract_licensed_history(
             &HistoryBook::new(),
             "btcusdt",
@@ -452,5 +510,65 @@ mod tests {
             None
         ))
         .is_none());
+    }
+
+    #[test]
+    fn obtain_book_alias_matches_adapter_for_spot() {
+        use crate::data::first_party_s0_manifests;
+        let manifests = first_party_s0_manifests();
+        let by_adapter = resolve_manifest(&manifests, Some("binance_com"), None).unwrap();
+        let by_book = resolve_manifest(&manifests, None, Some("binance-com-spot")).unwrap();
+        let both =
+            resolve_manifest(&manifests, Some("binance_com"), Some("binance-com-spot")).unwrap();
+        assert_eq!(by_adapter.adapter_id, "binance_com");
+        assert_eq!(by_adapter.book_id, "binance-com-spot");
+        assert_eq!(by_book.adapter_id, by_adapter.adapter_id);
+        assert_eq!(by_book.book_id, by_adapter.book_id);
+        assert_eq!(both.adapter_id, by_adapter.adapter_id);
+        assert_eq!(both.book_id, by_adapter.book_id);
+        assert!(resolve_manifest(&manifests, None, Some("binance-com-usdm")).is_none());
+        assert!(
+            resolve_manifest(&manifests, Some("binance_com"), Some("kotak-nse-bse-cash")).is_none()
+        );
+        assert!(enricher("binance-com-spot", "optionchain").is_none());
+        assert!(enricher("binance-com-usdm", "quotes").is_none());
+        let spot = manifests
+            .iter()
+            .find(|m| m.book_id == "binance-com-spot")
+            .unwrap();
+        assert_eq!(
+            crate::data::obtain(spot, "optionchain").status,
+            ObtainStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn binance_obtain_quotes_succeeds_with_tickbook_last() {
+        use crate::data::{
+            apply_quote, binance_com_quote_descriptor, extract_quote_for,
+            quote_tick_from_binance_json, TickBook,
+        };
+        let registry =
+            crate::data::Registry::load(&[binance_com_quote_descriptor()]).expect("spot quote");
+        let mut book = TickBook::new();
+        let tick = quote_tick_from_binance_json(
+            r#"{"e":"trade","E":1,"s":"BTCUSDT","p":"65000.00","T":1700000000000}"#,
+            chrono::Utc::now(),
+        )
+        .expect("binance trade fixture");
+        apply_quote(&registry, &mut book, tick).unwrap();
+        let quote = extract_quote_for(
+            &registry,
+            &book,
+            "btcusdt",
+            chrono::Utc::now(),
+            std::time::Duration::from_millis(1000),
+            Some("binance_com"),
+        );
+        let data = tickbook_quote_obtain_data(&quote).expect("spot last is obtain success");
+        assert_eq!(data["last"], "65000.00");
+        assert_eq!(data["quote_kind"], "last");
+        assert!(data["mark"].is_null());
+        assert!(book.has_positive_tick_for("binance_com"));
     }
 }

@@ -1,9 +1,21 @@
 //! In-memory REST/stream depth snapshots. Not TickBook, not an ordered replica.
+//! Keys are `{adapter}\0{instrument}` so two adapters cannot occupy one slot.
 
+use super::binance_public::normalize_quote_instrument;
+use super::descriptor::BINANCE_COM_ADAPTER_ID;
 use super::kotak_depth::DepthSnapshot;
 use super::tick::Transport;
 use chrono::Utc;
 use std::collections::HashMap;
+
+fn depth_key(adapter_id: &str, instrument_id: &str) -> String {
+    let instrument = if adapter_id.trim() == BINANCE_COM_ADAPTER_ID {
+        normalize_quote_instrument(instrument_id)
+    } else {
+        instrument_id.trim().to_string()
+    };
+    format!("{}\0{}", adapter_id.trim(), instrument)
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct DepthBook {
@@ -15,15 +27,16 @@ impl DepthBook {
         Self::default()
     }
 
-    pub fn get(&self, instrument_id: &str) -> Option<&DepthSnapshot> {
-        self.rows.get(instrument_id)
+    pub fn get(&self, adapter_id: &str, instrument_id: &str) -> Option<&DepthSnapshot> {
+        self.rows.get(&depth_key(adapter_id, instrument_id))
     }
 
     /// Always replace the stored row. An incomplete/gapped snapshot must not leave
     /// a stale complete Success in place — `extract_depth` returns Unusable when
     /// `!row.completeness`.
     pub fn upsert(&mut self, snapshot: DepthSnapshot) {
-        self.rows.insert(snapshot.instrument_id.clone(), snapshot);
+        let key = depth_key(&snapshot.adapter_id, &snapshot.instrument_id);
+        self.rows.insert(key, snapshot);
     }
 
     /// Mark a stored book Unusable (sequence gap / restart).
@@ -32,12 +45,13 @@ impl DepthBook {
     /// placeholder so `extract_depth` returns Unusable rather than Unavailable.
     /// Caller supplies `adapter_id` — a Binance gap must not write a Kotak-shaped row.
     pub fn invalidate(&mut self, instrument_id: &str, adapter_id: &str) {
-        if let Some(row) = self.rows.get_mut(instrument_id) {
+        let key = depth_key(adapter_id, instrument_id);
+        if let Some(row) = self.rows.get_mut(&key) {
             row.completeness = false;
             return;
         }
         self.rows.insert(
-            instrument_id.to_string(),
+            key,
             DepthSnapshot {
                 instrument_id: instrument_id.to_string(),
                 adapter_id: adapter_id.to_string(),
@@ -180,5 +194,25 @@ mod tests {
         let envelope = extract_depth(&book, "btcusdt", Some(BINANCE_COM_ADAPTER_ID));
         assert_eq!(envelope.status, DepthStatus::Success);
         assert_eq!(envelope.provenance.transport, Some(Transport::Stream));
+    }
+
+    #[test]
+    fn two_adapters_do_not_share_a_depth_slot() {
+        let mut book = DepthBook::new();
+        book.upsert(snap(
+            "btcusdt",
+            BINANCE_COM_ADAPTER_ID,
+            true,
+            Some(1),
+            Transport::Rest,
+        ));
+        book.upsert(snap("btcusdt", "other", true, Some(2), Transport::Rest));
+        let spot = book
+            .get(BINANCE_COM_ADAPTER_ID, "btcusdt")
+            .expect("spot row");
+        assert_eq!(spot.sequence, Some(1));
+        assert_eq!(spot.adapter_id, BINANCE_COM_ADAPTER_ID);
+        let other = book.get("other", "btcusdt").expect("other row");
+        assert_eq!(other.sequence, Some(2));
     }
 }

@@ -29,6 +29,10 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
     public let complianceProfileId: String
     public let availability: PlannedBrokerAvailability
     public let origin: BrokerAdapterOrigin
+    /// Versioned SourceManifest id. Capabilities come from the manifest, not the slug.
+    public let manifestId: String
+    /// Lock book id (locks/binance-com-spot.md, locks/kotak-nse-bse-cash.md; fetch 2026-08-22 IST).
+    public let bookId: String
 
     public init(
         slug: String,
@@ -39,6 +43,8 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
         calcProfileId: String,
         complianceProfileId: String,
         availability: PlannedBrokerAvailability,
+        manifestId: String,
+        bookId: String,
         origin: BrokerAdapterOrigin = .firstParty
     ) {
         self.slug = slug
@@ -50,6 +56,8 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
         self.complianceProfileId = complianceProfileId
         self.availability = availability
         self.origin = origin
+        self.manifestId = manifestId
+        self.bookId = bookId
     }
 }
 
@@ -64,7 +72,9 @@ public enum BrokerCatalog {
             authScheme: .hmacApiKeySecret,
             calcProfileId: "crypto_spot_usd",
             complianceProfileId: "binance_com_compliance",
-            availability: .enabled
+            availability: .enabled,
+            manifestId: "binance_com.s1.v1",
+            bookId: "binance-com-spot"
         ),
         PlannedBrokerDescriptor(
             slug: "kotak_neo",
@@ -74,7 +84,9 @@ public enum BrokerCatalog {
             authScheme: .kotakNeoTotpSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "kotak_neo_compliance",
-            availability: .enabled
+            availability: .enabled,
+            manifestId: "kotak_neo.s1k.v1",
+            bookId: "kotak-nse-bse-cash"
         ),
     ]
 

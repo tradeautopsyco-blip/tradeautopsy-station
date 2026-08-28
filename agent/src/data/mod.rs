@@ -70,8 +70,8 @@ pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;
 pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
-    authorize_host_call, authorize_inferred_call, infer_capability, is_kotak_cash_scrip_csv_path,
-    AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
+    authorize_book_call, authorize_host_call, authorize_inferred_call, infer_capability,
+    is_kotak_cash_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
 pub use inherit::{capital_may_light, inherit};
@@ -99,8 +99,9 @@ pub use provenance::ProvenanceLine;
 pub use registry::Registry;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use source_manifest::{
-    describe, kotak_neo_s1k_manifest, load_first_party_manifests, manifest_for_slug, obtain,
-    shared_budget, ObtainEnvelope, ObtainStatus, SourceManifest,
+    describe, first_party_s0_manifests, kotak_neo_s1k_manifest, load_first_party_manifests,
+    manifest_for_book_id, manifest_for_slug, obtain, shared_budget, ObtainEnvelope, ObtainStatus,
+    SourceManifest,
 };
 pub use tick::{QuoteTick, SessionOhlc, Transport};
 pub use tickbook::TickBook;

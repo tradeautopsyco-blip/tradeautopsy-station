@@ -37,6 +37,11 @@ pub struct BrokerDescriptor {
     pub compliance_profile_id: String,
     pub availability: BrokerAvailability,
     pub origin: AdapterOrigin,
+    /// Versioned SourceManifest id. Capabilities come from the manifest, not the slug.
+    pub manifest_id: String,
+    /// Lock book id (locks/binance-com-spot.md, locks/kotak-nse-bse-cash.md; fetch 2026-08-22 IST).
+    /// Slug stays Wasm/Keychain/Start (`binance_com` / `kotak_neo`).
+    pub book_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +104,8 @@ pub fn catalog_v1() -> Vec<BrokerDescriptor> {
             compliance_profile_id: "binance_com_compliance".into(),
             availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
+            manifest_id: "binance_com.s1.v1".into(),
+            book_id: "binance-com-spot".into(),
         },
         BrokerDescriptor {
             slug: "kotak_neo".into(),
@@ -110,6 +117,8 @@ pub fn catalog_v1() -> Vec<BrokerDescriptor> {
             compliance_profile_id: "kotak_neo_compliance".into(),
             availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
+            manifest_id: "kotak_neo.s1k.v1".into(),
+            book_id: "kotak-nse-bse-cash".into(),
         },
     ]
 }
@@ -131,13 +140,33 @@ mod tests {
         assert_eq!(com.availability, BrokerAvailability::Enabled);
         assert_eq!(com.auth_scheme, AuthScheme::HmacApiKeySecret);
         assert_eq!(com.origin, AdapterOrigin::FirstParty);
+        assert_eq!(com.manifest_id, "binance_com.s1.v1");
+        assert_eq!(com.book_id, "binance-com-spot");
         assert_eq!(kotak.availability, BrokerAvailability::Enabled);
         assert_eq!(kotak.auth_scheme, AuthScheme::KotakNeoTotpSession);
         assert_eq!(kotak.quote_currency, "INR");
+        assert_eq!(kotak.manifest_id, "kotak_neo.s1k.v1");
+        assert_eq!(kotak.book_id, "kotak-nse-bse-cash");
         assert!(cat.iter().all(|d| d.origin == AdapterOrigin::FirstParty));
         assert!(descriptor_for_slug("binance_us").is_none());
+        assert!(descriptor_for_slug("binance_com_usdm").is_none());
         assert!(descriptor_for_slug("zerodha_kite").is_none());
         assert!(descriptor_for_slug("interactive_brokers").is_none());
+    }
+
+    #[test]
+    fn catalog_capabilities_come_from_manifest_not_slug() {
+        use crate::data::{manifest_for_slug, obtain, ObtainStatus};
+        for descriptor in catalog_v1() {
+            let manifest =
+                manifest_for_slug(&descriptor.slug).expect("enabled slug has a manifest");
+            assert_eq!(manifest.manifest_id, descriptor.manifest_id);
+            assert!(manifest.implemented.iter().any(|op| op == "quotes"));
+            assert_eq!(
+                obtain(&manifest, "quotes").status,
+                ObtainStatus::Unavailable
+            );
+        }
     }
 
     /// B6 gate: only signed first-pair slugs may be Enabled. Named next
@@ -149,7 +178,10 @@ mod tests {
             .filter(|d| d.availability == BrokerAvailability::Enabled)
             .map(|d| d.slug)
             .collect();
-        assert_eq!(enabled, vec!["binance_com".to_string(), "kotak_neo".to_string()]);
+        assert_eq!(
+            enabled,
+            vec!["binance_com".to_string(), "kotak_neo".to_string()]
+        );
         assert!(catalog_v1()
             .iter()
             .all(|d| d.availability == BrokerAvailability::Enabled));

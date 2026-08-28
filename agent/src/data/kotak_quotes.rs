@@ -269,7 +269,9 @@ mod tests {
         let registry = desk_registry();
         let mut book = TickBook::new();
         apply_quote(&registry, &mut book, tick).unwrap();
-        let row = book.get("nse_cm|2885").expect("stored");
+        let row = book
+            .get(KOTAK_NEO_ADAPTER_ID, "nse_cm|2885")
+            .expect("stored");
         let stored_last: f64 = row.last.parse().unwrap();
         assert!(stored_last > 0.0);
         assert_eq!(row.adapter_id, KOTAK_NEO_ADAPTER_ID);

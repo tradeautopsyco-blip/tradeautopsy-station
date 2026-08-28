@@ -42,8 +42,8 @@ impl BarBrokerFillIngressConfig {
             );
             return None;
         }
-        let raw_product = std::env::var("AGENT_BAR_DEFAULT_PRODUCT")
-            .unwrap_or_else(|_| "MIS".to_string());
+        let raw_product =
+            std::env::var("AGENT_BAR_DEFAULT_PRODUCT").unwrap_or_else(|_| "MIS".to_string());
         // I-N4: v1 cash lock — CNC|MIS only. NRML/CO/FO must not re-enter via default_product.
         let default_product = match v1_cash_product(&raw_product) {
             Some(product) => product.to_string(),
@@ -87,7 +87,8 @@ struct BarFillBodyJson<'a> {
     side: &'a str,
     quantity: f64,
     fill_price: Option<f64>,
-    product: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    product: Option<&'a str>,
     filled_at_ms: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     fee_amount: Option<f64>,
@@ -110,7 +111,8 @@ struct BarBrokerFillIngressBody<'a> {
     fill: BarFillBodyJson<'a>,
 }
 
-/// I-N4: Station v1 cash lock. NRML/CO/BO/FO are not a default and must not re-enter.
+/// I-N4: Station v1 cash lock (locks/kotak-nse-bse-cash.md, fetch 2026-08-22 IST).
+/// NRML/CO/BO/FO are not a default and must not re-enter.
 pub(crate) fn v1_cash_product(raw: &str) -> Option<&'static str> {
     match raw.trim().to_ascii_uppercase().as_str() {
         "CNC" => Some("CNC"),
@@ -138,7 +140,26 @@ fn finite_fill_price(price: f64) -> Option<f64> {
     Some(price)
 }
 
+fn is_com_spot_fill(fill: &BrokerFill) -> bool {
+    fill.broker.trim() == "binance_com"
+}
+
+/// Spot has no CNC/MIS. Pass through only a non-cash, non-FO label.
+fn spot_legal_product(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.to_ascii_uppercase().as_str() {
+        "CNC" | "MIS" | "NRML" | "CO" | "BO" | "FO" => None,
+        _ => Some(trimmed),
+    }
+}
+
 /// Builds the JSON body matching `app/api/internal/bar/v1/broker-ingest/fill/route.ts` `bodySchema`.
+///
+/// D3 owner. Locks: locks/kotak-nse-bse-cash.md + locks/binance-com-spot.md (fetch 2026-08-22 IST).
+/// Cash CNC|MIS is Kotak-only. COM fills must not inherit `AGENT_BAR_DEFAULT_PRODUCT=MIS`.
 pub(crate) fn build_bar_broker_fill_ingress_json(
     fill: &BrokerFill,
     cfg: &BarBrokerFillIngressConfig,
@@ -148,13 +169,18 @@ pub(crate) fn build_bar_broker_fill_ingress_json(
     if !fill.qty.is_finite() || fill.qty <= 0.0 {
         return Err("quantity must be finite and positive");
     }
-    let product = v1_cash_product(&cfg.default_product)
-        .ok_or("v1 cash lock: default_product must be CNC or MIS")?;
-    if let Some(fill_product) = fill.product.as_deref() {
-        if v1_cash_product(fill_product).is_none() {
-            return Err("v1 cash lock: fill product NRML/CO/FO refused");
+    let product = if is_com_spot_fill(fill) {
+        fill.product.as_deref().and_then(spot_legal_product)
+    } else {
+        let default = v1_cash_product(&cfg.default_product)
+            .ok_or("v1 cash lock: default_product must be CNC or MIS")?;
+        if let Some(fill_product) = fill.product.as_deref() {
+            if v1_cash_product(fill_product).is_none() {
+                return Err("v1 cash lock: fill product NRML/CO/FO refused");
+            }
         }
-    }
+        Some(default)
+    };
     let filled_at_ms = fill.filled_at.timestamp_millis();
     let broker_order_id = fill.fill_id.as_str();
     let body = BarBrokerFillIngressBody {
@@ -229,8 +255,7 @@ pub async fn post_bar_broker_fill_ingress(
             return;
         }
     };
-    let resp = match req.send().await
-    {
+    let resp = match req.send().await {
         Ok(r) => r,
         Err(err) => {
             tracing::warn!(
@@ -514,5 +539,35 @@ mod tests {
         std::env::remove_var("AGENT_BAR_BROKER_CONNECTION_ID");
         std::env::remove_var("AGENT_BAR_DEFAULT_PRODUCT");
         assert!(cfg.is_none(), "NRML default_product must disable ingress");
+    }
+
+    #[test]
+    fn com_spot_fill_builds_json_without_cnc_or_mis() {
+        // locks/binance-com-spot.md (fetch 2026-08-22 IST): spot has no CNC.
+        // AGENT_BAR_DEFAULT_PRODUCT=MIS must not leak onto COM fills.
+        let cfg = fixture_cfg();
+        assert_eq!(cfg.default_product, "MIS");
+        let fill = BrokerFill {
+            fill_id: "com-1".to_string(),
+            trade_id: "ex-1".to_string(),
+            symbol: "BTCUSDT".to_string(),
+            side: "BUY".to_string(),
+            qty: 0.01,
+            price: 65000.0,
+            filled_at: Utc::now(),
+            broker: "binance_com".to_string(),
+            fee_amount: Some(0.1),
+            fee_asset: Some("USDT".to_string()),
+            currency: Some("USD".to_string()),
+            product: None,
+            exchange_segment: None,
+        };
+        let v =
+            build_bar_broker_fill_ingress_json(&fill, &cfg, BarFillIngestSource::Reconciliation)
+                .expect("COM fill without CNC must still build");
+        assert_eq!(v["fill"]["broker"], "binance_com");
+        assert!(v["fill"].get("product").is_none());
+        assert_ne!(v["fill"]["product"], "MIS");
+        assert_ne!(v["fill"]["product"], "CNC");
     }
 }

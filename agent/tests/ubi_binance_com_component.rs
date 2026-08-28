@@ -412,4 +412,12 @@ fn describe_claims_history_among_implemented_ops() {
         implemented.iter().any(|v| v.as_str() == Some("history")),
         "binance describe must claim history: {body}"
     );
+    let body_l = body.to_ascii_lowercase();
+    assert!(
+        !body_l.contains("equity")
+            && !body_l.contains("fapi")
+            && !body_l.contains("premiumindex")
+            && !body_l.contains("optionchain"),
+        "spot describe must not claim equity/fapi/premiumIndex/optionchain: {body}"
+    );
 }

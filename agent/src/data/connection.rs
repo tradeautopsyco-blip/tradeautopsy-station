@@ -8,8 +8,9 @@ use super::identity::Family;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrokerConnectionRuntime {
     pub adapter_id: String,
-    /// Keychain handle id. Never the raw secret.
+    /// Keychain handle id. Never the raw secret. Do not copy secrets across map entries.
     pub credential_handle: Option<String>,
+    /// Stay per map entry. A future fapi book gets its own budget (Binance IP weight is per cluster).
     pub shared_budget: u32,
     pub subscriptions: Vec<String>,
 }

@@ -88,10 +88,12 @@ pub fn extract_quote_for(
         .map(|binding| binding.delay_class)
         .unwrap_or(DelayClass::Unknown);
 
-    let Some(row) = book
-        .get(instrument_id)
-        .filter(|row| adapter_id.map(|id| row.adapter_id == id).unwrap_or(true))
-    else {
+    let Some(row) = (match adapter_id {
+        Some(id) => book.get(id, instrument_id),
+        None => book
+            .iter()
+            .find_map(|(_, row)| (row.instrument_id == instrument_id).then_some(row)),
+    }) else {
         return QuoteEnvelope {
             identity,
             instrument_id: instrument_id.to_string(),

@@ -66,17 +66,17 @@ pub use broker_validation::{
     PermissionPosture, ValidationFailure, ValidationResult,
 };
 pub use data::{
-    apply_quote, authorize_host_call, authorize_inferred_call, binance_com_quote_descriptor,
-    capital_may_light, extract_chain, extract_contracts, extract_depth, extract_greeks,
-    extract_history, extract_licensed_history, extract_margin_estimate, extract_open_interest,
-    extract_quote, extract_quote_for, fixture_quote_descriptor, infer_capability, inherit,
-    kotak_neo_quote_descriptor, kotak_neo_s1k_manifest, normalize_quote_instrument, obtain,
-    quote_tick_from_binance_json, quote_tick_from_kotak_json, resolve_desk_instrument, ApplyError,
-    AuthMode, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope, HistoryBook, HistoryEnvelope,
-    HistoryStatus, HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase,
-    InstrumentMasterStatus, ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope,
-    QuoteStatus, QuoteTick, Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID,
-    KOTAK_NEO_ADAPTER_ID, R0_ALLOWED_HOSTS,
+    apply_quote, authorize_book_call, authorize_host_call, authorize_inferred_call,
+    binance_com_quote_descriptor, capital_may_light, extract_chain, extract_contracts,
+    extract_depth, extract_greeks, extract_history, extract_licensed_history,
+    extract_margin_estimate, extract_open_interest, extract_quote, extract_quote_for,
+    fixture_quote_descriptor, infer_capability, inherit, kotak_neo_quote_descriptor,
+    kotak_neo_s1k_manifest, normalize_quote_instrument, obtain, quote_tick_from_binance_json,
+    quote_tick_from_kotak_json, resolve_desk_instrument, ApplyError, AuthMode, DepthBook,
+    DepthEnvelope, DepthStatus, GlanceEnvelope, HistoryBook, HistoryEnvelope, HistoryStatus,
+    HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus,
+    ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
+    Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, KOTAK_NEO_ADAPTER_ID, R0_ALLOWED_HOSTS,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
