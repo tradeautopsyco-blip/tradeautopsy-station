@@ -457,3 +457,137 @@ async fn omitted_level_uses_policy_default_level() {
 
     handle.abort();
 }
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+#[serial_test::serial]
+async fn l3_then_l1_is_ignored_hosts_and_audit() {
+    const PORT: u16 = 39_630;
+    let hosts_path = seed_hosts("escalate-l3-l1");
+    let handle = spawn_test_agent(PORT);
+    wait_ready(PORT).await;
+
+    let l3 = post_json(
+        PORT,
+        "/api/daemon/kill-switch",
+        json!({ "level": 3, "broker": "zerodha", "reason": "t5-esc-l3" }),
+    )
+    .await;
+    assert!(l3.status().is_success());
+    let after_l3 = std::fs::read_to_string(&hosts_path).expect("hosts after L3");
+    assert!(after_l3.contains(BLOCK_MARKER), "L3 must write hosts");
+
+    let l1 = post_json(
+        PORT,
+        "/api/daemon/kill-switch",
+        json!({ "level": 1, "broker": "zerodha", "reason": "t5-esc-l1" }),
+    )
+    .await;
+    assert!(l1.status().is_success());
+    let l1_json: Value = l1.json().await.expect("l1 json");
+    assert_eq!(l1_json["received"], true);
+    assert_eq!(l1_json["ignored"], true);
+    assert_eq!(l1_json["armed_level"], 3);
+    assert_eq!(l1_json["fog_active"], true);
+    assert_eq!(l1_json["dns_active"], true);
+
+    let after_l1 = std::fs::read_to_string(&hosts_path).expect("hosts after L1");
+    assert!(
+        after_l1.contains(BLOCK_MARKER),
+        "softer L1 must not clear L3 hosts"
+    );
+
+    let entries = get_kill_audit_tail(PORT, 5).await["entries"]
+        .as_array()
+        .expect("entries")
+        .clone();
+    assert_eq!(entries[0]["event_type"], "ignored");
+    assert_eq!(entries[0]["level"], 1);
+    assert_eq!(entries[0]["verified"], true);
+    assert!(audit_hosts(&entries[0]).is_empty());
+    assert_eq!(entries[1]["event_type"], "fire");
+    assert_eq!(entries[1]["level"], 3);
+
+    cleanup_hosts(&hosts_path);
+    handle.abort();
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+#[serial_test::serial]
+async fn clear_fog_during_l3_does_not_unlock() {
+    const PORT: u16 = 39_631;
+    let hosts_path = seed_hosts("clear-fog-l3");
+    std::env::set_var("AGENT_COMMAND_POLL_MS", "200");
+
+    let upstream = axum::Router::new().route(
+        "/api/daemon/command",
+        axum::routing::get(|| async {
+            axum::Json(json!({
+                "commands": [{
+                    "id": "cmd-clear-fog",
+                    "type": "clear_fog",
+                    "payload": {},
+                    "created_at": "2026-01-01T00:00:00Z",
+                }],
+            }))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+
+    let opts = TestAgentOptions {
+        upstream_base_url_override: Some(format!("http://127.0.0.1:{upstream_port}")),
+        daemon_poll_user_id: Some(common::TEST_USER_ID.to_string()),
+        command_poll_ms: 200,
+        ..TestAgentOptions::default()
+    };
+    let handle = spawn_test_agent_with_options(PORT, opts);
+    wait_ready(PORT).await;
+
+    let l3 = post_json(
+        PORT,
+        "/api/daemon/kill-switch",
+        json!({ "level": 3, "broker": "zerodha", "reason": "t5-clear-fog-l3" }),
+    )
+    .await;
+    assert!(l3.status().is_success());
+    let after_l3 = std::fs::read_to_string(&hosts_path).expect("hosts after L3");
+    assert!(after_l3.contains(BLOCK_MARKER));
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    let after_poll = std::fs::read_to_string(&hosts_path).expect("hosts after clear_fog poll");
+    assert!(
+        after_poll.contains(BLOCK_MARKER),
+        "clear_fog must not unlock L3"
+    );
+
+    let entries = get_kill_audit_tail(PORT, 8).await["entries"]
+        .as_array()
+        .expect("entries")
+        .clone();
+    assert!(
+        entries.iter().any(|e| e["event_type"] == "ignored"),
+        "clear_fog during L3 must audit ignored: {entries:?}"
+    );
+
+    let dismiss = post_json(PORT, "/api/daemon/dismiss-kill-switch", json!({})).await;
+    assert!(dismiss.status().is_success());
+    let after_calm = std::fs::read_to_string(&hosts_path).expect("hosts after dismiss");
+    assert!(
+        !after_calm.contains(BLOCK_MARKER),
+        "I'm Calm HTTP dismiss still unlocks"
+    );
+
+    std::env::remove_var("AGENT_COMMAND_POLL_MS");
+    cleanup_hosts(&hosts_path);
+    handle.abort();
+}

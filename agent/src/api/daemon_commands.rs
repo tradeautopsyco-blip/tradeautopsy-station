@@ -1,7 +1,7 @@
 //! Brain `daemon_commands` poll → L1 fog / L2 overlay / L3 DNS (#190).
 
 use super::capture::forward_daemon_json_with_optional_429_retry;
-use super::kill_switch::{apply_kill_switch_level, dismiss_kill_switch_state};
+use super::kill_switch::{apply_clear_fog, apply_kill_switch_level};
 use super::AppState;
 use crate::resolve_kill_switch_broker::resolve_kill_switch_broker;
 use serde_json::{json, Value};
@@ -66,7 +66,7 @@ pub async fn execute_daemon_command(
             Ok(())
         }
         DaemonCommandKind::ClearFog => {
-            dismiss_kill_switch_state(state).await?;
+            apply_clear_fog(state).await?;
             Ok(())
         }
     }

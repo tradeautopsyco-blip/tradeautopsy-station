@@ -53,6 +53,38 @@ pub fn effective_level(requested: u64, policy: &KillPolicy) -> u64 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KillApplyDecision {
+    Apply { level: u64 },
+    Ignore { armed: u64, requested: u64 },
+}
+
+/// Escalate-only (PLAN Kill Q4). Same-level re-fire applies. Softer fire is ignored.
+pub fn resolve_kill_apply(armed: Option<u64>, requested: u64) -> KillApplyDecision {
+    match armed {
+        None => KillApplyDecision::Apply { level: requested },
+        Some(current) if requested >= current => KillApplyDecision::Apply { level: requested },
+        Some(current) => KillApplyDecision::Ignore {
+            armed: current,
+            requested,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KillClearDecision {
+    Dismiss,
+    Ignore { armed: u64 },
+}
+
+/// `clear_fog` must not unlock L3. HTTP I’m Calm still dismisses.
+pub fn resolve_clear_fog(armed: Option<u64>) -> KillClearDecision {
+    match armed {
+        Some(level) if level >= 3 => KillClearDecision::Ignore { armed: level },
+        _ => KillClearDecision::Dismiss,
+    }
+}
+
 /// R8: empty host map + website_block must refuse. `true` = write DNS.
 pub fn plan_l3_dns(website_block: bool, hosts: &[&str]) -> Result<bool, String> {
     if !website_block {
@@ -71,12 +103,41 @@ fn hosts_for_audit(broker: &str) -> Vec<String> {
         .collect()
 }
 
+fn last_applied_level(state: &AppState) -> Option<u64> {
+    state
+        .last_applied_level
+        .lock()
+        .ok()
+        .and_then(|g| *g)
+        .map(|v| v as u64)
+}
+
 fn remember_apply(state: &AppState, level: u64, broker: &str) {
     if let Ok(mut last) = state.last_l3_broker.lock() {
         *last = Some(broker.to_string());
     }
     if let Ok(mut last) = state.last_applied_level.lock() {
         *last = Some(level.min(u8::MAX as u64) as u8);
+    }
+}
+
+fn append_audit_ignored(state: &AppState, requested: i32, broker: &str, trigger: Option<&str>) {
+    match state.kill_switch_audit.append_signed(
+        state.audit_signer.as_ref(),
+        KillSwitchAuditAppend {
+            event_type: "ignored".to_string(),
+            level: requested,
+            broker: broker.to_string(),
+            trigger: trigger.map(str::to_string),
+            hosts: Vec::new(),
+        },
+    ) {
+        Ok(record) => info!(
+            audit_id = record.id,
+            event_type = %record.event_type,
+            "kill switch ignored audit row appended"
+        ),
+        Err(e) => warn!("kill switch audit append (ignored) failed: {e}"),
     }
 }
 
@@ -139,15 +200,39 @@ fn append_audit_dismiss(state: &AppState, broker: &str, trigger: Option<&str>) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KillApplyOutcome {
+    Applied { level: u64 },
+    Ignored { armed: u64, requested: u64 },
+}
+
 /// Shared enforcement path for HTTP handler + brain `fog_of_war` commands (#190).
 pub async fn apply_kill_switch_level(
     state: &AppState,
     level: u64,
     broker: &str,
     trigger: Option<&str>,
-) -> Result<(), String> {
+) -> Result<KillApplyOutcome, String> {
     let policy = loaded_policy(state);
     let level = effective_level(level, &policy);
+    match resolve_kill_apply(last_applied_level(state), level) {
+        KillApplyDecision::Ignore { armed, requested } => {
+            append_audit_ignored(state, requested as i32, broker, trigger);
+            return Ok(KillApplyOutcome::Ignored { armed, requested });
+        }
+        KillApplyDecision::Apply { level } => {
+            return apply_kill_switch_teeth(state, policy, level, broker, trigger).await;
+        }
+    }
+}
+
+async fn apply_kill_switch_teeth(
+    state: &AppState,
+    policy: KillPolicy,
+    level: u64,
+    broker: &str,
+    trigger: Option<&str>,
+) -> Result<KillApplyOutcome, String> {
     let countdown = policy.countdown_secs;
     info!(
         "Kill switch apply level={level} broker={broker} trigger={}",
@@ -164,7 +249,7 @@ pub async fn apply_kill_switch_level(
             countdown_secs: None,
             requires_ack: false,
         });
-        return Ok(());
+        return Ok(KillApplyOutcome::Applied { level });
     }
 
     if level == 2 {
@@ -176,7 +261,7 @@ pub async fn apply_kill_switch_level(
             countdown_secs: Some(countdown),
             requires_ack: false,
         });
-        return Ok(());
+        return Ok(KillApplyOutcome::Applied { level });
     }
 
     if level >= 3 {
@@ -208,7 +293,24 @@ pub async fn apply_kill_switch_level(
         });
     }
 
-    Ok(())
+    Ok(KillApplyOutcome::Applied { level })
+}
+
+/// Command-poll `clear_fog`. L3 stays locked; HTTP I’m Calm still dismisses.
+pub async fn apply_clear_fog(state: &AppState) -> Result<(), String> {
+    match resolve_clear_fog(last_applied_level(state)) {
+        KillClearDecision::Ignore { armed } => {
+            let broker = state
+                .last_l3_broker
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            append_audit_ignored(state, armed as i32, &broker, Some("clear_fog"));
+            Ok(())
+        }
+        KillClearDecision::Dismiss => dismiss_kill_switch_state(state).await,
+    }
 }
 
 pub async fn dismiss_kill_switch_state(state: &AppState) -> Result<(), String> {
@@ -266,10 +368,23 @@ pub async fn kill_switch_handler(
     let trigger = body.get("reason").and_then(|v| v.as_str());
 
     match apply_kill_switch_level(&state, level, &broker, trigger).await {
-        Ok(()) => (
+        Ok(KillApplyOutcome::Ignored { armed, requested }) => (
             StatusCode::OK,
             Json(json!({
                 "received": true,
+                "ignored": true,
+                "level": requested,
+                "armed_level": armed,
+                "dns_active": dns_block::is_block_active(),
+                "fog_active": state.fog_active.load(Ordering::SeqCst),
+            })),
+        )
+            .into_response(),
+        Ok(KillApplyOutcome::Applied { level }) => (
+            StatusCode::OK,
+            Json(json!({
+                "received": true,
+                "ignored": false,
                 "level": level,
                 "dns_active": dns_block::is_block_active(),
                 "fog_active": state.fog_active.load(Ordering::SeqCst),
@@ -386,5 +501,66 @@ mod tests {
         assert!(plan_l3_dns(true, &[]).is_err());
         assert_eq!(plan_l3_dns(false, &[]).unwrap(), false);
         assert_eq!(plan_l3_dns(true, &["kite.zerodha.com"]).unwrap(), true);
+    }
+
+    #[test]
+    fn escalate_only_unarmed_applies_requested() {
+        assert_eq!(
+            resolve_kill_apply(None, 1),
+            KillApplyDecision::Apply { level: 1 }
+        );
+    }
+
+    #[test]
+    fn escalate_only_l1_to_l3_applies() {
+        assert_eq!(
+            resolve_kill_apply(Some(1), 3),
+            KillApplyDecision::Apply { level: 3 }
+        );
+    }
+
+    #[test]
+    fn escalate_only_l3_then_l1_is_ignored() {
+        assert_eq!(
+            resolve_kill_apply(Some(3), 1),
+            KillApplyDecision::Ignore {
+                armed: 3,
+                requested: 1
+            }
+        );
+    }
+
+    #[test]
+    fn escalate_only_l3_then_l2_is_ignored() {
+        assert_eq!(
+            resolve_kill_apply(Some(3), 2),
+            KillApplyDecision::Ignore {
+                armed: 3,
+                requested: 2
+            }
+        );
+    }
+
+    #[test]
+    fn escalate_only_l3_re_fire_applies() {
+        assert_eq!(
+            resolve_kill_apply(Some(3), 3),
+            KillApplyDecision::Apply { level: 3 }
+        );
+    }
+
+    #[test]
+    fn clear_fog_ignored_while_l3_armed() {
+        assert_eq!(
+            resolve_clear_fog(Some(3)),
+            KillClearDecision::Ignore { armed: 3 }
+        );
+    }
+
+    #[test]
+    fn clear_fog_allowed_when_unarmed_or_below_l3() {
+        assert_eq!(resolve_clear_fog(None), KillClearDecision::Dismiss);
+        assert_eq!(resolve_clear_fog(Some(1)), KillClearDecision::Dismiss);
+        assert_eq!(resolve_clear_fog(Some(2)), KillClearDecision::Dismiss);
     }
 }

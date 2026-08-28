@@ -91,10 +91,8 @@ struct BarPlanStateView: View {
                     .padding(.top, 8)
             }
 
-            if shouldShowStopMeSection {
-                stopMeSection
-                    .padding(.top, 8)
-            }
+            planKillSection
+                .padding(.top, 8)
         }
         .padding(0)
         .onReceive(NotchOneSecondClock.publisher) { date in
@@ -186,11 +184,11 @@ struct BarPlanStateView: View {
         viewModel.barSurfacePhase == .armed && viewModel.barCancelDeclarationId != nil
     }
 
-    /// Kill switch chips + confirm only when a live matched declaration backs the active trade (#bar).
-    private var shouldShowStopMeSection: Bool {
-        guard viewModel.hasOpenPositions else { return false }
-        let trimmed = payload?.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return !trimmed.isEmpty
+    private var planKillChrome: BarPlanKillChrome.Presentation {
+        BarPlanKillChrome.presentation(
+            phase: viewModel.planKillPhase,
+            agentUp: viewModel.planKillAgentUp
+        )
     }
 
     private var shouldShowDeclareBeforeTradeCTA: Bool {
@@ -1304,89 +1302,52 @@ struct BarPlanStateView: View {
         }
     }
 
-    // MARK: - Stop me
+    // MARK: - Kill
 
-    private var stopMeSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            switch viewModel.stopMeStep {
-            case 0:
-                let need = viewModel.stopMeRequiredTaps
-                let n = min(viewModel.stopMeTapCount, need)
-                Text(
-                    n == 0
-                        ? "Stop me — \(need)-tap confirm (kill switch)."
-                        : "Stop me — tap \(n) of \(need).",
-                )
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.55))
+    private var planKillSection: some View {
+        let chrome = planKillChrome
+        return VStack(alignment: .leading, spacing: 10) {
+            if chrome.showsKillButton {
                 Button {
-                    viewModel.stopMeTapCount += 1
-                    if viewModel.stopMeTapCount >= viewModel.stopMeRequiredTaps {
-                        viewModel.stopMeStep = 1
-                    }
+                    viewModel.presentPlanKillWarning()
                 } label: {
-                    Text("Stop me for today →")
+                    Text(chrome.killButtonTitle)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(hex: "#FF3B30"))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(chrome.killButtonTitle)
+                .accessibilityHint("Shows a warning before locking the desk")
+            }
+            if chrome.showsWarningCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(chrome.warningTitle)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                    Text(chrome.warningBody)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(Color.white.opacity(0.75))
-                }
-                .buttonStyle(.plain)
-                Button("Reset") {
-                    viewModel.resetStopMeFlow()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.35))
-            case 1:
-                Text("Pick a reason — required before arm.")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color.white.opacity(0.45))
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], spacing: 8) {
-                    ForEach(viewModel.stopMeReasonChips, id: \.self) { chip in
-                        Button {
-                            viewModel.stopMeReason = chip
-                        } label: {
-                            Text(chip)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundColor(
-                                    viewModel.stopMeReason == chip
-                                        ? BarDS.Accent.teal
-                                        : Color.white.opacity(0.7),
-                                )
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(
-                                            viewModel.stopMeReason == chip
-                                                ? BarDS.Accent.teal.opacity(0.12)
-                                                : Color.white.opacity(0.06),
-                                        ),
-                                )
+                        .foregroundColor(Color.white.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 12) {
+                        Button(chrome.confirmTitle) {
+                            Task { await viewModel.confirmPlanKill() }
                         }
                         .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(hex: "#FF3B30"))
+                        Button(chrome.cancelTitle) {
+                            viewModel.cancelPlanKillWarning()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(Color.white.opacity(0.45))
                     }
                 }
-                HStack {
-                    Button("Confirm kill switch") {
-                        Task { await viewModel.submitBarStopMe() }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundColor(viewModel.stopMeReason.isEmpty ? Color.white.opacity(0.3) : Color(hex: "#FF3B30"))
-                    .disabled(viewModel.stopMeReason.isEmpty || viewModel.barStopMeBusy)
-                    Button("Cancel") {
-                        viewModel.resetStopMeFlow()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundColor(Color.white.opacity(0.45))
-                }
-            default:
-                EmptyView()
-            }
-            if viewModel.barStopMeBusy {
-                ProgressView()
-                    .scaleEffect(0.75)
+                .padding(12)
+                .background(Color(hex: "#FF3B30").opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(chrome.warningTitle)
             }
         }
         .padding(.top, 4)
