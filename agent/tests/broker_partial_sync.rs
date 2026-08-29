@@ -11,8 +11,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
-    BrokerAdapter, BrokerBalancesSnapshot, BrokerError, BrokerOpenOrdersSnapshot,
-    BrokerCredentialVault, ConfigurableDataClassAdapter, DataClassPollRound,
+    BrokerAdapter, BrokerBalancesSnapshot, BrokerCredentialVault, BrokerError,
+    BrokerOpenOrdersSnapshot, ConfigurableDataClassAdapter, DataClassPollRound,
 };
 
 async fn post_broker_sync_start(port: u16) -> reqwest::Response {
@@ -21,7 +21,9 @@ async fn post_broker_sync_start(port: u16) -> reqwest::Response {
     let body = identity_start_body("binance_us");
     let payload = serde_json::to_vec(&body).expect("json");
     apply_wire_v1(
-        client().post(&url).header("content-type", "application/json"),
+        client()
+            .post(&url)
+            .header("content-type", "application/json"),
         "POST",
         path,
         &payload,
@@ -74,13 +76,15 @@ async fn get_broker_sync_state(port: u16) -> Value {
 async fn rate_limited_class_reports_rate_limited_status() {
     const PORT: u16 = 19_490;
     let retry_after = chrono::Utc::now().timestamp_millis() + 120_000;
-    let adapter = Arc::new(ConfigurableDataClassAdapter::new(vec![DataClassPollRound {
-        fills: Ok(vec![]),
-        balances: Err(BrokerError::RateLimited {
-            retry_after_ms: Some(retry_after),
-        }),
-        open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
-    }]));
+    let adapter = Arc::new(ConfigurableDataClassAdapter::new(vec![
+        DataClassPollRound {
+            fills: Ok(vec![]),
+            balances: Err(BrokerError::RateLimited {
+                retry_after_ms: Some(retry_after),
+            }),
+            open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
+        },
+    ]));
     let vault = seeded_hmac_vault("binance_us", "TA_TEST_SYNC");
     let opts = TestAgentOptions {
         runtime_poll_adapter: Some(adapter as Arc<dyn BrokerAdapter>),

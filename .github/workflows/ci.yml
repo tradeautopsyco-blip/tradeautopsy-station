@@ -38,6 +38,15 @@ jobs:
         run: |
           swift build 2>&1 || echo "No Package.swift yet — add SwiftPM manifest to notch/"
 
+  notch-tests:
+    name: Notch tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Notch tests
+        working-directory: notch
+        run: swift test
+
   station-build:
     name: Station build
     runs-on: macos-14 # SwiftPM build; macos-15 required for TradeAutopsy Station.app (see build-app)

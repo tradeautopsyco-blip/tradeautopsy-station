@@ -3,9 +3,11 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    depth_obtain_data, describe, extract_depth, extract_licensed_history, extract_quote_for,
-    history_obtain_data, obtain, DepthStatus, ObtainEnvelope, ObtainStatus, QuoteStatus,
-    SourceManifest, DEFAULT_HISTORY_INTERVAL,
+    depth_obtain_data, describe, extract_chain_from,
+    extract_depth, extract_licensed_history, extract_quote_for_book, history_obtain_data, obtain,
+    parse_nfo_instrument_id, DepthStatus, GlanceStatus, ObtainEnvelope, ObtainStatus, QuoteStatus,
+    Registry, SourceManifest, TickBook, DEFAULT_HISTORY_INTERVAL,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -46,9 +48,17 @@ pub(crate) fn resolve_manifest<'a>(
     let adapter = query_id(adapter);
     let book = query_id(book);
     let by_adapter = adapter.and_then(|slug| {
-        manifests
-            .iter()
-            .find(|manifest| manifest.adapter_id == slug && describe(manifest).is_ok())
+        if let Some(book) = book {
+            manifests.iter().find(|manifest| {
+                manifest.adapter_id == slug
+                    && manifest.book_id == book
+                    && describe(manifest).is_ok()
+            })
+        } else {
+            manifests
+                .iter()
+                .find(|manifest| manifest.adapter_id == slug && describe(manifest).is_ok())
+        }
     });
     let by_book = book.and_then(|id| {
         manifests
@@ -149,37 +159,79 @@ fn enricher(
         ("kotak-nse-bse-cash", "depth") => Some(enrich_depth),
         ("kotak-nse-bse-cash", "instruments") => Some(enrich_kotak_instruments),
         ("kotak-nse-bse-cash", "tradebook") => Some(enrich_tradebook),
+        ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
+        ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
+        ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         _ => None,
     }
 }
 
-fn enrich_tickbook_quotes(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let adapter = envelope.adapter_id.clone();
-    let mut instrument = state
+fn enrich_tickbook_quotes(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let selected = state
         .selected_quote_instrument
         .lock()
         .expect("selected quote instrument poisoned")
-        .clone()
-        .unwrap_or_default();
+        .clone();
     let book = state.tickbook.lock().expect("tickbook mutex poisoned");
-    let selected_ok = !instrument.is_empty() && book.get(&adapter, &instrument).is_some();
+    enrich_tickbook_quotes_with(
+        state.quote_registry.as_ref(),
+        &book,
+        selected.as_deref(),
+        state.quote_freshness,
+        envelope,
+    )
+}
+
+/// One global `selected_quote_instrument`. NFO identity must not paint cash obtain.
+fn quotes_instrument_for_envelope(
+    selected: Option<&str>,
+    book: &TickBook,
+    adapter: &str,
+    envelope_book_id: &str,
+) -> String {
+    let mut instrument = selected.unwrap_or("").trim().to_string();
+    if envelope_book_id == KOTAK_NSE_BSE_CASH_BOOK_ID
+        && parse_nfo_instrument_id(&instrument).is_some()
+    {
+        instrument.clear();
+    }
+    let selected_ok = !instrument.is_empty() && book.get(envelope_book_id, &instrument).is_some();
     if !selected_ok {
-        if let Some((_, row)) = book.iter().find(|(_, row)| row.adapter_id == adapter) {
+        if let Some((_, row)) = book.iter().find(|(_, row)| row.book_id == envelope_book_id) {
+            instrument = row.instrument_id.clone();
+        } else if let Some((_, row)) = book
+            .iter()
+            .find(|(_, row)| row.adapter_id == adapter && row.book_id == envelope_book_id)
+        {
             instrument = row.instrument_id.clone();
         } else {
             instrument.clear();
         }
     }
+    instrument
+}
+
+fn enrich_tickbook_quotes_with(
+    registry: &Registry,
+    book: &TickBook,
+    selected: Option<&str>,
+    freshness: std::time::Duration,
+    mut envelope: ObtainEnvelope,
+) -> ObtainEnvelope {
+    let adapter = envelope.adapter_id.clone();
+    let book_id = envelope.book_id.clone();
+    let instrument = quotes_instrument_for_envelope(selected, book, &adapter, &book_id);
     if instrument.is_empty() {
         return envelope;
     }
-    let quote = extract_quote_for(
-        state.quote_registry.as_ref(),
-        &book,
+    let quote = extract_quote_for_book(
+        registry,
+        book,
         &instrument,
         Utc::now(),
-        state.quote_freshness,
+        freshness,
         Some(&adapter),
+        Some(&book_id),
     );
     if let Some(data) = tickbook_quote_obtain_data(&quote) {
         envelope.status = ObtainStatus::Success;
@@ -191,6 +243,7 @@ fn enrich_tickbook_quotes(state: &AppState, mut envelope: ObtainEnvelope) -> Obt
 
 fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
     let adapter = envelope.adapter_id.clone();
+    let book_id = envelope.book_id.clone();
     let book = state.depthbook.lock().expect("depthbook mutex poisoned");
     let mut instrument = state
         .resolve_candidates()
@@ -200,8 +253,13 @@ fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelop
     if envelope.book_id == "binance-com-spot" {
         instrument = crate::data::normalize_quote_instrument(&instrument);
     }
-    if instrument.is_empty() || book.get(&adapter, &instrument).is_none() {
+    if instrument.is_empty() || book.get(&book_id, &instrument).is_none() {
         if let Some((_, row)) = book
+            .iter()
+            .find(|(_, row)| row.book_id == book_id && row.completeness)
+        {
+            instrument = row.instrument_id.clone();
+        } else if let Some((_, row)) = book
             .iter()
             .find(|(_, row)| row.adapter_id == adapter && row.completeness)
         {
@@ -294,6 +352,88 @@ fn enrich_kotak_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> O
     if let Some(data) = kotak_instruments_data(&master) {
         envelope.status = ObtainStatus::Success;
         envelope.data = Some(data);
+    }
+    envelope
+}
+
+fn enrich_kotak_nfo_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let master = state
+        .kotak_nfo_scrip_master
+        .lock()
+        .expect("kotak nfo scrip master mutex poisoned");
+    if master.is_empty() {
+        return envelope;
+    }
+    let rows: Vec<crate::data::ContractRow> =
+        master.iter().map(|row| row.to_contract_row()).collect();
+    drop(master);
+    let extracted = crate::data::extract_contracts_from_rows(
+        Some(crate::data::KOTAK_NSE_NFO_BOOK_ID),
+        Some(&rows),
+    );
+    if let Some(data) = extracted.data {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = Some(data);
+    }
+    envelope
+}
+
+fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let book_id = envelope.book_id.clone();
+    let selected = state
+        .selected_quote_instrument
+        .lock()
+        .expect("selected quote instrument poisoned")
+        .clone()
+        .unwrap_or_default();
+    let chain = match book_id.as_str() {
+        KOTAK_NSE_NFO_BOOK_ID => {
+            let master = state
+                .kotak_nfo_scrip_master
+                .lock()
+                .expect("kotak nfo scrip master mutex poisoned");
+            if master.is_empty() {
+                return envelope;
+            }
+            let instrument = {
+                let trimmed = selected.trim();
+                if !trimmed.is_empty() {
+                    trimmed.to_string()
+                } else {
+                    master
+                        .iter()
+                        .next()
+                        .map(|row| row.name.clone())
+                        .unwrap_or_default()
+                }
+            };
+            let rows: Vec<_> =
+                if parse_nfo_instrument_id(&instrument).is_some() || !instrument.is_empty() {
+                    master
+                        .rows_for_underlying(&instrument)
+                        .into_iter()
+                        .map(|row| row.to_chain_row())
+                        .collect()
+                } else {
+                    master.iter().map(|row| row.to_chain_row()).collect()
+                };
+            drop(master);
+            let tickbook = state.tickbook.lock().expect("tickbook mutex poisoned");
+            extract_chain_from(
+                Some(KOTAK_NSE_NFO_BOOK_ID),
+                &instrument,
+                Some(rows.as_slice()),
+                Some(&tickbook),
+            )
+        }
+        _ => return envelope,
+    };
+    if chain.status == GlanceStatus::Success {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = chain.data;
+        if !chain.provenance.adapter_id.is_empty() {
+            envelope.provenance_adapter_id = Some(chain.provenance.adapter_id);
+        }
     }
     envelope
 }
@@ -475,7 +615,7 @@ mod tests {
         assert_eq!(data["source"], "rest_snapshot");
         assert!(data.get("synced").is_none());
         assert!(TickBook::new()
-            .get(KOTAK_NEO_ADAPTER_ID, "nse_cm|2885")
+            .get("kotak-nse-bse-cash", "nse_cm|2885")
             .is_none());
         assert!(depth_obtain_data(&extract_depth(
             &DepthBook::new(),
@@ -502,7 +642,7 @@ mod tests {
         let data = history_obtain_data(&envelope).expect("licensed series");
         assert_eq!(data["last_close"], "0.01590000");
         assert_eq!(data["source"], "binance_klines");
-        assert!(TickBook::new().get("binance_com", "btcusdt").is_none());
+        assert!(TickBook::new().get("binance-com-spot", "btcusdt").is_none());
         assert!(history_obtain_data(&extract_licensed_history(
             &HistoryBook::new(),
             "btcusdt",
@@ -530,8 +670,24 @@ mod tests {
         assert!(
             resolve_manifest(&manifests, Some("binance_com"), Some("kotak-nse-bse-cash")).is_none()
         );
+        let nfo = resolve_manifest(&manifests, Some("kotak_neo"), Some("kotak-nse-nfo")).unwrap();
+        assert_eq!(nfo.book_id, "kotak-nse-nfo");
+        assert_eq!(nfo.manifest_id, "kotak_neo.nfo.v1");
+        assert_eq!(
+            resolve_manifest(&manifests, Some("kotak_neo"), None)
+                .unwrap()
+                .book_id,
+            "kotak-nse-bse-cash"
+        );
+        assert!(resolve_manifest(&manifests, Some("binance_com"), Some("binance-com-options")).is_none());
+        assert!(resolve_manifest(&manifests, None, Some("binance-com-options")).is_none());
         assert!(enricher("binance-com-spot", "optionchain").is_none());
         assert!(enricher("binance-com-usdm", "quotes").is_none());
+        assert!(enricher("binance-com-options", "quotes").is_none());
+        assert!(enricher("binance-com-options", "optionchain").is_none());
+        assert!(enricher("kotak-nse-nfo", "quotes").is_some());
+        assert!(enricher("kotak-nse-nfo", "instruments").is_some());
+        assert!(enricher("kotak-nse-nfo", "optionchain").is_some());
         let spot = manifests
             .iter()
             .find(|m| m.book_id == "binance-com-spot")
@@ -540,6 +696,76 @@ mod tests {
             crate::data::obtain(spot, "optionchain").status,
             ObtainStatus::Unsupported
         );
+        assert!(manifests.iter().all(|m| m.book_id != "binance-com-options"));
+    }
+
+    #[test]
+    fn nfo_last_obtain_does_not_close_spot() {
+        use crate::data::{
+            apply_quote, binance_com_quote_descriptor, extract_quote_for_book,
+            kotak_neo_nfo_manifest, kotak_neo_quote_descriptor, quote_tick_from_binance_json,
+            quote_tick_from_kotak_json_for_book, TickBook, Transport, KOTAK_NSE_NFO_BOOK_ID,
+        };
+        let registry = crate::data::Registry::load(&[
+            kotak_neo_quote_descriptor(),
+            binance_com_quote_descriptor(),
+        ])
+        .expect("kotak + spot quote");
+        let mut book = TickBook::new();
+        let fo = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        let nfo_tick =
+            quote_tick_from_kotak_json_for_book(fo, chrono::Utc::now(), KOTAK_NSE_NFO_BOOK_ID)
+                .expect("nfo tick");
+        apply_quote(&registry, &mut book, nfo_tick).unwrap();
+        let quote = extract_quote_for_book(
+            &registry,
+            &book,
+            "nse_fo|12345",
+            chrono::Utc::now(),
+            std::time::Duration::from_millis(1000),
+            Some(KOTAK_NEO_ADAPTER_ID),
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+        );
+        let data = tickbook_quote_obtain_data(&quote).expect("nfo last is obtain success");
+        assert_eq!(data["quote_kind"], "last");
+        let last: f64 = data["last"].as_str().unwrap().parse().unwrap();
+        assert!(last > 0.0);
+        assert_eq!(quote.provenance.adapter_id, "kotak_neo");
+
+        let spot = quote_tick_from_binance_json(
+            r#"{"e":"trade","E":1,"s":"BTCUSDT","p":"65000.00","T":1700000000000}"#,
+            chrono::Utc::now(),
+        )
+        .expect("binance trade fixture");
+        apply_quote(&registry, &mut book, spot).unwrap();
+        assert_eq!(
+            book.get("binance-com-spot", "btcusdt").unwrap().last,
+            "65000.00"
+        );
+        let rest_spot = crate::data::QuoteTick {
+            instrument_id: "btcusdt".to_string(),
+            last: "65001.00".to_string(),
+            as_of: chrono::Utc::now(),
+            received_at: chrono::Utc::now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "binance_com".to_string(),
+            book_id: "binance-com-spot".to_string(),
+            session_ohlc: None,
+        };
+        apply_quote(&registry, &mut book, rest_spot).unwrap();
+        assert_eq!(
+            book.get("binance-com-spot", "btcusdt").unwrap().last,
+            "65001.00"
+        );
+
+        let nfo = kotak_neo_nfo_manifest();
+        assert_eq!(
+            crate::data::obtain(&nfo, "optionchain").status,
+            ObtainStatus::Unavailable
+        );
+        assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
+        assert!(nfo.implemented.iter().any(|op| op == "instruments"));
     }
 
     #[test]
@@ -570,5 +796,62 @@ mod tests {
         assert_eq!(data["quote_kind"], "last");
         assert!(data["mark"].is_null());
         assert!(book.has_positive_tick_for("binance_com"));
+    }
+
+    #[test]
+    fn selected_nfo_does_not_steal_cash_obtain_last() {
+        use crate::data::{
+            apply_quote, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
+            kotak_neo_s1k_manifest, quote_tick_from_kotak_json,
+            quote_tick_from_kotak_json_for_book, TickBook, KOTAK_NSE_NFO_BOOK_ID,
+        };
+        let registry =
+            crate::data::Registry::load(&[kotak_neo_quote_descriptor()]).expect("kotak quote");
+        let mut book = TickBook::new();
+        let cash_json = include_str!("../../fixtures/kotak/quotes_neosymbol.json");
+        let cash_tick = quote_tick_from_kotak_json(cash_json, chrono::Utc::now()).unwrap();
+        apply_quote(&registry, &mut book, cash_tick).unwrap();
+        let nfo_json = include_str!("../../fixtures/kotak/quotes_neosymbol_nfo.json");
+        let nfo_tick = quote_tick_from_kotak_json_for_book(
+            nfo_json,
+            chrono::Utc::now(),
+            KOTAK_NSE_NFO_BOOK_ID,
+        )
+        .expect("nfo tick");
+        apply_quote(&registry, &mut book, nfo_tick).unwrap();
+        assert_eq!(
+            book.get("kotak-nse-bse-cash", "nse_cm|2885").unwrap().last,
+            "1400.50"
+        );
+        assert_eq!(
+            book.get(KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345")
+                .unwrap()
+                .last,
+            "10.00"
+        );
+
+        let freshness = std::time::Duration::from_millis(1000);
+        let cash = enrich_tickbook_quotes_with(
+            &registry,
+            &book,
+            Some("nse_fo|12345"),
+            freshness,
+            crate::data::obtain(&kotak_neo_s1k_manifest(), "quotes"),
+        );
+        assert_eq!(cash.status, ObtainStatus::Success);
+        assert_eq!(cash.book_id, "kotak-nse-bse-cash");
+        assert_eq!(cash.data.as_ref().unwrap()["last"], "1400.50");
+        assert_ne!(cash.data.as_ref().unwrap()["last"], "10.00");
+
+        let nfo = enrich_tickbook_quotes_with(
+            &registry,
+            &book,
+            Some("nse_fo|12345"),
+            freshness,
+            crate::data::obtain(&kotak_neo_nfo_manifest(), "quotes"),
+        );
+        assert_eq!(nfo.status, ObtainStatus::Success);
+        assert_eq!(nfo.book_id, "kotak-nse-nfo");
+        assert_eq!(nfo.data.as_ref().unwrap()["last"], "10.00");
     }
 }

@@ -11,6 +11,7 @@
 use super::descriptor::KOTAK_NEO_ADAPTER_ID;
 use super::identity::{CapabilityId, Family, Identity, Physics};
 use super::kotak_quotes::{cash_instrument_id_from_quote_object, json_string, quote_objects};
+use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::Transport;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
@@ -64,7 +65,10 @@ pub struct DepthEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepthSnapshot {
     pub instrument_id: String,
+    /// Login identity / provenance. Distinct from `book_id`.
     pub adapter_id: String,
+    /// DepthBook slot prefix. Two books can share a slug without overwrite.
+    pub book_id: String,
     pub bids: Vec<DepthLevel>,
     pub asks: Vec<DepthLevel>,
     pub completeness: bool,
@@ -128,6 +132,8 @@ fn snapshot_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<Dep
     Some(DepthSnapshot {
         instrument_id,
         adapter_id: KOTAK_NEO_ADAPTER_ID.to_string(),
+        book_id: shipping_book_id_for_slug(KOTAK_NEO_ADAPTER_ID)
+            .unwrap_or_else(|| KOTAK_NEO_ADAPTER_ID.to_string()),
         bids,
         asks,
         completeness: true,
@@ -179,6 +185,12 @@ fn level_from_value(value: &Value) -> Option<DepthLevel> {
     })
 }
 
+/// Slot prefix for DepthBook lookup. Shipping slugs map to their book; fixtures
+/// and already-book ids keep the passed string (`shipping_book_id_for_slug` is None).
+fn depth_slot(id: &str) -> String {
+    shipping_book_id_for_slug(id).unwrap_or_else(|| id.to_string())
+}
+
 pub fn extract_depth(
     book: &super::depthbook::DepthBook,
     instrument_id: &str,
@@ -186,7 +198,14 @@ pub fn extract_depth(
 ) -> DepthEnvelope {
     let identity = order_book_bounded_snapshot();
     let wanted = adapter_id.unwrap_or(KOTAK_NEO_ADAPTER_ID);
-    let Some(row) = book.get(wanted, instrument_id) else {
+    let slot = depth_slot(wanted);
+    let Some(row) = book.get(&slot, instrument_id).or_else(|| {
+        if slot != wanted {
+            book.get(wanted, instrument_id)
+        } else {
+            None
+        }
+    }) else {
         return DepthEnvelope {
             identity,
             instrument_id: instrument_id.to_string(),
@@ -283,6 +302,10 @@ mod tests {
         let snap = depth_snapshot_from_kotak_json(FIXTURE, received()).expect("fixture depth");
         assert_eq!(snap.instrument_id, "nse_cm|2885");
         assert_eq!(snap.adapter_id, KOTAK_NEO_ADAPTER_ID);
+        assert_eq!(
+            snap.book_id,
+            shipping_book_id_for_slug(KOTAK_NEO_ADAPTER_ID).expect("kotak cash book")
+        );
         assert_eq!(snap.transport, Transport::Rest);
         assert!(snap.sequence.is_none());
         assert!(snap.completeness);

@@ -1,6 +1,6 @@
 # B6 · Broker capability sheet — `kotak_neo`
 
-**Status:** `SIGNED` — research pass 2026-07-24 · **approved for Phase 1+** · market-data amendment 2026-08-26 (quotes + scrip master; **no history**)  
+**Status:** `SIGNED` — research pass 2026-07-24 · **approved for Phase 1+** · market-data amendment 2026-08-26 (quotes + scrip master; **no history**) · NFO-book amendment 2026-08-28 (`kotak-nse-nfo`; cash still refuse FO)  
 **Slug:** `kotak_neo`  
 **Display:** Kotak Neo  
 **Dogfood role:** First equities integration (India)  
@@ -11,7 +11,7 @@
 | # | Field | Answer |
 |---|-------|--------|
 | 0 | Slug / venues | `kotak_neo` · login `https://mis.kotaksecurities.com` · trading base from login (`gw-napi.kotaksecurities.com/trading` fallback in Console) |
-| 1 | Asset class(es) when connected | **equities** cash v1 — segments **`nse_cm` / `bse_cm` only**. API also supports F&O — **refuse F&O in v1** |
+| 1 | Asset class(es) when connected | **equities** cash v1 — segments **`nse_cm` / `bse_cm` only** (CNC+MIS). Named book **`kotak-nse-nfo`** may FO. Cash still refuses F&O. |
 | 2 | Fetch path | REST after session: `GET {BASE_URL}/quick/user/trades` (trade book / fills), `/quick/user/orders`, holdings/positions/limits. Login: `POST /login/1.0/tradeApiLogin` (TOTP) → `POST /login/1.0/tradeApiValidate` (MPIN). No Binance-style HMAC poll. v1 sync = **read-only fills** (no place/modify/cancel) |
 | 3 | Post-connect options | Equity cash; products **CNC + MIS** ingested. **v1 poll remains trade book only** (`GET {baseUrl}/quick/user/trades`). Quotes/subscribe exist for a **later s1k** slice (REST `quote_type` + HSM subscribe) — not required for v1 poll. Scrip master: documented file-paths (see 2026-08-26 amendment) |
 | 4 | Time / volume | Trade book has **no date-range params**. Official: historical market/session history **unavailable** via Trade API. Rate/latency marketed under 50ms order path. Static IPs **not** provided by Kotak (ISP/VPN self-managed if dashboard requires whitelist — optional, verify at Phase 2 dogfood) |
@@ -22,7 +22,7 @@
 | 9 | Compliance | Human TOTP + MPIN to mint session; session expiry (`stCode` 1003 / KotakSessionExpiredError) → reconnect UX (pause sync, don’t Kill); Console models expiry as **end of trading day IST** (`getEndOfTradingDay` ≈ 15:30 IST); no auto-refresh; SEBI/algo policy awareness (product later — v1 = read-only sync); Keychain-only secrets; no withdraw-key analogue |
 | 10 | Secrets shape | Dashboard **consumer/access token** + session **trade_token** + **Sid** + **base_url** + expiry in Keychain. **Not** long-lived api_secret HMAC. Console DB path is **legacy — fence (B5)** |
 | 11 | Dogfood role | **Enabled** first equities |
-| 12 | Refuse list v1 | F&O segments (`nse_fo`, …); products **NRML / CO / BO** as v1 dogfood; order placement via Station sync; Console DB as live vault; treating Kotak like HMAC key broker; assuming USD desk math; inventing multi-year trade history from `/quick/user/trades`; inventing market **candle / klines / `history`** (FAQ 2026-08-26) |
+| 12 | Refuse list v1 | **Cash book:** F&O segments (`nse_fo`, …); products **NRML / CO / BO** as v1 dogfood; order placement via Station sync; Console DB as live vault; treating Kotak like HMAC key broker; assuming USD desk math; inventing multi-year trade history from `/quick/user/trades`; inventing market **candle / klines / `history`** (FAQ 2026-08-26). Named book **`kotak-nse-nfo`** is a separate lock (not cash). |
 | 13 | Sources + date | kotakneo.com API guide 2025-11-07 (re-fetched 2026-08-26, page updated 22 May 2026); historical-data FAQ + static-IP FAQ 2026-07-24 / FAQ re-fetched 2026-08-26; Console connector 2026-07-24; SDK trade_report (no date params); SDK Quotes.md + Scrip_Master.md + `settings.py` 2026-08-26 |
 
 ---
@@ -57,11 +57,41 @@ Does **not** change Phase 1 fills (`GET {baseUrl}/quick/user/trades`). Does **no
 
 ---
 
+## Research amendment (2026-08-27) — NFO master (N3 header CLOSED 2026-08-28; cash still refuse FO)
+
+Does **not** flip row 1 (cash `nse_cm` / `bse_cm` only) or row 12 (cash refuse `nse_fo`, …). Does **not** change Phase 1 fills (`GET {baseUrl}/quick/user/trades`). Fills stay cash-only. **N3 “did not download `nse_fo.csv`” is superseded 2026-08-28** — header lives on lock `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md`. Cash refuse of FO files on the **cash book** remains (M1). Full write-up: [`docs/reference/india/kotak-neo/NFO-SCRIP-MASTER.md`](../../reference/india/kotak-neo/NFO-SCRIP-MASTER.md).
+
+| # | Field | Answer |
+|---|-------|--------|
+| N1 | Hole | Pre-trade strike grid that paints a fixture 57500 ladder while NFO master is refused is cheating. Dark state is **no contracts** (empty / unavailable). |
+| N2 | What `filesPaths` lists | SDK `Scrip_Master.md` sample includes `nse_fo.csv`, `bse_fo.csv`, `cde_fo.csv`, `mcx_fo.csv`. Listing ≠ cash-book allowlist. Row 12 / M1 still refuse those files on the **cash book**. |
+| N3 | Official FO CSV schema | **Specified on the lock** `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md` (live unsigned GET `nse_fo.csv` 2026-08-28). Token `pSymbol` (no `pToken`). Lot `lLotSize` and `iLotSize`. Remaining blockers: strike scale, expiry epoch offset — on the lock, not invented here. Cash columns (`pSymbol` token, `pSymbolName` ticker) stay cash-only (REST.md 2026-08-27). |
+| N4 | Matrix identities | Already on the matrix: `reference/expiry` (BoundedSnapshot), `reference/option_symbol` (BoundedSnapshot). Lot size is a **field on the contract row**, not a capability id. `kotak_neo.s1k.v1` does **not** claim expiry / optionsymbol / optionchain. |
+| N5 | Extracts today | **Do not exist** for NFO expiry, option-symbol resolve, or FO lot size. `market/option_chain` glance extract is already an unavailable hole. |
+| N6 | Future honest envelopes | Complete expiry list **or** empty/unavailable. BANKNIFTY 57500 PE 29 Sep → tradable id **or** empty. Lot size from the master row **or** unavailable — never hardcoded 30. Chain table with ghost strikes while master is refused is forbidden. |
+| N7 | Still unspecified | BANKNIFTY lot quantity; weekly expiry weekday; strike scale; expiry epoch/offset — remaining blockers live on the lock, not invented here. Token `pSymbol` and lot `lLotSize`/`iLotSize` are specified (N3 / lock 2026-08-28). OpenAlgo `process_kotak_nfo_csv` is third-party, not official schema. |
+
+---
+
+## Research amendment (2026-08-28) — named book `kotak-nse-nfo`
+
+Lock: `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md` (fetch 2026-08-28 IST). Slice 0 lock-only. Does **not** enable NRML on cash. Does **not** allowlist `_fo.csv` on the cash book. Does **not** rewrite row 1 to FO-everywhere.
+
+| # | Field | Answer |
+|---|-------|--------|
+| F1 | Cash v1 (unchanged) | Segments **`nse_cm` / `bse_cm`**. Products **CNC + MIS**. Cash still refuses **`nse_fo` / NRML / CO / BO**. |
+| F2 | Named book | **`kotak-nse-nfo`** may segment **`nse_fo`**. Products **NRML + MIS** scoped (FNO-Index / stock futures / index derivatives). **MIS/BO refused on stock options** (Kotak support 2026-08-28). **CNC on FO = NOT SPECIFIED** — do not enable. |
+| F3 | FO CSV header | **Specified on the lock** (live unsigned GET `nse_fo.csv` 2026-08-28). Token **`pSymbol`** (no `pToken`). Lot **`lLotSize`** and **`iLotSize`**. Remaining blockers: strike scale, expiry epoch offset — on the lock, not invented here. |
+| F4 | Cash FO files | M1 / row 12 still refuse `_fo.csv` on the **cash book**. Named-book allowlist is the lock, not cash. |
+
+---
+
 ## Founder sign-off
 
 - [x] Login flow protocol verified (official guide + Console `tradeApiLogin` / `tradeApiValidate`)
 - [x] History depth answered (day/session only — amend rows 4–5)
 - [x] Products/segments refuse list confirmed (CNC+MIS · cash only · no F&O)
 - [x] Approve for Phase 1+ build (Rust port from Console prior art)
+- [x] 2026-08-28 named book `kotak-nse-nfo` amendment (cash still refuse FO; NFO book may `nse_fo` per lock)
 
-**Signed:** founder research pass (reconciled) **Date:** 2026-07-24
+**Signed:** founder research pass (reconciled) **Date:** 2026-07-24 · NFO-book amendment **2026-08-28**

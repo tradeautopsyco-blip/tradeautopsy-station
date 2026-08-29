@@ -168,11 +168,15 @@ pub fn mint_totp_session(
         "totp": request.totp,
     });
     let login_url = format!("{KOTAK_LOGIN_BASE}{TOTP_LOGIN_PATH}");
-    let (login_status, login_body_text) = http
-        .post_json(&login_url, &login_headers, &login_body)
-        .map_err(|e| KotakMintError::new(KotakMintErrorClass::Upstream, e))?;
+    let (login_status, login_body_text) =
+        http.post_json(&login_url, &login_headers, &login_body)
+            .map_err(|e| KotakMintError::new(KotakMintErrorClass::Upstream, e))?;
 
-    let login = parse_session_payload(login_status, &login_body_text, KotakMintErrorClass::TotpFailed)?;
+    let login = parse_session_payload(
+        login_status,
+        &login_body_text,
+        KotakMintErrorClass::TotpFailed,
+    )?;
     let view_token = required_field(&login, "token", KotakMintErrorClass::TotpFailed)?;
     let view_sid = required_field(&login, "sid", KotakMintErrorClass::TotpFailed)?;
 
@@ -248,9 +252,8 @@ fn parse_session_payload(
             .unwrap_or_else(|| format!("kotak session http {status}"));
         return Err(KotakMintError::new(fail_class, detail));
     }
-    let envelope: SessionEnvelope = serde_json::from_str(body).map_err(|_| {
-        KotakMintError::new(fail_class, "kotak session response not json")
-    })?;
+    let envelope: SessionEnvelope = serde_json::from_str(body)
+        .map_err(|_| KotakMintError::new(fail_class, "kotak session response not json"))?;
     match envelope.data {
         Some(data) if !data.is_null() => Ok(data),
         _ => {
@@ -290,7 +293,8 @@ fn sanitize_kotak_error_message(raw: &str) -> String {
     let mut out = String::new();
     for word in raw.split_whitespace() {
         let looks_secret = word.len() >= 24
-            || (word.len() >= 8 && word.chars().filter(|c| c.is_ascii_hexdigit()).count() > word.len() / 2);
+            || (word.len() >= 8
+                && word.chars().filter(|c| c.is_ascii_hexdigit()).count() > word.len() / 2);
         if looks_secret {
             out.push_str("[redacted]");
         } else {
@@ -306,9 +310,8 @@ fn required_field(
     key: &str,
     fail_class: KotakMintErrorClass,
 ) -> Result<String, KotakMintError> {
-    optional_field(data, &[key]).ok_or_else(|| {
-        KotakMintError::new(fail_class, format!("kotak session missing {key}"))
-    })
+    optional_field(data, &[key])
+        .ok_or_else(|| KotakMintError::new(fail_class, format!("kotak session missing {key}")))
 }
 
 fn optional_field(data: &serde_json::Value, keys: &[&str]) -> Option<String> {
@@ -390,10 +393,7 @@ mod tests {
                 "baseUrl":"https://gw-napi.kotaksecurities.com/trading"
             }
         }"#;
-        let http = ScriptedHttp::new(vec![
-            (200, login_json.into()),
-            (200, validate_json.into()),
-        ]);
+        let http = ScriptedHttp::new(vec![(200, login_json.into()), (200, validate_json.into())]);
         let minted = mint_totp_session(&http, &sample_request()).expect("mint");
         assert_eq!(minted.trade_token, "trade-tok");
         assert_eq!(minted.sid, "trade-sid");
@@ -484,7 +484,10 @@ mod tests {
         let login_json = r#"{"data":{"token":"view-tok","sid":"view-sid"}}"#;
         let http = ScriptedHttp::new(vec![
             (200, login_json.into()),
-            (403, r#"{"error":[{"code":"403","message":"Invalid MPIN"}]}"#.into()),
+            (
+                403,
+                r#"{"error":[{"code":"403","message":"Invalid MPIN"}]}"#.into(),
+            ),
         ]);
         let err = mint_totp_session(&http, &sample_request()).expect_err("mpin");
         assert_eq!(err.class, KotakMintErrorClass::MpinFailed);
@@ -503,10 +506,7 @@ mod tests {
                 "baseUrl":"https://gw-napi.kotaksecurities.com/trading"
             }
         }"#;
-        let http = ScriptedHttp::new(vec![
-            (200, login_json.into()),
-            (200, validate_json.into()),
-        ]);
+        let http = ScriptedHttp::new(vec![(200, login_json.into()), (200, validate_json.into())]);
         let minted = mint_totp_session(&http, &sample_request()).expect("mint");
         assert_eq!(minted.hs_server_id, "");
         assert_eq!(minted.trade_token, "trade-tok");
@@ -527,10 +527,7 @@ mod tests {
                 "baseUrl":"https://mnapi.kotaksecurities.com"
             }
         }"#;
-        let http = ScriptedHttp::new(vec![
-            (200, login_json.into()),
-            (200, validate_json.into()),
-        ]);
+        let http = ScriptedHttp::new(vec![(200, login_json.into()), (200, validate_json.into())]);
         let minted = mint_totp_session(&http, &sample_request()).expect("mint");
         assert_eq!(minted.hs_server_id, "server4");
     }

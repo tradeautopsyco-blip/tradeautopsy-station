@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
     AgentConfig, BrokerAdapter, BrokerCredentialVault, BrokerSyncConfig, CredentialBlob,
-    KillPolicy, MemoryBrokerCredentialVault, WireVerifier, WIRE_PROTO_VERSION,
+    KillPolicy, MemoryBrokerCredentialVault, MemoryStationTokenStore, WireVerifier,
+    WIRE_PROTO_VERSION,
 };
 
 pub const TEST_SECRET: &str = "integration-test-daemon-secret-min-32b";
@@ -50,6 +51,10 @@ pub struct TestAgentOptions {
     pub kill_policy: KillPolicy,
     /// Slice F — plant cash CSV + quote JSON (no live Kotak session).
     pub plant_kotak_s1k_fixtures: bool,
+    /// Plant NFO LTP JSON into TickBook `kotak-nse-nfo` (no live session). Cash-only stays cash-only.
+    pub plant_kotak_nfo_quote: bool,
+    /// Plant lock-header FO CSV into the named NFO store (no live session).
+    pub plant_kotak_nfo_contracts: bool,
     /// S2 — plant committed Binance klines JSON (no live Binance).
     pub plant_binance_s2_history: bool,
 }
@@ -82,6 +87,8 @@ impl Default for TestAgentOptions {
             fact_clock_ms: None,
             kill_policy: KillPolicy::default(),
             plant_kotak_s1k_fixtures: false,
+            plant_kotak_nfo_quote: false,
+            plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
         }
     }
@@ -123,6 +130,8 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.fact_clock_ms = opts.fact_clock_ms.clone();
     cfg.kill_policy = opts.kill_policy.clone();
     cfg.plant_kotak_s1k_fixtures = opts.plant_kotak_s1k_fixtures;
+    cfg.plant_kotak_nfo_quote = opts.plant_kotak_nfo_quote;
+    cfg.plant_kotak_nfo_contracts = opts.plant_kotak_nfo_contracts;
     cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
 }
 
@@ -142,6 +151,10 @@ pub fn spawn_test_agent_with_options(
     }
     let mut cfg = AgentConfig::test_on_port(port, TEST_SECRET.to_string());
     apply_broker_options(&mut cfg, &opts);
+    if cfg.station_token_store.is_none() {
+        // Tests must not block on developer Keychain / live-state hydrate.
+        cfg.station_token_store = Some(Arc::new(MemoryStationTokenStore::default()));
+    }
     if opts.recent_trades_db_path.is_none() {
         remove_sqlite_files(&cfg.recent_trades_db_path);
     }
@@ -149,9 +162,10 @@ pub fn spawn_test_agent_with_options(
     remove_sqlite_files(&cfg.fact_outbox_db_path);
     remove_sqlite_files(&cfg.history_db_path);
     tokio::spawn(async move {
-        tradeautopsy_agent::run_agent(cfg)
-            .await
-            .expect("agent should bind");
+        if let Err(e) = tradeautopsy_agent::run_agent(cfg).await {
+            eprintln!("agent boot failed: {e:#}");
+            panic!("agent should bind: {e:#}");
+        }
     })
 }
 

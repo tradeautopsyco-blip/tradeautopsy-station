@@ -17,6 +17,14 @@ pub struct SymbolAssets {
     pub filters: Option<SymbolFilters>,
 }
 
+/// Search hit from the local COM instrument master. Not a Zerodha row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstrumentSearchHit {
+    pub symbol: String,
+    pub base_asset: String,
+    pub quote_asset: String,
+}
+
 /// Venue filters stored from exchangeInfo (I-S4). Not an order-placement validator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SymbolFilters {
@@ -82,6 +90,40 @@ impl ExchangeInfoSymbolCache {
         self.by_symbol.is_empty()
     }
 
+    pub fn contains_symbol(&self, symbol: &str) -> bool {
+        self.by_symbol.contains_key(&symbol.to_ascii_uppercase())
+    }
+
+    pub fn iter_symbols(&self) -> impl Iterator<Item = &str> {
+        self.by_symbol.keys().map(|s| s.as_str())
+    }
+
+    /// Prefix search on TRADING symbols and base assets. Shortest symbol first.
+    pub fn search_trading(&self, q: &str, limit: usize) -> Vec<InstrumentSearchHit> {
+        let q = q.trim().to_ascii_uppercase();
+        if q.len() < 2 {
+            return Vec::new();
+        }
+        let mut hits: Vec<InstrumentSearchHit> = self
+            .by_symbol
+            .iter()
+            .filter(|(symbol, assets)| symbol.starts_with(&q) || assets.base_asset.starts_with(&q))
+            .map(|(symbol, assets)| InstrumentSearchHit {
+                symbol: symbol.clone(),
+                base_asset: assets.base_asset.clone(),
+                quote_asset: assets.quote_asset.clone(),
+            })
+            .collect();
+        hits.sort_by(|a, b| {
+            a.symbol
+                .len()
+                .cmp(&b.symbol.len())
+                .then_with(|| a.symbol.cmp(&b.symbol))
+        });
+        hits.truncate(limit);
+        hits
+    }
+
     /// I-S4: empty cache (or symbols without LOT_SIZE + tickSize) is never “filters ready”.
     /// Live COM must not treat this as success / silently heuristic-as-ok.
     pub fn filters_ready(&self) -> bool {
@@ -111,10 +153,7 @@ impl ExchangeInfoSymbolCache {
 }
 
 /// I-S4: live COM path — empty / filter-less cache is not ready.
-pub fn live_com_filters_ready(
-    broker_slug: Option<&str>,
-    cache: &ExchangeInfoSymbolCache,
-) -> bool {
+pub fn live_com_filters_ready(broker_slug: Option<&str>, cache: &ExchangeInfoSymbolCache) -> bool {
     match broker_slug.map(|s| s.to_ascii_lowercase()) {
         Some(slug) if slug == "binance_com" => cache.filters_ready(),
         _ => true,
@@ -173,7 +212,8 @@ fn heuristic_symbol_assets(symbol: &str) -> Option<(String, String)> {
 }
 
 fn parse_f64_str(raw: Option<&str>) -> Option<f64> {
-    raw.and_then(|s| s.parse::<f64>().ok()).filter(|v| v.is_finite())
+    raw.and_then(|s| s.parse::<f64>().ok())
+        .filter(|v| v.is_finite())
 }
 
 fn parse_symbol_filters(filters: Option<&[ExchangeInfoFilter]>) -> Option<SymbolFilters> {
@@ -326,6 +366,22 @@ mod tests {
     }
 
     #[test]
+    fn search_trading_matches_symbol_and_base() {
+        let json = r#"{
+            "symbols": [
+                { "symbol": "BTCUSDT", "baseAsset": "BTC", "quoteAsset": "USDT", "status": "TRADING" },
+                { "symbol": "ETHUSDT", "baseAsset": "ETH", "quoteAsset": "USDT", "status": "TRADING" }
+            ]
+        }"#;
+        let cache = ExchangeInfoSymbolCache::from_exchange_info_json(json).expect("parse");
+        let hits = cache.search_trading("btc", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].symbol, "BTCUSDT");
+        assert_eq!(hits[0].base_asset, "BTC");
+        assert!(cache.contains_symbol("btcusdt"));
+    }
+
+    #[test]
     fn is_usd_quoted_symbol_from_cache_and_heuristic() {
         let json = r#"{
             "symbols": [
@@ -336,14 +392,23 @@ mod tests {
         let cache = ExchangeInfoSymbolCache::from_exchange_info_json(json).expect("parse");
         assert!(is_usd_quoted_symbol(&cache, "BTCUSDT", false));
         assert!(!is_usd_quoted_symbol(&cache, "ETHBTC", false));
-        assert!(is_usd_quoted_symbol(&ExchangeInfoSymbolCache::empty(), "SOLUSDT", true));
-        assert!(!is_usd_quoted_symbol(&ExchangeInfoSymbolCache::empty(), "ETHBTC", true));
+        assert!(is_usd_quoted_symbol(
+            &ExchangeInfoSymbolCache::empty(),
+            "SOLUSDT",
+            true
+        ));
+        assert!(!is_usd_quoted_symbol(
+            &ExchangeInfoSymbolCache::empty(),
+            "ETHBTC",
+            true
+        ));
     }
 
     #[test]
     fn filters_are_persisted_from_fixture_json() {
         // I-S4
-        let cache = ExchangeInfoSymbolCache::from_exchange_info_json(FILTERS_FIXTURE).expect("parse");
+        let cache =
+            ExchangeInfoSymbolCache::from_exchange_info_json(FILTERS_FIXTURE).expect("parse");
         let btc = cache.filters_for("BTCUSDT").expect("btc filters");
         assert!((btc.min_qty.unwrap() - 0.00001).abs() < 1e-12);
         assert!((btc.max_qty.unwrap() - 9000.0).abs() < 1e-9);

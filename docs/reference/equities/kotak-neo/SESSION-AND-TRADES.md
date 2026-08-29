@@ -26,7 +26,8 @@
 | `urls.py` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/neo_api_client/urls.py | 2026-07-26 | `BASE_URL = https://mis.kotaksecurities.com` |
 | `neo_utility.py` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/neo_api_client/neo_utility.py | 2026-07-26 | `get_domain(session_init)`, `neotradeapi` fin key |
 | Totp_login.md / Totp_validate.md / Trade_report.md | SDK `docs/` | 2026-07-26 | Sample JSON shapes |
-| B6 sheet | `docs/research/sheets/kotak_neo.md` | 2026-07-24 | Product refuse list, day-book scope |
+| B6 sheet | `docs/research/sheets/kotak_neo.md` | 2026-07-24 · market-data amendment 2026-08-26 | Product refuse list, day-book scope; quotes + scrip master |
+| Quotes + scrip master | `docs/reference/india/kotak-neo/REST.md` · `WEBSOCKET.md` | 2026-08-26 | File-paths + REST quotes + subscribe; no history |
 
 ---
 

@@ -3,8 +3,9 @@
 //! CI parses fixture JSON only. Live `wss://` follows runtime subscriptions.
 
 use super::apply::apply_quote;
-use super::descriptor::BINANCE_COM_ADAPTER_ID;
+use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
 use super::registry::Registry;
+use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::{QuoteTick, Transport};
 use super::tickbook::TickBook;
 use chrono::{DateTime, Utc};
@@ -24,6 +25,11 @@ pub fn binance_public_trade_stream_url(instrument: &str) -> String {
         "wss://stream.binance.com:9443/ws/{}@trade",
         normalize_quote_instrument(instrument)
     )
+}
+
+fn binance_com_spot_book_id() -> String {
+    shipping_book_id_for_slug(BINANCE_COM_ADAPTER_ID)
+        .unwrap_or_else(|| BINANCE_COM_ADAPTER_ID.to_string())
 }
 
 /// Map a public Binance JSON payload to a quote tick. Depth / force-order → `None`.
@@ -53,6 +59,7 @@ pub fn quote_tick_from_binance_json(raw: &str, received_at: DateTime<Utc>) -> Op
             age_unknown,
             transport: Transport::Stream,
             adapter_id: BINANCE_COM_ADAPTER_ID.to_string(),
+            book_id: binance_com_spot_book_id(),
             session_ohlc: None,
         });
     }
@@ -75,6 +82,7 @@ pub fn quote_tick_from_binance_json(raw: &str, received_at: DateTime<Utc>) -> Op
             age_unknown,
             transport: Transport::Stream,
             adapter_id: BINANCE_COM_ADAPTER_ID.to_string(),
+            book_id: binance_com_spot_book_id(),
             session_ohlc: None,
         });
     }
@@ -89,6 +97,7 @@ pub fn quote_tick_from_binance_json(raw: &str, received_at: DateTime<Utc>) -> Op
         age_unknown: true,
         transport: Transport::Rest,
         adapter_id: BINANCE_COM_ADAPTER_ID.to_string(),
+        book_id: binance_com_spot_book_id(),
         session_ohlc: None,
     })
 }
@@ -104,7 +113,7 @@ pub fn spawn_binance_com_trade_loop(
         let instrument = normalize_quote_instrument(&symbol);
         {
             let mut guard = book.lock().expect("tickbook mutex poisoned");
-            guard.subscribe(BINANCE_COM_ADAPTER_ID, &instrument);
+            guard.subscribe(BINANCE_COM_SPOT_BOOK_ID, &instrument);
         }
         let url = binance_public_trade_stream_url(&instrument);
         tracing::info!(instrument = %instrument, url = %url, "s1 desk: binance_com trade stream");
@@ -195,6 +204,7 @@ mod tests {
         assert_eq!(tick.last, "96450.12");
         assert_eq!(tick.transport, Transport::Stream);
         assert_eq!(tick.adapter_id, BINANCE_COM_ADAPTER_ID);
+        assert_eq!(tick.book_id, BINANCE_COM_SPOT_BOOK_ID);
         assert!(!tick.age_unknown);
         assert_eq!(
             tick.as_of,
@@ -223,7 +233,7 @@ mod tests {
     fn stream_applies_and_rest_closes_when_subscribed() {
         let registry = desk_registry();
         let mut book = TickBook::new();
-        book.subscribe(BINANCE_COM_ADAPTER_ID, "btcusdt");
+        book.subscribe(BINANCE_COM_SPOT_BOOK_ID, "btcusdt");
 
         let trade = quote_tick_from_binance_json(
             r#"{"e":"trade","E":1,"s":"BTCUSDT","p":"100.00","T":1672515782136}"#,
@@ -232,7 +242,7 @@ mod tests {
         .unwrap();
         apply_quote(&registry, &mut book, trade).unwrap();
         assert_eq!(
-            book.get(BINANCE_COM_ADAPTER_ID, "btcusdt")
+            book.get(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
                 .map(|row| row.last.as_str()),
             Some("100.00")
         );
@@ -248,7 +258,7 @@ mod tests {
             }
         );
         assert_eq!(
-            book.get(BINANCE_COM_ADAPTER_ID, "btcusdt")
+            book.get(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
                 .map(|row| row.last.as_str()),
             Some("100.00")
         );

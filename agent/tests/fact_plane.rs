@@ -22,11 +22,7 @@ async fn events_200(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> StatusCode {
-    state
-        .posts
-        .lock()
-        .expect("posts")
-        .push((headers, body));
+    state.posts.lock().expect("posts").push((headers, body));
     StatusCode::OK
 }
 
@@ -55,15 +51,10 @@ async fn enqueue_station_online_200_marks_row_done() {
         })
         .expect("upstream"),
     );
-    let db = std::env::temp_dir().join(format!(
-        "fact-outbox-done-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db = std::env::temp_dir().join(format!("fact-outbox-done-{}.db", uuid::Uuid::new_v4()));
     let outbox = FactOutbox::open(&db, upstream).expect("open");
 
-    let EnqueueOutcome::Enqueued { id } = outbox
-        .enqueue(Fact::StationOnline)
-        .expect("enqueue")
+    let EnqueueOutcome::Enqueued { id } = outbox.enqueue(Fact::StationOnline).expect("enqueue")
     else {
         panic!("expected enqueue");
     };
@@ -85,11 +76,14 @@ async fn enqueue_station_online_200_marks_row_done() {
         auth.starts_with("Bearer ") && auth.len() > "Bearer ".len(),
         "Console ingest must use Station Caller Bearer"
     );
-    assert_eq!(body["events"], json!([{
-        "signal_type": "station_online",
-        "value": { "v": 1, "event_id": id },
-        "session_id": null
-    }]));
+    assert_eq!(
+        body["events"],
+        json!([{
+            "signal_type": "station_online",
+            "value": { "v": 1, "event_id": id },
+            "session_id": null
+        }])
+    );
     assert!(body["events"][0].get("user_id").is_none());
     drop(posts);
 
@@ -106,11 +100,7 @@ async fn events_500(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> StatusCode {
-    state
-        .posts
-        .lock()
-        .expect("posts")
-        .push((headers, body));
+    state.posts.lock().expect("posts").push((headers, body));
     StatusCode::INTERNAL_SERVER_ERROR
 }
 
@@ -139,15 +129,10 @@ async fn enqueue_station_online_500_leaves_row_for_retry() {
         })
         .expect("upstream"),
     );
-    let db = std::env::temp_dir().join(format!(
-        "fact-outbox-retry-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db = std::env::temp_dir().join(format!("fact-outbox-retry-{}.db", uuid::Uuid::new_v4()));
     let outbox = FactOutbox::open(&db, upstream).expect("open");
 
-    let EnqueueOutcome::Enqueued { id } = outbox
-        .enqueue(Fact::StationOnline)
-        .expect("enqueue")
+    let EnqueueOutcome::Enqueued { id } = outbox.enqueue(Fact::StationOnline).expect("enqueue")
     else {
         panic!("expected enqueue");
     };
@@ -201,22 +186,20 @@ async fn second_station_online_within_15s_is_dropped() {
         })
         .expect("upstream"),
     );
-    let db = std::env::temp_dir().join(format!(
-        "fact-outbox-coalesce-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db = std::env::temp_dir().join(format!("fact-outbox-coalesce-{}.db", uuid::Uuid::new_v4()));
     let outbox = FactOutbox::open(&db, upstream).expect("open");
 
-    let EnqueueOutcome::Enqueued { id } = outbox
-        .enqueue(Fact::StationOnline)
-        .expect("enqueue")
+    let EnqueueOutcome::Enqueued { id } = outbox.enqueue(Fact::StationOnline).expect("enqueue")
     else {
         panic!("expected enqueue");
     };
     outbox.drain().await.expect("drain");
-    assert!(
-        outbox.row(&id).expect("query").expect("row").done_at_ms.is_some()
-    );
+    assert!(outbox
+        .row(&id)
+        .expect("query")
+        .expect("row")
+        .done_at_ms
+        .is_some());
     assert_eq!(fake.posts.lock().expect("posts").len(), 1);
 
     assert!(
@@ -258,10 +241,7 @@ async fn no_jwt_skips_enqueue_and_does_not_post() {
         })
         .expect("upstream"),
     );
-    let db = std::env::temp_dir().join(format!(
-        "fact-outbox-no-jwt-{}.db",
-        uuid::Uuid::new_v4()
-    ));
+    let db = std::env::temp_dir().join(format!("fact-outbox-no-jwt-{}.db", uuid::Uuid::new_v4()));
     let tokens = Arc::new(MemoryStationTokenStore::default());
     let outbox = FactOutbox::open(&db, upstream)
         .expect("open")

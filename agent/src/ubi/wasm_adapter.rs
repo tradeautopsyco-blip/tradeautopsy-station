@@ -18,6 +18,7 @@ pub struct WasmBrokerAdapter {
     component_path: PathBuf,
     connection_id: String,
     broker_slug: String,
+    book_id: String,
     asset_class: String,
     credentials: HostCredentialBlob,
     transport: Arc<dyn BrokerHttpTransport>,
@@ -27,6 +28,7 @@ pub struct WasmBrokerAdapter {
 impl WasmBrokerAdapter {
     pub fn new(
         broker_slug: &str,
+        book_id: impl Into<String>,
         connection_id: impl Into<String>,
         asset_class: impl Into<String>,
         credentials: HostCredentialBlob,
@@ -42,6 +44,7 @@ impl WasmBrokerAdapter {
             component_path,
             connection_id: connection_id.into(),
             broker_slug: broker_slug.to_string(),
+            book_id: book_id.into(),
             asset_class: asset_class.into(),
             credentials,
             transport,
@@ -54,6 +57,7 @@ impl WasmBrokerAdapter {
             UbiHostConfig {
                 connection_id: self.connection_id.clone(),
                 broker_slug: self.broker_slug.clone(),
+                book_id: self.book_id.clone(),
                 asset_class: self.asset_class.clone(),
                 credentials: self.credentials.clone(),
             },
@@ -131,7 +135,25 @@ pub fn fill_event_to_broker_fill(fill: &FillEvent) -> BrokerFill {
         currency: nonempty_owned(&fill.currency),
         product: fill.product.clone().filter(|p| !p.is_empty()),
         exchange_segment: fill.exchange_segment.clone().filter(|s| !s.is_empty()),
+        instrument_type: nfo_ce_pe_fut_from_symbol(fill.exchange_segment.as_deref(), &fill.symbol),
+        // Lot is slice-2 master-owned. Never invent 1. Never copy onto COM/spot.
+        lot: None,
     }
+}
+
+/// CE/PE/FUT from the fill's trading symbol on `nse_fo` only — never product, never `"NSE"`.
+fn nfo_ce_pe_fut_from_symbol(segment: Option<&str>, symbol: &str) -> Option<String> {
+    let seg = segment?.trim().to_ascii_lowercase();
+    if seg != "nse_fo" {
+        return None;
+    }
+    let upper = symbol.trim().to_ascii_uppercase();
+    for suffix in ["CE", "PE", "FUT"] {
+        if upper.ends_with(suffix) {
+            return Some(suffix.to_string());
+        }
+    }
+    None
 }
 
 fn nonempty_owned(value: &str) -> Option<String> {
@@ -210,6 +232,63 @@ mod tests {
         assert_eq!(mis.currency.as_deref(), Some("INR"));
         assert_eq!(mis.exchange_segment.as_deref(), Some("nse_cm"));
         assert_eq!(mis.product.as_deref(), Some("MIS"));
+    }
+
+    #[test]
+    fn fill_event_preserves_nfo_segment_and_does_not_map_to_cash() {
+        let fill = fill_event_to_broker_fill(&FillEvent {
+            fill_id: "NFO-1".into(),
+            broker_slug: "kotak_neo".into(),
+            connection_id: "conn-1".into(),
+            asset_class: "nfo".into(),
+            symbol: "NIFTY".into(),
+            side: "BUY".into(),
+            qty: 15.0,
+            price: 200.0,
+            currency: "INR".into(),
+            filled_at_unix_ms: 1_784_968_500_000,
+            fee_amount: None,
+            fee_currency: None,
+            exchange_segment: Some("nse_fo".into()),
+            product: Some("NRML".into()),
+            trade_id: Some("NFO998877".into()),
+        });
+        assert_eq!(fill.exchange_segment.as_deref(), Some("nse_fo"));
+        assert_eq!(fill.product.as_deref(), Some("NRML"));
+        assert_eq!(fill.qty, 15.0);
+        assert_eq!(fill.currency.as_deref(), Some("INR"));
+        assert_ne!(fill.exchange_segment.as_deref(), Some("nse_cm"));
+        assert_ne!(fill.product.as_deref(), Some("MIS"));
+        assert!(fill.lot.is_none(), "lot comes from master, not FillEvent");
+        assert!(
+            fill.instrument_type.is_none(),
+            "symbol NIFTY has no CE/PE/FUT suffix"
+        );
+    }
+
+    #[test]
+    fn fill_event_nfo_symbol_suffix_is_ce_pe_fut_not_product() {
+        let fill = fill_event_to_broker_fill(&FillEvent {
+            fill_id: "NFO-PE".into(),
+            broker_slug: "kotak_neo".into(),
+            connection_id: "conn-1".into(),
+            asset_class: "nfo".into(),
+            symbol: "NIFTY2692221000PE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 10.0,
+            currency: "INR".into(),
+            filled_at_unix_ms: 1_784_968_500_000,
+            fee_amount: None,
+            fee_currency: None,
+            exchange_segment: Some("nse_fo".into()),
+            product: Some("NRML".into()),
+            trade_id: Some("NFO998877".into()),
+        });
+        assert_eq!(fill.instrument_type.as_deref(), Some("PE"));
+        assert_ne!(fill.instrument_type.as_deref(), Some("NRML"));
+        assert_ne!(fill.instrument_type.as_deref(), Some("NSE"));
+        assert!(fill.lot.is_none());
     }
 
     #[test]

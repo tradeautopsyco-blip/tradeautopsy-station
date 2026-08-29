@@ -17,6 +17,11 @@ const KOTAK_HOSTS: &[&str] = &[
     "mnapi.kotaksecurities.com",
     "cnapi.kotaksecurities.com",
     "napi.kotaksecurities.com",
+    "e21.kotaksecurities.com",
+    "e22.kotaksecurities.com",
+    "e41.kotaksecurities.com",
+    "e43.kotaksecurities.com",
+    "lapi.kotaksecurities.com",
 ];
 
 /// R8 gap closed: COM was reachable during an L3 block because it had no host set here.
@@ -352,6 +357,7 @@ mod tests {
         let hosts = hosts_for_broker("kotak_neo");
         assert!(hosts.contains(&"neo.kotaksecurities.com"));
         assert!(hosts.contains(&"cis.kotaksecurities.com"));
+        assert!(hosts.contains(&"e21.kotaksecurities.com"));
     }
 
     #[test]
@@ -386,7 +392,10 @@ mod tests {
     #[test]
     fn unknown_broker_does_not_silently_use_kotak_hosts() {
         let hosts = hosts_for_broker("unknown");
-        assert!(hosts.is_empty(), "unknown slug must not default to Kotak (R8)");
+        assert!(
+            hosts.is_empty(),
+            "unknown slug must not default to Kotak (R8)"
+        );
         for kotak in KOTAK_HOSTS {
             assert!(!hosts.contains(kotak));
         }
@@ -401,8 +410,27 @@ mod tests {
         assert!(com.contains(&"api.binance.com"));
         assert!(kotak.contains(&"mis.kotaksecurities.com"));
         for h in com {
-            assert!(!kotak.contains(h), "host {h} must not be shared across desks");
+            assert!(
+                !kotak.contains(h),
+                "host {h} must not be shared across desks"
+            );
         }
+    }
+
+    #[test]
+    fn kill_dns_nfo_shares_kotak_hosts_without_eapi() {
+        let com = hosts_for_broker("binance_com");
+        assert_eq!(com, BINANCE_COM_HOSTS);
+        assert!(!com.contains(&"eapi.binance.com"));
+        assert!(!com.contains(&"fapi.binance.com"));
+        assert!(!com.contains(&"dapi.binance.com"));
+
+        let kotak = hosts_for_broker("kotak_neo");
+        assert_eq!(kotak, KOTAK_HOSTS);
+        assert!(kotak.contains(&"lapi.kotaksecurities.com"));
+        assert!(kotak.contains(&"e21.kotaksecurities.com"));
+        assert!(!kotak.contains(&"mlhsm.kotaksecurities.com"));
+        assert!(!kotak.iter().any(|h| h.contains("eapi")));
     }
 
     #[cfg(target_os = "macos")]

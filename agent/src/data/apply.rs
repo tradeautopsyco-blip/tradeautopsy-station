@@ -63,9 +63,7 @@ pub fn apply_quote(
     if !registered_quote_adapter(registry, &tick.adapter_id) {
         return Err(ApplyError::UnregisteredBinding);
     }
-    if tick.transport == Transport::Rest
-        && book.is_subscribed(&tick.adapter_id, &tick.instrument_id)
-    {
+    if tick.transport == Transport::Rest && book.is_subscribed(&tick.book_id, &tick.instrument_id) {
         return Err(ApplyError::RestClosed {
             instrument_id: tick.instrument_id,
         });
@@ -109,6 +107,7 @@ mod tests {
             age_unknown,
             transport,
             adapter_id: "fixture_equity_quote".to_string(),
+            book_id: "fixture_equity_quote".to_string(),
             session_ohlc: None,
         }
     }
@@ -283,11 +282,12 @@ mod tests {
             age_unknown: true,
             transport: Transport::Rest,
             adapter_id: "binance_com".to_string(),
+            book_id: "binance-com-spot".to_string(),
             session_ohlc: None,
         };
         apply_quote(&registry, &mut book, rest).unwrap();
-        assert_eq!(book.get("binance_com", "btcusdt").unwrap().last, "1");
-        book.subscribe("binance_com", "btcusdt");
+        assert_eq!(book.get("binance-com-spot", "btcusdt").unwrap().last, "1");
+        book.subscribe("binance-com-spot", "btcusdt");
         let rest2 = QuoteTick {
             instrument_id: "btcusdt".to_string(),
             last: "2".to_string(),
@@ -296,10 +296,133 @@ mod tests {
             age_unknown: true,
             transport: Transport::Rest,
             adapter_id: "binance_com".to_string(),
+            book_id: "binance-com-spot".to_string(),
             session_ohlc: None,
         };
         let err = apply_quote(&registry, &mut book, rest2).unwrap_err();
         assert!(matches!(err, ApplyError::RestClosed { .. }));
-        assert_eq!(book.get("binance_com", "btcusdt").unwrap().last, "1");
+        assert_eq!(book.get("binance-com-spot", "btcusdt").unwrap().last, "1");
+    }
+
+    #[test]
+    fn rest_closed_is_per_book_slot() {
+        use crate::data::descriptor::binance_com_quote_descriptor;
+        let registry = Registry::load(&[binance_com_quote_descriptor()]).expect("spot quote");
+        let mut book = TickBook::new();
+        book.subscribe("binance-com-usdm", "btcusdt");
+        let rest = QuoteTick {
+            instrument_id: "btcusdt".to_string(),
+            last: "1".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "binance_com".to_string(),
+            book_id: "binance-com-spot".to_string(),
+            session_ohlc: None,
+        };
+        let outcome = apply_quote(&registry, &mut book, rest).unwrap();
+        assert_eq!(outcome, ApplyOutcome::Applied);
+        // usdm subscribe must not close spot REST; lookup is by book_id.
+        assert_eq!(book.get("binance-com-spot", "btcusdt").unwrap().last, "1");
+    }
+
+    #[test]
+    fn subscribe_nfo_does_not_close_spot_or_cash_rest() {
+        use crate::data::descriptor::{binance_com_quote_descriptor, kotak_neo_quote_descriptor};
+        let registry =
+            Registry::load(&[binance_com_quote_descriptor(), kotak_neo_quote_descriptor()])
+                .expect("spot + kotak quote");
+        let mut book = TickBook::new();
+        book.subscribe("kotak-nse-nfo", "nse_fo|12345");
+
+        let spot = QuoteTick {
+            instrument_id: "btcusdt".to_string(),
+            last: "65000".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "binance_com".to_string(),
+            book_id: "binance-com-spot".to_string(),
+            session_ohlc: None,
+        };
+        apply_quote(&registry, &mut book, spot).unwrap();
+        assert_eq!(
+            book.get("binance-com-spot", "btcusdt").unwrap().last,
+            "65000"
+        );
+
+        let cash = QuoteTick {
+            instrument_id: "nse_cm|2885".to_string(),
+            last: "1400.50".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "kotak_neo".to_string(),
+            book_id: "kotak-nse-bse-cash".to_string(),
+            session_ohlc: None,
+        };
+        apply_quote(&registry, &mut book, cash).unwrap();
+        assert_eq!(
+            book.get("kotak-nse-bse-cash", "nse_cm|2885").unwrap().last,
+            "1400.50"
+        );
+
+        let nfo = QuoteTick {
+            instrument_id: "nse_fo|12345".to_string(),
+            last: "10.00".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "kotak_neo".to_string(),
+            book_id: "kotak-nse-nfo".to_string(),
+            session_ohlc: None,
+        };
+        let err = apply_quote(&registry, &mut book, nfo).unwrap_err();
+        assert!(matches!(err, ApplyError::RestClosed { .. }));
+        assert!(book.get("kotak-nse-nfo", "nse_fo|12345").is_none());
+    }
+
+    #[test]
+    fn subscribe_cash_does_not_close_nfo_rest() {
+        use crate::data::descriptor::kotak_neo_quote_descriptor;
+        let registry = Registry::load(&[kotak_neo_quote_descriptor()]).expect("kotak quote");
+        let mut book = TickBook::new();
+        book.subscribe("kotak-nse-bse-cash", "nse_cm|2885");
+
+        let nfo = QuoteTick {
+            instrument_id: "nse_fo|12345".to_string(),
+            last: "10.00".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "kotak_neo".to_string(),
+            book_id: "kotak-nse-nfo".to_string(),
+            session_ohlc: None,
+        };
+        apply_quote(&registry, &mut book, nfo).unwrap();
+        assert_eq!(
+            book.get("kotak-nse-nfo", "nse_fo|12345").unwrap().last,
+            "10.00"
+        );
+
+        let cash = QuoteTick {
+            instrument_id: "nse_cm|2885".to_string(),
+            last: "1400.50".to_string(),
+            as_of: now(),
+            received_at: now(),
+            age_unknown: true,
+            transport: Transport::Rest,
+            adapter_id: "kotak_neo".to_string(),
+            book_id: "kotak-nse-bse-cash".to_string(),
+            session_ohlc: None,
+        };
+        let err = apply_quote(&registry, &mut book, cash).unwrap_err();
+        assert!(matches!(err, ApplyError::RestClosed { .. }));
+        assert!(book.get("kotak-nse-bse-cash", "nse_cm|2885").is_none());
     }
 }

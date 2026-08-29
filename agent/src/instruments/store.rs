@@ -203,10 +203,7 @@ impl InstrumentStore {
     }
 
     /// Venue lot/tick from instruments CSV (must not be dropped when the row has them).
-    pub fn lot_size_and_tick(
-        &self,
-        trading_symbol: &str,
-    ) -> anyhow::Result<Option<(f64, f64)>> {
+    pub fn lot_size_and_tick(&self, trading_symbol: &str) -> anyhow::Result<Option<(f64, f64)>> {
         let guard = self.conn.lock().expect("sqlite mutex poisoned");
         guard
             .query_row(
@@ -298,10 +295,8 @@ mod tests {
 
     #[test]
     fn csv_lot_and_tick_are_not_dropped() {
-        let dir = std::env::temp_dir().join(format!(
-            "ta-instruments-lot-tick-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ta-instruments-lot-tick-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("instruments.db");
         let _ = std::fs::remove_file(&path);

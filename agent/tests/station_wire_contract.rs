@@ -22,7 +22,9 @@ fn station_wire_documents_bearer_upstream_not_daemon_secret_identity() {
         .as_str()
         .unwrap()
         .starts_with("/api/bar/v1/"));
-    let cmds = hops["kill"]["command_types"].as_array().expect("command_types");
+    let cmds = hops["kill"]["command_types"]
+        .as_array()
+        .expect("command_types");
     assert!(cmds.iter().any(|c| c == "fog_of_war"));
     assert!(cmds.iter().any(|c| c == "clear_fog"));
     assert_eq!(

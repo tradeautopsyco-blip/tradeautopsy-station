@@ -83,7 +83,10 @@ fn basic_round_trip_three_fills_net_of_fees() {
     assert!((rt.qty - 1.0).abs() < 1e-6);
     // gross = 1 × (65k − 61k) = 4_000; fees = 30 + 31 + 32.5 = 93.5
     assert!((rt.fees_usd.unwrap() - 93.5).abs() < 1e-6, "fees_usd");
-    assert!((rt.realized_pnl_usd.unwrap() - 3_906.5).abs() < 1e-6, "net pnl");
+    assert!(
+        (rt.realized_pnl_usd.unwrap() - 3_906.5).abs() < 1e-6,
+        "net pnl"
+    );
     assert!(!rt.unknown_basis);
     assert!(!rt.fee_unhandled);
     assert!(!rt.quote_not_usd);
@@ -119,7 +122,11 @@ fn partial_close_is_one_round_trip_not_two() {
     ];
 
     let result = engine.reconstruct(fills);
-    assert_eq!(result.round_trips.len(), 1, "partial close must not split round-trips");
+    assert_eq!(
+        result.round_trips.len(),
+        1,
+        "partial close must not split round-trips"
+    );
 
     let rt = &result.round_trips[0];
     assert!((rt.avg_entry_price - 50_000.0).abs() < 1e-6);
@@ -158,7 +165,16 @@ fn unknown_basis_sell_excluded_from_aggregate() {
     let fills = vec![
         fill("b1", "BTCUSDT", "BUY", 1.0, 50_000.0, t(8, 0), None, None),
         fill("s1", "BTCUSDT", "SELL", 1.0, 55_000.0, t(9, 0), None, None),
-        fill("u1", "SOLUSDT", "SELL", 10.0, 150.0, t(10, 0), Some(1.5), Some("USDT")),
+        fill(
+            "u1",
+            "SOLUSDT",
+            "SELL",
+            10.0,
+            150.0,
+            t(10, 0),
+            Some(1.5),
+            Some("USDT"),
+        ),
     ];
 
     let result = engine.reconstruct(fills);
@@ -334,7 +350,10 @@ fn non_usd_quoted_pair_flagged_not_mislabeled() {
     assert!((btcusdt.realized_pnl_usd.unwrap() - 5_000.0).abs() < 1e-6);
 
     let aggregate = aggregate_known_pnl(&result.round_trips);
-    assert!((aggregate - 5_000.0).abs() < 1e-6, "ETHBTC BTC-denominated P&L excluded");
+    assert!(
+        (aggregate - 5_000.0).abs() < 1e-6,
+        "ETHBTC BTC-denominated P&L excluded"
+    );
 }
 
 /// 10. Honesty flags are independent; aggregate excludes when any is set.
@@ -435,6 +454,8 @@ fn inr_cash_reliance_is_quote_not_usd_not_usd_hero_pnl() {
             currency: Some("INR".into()),
             product: Some("CNC".into()),
             exchange_segment: Some("nse_cm".into()),
+            instrument_type: None,
+            lot: None,
         },
         BrokerFill {
             fill_id: "s1".into(),
@@ -450,13 +471,18 @@ fn inr_cash_reliance_is_quote_not_usd_not_usd_hero_pnl() {
             currency: Some("INR".into()),
             product: Some("CNC".into()),
             exchange_segment: Some("nse_cm".into()),
+            instrument_type: None,
+            lot: None,
         },
     ];
 
     let result = engine.reconstruct(fills);
     assert_eq!(result.round_trips.len(), 1);
     let rt = &result.round_trips[0];
-    assert!(rt.quote_not_usd, "INR cash must be blanked, not converted to USD");
+    assert!(
+        rt.quote_not_usd,
+        "INR cash must be blanked, not converted to USD"
+    );
     assert!(rt.realized_pnl_usd.is_none());
     assert!(rt.fees_usd.is_none());
     assert!(!is_aggregate_eligible(rt));
@@ -516,5 +542,8 @@ fn fee_unhandled_excludes_from_aggregate_like_unknown_basis() {
     assert!((eth_trip.realized_pnl_usd.unwrap() - 100.0).abs() < 1e-6);
 
     let aggregate = aggregate_known_pnl(&result.round_trips);
-    assert!((aggregate - 100.0).abs() < 1e-6, "BNB trip must not inflate aggregate");
+    assert!(
+        (aggregate - 100.0).abs() < 1e-6,
+        "BNB trip must not inflate aggregate"
+    );
 }

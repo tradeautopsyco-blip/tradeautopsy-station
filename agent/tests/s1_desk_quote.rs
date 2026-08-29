@@ -127,36 +127,57 @@ async fn s0_manifest_and_obtain_are_host_owned() {
         .await
         .unwrap();
     let list = manifests["manifests"].as_array().unwrap();
-    assert_eq!(list.len(), 2);
-    assert_eq!(list[0]["manifest_id"], "binance_com.s1.v1");
-    assert_eq!(list[0]["book_id"], "binance-com-spot");
-    assert_eq!(
-        list[0]["implemented"],
-        serde_json::json!([
-            "quotes",
-            "instruments",
-            "tradebook",
-            "funds",
-            "history",
-            "depth"
-        ])
-    );
-    assert_eq!(list[1]["manifest_id"], "kotak_neo.s1k.v1");
-    assert_eq!(list[1]["book_id"], "kotak-nse-bse-cash");
-    assert_eq!(
-        list[1]["implemented"],
-        serde_json::json!(["quotes", "instruments", "tradebook", "depth"])
-    );
-    assert!(list[0]["implemented"]
+    let ids: Vec<&str> = list
+        .iter()
+        .filter_map(|m| m["manifest_id"].as_str())
+        .collect();
+    assert!(ids.contains(&"binance_com.s1.v1"));
+    assert!(ids.contains(&"kotak_neo.s1k.v1"));
+    assert!(ids.contains(&"kotak_neo.nfo.v1"));
+
+    let first_binance = list
+        .iter()
+        .find(|m| m["adapter_id"] == "binance_com")
+        .expect("binance_com manifest");
+    assert_eq!(first_binance["manifest_id"], "binance_com.s1.v1");
+    assert_eq!(first_binance["book_id"], "binance-com-spot");
+    assert!(first_binance["implemented"]
         .as_array()
         .unwrap()
         .iter()
         .any(|op| op == "quotes"));
-    assert!(list[1]["implemented"]
+
+    let kotak_cash = list
+        .iter()
+        .find(|m| m["manifest_id"] == "kotak_neo.s1k.v1")
+        .expect("kotak cash manifest");
+    assert_eq!(kotak_cash["book_id"], "kotak-nse-bse-cash");
+    assert!(kotak_cash["implemented"]
         .as_array()
         .unwrap()
         .iter()
         .any(|op| op == "quotes"));
+
+    let kotak_nfo = list
+        .iter()
+        .find(|m| m["manifest_id"] == "kotak_neo.nfo.v1")
+        .expect("kotak nfo manifest");
+    assert_eq!(kotak_nfo["book_id"], "kotak-nse-nfo");
+    assert!(kotak_nfo["implemented"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "quotes"));
+    assert!(kotak_nfo["implemented"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "instruments"));
+    assert!(kotak_nfo["implemented"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|op| op == "optionchain"));
 
     let quotes: serde_json::Value = client
         .get(format!(
@@ -259,6 +280,8 @@ async fn s0_manifest_and_obtain_are_host_owned() {
         .unwrap();
     assert_eq!(kotak_quotes["status"], "unavailable");
     assert!(kotak_quotes["data"].is_null());
+    assert_eq!(kotak_quotes["adapter_id"], "kotak_neo");
+    assert_eq!(kotak_quotes["book_id"], "kotak-nse-bse-cash");
 
     let kotak_instruments: serde_json::Value = client
         .get(format!(
@@ -315,6 +338,51 @@ async fn s0_manifest_and_obtain_are_host_owned() {
         .unwrap();
     assert_eq!(kotak_optionchain["status"], "unsupported");
     assert!(kotak_optionchain["data"].is_null());
+
+    let nfo_quotes_empty: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nfo_quotes_empty["status"], "unavailable");
+    assert!(nfo_quotes_empty["data"].is_null());
+    assert_ne!(nfo_quotes_empty["data"]["last"], "0");
+    assert_eq!(nfo_quotes_empty["book_id"], "kotak-nse-nfo");
+
+    let nfo_optionchain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=optionchain"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nfo_optionchain["status"], "unavailable");
+    assert!(nfo_optionchain["data"].is_null());
+
+    let nfo_instruments_empty: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=instruments"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nfo_instruments_empty["status"], "unavailable");
+    assert!(nfo_instruments_empty["data"].is_null());
+    assert_eq!(nfo_instruments_empty["book_id"], "kotak-nse-nfo");
 
     let binance_history: serde_json::Value = client
         .get(format!(
@@ -456,6 +524,301 @@ async fn planted_binance_history_is_licensed_series_not_yahoo() {
     assert!(other["data"].is_null());
     assert_eq!(other["instrument_id"], "ethusdt");
     assert_ne!(other["data"]["last_close"], "0.01590000");
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn planted_nfo_quote_last_is_not_cash_last() {
+    const PORT: u16 = 19_490;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_s1k_fixtures: true,
+            plant_kotak_nfo_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let nfo: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C12345"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo quote")
+        .json()
+        .await
+        .expect("nfo json");
+    assert_ne!(nfo["status"], "unavailable");
+    assert!(!nfo["data"].is_null());
+    assert_eq!(nfo["instrument_id"], "nse_fo|12345");
+    assert_eq!(nfo["provenance"]["adapter_id"], "kotak_neo");
+    let nfo_last = nfo["data"]["last"].as_str().expect("nfo last");
+    assert_ne!(nfo_last, "0");
+    assert!(nfo_last.parse::<f64>().unwrap() > 0.0);
+
+    let cash_obtain_after_nfo_select: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cash_obtain_after_nfo_select["status"], "success");
+    assert_eq!(
+        cash_obtain_after_nfo_select["book_id"],
+        "kotak-nse-bse-cash"
+    );
+    assert_eq!(cash_obtain_after_nfo_select["data"]["last"], "1400.50");
+    assert_ne!(cash_obtain_after_nfo_select["data"]["last"], nfo_last);
+
+    let cash: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_cm%7C2885"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("cash quote")
+        .json()
+        .await
+        .expect("cash json");
+    assert_ne!(cash["status"], "unavailable");
+    let cash_last = cash["data"]["last"].as_str().expect("cash last");
+    assert_ne!(nfo_last, cash_last);
+    assert_eq!(nfo_last, "10.00");
+    assert_eq!(cash_last, "1400.50");
+
+    let nfo_obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nfo_obtain["status"], "success");
+    assert_eq!(nfo_obtain["book_id"], "kotak-nse-nfo");
+    assert_eq!(nfo_obtain["data"]["last"], "10.00");
+    assert_eq!(nfo_obtain["provenance_adapter_id"], "kotak_neo");
+
+    let cash_obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cash_obtain["status"], "success");
+    assert_eq!(cash_obtain["book_id"], "kotak-nse-bse-cash");
+    assert_eq!(cash_obtain["data"]["last"], "1400.50");
+    assert_ne!(cash_obtain["data"]["last"], nfo_obtain["data"]["last"]);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn planted_nfo_quote_without_master_optionchain_unavailable() {
+    const PORT: u16 = 19_491;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_nfo_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let quotes: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quotes["status"], "success");
+    assert!(!quotes["data"].is_null());
+    assert_eq!(quotes["data"]["last"], "10.00");
+    assert_eq!(quotes["book_id"], "kotak-nse-nfo");
+
+    let chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=optionchain"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(chain["status"], "unavailable");
+    assert!(chain["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn planted_nfo_instruments_and_optionchain_success_lock_lot() {
+    const PORT: u16 = 19_493;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_s1k_fixtures: true,
+            plant_kotak_nfo_contracts: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let nfo: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=instruments"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["book_id"], "kotak-nse-nfo");
+    assert_eq!(nfo["adapter_id"], "kotak_neo");
+    assert_eq!(nfo["data"]["contract_count"], 1);
+    assert_eq!(nfo["data"]["identity"]["family"], "reference");
+    assert_eq!(
+        nfo["data"]["identity"]["capability_id"],
+        "derivative_contracts"
+    );
+    assert_eq!(nfo["data"]["identity"]["physics"], "bounded_snapshot");
+    let lot = &nfo["data"]["rows"][0]["lot"];
+    assert!(lot.is_number(), "lot must be a JSON number: {lot}");
+    assert_eq!(lot.as_i64(), Some(65));
+    assert_eq!(nfo["data"]["rows"][0]["instrument_id"], "nse_fo|56526");
+    let dumped = nfo.to_string();
+    assert!(!dumped.contains("57500"), "no ghost strike: {dumped}");
+
+    let chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=optionchain"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(chain["status"], "success");
+    assert_eq!(chain["data"]["identity"]["capability_id"], "option_chain");
+    assert_eq!(chain["data"]["rows"][0]["instrument_id"], "nse_fo|56526");
+    assert_eq!(chain["data"]["rows"][0]["lot"], 65);
+    let dumped_chain = chain.to_string();
+    assert!(
+        !dumped_chain.contains("57500"),
+        "no ghost strike: {dumped_chain}"
+    );
+
+    let glance: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/chain?book=kotak-nse-nfo&instrument=NIFTY"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(glance["status"], "success");
+    assert_eq!(glance["identity"]["capability_id"], "option_chain");
+    assert_eq!(glance["identity"]["physics"], "bounded_snapshot");
+    assert_eq!(glance["data"]["rows"][0]["instrument_id"], "nse_fo|56526");
+
+    let cash_chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/chain?book=kotak-nse-bse-cash&instrument=NIFTY"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cash_chain["status"], "unavailable");
+    assert!(cash_chain["data"].is_null());
+
+    let cash: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&operation=instruments"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cash["book_id"], "kotak-nse-bse-cash");
+    assert_eq!(cash["status"], "success");
+    assert_eq!(cash["data"]["symbol_count"], 2);
+    assert!(cash["data"]["rows"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn nfo_plant_does_not_steal_cash_adapter_obtain() {
+    const PORT: u16 = 19_492;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_nfo_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let cash: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&operation=quotes"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(cash["book_id"], "kotak-nse-bse-cash");
+    assert_eq!(cash["status"], "unavailable");
+    assert!(cash["data"].is_null());
+    assert_ne!(cash["data"]["last"], "10.00");
+    assert_ne!(cash["data"]["last"], "0");
 
     handle.abort();
 }

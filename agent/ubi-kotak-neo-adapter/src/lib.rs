@@ -2,8 +2,8 @@
 //!
 //! Reads the session trade book through the host's `broker_http_call`; the session
 //! token, `Sid`, and base URL live in the Enforcer's credential blob and never enter
-//! component memory. v1 is equities **cash only** — F&O segments and NRML/CO/BO
-//! products are refused here, not silently normalised (B6 §12).
+//! component memory. One GET `/quick/user/trades` partitions cash (`nse_cm`/`bse_cm`
+//! + CNC/MIS) and NFO (`nse_fo`, product from the row). Do not mint a second session.
 
 #![allow(clippy::all)]
 
@@ -24,10 +24,12 @@ use crate::tradeautopsy::ubi_data::types::{
 const HOST: &str = "cis.kotaksecurities.com";
 /// B6 §2: session trade book, no date-range params.
 const TRADES_PATH: &str = "/quick/user/trades";
-/// B6 §1: equities cash only in v1.
-const ALLOWED_SEGMENTS: &[&str] = &["nse_cm", "bse_cm"];
-/// B6 §12: CNC + MIS ingested; NRML/CO/BO refused.
-const ALLOWED_PRODUCTS: &[&str] = &["CNC", "MIS"];
+/// B6 §1: equities cash segments.
+const ALLOWED_CASH_SEGMENTS: &[&str] = &["nse_cm", "bse_cm"];
+/// B6 §12: cash CNC + MIS ingested; NRML/CO/BO on cash refused.
+const ALLOWED_CASH_PRODUCTS: &[&str] = &["CNC", "MIS"];
+/// Named NFO book: `nse_fo` only. Product comes from the row (ingress signs NRML).
+const NFO_SEGMENT: &str = "nse_fo";
 /// IST is UTC+05:30; the trade book prints local exchange time with no offset.
 const IST_OFFSET_SECONDS: i64 = 5 * 3600 + 30 * 60;
 
@@ -96,14 +98,19 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
     for row in rows {
         let exchange_segment = string_field(row, "exSeg");
         let product = string_field(row, "prod");
-        if !is_supported_cash_row(exchange_segment.as_deref(), product.as_deref()) {
+        let nfo = is_nfo_row(exchange_segment.as_deref());
+        if !nfo && !is_supported_cash_row(exchange_segment.as_deref(), product.as_deref()) {
             continue;
         }
 
         let raw_symbol = string_field(row, "trdSym")
             .or_else(|| string_field(row, "sym"))
             .ok_or("trade book row missing trdSym")?;
-        let symbol = strip_equity_suffix(&raw_symbol);
+        let symbol = if nfo {
+            raw_symbol
+        } else {
+            strip_equity_suffix(&raw_symbol)
+        };
         let side = match string_field(row, "trnsTp").as_deref() {
             Some("S") | Some("s") => "SELL",
             Some("B") | Some("b") => "BUY",
@@ -129,7 +136,11 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
             fill_id,
             broker_slug: "kotak_neo".to_string(),
             connection_id: String::new(),
-            asset_class: "equities".to_string(),
+            asset_class: if nfo {
+                "nfo".to_string()
+            } else {
+                "equities".to_string()
+            },
             symbol,
             side: side.to_string(),
             qty,
@@ -146,12 +157,18 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
     Ok(out)
 }
 
+fn is_nfo_row(segment: Option<&str>) -> bool {
+    segment
+        .map(|s| s.eq_ignore_ascii_case(NFO_SEGMENT))
+        .unwrap_or(false)
+}
+
 fn is_supported_cash_row(segment: Option<&str>, product: Option<&str>) -> bool {
     let segment_ok = segment
-        .map(|s| ALLOWED_SEGMENTS.contains(&s.to_ascii_lowercase().as_str()))
+        .map(|s| ALLOWED_CASH_SEGMENTS.contains(&s.to_ascii_lowercase().as_str()))
         .unwrap_or(false);
     let product_ok = product
-        .map(|p| ALLOWED_PRODUCTS.contains(&p.to_ascii_uppercase().as_str()))
+        .map(|p| ALLOWED_CASH_PRODUCTS.contains(&p.to_ascii_uppercase().as_str()))
         .unwrap_or(false);
     segment_ok && product_ok
 }

@@ -25,6 +25,10 @@ pub struct BrokerFill {
     pub product: Option<String>,
     /// Venue segment (I-N3). Kotak cash is `nse_cm` / `bse_cm`.
     pub exchange_segment: Option<String>,
+    /// NFO only: CE / PE / FUT from master `pOptionType` or fill symbol — never product, never `"NSE"`.
+    pub instrument_type: Option<String>,
+    /// NFO only: lot from slice-2 scrip master row. Never default `1`. Never copy onto COM/spot.
+    pub lot: Option<i64>,
 }
 
 impl Default for BrokerFill {
@@ -43,6 +47,8 @@ impl Default for BrokerFill {
             currency: None,
             product: None,
             exchange_segment: None,
+            instrument_type: None,
+            lot: None,
         }
     }
 }
@@ -50,9 +56,7 @@ impl Default for BrokerFill {
 #[derive(Debug, Clone)]
 pub enum BrokerError {
     Http(String),
-    RateLimited {
-        retry_after_ms: Option<i64>,
-    },
+    RateLimited { retry_after_ms: Option<i64> },
 }
 
 impl BrokerError {
@@ -99,8 +103,7 @@ impl CountingPollAdapter {
     }
 
     pub fn poll_count(&self) -> u32 {
-        self.poll_count
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.poll_count.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -156,13 +159,11 @@ impl ConfigurableDataClassAdapter {
             return round;
         }
         let mut rounds = self.rounds.lock().expect("rounds");
-        rounds
-            .pop_front()
-            .unwrap_or(DataClassPollRound {
-                fills: Ok(vec![]),
-                balances: Ok(BrokerBalancesSnapshot::default()),
-                open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
-            })
+        rounds.pop_front().unwrap_or(DataClassPollRound {
+            fills: Ok(vec![]),
+            balances: Ok(BrokerBalancesSnapshot::default()),
+            open_orders: Ok(BrokerOpenOrdersSnapshot::empty()),
+        })
     }
 }
 
@@ -213,9 +214,9 @@ impl BrokerAdapter for SeqMockBrokerAdapter {
             .unwrap_or_else(|| Ok(Vec::new()))
             .map_err(|e| match e {
                 BrokerError::Http(s) => BrokerError::Http(s),
-                BrokerError::RateLimited { retry_after_ms } => BrokerError::RateLimited {
-                    retry_after_ms,
-                },
+                BrokerError::RateLimited { retry_after_ms } => {
+                    BrokerError::RateLimited { retry_after_ms }
+                }
             })
     }
 }

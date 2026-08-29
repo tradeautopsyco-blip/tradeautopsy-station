@@ -207,6 +207,8 @@ pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::Brok
         currency: Some("USDT".to_string()),
         product: None,
         exchange_segment: None,
+        instrument_type: None,
+        lot: None,
     }
 }
 

@@ -283,6 +283,126 @@ struct BrokerBridgeTests {
         #expect(vm.barDeclarationSymbol == "RE")
     }
 
+    @Test func selectSymbolKotakNfoOnOptionsSetsTickBookId() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        vm.showSymbolSuggestions = true
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        vm.symbolSuggestions = [nfo]
+        vm.selectSymbol(nfo)
+        #expect(vm.barDeclarationLastError == nil)
+        #expect(vm.deskSelectedInstrumentId == "nse_fo|12345")
+        #expect(vm.barDeclarationSymbol == "BANKNIFTY25SEP57500CE")
+        #expect(vm.symbolSuggestions.isEmpty)
+        #expect(vm.showSymbolSuggestions == false)
+    }
+
+    @Test func selectSymbolRefusesNfoOnKotakCashDeclare() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .equity
+        vm.deskSelectedInstrumentId = ""
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        vm.selectSymbol(nfo)
+        #expect(vm.barDeclarationLastError == "Select a Kotak cash instrument")
+        #expect(vm.deskSelectedInstrumentId.isEmpty)
+    }
+
+    @Test func selectSymbolRefusesCashOnKotakOptionsDeclare() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = ""
+        let cash = InstrumentResult(
+            trading_symbol: "NMDC",
+            name: "NMDC Limited",
+            exchange: "kotak_neo",
+            segment: "nse_cm",
+            instrument_token: 11532,
+            last_price: 0
+        )
+        vm.selectSymbol(cash)
+        #expect(vm.barDeclarationLastError == "Select a Kotak NFO instrument")
+        #expect(vm.deskSelectedInstrumentId.isEmpty)
+    }
+
+    @Test func selectSymbolKotakOptionsWithoutTokenDoesNotPaintUnderlyingTicker() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = ""
+        vm.declEntryPrice = ""
+        vm.deskLastStatus = "unavailable"
+        let ghost = InstrumentResult(
+            trading_symbol: "BANKNIFTY",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: nil,
+            last_price: 0
+        )
+        vm.selectSymbol(ghost)
+        #expect(vm.deskSelectedInstrumentId != "BANKNIFTY")
+        #expect(vm.deskSelectedInstrumentId.isEmpty)
+        #expect(!InstrumentTickBookId.isNfoIdentity(vm.deskSelectedInstrumentId))
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(!vm.shouldBindQuoteLast(adapter: "kotak_neo", instrumentId: "BANKNIFTY"))
+    }
+
+    @Test func applyStationQuoteEnvelopeOptionsRejectsBinanceSpotLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.declEntryPrice = ""
+        vm.declareAssetClass = .options
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "data": ["last": "65000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.declEntryPrice.isEmpty)
+    }
+
+    @Test func applyStationQuoteEnvelopeOptionsBindsNfoLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declEntryPrice = ""
+        vm.declareAssetClass = .options
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "nse_fo|12345",
+            "data": ["last": "245.50"],
+            "provenance": ["adapter_id": "kotak_neo"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.declEntryPrice == "245.50")
+    }
+
     @Test func emptySlugWhileSessionActiveIsCatalogDesk() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = nil

@@ -21,6 +21,7 @@ mod fact_outbox;
 mod instruments;
 mod kill_policy;
 mod kill_switch_audit;
+mod kotak_nfo_scrip;
 mod kotak_rest_quotes;
 mod kotak_scrip_master;
 mod live_book;
@@ -57,26 +58,29 @@ pub use broker_data_class::{
 pub use broker_redaction::RedactionBoundary;
 pub use broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 pub use broker_sync_control::{
-    build_runtime_adapter, build_wasm_runtime_adapter, default_credential_vault,
-    memory_credential_vault, uses_wasm_component, BrokerRuntimeCardStatus, BrokerSyncController,
-    BrokerSyncStartRequest,
+    build_runtime_adapter, build_wasm_runtime_adapter, build_wasm_runtime_adapter_for_book,
+    default_credential_vault, memory_credential_vault, uses_wasm_component,
+    BrokerRuntimeCardStatus, BrokerSyncController, BrokerSyncStartRequest,
 };
 pub use broker_validation::{
     BrokerValidationAdapter, FakeBinanceUSValidationAdapter, LiveBinanceUSValidationAdapter,
     PermissionPosture, ValidationFailure, ValidationResult,
 };
 pub use data::{
-    apply_quote, authorize_book_call, authorize_host_call, authorize_inferred_call,
-    binance_com_quote_descriptor, capital_may_light, extract_chain, extract_contracts,
-    extract_depth, extract_greeks, extract_history, extract_licensed_history,
-    extract_margin_estimate, extract_open_interest, extract_quote, extract_quote_for,
-    fixture_quote_descriptor, infer_capability, inherit, kotak_neo_quote_descriptor,
+    apply_quote, authorize_book_call, authorize_book_fence, authorize_host_call,
+    authorize_inferred_call, binance_com_quote_descriptor, capital_may_light, extract_chain,
+    extract_contracts, extract_contracts_from_rows, extract_depth, extract_greeks, extract_history,
+    extract_licensed_history, extract_margin_estimate, extract_open_interest, extract_quote,
+    extract_quote_for, extract_quote_for_book, fixture_quote_descriptor, infer_capability, inherit,
+    is_kotak_fo_scrip_csv_path, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
     kotak_neo_s1k_manifest, normalize_quote_instrument, obtain, quote_tick_from_binance_json,
-    quote_tick_from_kotak_json, resolve_desk_instrument, ApplyError, AuthMode, DepthBook,
-    DepthEnvelope, DepthStatus, GlanceEnvelope, HistoryBook, HistoryEnvelope, HistoryStatus,
-    HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus,
-    ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
-    Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, KOTAK_NEO_ADAPTER_ID, R0_ALLOWED_HOSTS,
+    quote_tick_from_kotak_json, resolve_desk_instrument,
+    ApplyError, AuthMode, ContractRow, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope,
+    GlanceStatus, HistoryBook, HistoryEnvelope, HistoryStatus, HonestyStatus, HostRefuse,
+    InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus, ObtainEnvelope, ObtainStatus,
+    Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick, Registry, TickBook, Transport,
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
@@ -297,6 +301,10 @@ pub struct AgentConfig {
     pub quote_freshness: Duration,
     /// Slice F CI: plant cash CSV + quote JSON into TickBook / scrip master. No live session.
     pub plant_kotak_s1k_fixtures: bool,
+    /// CI: plant NFO LTP JSON into TickBook `{kotak-nse-nfo}`. Cash-only tests stay cash-only.
+    pub plant_kotak_nfo_quote: bool,
+    /// CI: plant lock-header FO CSV into the named NFO store. Not cash KotakScripMaster.
+    pub plant_kotak_nfo_contracts: bool,
     /// S2 CI: plant committed klines JSON into HistoryBook. No live Binance.
     pub plant_binance_s2_history: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
@@ -406,6 +414,8 @@ impl AgentConfig {
                 .map(Duration::from_millis)
                 .unwrap_or_else(|| Duration::from_millis(2000)),
             plant_kotak_s1k_fixtures: false,
+            plant_kotak_nfo_quote: false,
+            plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
@@ -459,6 +469,8 @@ impl AgentConfig {
             s1_desk_symbol: None,
             quote_freshness: Duration::from_millis(2000),
             plant_kotak_s1k_fixtures: false,
+            plant_kotak_nfo_quote: false,
+            plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
             instrument_master_cache_dir,
         }
@@ -633,6 +645,47 @@ fn plant_kotak_s1k_fixtures(
         .active_broker_slug = Some(crate::data::KOTAK_NEO_ADAPTER_ID.to_string());
 }
 
+/// Headless NFO last: committed quotes JSON into the named book. No live session.
+fn plant_kotak_nfo_quote(
+    registry: &crate::data::Registry,
+    tickbook: &Arc<Mutex<crate::data::TickBook>>,
+    broker_status: &Arc<Mutex<crate::broker_sync::BrokerRuntimeState>>,
+) {
+    let json = include_str!("../fixtures/kotak/quotes_neosymbol_nfo.json");
+    if let Some(tick) = crate::data::quote_tick_from_kotak_json_for_book(
+        json,
+        Utc::now(),
+        crate::data::KOTAK_NSE_NFO_BOOK_ID,
+    ) {
+        let mut book = tickbook.lock().expect("tickbook mutex poisoned");
+        if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
+            tracing::warn!(error = %err, "nfo fixture: quote plant refused");
+        }
+    }
+    broker_status
+        .lock()
+        .expect("broker_status mutex poisoned")
+        .active_broker_slug = Some(crate::data::KOTAK_NEO_ADAPTER_ID.to_string());
+}
+
+/// Headless NFO master: lock-header CSV into the named store. Not cash. No live session.
+fn plant_kotak_nfo_contracts(
+    master: &Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+    broker_status: &Arc<Mutex<crate::broker_sync::BrokerRuntimeState>>,
+) {
+    let csv = include_str!("../fixtures/kotak/nse_fo_header.csv");
+    match crate::kotak_nfo_scrip::KotakNfoScripMaster::from_csv_bytes(csv.as_bytes()) {
+        Ok(loaded) => {
+            let _ = crate::kotak_nfo_scrip::install_master_if_nonempty(master, loaded);
+        }
+        Err(err) => tracing::warn!(error = %err, "nfo fixture: FO CSV plant failed"),
+    }
+    broker_status
+        .lock()
+        .expect("broker_status mutex poisoned")
+        .active_broker_slug = Some(crate::data::KOTAK_NEO_ADAPTER_ID.to_string());
+}
+
 fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
@@ -762,6 +815,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let kotak_scrip_master = Arc::new(std::sync::Mutex::new(
         crate::kotak_scrip_master::KotakScripMaster::empty(),
     ));
+    let kotak_nfo_scrip_master = Arc::new(std::sync::Mutex::new(
+        crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+    ));
     let kotak_session_locator = Arc::new(std::sync::Mutex::new(None));
     let kotak_quote_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
     let kotak_depth_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
@@ -781,6 +837,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             &broker_status,
             &instrument_master_status,
         );
+    }
+    if config.plant_kotak_nfo_quote {
+        plant_kotak_nfo_quote(quote_registry.as_ref(), &tickbook, &broker_status);
+    }
+    if config.plant_kotak_nfo_contracts {
+        plant_kotak_nfo_contracts(&kotak_nfo_scrip_master, &broker_status);
     }
     if config.plant_binance_s2_history {
         plant_binance_s2_history(&historybook);
@@ -889,6 +951,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         broker_connections,
         instrument_master,
         kotak_scrip_master,
+        kotak_nfo_scrip_master,
         quote_streams,
         depth_streams,
         klines_inflight,

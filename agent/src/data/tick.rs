@@ -31,8 +31,10 @@ pub struct QuoteTick {
     pub received_at: DateTime<Utc>,
     pub age_unknown: bool,
     pub transport: Transport,
-    /// Must match a loaded `market/quote/latest_state` descriptor.
+    /// Must match a loaded `market/quote/latest_state` descriptor (Wasm/Keychain slug).
     pub adapter_id: String,
+    /// TickBook slot prefix. Distinct from `adapter_id` — two books can share a slug.
+    pub book_id: String,
     /// Optional session OHLC. Rides the quote envelope, not `/api/station/history`.
     pub session_ohlc: Option<SessionOhlc>,
 }

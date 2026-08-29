@@ -353,7 +353,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var declProtectiveSLConsent: Bool = true
 
     /// Spot / equity / options — not the Intraday/Swing style tabs.
-    @Published var declareAssetClass: BarDeclareAssetClass = .spot
+    @Published var declareAssetClass: BarDeclareAssetClass = .spot {
+        didSet {
+            guard oldValue != declareAssetClass else { return }
+            reconcileDeskLastForAssetClass()
+        }
+    }
     @Published var declOptionStrike: String = ""
     @Published var declOptionExpiry: String = ""
     @Published var wantOptionsChain: Bool = true
@@ -379,7 +384,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskFillsCapability: String = "unavailable"
     /// Desk-level `capabilities.instruments` from sync-state — independent of quote/account.
     @Published var deskInstrumentsCapability: String = "unavailable"
-    /// Last selected TickBook id (`nse_cm|2885` or Binance pair).
+    /// Last selected TickBook id (`nse_cm|2885`, `nse_fo|token`, or Binance pair).
     @Published var deskSelectedInstrumentId: String = ""
 
     /// Called from `NotchPanelController` to front the panel when expanding explicitly.
@@ -1093,7 +1098,7 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
         if DeskCatalogAllowlist.refusesKotakSelection(result, deskSlug: resolvedDeskSlug) {
-            barDeclarationLastError = "Select a Kotak cash instrument"
+            barDeclarationLastError = kotakInstrumentHint
             showSymbolSuggestions = false
             symbolSuggestions = []
             symbolSearchHint = nil
@@ -1107,8 +1112,18 @@ public final class NotchViewModel: ObservableObject {
             return
         }
         let kotakDesk = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
-        if kotakDesk, result.tickBookInstrumentId == nil {
-            barDeclarationLastError = "Select a Kotak cash instrument"
+        let tickId = result.tickBookInstrumentId(for: declareAssetClass, deskSlug: resolvedDeskSlug)
+        if kotakDesk, declareAssetClass == .options, tickId == nil {
+            barDeclarationLastError = kotakInstrumentHint
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+            showSymbolSuggestions = false
+            symbolSuggestions = []
+            symbolSearchHint = nil
+            return
+        }
+        if kotakDesk, tickId == nil {
+            barDeclarationLastError = kotakInstrumentHint
             showSymbolSuggestions = false
             symbolSuggestions = []
             symbolSearchHint = nil
@@ -1120,13 +1135,13 @@ public final class NotchViewModel: ObservableObject {
         showSymbolSuggestions = false
         symbolSuggestions = []
         symbolSearchHint = nil
-        if result.last_price > 0 {
-            applyLTP(result.last_price)
-        }
-        if kotakDesk, let tickId = result.tickBookInstrumentId {
+        if kotakDesk, let tickId {
             deskSelectedInstrumentId = tickId
+            if result.last_price > 0 {
+                applyLTP(result.last_price)
+            }
             fetchStationQuote(instrument: tickId)
-            refreshDeskExtracts(symbol: ticker, instrumentId: tickId)
+            refreshDeskExtracts(symbol: chainUnderlying(from: result, ticker: ticker), instrumentId: tickId)
             return
         }
         let exchangeNorm = result.exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -1135,17 +1150,50 @@ public final class NotchViewModel: ObservableObject {
             || exchangeNorm == "binance"
         {
             deskSelectedInstrumentId = ticker
+            if declareAssetClass == .options {
+                deskLastStatus = "unavailable"
+                deskQuoteCapability = "unavailable"
+                refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
+                return
+            }
+            if result.last_price > 0 {
+                applyLTP(result.last_price)
+            }
             fetchStationQuote(instrument: ticker)
             refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
             return
         }
+        if kotakDesk, declareAssetClass == .options {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+            return
+        }
         deskSelectedInstrumentId = result.tickBookInstrumentId ?? ticker
+        if result.last_price > 0 {
+            applyLTP(result.last_price)
+        }
         fetchLTP(
             symbol: ticker,
             exchange: result.exchange,
             segment: result.segment ?? result.exchange
         )
-        refreshDeskExtracts(symbol: ticker, instrumentId: deskSelectedInstrumentId)
+        refreshDeskExtracts(symbol: chainUnderlying(from: result, ticker: ticker), instrumentId: deskSelectedInstrumentId)
+    }
+
+    private var kotakInstrumentHint: String {
+        declareAssetClass == .options
+            ? "Select a Kotak NFO instrument"
+            : "Select a Kotak cash instrument"
+    }
+
+    /// NFO chain instrument is `pSymbolName` (BANKNIFTY / NIFTY), not a cash token or trading-symbol.
+    /// Binance options keep the ticker — `deskBookId` is nil, so `book=` is omitted.
+    private func chainUnderlying(from result: InstrumentResult, ticker: String) -> String {
+        guard declareAssetClass == .options,
+              BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        else { return ticker }
+        let name = result.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? ticker : name
     }
 
     /// Active catalog slug for desk-honest Last/history routing.
@@ -1173,6 +1221,9 @@ public final class NotchViewModel: ObservableObject {
 
     func fetchLTP(symbol: String, exchange: String, segment: String) {
         let exchangeNorm = exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if declareAssetClass == .options {
+            return
+        }
         if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
             return
         }
@@ -1210,6 +1261,11 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func fetchStationQuote(instrument: String) {
+        if !shouldBindQuoteLast(adapter: nil, instrumentId: instrument) {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+            return
+        }
         let encoded = InstrumentTickBookId.queryEncode(instrument)
         guard let url = URL(string: "\(baseURL())/api/station/quote?instrument=\(encoded)") else {
             return
@@ -1235,7 +1291,8 @@ public final class NotchViewModel: ObservableObject {
         let adapter = ((json["provenance"] as? [String: Any])?["adapter_id"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug), adapter == "binance_com" {
+        let instrumentId = (json["instrument_id"] as? String) ?? ""
+        if !shouldBindQuoteLast(adapter: adapter, instrumentId: instrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
             return
@@ -1264,6 +1321,60 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Options last is NFO TickBook only. Binance spot / eapi last must not paint options declare.
+    func shouldBindQuoteLast(adapter: String?, instrumentId: String) -> Bool {
+        if declareAssetClass == .options {
+            if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug) {
+                return false
+            }
+            if adapter == "binance_com" || adapter == "binance" {
+                return false
+            }
+            guard BarDeskTemplate.isKotakNfoDesk(slug: resolvedDeskSlug, assetClass: declareAssetClass) else {
+                return false
+            }
+            return InstrumentTickBookId.isNfoIdentity(instrumentId)
+        }
+        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug),
+           adapter == "binance_com" || adapter == "binance"
+        {
+            return false
+        }
+        return true
+    }
+
+    func applyLTP(_ ltp: Double) {
+        if declareAssetClass == .options {
+            if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug) { return }
+            if !BarDeskTemplate.isKotakNfoDesk(slug: resolvedDeskSlug, assetClass: declareAssetClass) {
+                return
+            }
+        }
+        if declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || declEntryPrice == "0"
+        {
+            declEntryPrice = String(format: "%.2f", ltp)
+        }
+    }
+
+    private func reconcileDeskLastForAssetClass() {
+        if declareAssetClass == .options {
+            if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
+                fetchStationQuote(instrument: deskSelectedInstrumentId)
+            } else {
+                deskLastStatus = "unavailable"
+                deskQuoteCapability = "unavailable"
+            }
+            refreshDeskExtracts(symbol: barDeclarationSymbol, instrumentId: deskSelectedInstrumentId)
+            return
+        }
+        if InstrumentTickBookId.isNfoIdentity(deskSelectedInstrumentId) {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+        }
+        refreshDeskExtracts(symbol: barDeclarationSymbol, instrumentId: deskSelectedInstrumentId)
+    }
+
     static func parseQuoteLast(_ data: [String: Any]) -> Double? {
         if let s = data["last"] as? String {
             return Double(s)
@@ -1275,14 +1386,6 @@ public final class NotchViewModel: ObservableObject {
             return Double(i)
         }
         return nil
-    }
-
-    func applyLTP(_ ltp: Double) {
-        if declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || declEntryPrice == "0"
-        {
-            declEntryPrice = String(format: "%.2f", ltp)
-        }
     }
 
     /// Bind History from a Station history extract (testable without network).
@@ -1319,6 +1422,28 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Testable chain glance path. `book=` comes from the current declare class; instrument is the typed underlying.
+    func deskChainExtractPath(symbol: String) -> String {
+        DeskChainExtractQuery.path(
+            bookId: BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass),
+            underlying: DeskChainExtractQuery.underlyingTicker(
+                preferred: symbol,
+                declarationSymbol: barDeclarationSymbol
+            )
+        )
+    }
+
+    /// Same `book=` + underlying as chain. Do not send a TickBook token as the OI instrument.
+    func deskOiExtractPath(symbol: String) -> String {
+        DeskChainExtractQuery.oiPath(
+            bookId: BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass),
+            underlying: DeskChainExtractQuery.underlyingTicker(
+                preferred: symbol,
+                declarationSymbol: barDeclarationSymbol
+            )
+        )
+    }
+
     func refreshDeskExtracts(symbol: String, instrumentId: String? = nil) {
         let selected = deskSelectedInstrumentId
         let raw: String
@@ -1331,10 +1456,12 @@ public final class NotchViewModel: ObservableObject {
         }
         let encoded = InstrumentTickBookId.queryEncode(raw)
         let kotak = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        let chainPath = deskChainExtractPath(symbol: symbol)
+        let oiPath = deskOiExtractPath(symbol: symbol)
         Task { [weak self] in
             guard let self else { return }
-            async let chain = self.getExtractJSON("/api/station/chain?instrument=\(encoded)")
-            async let oi = self.getExtractJSON("/api/station/oi?instrument=\(encoded)")
+            async let chain = self.getExtractJSON(chainPath)
+            async let oi = self.getExtractJSON(oiPath)
             let licensedJSON: [String: Any]?
             if kotak {
                 licensedJSON = await self.getExtractJSON(

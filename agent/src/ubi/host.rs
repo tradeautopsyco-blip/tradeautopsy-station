@@ -51,6 +51,8 @@ pub enum BrokerHttpMode {
 pub struct UbiHostConfig {
     pub connection_id: String,
     pub broker_slug: String,
+    /// This connection's shipping book. Fence source for `broker_http_call` — not a catalog slug lookup.
+    pub book_id: String,
     pub asset_class: String,
     /// Host-only. Must never appear in `broker_http_call` responses returned to the component.
     pub credentials: HostCredentialBlob,
@@ -160,11 +162,10 @@ impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
 
         // Kotak's real host comes from the credential blob, not the component (R6 §3.4).
         let target_host = effective_host(&request.host, &self.config.credentials);
-        let book_id = crate::ubi::catalog::descriptor_for_slug(&self.config.broker_slug)
-            .map(|d| d.book_id)
-            .unwrap_or_default();
+        // Fence this connection's book, not the catalog slug's shipping book.
+        let book_id = self.config.book_id.trim();
         let (_capability_id, auth_mode) = match crate::data::authorize_book_call(
-            &book_id,
+            book_id,
             &target_host,
             &request.method,
             &request.path,
@@ -375,6 +376,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
@@ -402,6 +404,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
@@ -442,6 +445,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("KEY", secret),
             },
@@ -471,6 +475,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
             },
@@ -521,6 +526,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
@@ -555,6 +561,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "kotak_neo".into(),
+                book_id: crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
                 asset_class: "equities".into(),
                 credentials: HostCredentialBlob::KotakSession {
                     consumer_key: "ck".into(),
@@ -589,6 +596,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
@@ -620,6 +628,7 @@ mod tests {
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
                 asset_class: "crypto_spot".into(),
                 credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
             },
@@ -653,5 +662,290 @@ mod tests {
             .iter()
             .any(|(n, _)| n.eq_ignore_ascii_case("X-MBX-APIKEY")));
         assert_eq!(resp.status, 200);
+    }
+
+    fn ticker_price_request() -> BrokerHttpRequest {
+        BrokerHttpRequest {
+            method: "GET".into(),
+            host: "api.binance.com".into(),
+            path: "/api/v3/ticker/price".into(),
+            query: vec![],
+            headers: vec![],
+            body: None,
+        }
+    }
+
+    fn ticker_price_fixtures() -> HashMap<String, BrokerHttpFixture> {
+        let mut fixtures = HashMap::new();
+        fixtures.insert(
+            "/api/v3/ticker/price".into(),
+            BrokerHttpFixture {
+                status: 200,
+                body: r#"{"symbol":"BTCUSDT","price":"1"}"#.into(),
+                headers: vec![],
+                error_class: None,
+            },
+        );
+        fixtures
+    }
+
+    #[test]
+    fn broker_http_call_empty_book_id_fails_closed_without_slug_lookup() {
+        // Catalog would map binance_com → binance-com-spot; empty config.book_id must still refuse.
+        let mut state = UbiHostState::new(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                book_id: String::new(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("k", "s"),
+            },
+            ticker_price_fixtures(),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            ticker_price_request(),
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(resp.error_class.as_deref(), Some("path_not_allowlisted"));
+        assert!(state.calls.is_empty());
+    }
+
+    #[test]
+    fn broker_http_call_fences_from_config_book_id_not_catalog_slug() {
+        let mut state = UbiHostState::new(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "not_a_catalog_slug".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("TEST_KEY", "TEST_SECRET"),
+            },
+            ticker_price_fixtures(),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            ticker_price_request(),
+        )
+        .expect("fixture ok");
+        assert_ne!(resp.error_class.as_deref(), Some("host_blocked"));
+        assert_ne!(resp.error_class.as_deref(), Some("path_not_allowlisted"));
+        assert_eq!(resp.status, 200);
+    }
+
+    #[test]
+    fn broker_http_call_spot_book_refuses_eapi() {
+        let mut state = UbiHostState::new(
+            UbiHostConfig {
+                connection_id: "c".into(),
+                broker_slug: "binance_com".into(),
+                book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
+                asset_class: "crypto_spot".into(),
+                credentials: HostCredentialBlob::hmac("k", "s"),
+            },
+            HashMap::new(),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "eapi.binance.com".into(),
+                path: "/eapi/v1/ticker".into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(resp.error_class.as_deref(), Some("host_blocked"));
+        assert!(state.calls.is_empty());
+    }
+
+    fn kotak_session_blob(base_url: &str) -> HostCredentialBlob {
+        HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: base_url.into(),
+            hs_server_id: "server4".into(),
+        }
+    }
+
+    fn kotak_host_config(book_id: &str, base_url: &str) -> UbiHostConfig {
+        UbiHostConfig {
+            connection_id: "c".into(),
+            broker_slug: "kotak_neo".into(),
+            book_id: book_id.into(),
+            asset_class: "equities".into(),
+            credentials: kotak_session_blob(base_url),
+        }
+    }
+
+    const CASH_CSV: &str = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_cm.csv";
+    const FO_CSV: &str = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
+    const CASH_QUOTE: &str = "/script-details/1.0/quotes/neosymbol/nse_cm%7C2885/ltp";
+    const NFO_QUOTE: &str = "/script-details/1.0/quotes/neosymbol/nse_fo%7C12345/ltp";
+
+    fn csv_fixture(path: &str) -> HashMap<String, BrokerHttpFixture> {
+        let mut fixtures = HashMap::new();
+        fixtures.insert(
+            path.into(),
+            BrokerHttpFixture {
+                status: 200,
+                body: "ok".into(),
+                headers: vec![],
+                error_class: None,
+            },
+        );
+        fixtures
+    }
+
+    #[test]
+    fn nfo_book_host_refuses_cash_csv_spot_ticker_and_cash_quotes() {
+        let mut state = UbiHostState::new(
+            kotak_host_config(
+                crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                "https://cis.kotaksecurities.com",
+            ),
+            csv_fixture(CASH_CSV),
+        );
+        let cash_csv = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "lapi.kotaksecurities.com".into(),
+                path: CASH_CSV.into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(
+            cash_csv.error_class.as_deref(),
+            Some("path_not_allowlisted")
+        );
+        assert!(state.calls.is_empty());
+
+        let ticker = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "api.binance.com".into(),
+                path: "/api/v3/ticker/price".into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("Ok response with error_class");
+        assert!(
+            matches!(
+                ticker.error_class.as_deref(),
+                Some("host_blocked") | Some("path_not_allowlisted")
+            ),
+            "{:?}",
+            ticker.error_class
+        );
+
+        let cash_quote = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "gw-napi.kotaksecurities.com".into(),
+                path: CASH_QUOTE.into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(
+            cash_quote.error_class.as_deref(),
+            Some("path_not_allowlisted")
+        );
+    }
+
+    #[test]
+    fn nfo_book_host_allows_fo_csv_and_nfo_quotes_fixture() {
+        let mut fo_state = UbiHostState::new(
+            kotak_host_config(
+                crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                "https://lapi.kotaksecurities.com",
+            ),
+            csv_fixture(FO_CSV),
+        );
+        let fo = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut fo_state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "lapi.kotaksecurities.com".into(),
+                path: FO_CSV.into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("FO CSV fixture");
+        assert_ne!(fo.error_class.as_deref(), Some("path_not_allowlisted"));
+        assert_ne!(fo.error_class.as_deref(), Some("host_blocked"));
+        assert_eq!(fo.status, 200);
+
+        let mut quote_fixtures = HashMap::new();
+        quote_fixtures.insert(
+            NFO_QUOTE.into(),
+            BrokerHttpFixture {
+                status: 200,
+                body: r#"{"ltp":"1"}"#.into(),
+                headers: vec![],
+                error_class: None,
+            },
+        );
+        let mut quote_state = UbiHostState::new(
+            kotak_host_config(
+                crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                "https://gw-napi.kotaksecurities.com",
+            ),
+            quote_fixtures,
+        );
+        let quote = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut quote_state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "gw-napi.kotaksecurities.com".into(),
+                path: NFO_QUOTE.into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("NFO quotes fixture");
+        assert_ne!(quote.error_class.as_deref(), Some("path_not_allowlisted"));
+        assert_eq!(quote.status, 200);
+    }
+
+    #[test]
+    fn cash_book_host_refuses_fo_csv() {
+        let mut state = UbiHostState::new(
+            kotak_host_config(
+                crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID,
+                "https://lapi.kotaksecurities.com",
+            ),
+            csv_fixture(FO_CSV),
+        );
+        let resp = tradeautopsy::ubi_data::broker_http::Host::broker_http_call(
+            &mut state,
+            BrokerHttpRequest {
+                method: "GET".into(),
+                host: "lapi.kotaksecurities.com".into(),
+                path: FO_CSV.into(),
+                query: vec![],
+                headers: vec![],
+                body: None,
+            },
+        )
+        .expect("Ok response with error_class");
+        assert_eq!(resp.error_class.as_deref(), Some("path_not_allowlisted"));
+        assert!(state.calls.is_empty());
     }
 }

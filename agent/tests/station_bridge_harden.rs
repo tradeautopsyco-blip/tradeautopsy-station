@@ -19,7 +19,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
-use common::{apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides};
+use common::{
+    apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
+};
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::net::SocketAddr;
@@ -133,10 +135,7 @@ async fn upstream_broker_ltp(
     Json(_body): Json<Value>,
 ) -> impl IntoResponse {
     *spy.headers.lock().expect("headers mutex") = Some(headers);
-    (
-        StatusCode::OK,
-        Json(json!({ "ltp": 1234.5 })),
-    )
+    (StatusCode::OK, Json(json!({ "ltp": 1234.5 })))
 }
 
 async fn assert_wire_401_sig_invalid(resp: reqwest::Response) {

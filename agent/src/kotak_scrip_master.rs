@@ -8,9 +8,9 @@
 //! `pSymbolName` (no `pToken`). F&O CSVs stay refused.
 
 use crate::data::{
-    authorize_inferred_call, is_kotak_cash_scrip_csv_path, json_object_keys, kotak_csv_cache_path,
-    truncate_body, write_raw_cache, InstrumentMasterErrorClass, InstrumentMasterFetchError,
-    InstrumentMasterStatus,
+    authorize_book_call, authorize_inferred_call, is_kotak_cash_scrip_csv_path, json_object_keys,
+    kotak_csv_cache_path, truncate_body, write_raw_cache, InstrumentMasterErrorClass,
+    InstrumentMasterFetchError, InstrumentMasterStatus, KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 use crate::instruments::normalize_broker_ticker;
 use crate::ubi::{
@@ -345,10 +345,11 @@ fn csv_allowlist_log_host_path(url: &str) -> (String, String) {
     }
 }
 
-/// Live CSV GET is only attempted after host policy allows the exact URL.
+/// Live cash CSV GET is only attempted after the cash book fence allows the URL.
+/// FO CSVs stay refused here; the NFO book uses `authorize_nfo_csv_get`.
 pub fn authorize_csv_get(url: &str) -> Result<(), String> {
     let (host, path) = split_http_url(url).ok_or_else(|| "path_not_allowlisted".to_string())?;
-    authorize_inferred_call(&host, "GET", &path, false)
+    authorize_book_call(KOTAK_NSE_BSE_CASH_BOOK_ID, &host, "GET", &path, false)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }

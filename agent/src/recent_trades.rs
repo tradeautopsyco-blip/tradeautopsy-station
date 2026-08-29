@@ -276,6 +276,8 @@ CREATE INDEX IF NOT EXISTS idx_recent_fills_inserted ON recent_fills(inserted_at
                 currency,
                 product,
                 exchange_segment,
+                instrument_type: None,
+                lot: None,
             })
         })?;
         let mut out = Vec::new();
@@ -316,6 +318,8 @@ mod tests {
             currency: Some("INR".into()),
             product: Some("CNC".into()),
             exchange_segment: Some("nse_cm".into()),
+            instrument_type: None,
+            lot: None,
         };
         store.upsert_fill(&fill).expect("upsert");
         let loaded = store.fetch_all_fills().expect("fetch");

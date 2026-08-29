@@ -31,10 +31,7 @@ async fn station_auth_begin_returns_user_code_without_device_code() {
 
     std::env::set_var("WORKOS_API_BASE_URL", workos.uri());
     std::env::set_var("WORKOS_STATION_CLIENT_ID", "client_test_station");
-    std::env::set_var(
-        "TRADEAUTOPSY_SERVER_BASE_URL",
-        "https://localhost:3000",
-    );
+    std::env::set_var("TRADEAUTOPSY_SERVER_BASE_URL", "https://localhost:3000");
 
     let _agent = spawn_test_agent_with_options(PORT, TestAgentOptions::default());
     tokio::time::sleep(Duration::from_millis(400)).await;

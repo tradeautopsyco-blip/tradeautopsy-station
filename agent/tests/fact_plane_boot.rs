@@ -9,13 +9,13 @@ use axum::{Json, Router};
 use common::{
     apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
 };
-use tradeautopsy_agent::MemoryStationTokenStore;
-use serde_json::Value;
 use serde_json::json;
+use serde_json::Value;
 use serial_test::serial;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tradeautopsy_agent::MemoryStationTokenStore;
 
 #[derive(Clone, Default)]
 struct FakeConsole {
@@ -54,9 +54,7 @@ async fn boot_with_jwt_posts_station_online_immediately() {
     opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{port}"));
     let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
     let deadline = tokio::time::Instant::now() + Duration::from_millis(800);
-    while fake.posts.lock().expect("posts").is_empty()
-        && tokio::time::Instant::now() < deadline
-    {
+    while fake.posts.lock().expect("posts").is_empty() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
@@ -113,9 +111,7 @@ async fn boot_with_jwt_posts_station_online_again_after_interval() {
     let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
 
     let deadline = tokio::time::Instant::now() + Duration::from_millis(800);
-    while fake.posts.lock().expect("posts").len() < 1
-        && tokio::time::Instant::now() < deadline
-    {
+    while fake.posts.lock().expect("posts").len() < 1 && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_eq!(
@@ -127,9 +123,7 @@ async fn boot_with_jwt_posts_station_online_again_after_interval() {
     clock.store(1_000_000 + COALESCE_MS, Ordering::SeqCst);
 
     let deadline = tokio::time::Instant::now() + Duration::from_millis(800);
-    while fake.posts.lock().expect("posts").len() < 2
-        && tokio::time::Instant::now() < deadline
-    {
+    while fake.posts.lock().expect("posts").len() < 2 && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
 
@@ -227,8 +221,7 @@ async fn boot_with_jwt_hydrates_livebook_once_then_agent_get_is_local() {
     let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
 
     let deadline = tokio::time::Instant::now() + Duration::from_millis(800);
-    while live_state_hits.load(Ordering::SeqCst) < 1 && tokio::time::Instant::now() < deadline
-    {
+    while live_state_hits.load(Ordering::SeqCst) < 1 && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_eq!(

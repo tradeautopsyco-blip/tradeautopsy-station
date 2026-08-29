@@ -9,7 +9,8 @@
 //! poll/on-select is enough. Do not subscribe `isDepth=true` until an ordered-state
 //! replica exists. Slice D stores REST `quote_type=depth` as a bounded snapshot.
 
-use super::descriptor::KOTAK_NEO_ADAPTER_ID;
+use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
+use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::{QuoteTick, SessionOhlc, Transport};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -43,6 +44,46 @@ pub fn kotak_instrument_id(segment: &str, token: &str) -> Option<String> {
 
 pub fn is_cash_segment(segment: &str) -> bool {
     matches!(segment, "nse_cm" | "bse_cm")
+}
+
+/// Named NFO book only. Not `bse_fo` / `cde_fo` / `mcx_fo`.
+pub fn is_nfo_segment(segment: &str) -> bool {
+    segment == "nse_fo"
+}
+
+/// `{segment}|{token}` for `nse_fo` only.
+pub fn kotak_nfo_instrument_id(segment: &str, token: &str) -> Option<String> {
+    let segment = segment.trim().to_ascii_lowercase();
+    let token = token.trim();
+    if token.is_empty() || !is_nfo_segment(&segment) {
+        return None;
+    }
+    Some(format!("{segment}|{token}"))
+}
+
+/// TickBook slot for a Kotak `neo_symbols` id. Unknown / other FO → `None`.
+pub fn kotak_quote_book_id(instrument_id: &str) -> Option<&'static str> {
+    let segment = instrument_id.split('|').next()?.trim().to_ascii_lowercase();
+    match segment.as_str() {
+        "nse_cm" | "bse_cm" => Some(KOTAK_NSE_BSE_CASH_BOOK_ID),
+        "nse_fo" => Some(KOTAK_NSE_NFO_BOOK_ID),
+        _ => None,
+    }
+}
+
+/// Well-formed `nse_fo|<token>` (numeric token). Cash and other FO segments → `None`.
+pub fn parse_nfo_instrument_id(raw: &str) -> Option<String> {
+    let decoded = raw.trim().replace("%7C", "|").replace("%7c", "|");
+    let (segment, token) = decoded.split_once('|')?;
+    let segment = segment.trim().to_ascii_lowercase();
+    if !is_nfo_segment(&segment) {
+        return None;
+    }
+    let token = token.trim();
+    if token.is_empty() || token.parse::<i64>().is_err() {
+        return None;
+    }
+    Some(format!("{segment}|{token}"))
 }
 
 /// SDK `urllib.parse.quote` of `{exchange_segment}|{instrument_token}`.
@@ -110,12 +151,38 @@ pub fn quote_tick_from_kotak_json(raw: &str, received_at: DateTime<Utc>) -> Opti
 }
 
 pub fn quote_ticks_from_kotak_json(raw: &str, received_at: DateTime<Utc>) -> Vec<QuoteTick> {
+    quote_ticks_from_kotak_json_for_book(raw, received_at, KOTAK_NSE_BSE_CASH_BOOK_ID)
+}
+
+/// Map Kotak REST quotes JSON to LTP ticks for a named book.
+///
+/// `kotak-nse-bse-cash`: `nse_cm` / `bse_cm` only. `kotak-nse-nfo`: `nse_fo` only
+/// (`adapter_id` stays `kotak_neo`). Unknown book → empty.
+pub fn quote_tick_from_kotak_json_for_book(
+    raw: &str,
+    received_at: DateTime<Utc>,
+    book_id: &str,
+) -> Option<QuoteTick> {
+    quote_ticks_from_kotak_json_for_book(raw, received_at, book_id)
+        .into_iter()
+        .next()
+}
+
+pub fn quote_ticks_from_kotak_json_for_book(
+    raw: &str,
+    received_at: DateTime<Utc>,
+    book_id: &str,
+) -> Vec<QuoteTick> {
+    let slot = book_id.trim();
+    if slot != KOTAK_NSE_BSE_CASH_BOOK_ID && slot != KOTAK_NSE_NFO_BOOK_ID {
+        return Vec::new();
+    }
     let Ok(value) = serde_json::from_str::<Value>(raw) else {
         return Vec::new();
     };
     quote_objects(&value)
         .into_iter()
-        .filter_map(|obj| tick_from_object(obj, received_at))
+        .filter_map(|obj| tick_from_object_for_book(obj, received_at, slot))
         .collect()
 }
 
@@ -135,10 +202,7 @@ pub(crate) fn quote_objects(value: &Value) -> Vec<&Value> {
     Vec::new()
 }
 
-/// Cash `nse_cm|token` from a quote/depth row. v1: `exchange_segment` +
-/// `instrument_token`. Live v2 array (OpenAlgo / founder 2026-08-27): `exchange` +
-/// `exchange_token`.
-pub(crate) fn cash_instrument_id_from_quote_object(value: &Value) -> Option<String> {
+fn quote_segment_and_token(value: &Value) -> Option<(String, String)> {
     let segment = json_string(
         value
             .get("exchange_segment")
@@ -153,11 +217,32 @@ pub(crate) fn cash_instrument_id_from_quote_object(value: &Value) -> Option<Stri
             .or_else(|| value.get("token"))
             .or_else(|| value.get("exchange_token"))?,
     )?;
+    Some((segment, token))
+}
+
+/// Cash `nse_cm|token` from a quote/depth row. v1: `exchange_segment` +
+/// `instrument_token`. Live v2 array (OpenAlgo / founder 2026-08-27): `exchange` +
+/// `exchange_token`.
+pub(crate) fn cash_instrument_id_from_quote_object(value: &Value) -> Option<String> {
+    let (segment, token) = quote_segment_and_token(value)?;
     kotak_instrument_id(&segment, &token)
 }
 
-fn tick_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<QuoteTick> {
-    let instrument_id = cash_instrument_id_from_quote_object(value)?;
+fn instrument_id_from_quote_object_for_book(value: &Value, book_id: &str) -> Option<String> {
+    let (segment, token) = quote_segment_and_token(value)?;
+    match book_id {
+        KOTAK_NSE_BSE_CASH_BOOK_ID => kotak_instrument_id(&segment, &token),
+        KOTAK_NSE_NFO_BOOK_ID => kotak_nfo_instrument_id(&segment, &token),
+        _ => None,
+    }
+}
+
+fn tick_from_object_for_book(
+    value: &Value,
+    received_at: DateTime<Utc>,
+    book_id: &str,
+) -> Option<QuoteTick> {
+    let instrument_id = instrument_id_from_quote_object_for_book(value, book_id)?;
     let session_ohlc = session_ohlc_from_object(value);
     let last = json_string(
         value
@@ -172,6 +257,12 @@ fn tick_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<QuoteTi
     if last_n <= 0.0 {
         return None;
     }
+    let book_id = if book_id == KOTAK_NSE_NFO_BOOK_ID {
+        KOTAK_NSE_NFO_BOOK_ID.to_string()
+    } else {
+        shipping_book_id_for_slug(KOTAK_NEO_ADAPTER_ID)
+            .unwrap_or_else(|| KOTAK_NEO_ADAPTER_ID.to_string())
+    };
     Some(QuoteTick {
         instrument_id,
         last,
@@ -180,6 +271,7 @@ fn tick_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<QuoteTi
         age_unknown: true,
         transport: Transport::Rest,
         adapter_id: KOTAK_NEO_ADAPTER_ID.to_string(),
+        book_id,
         session_ohlc,
     })
 }
@@ -253,6 +345,7 @@ mod tests {
         let tick = quote_tick_from_kotak_json(FIXTURE, received()).expect("fixture tick");
         assert_eq!(tick.instrument_id, "nse_cm|2885");
         assert_eq!(tick.adapter_id, KOTAK_NEO_ADAPTER_ID);
+        assert_eq!(tick.book_id, "kotak-nse-bse-cash");
         assert_eq!(tick.transport, Transport::Rest);
         let last: f64 = tick.last.parse().unwrap();
         assert!(last > 0.0);
@@ -270,7 +363,7 @@ mod tests {
         let mut book = TickBook::new();
         apply_quote(&registry, &mut book, tick).unwrap();
         let row = book
-            .get(KOTAK_NEO_ADAPTER_ID, "nse_cm|2885")
+            .get("kotak-nse-bse-cash", "nse_cm|2885")
             .expect("stored");
         let stored_last: f64 = row.last.parse().unwrap();
         assert!(stored_last > 0.0);
@@ -335,5 +428,85 @@ mod tests {
         assert_eq!(tick.last, "3224.50");
         assert_eq!(tick.session_ohlc.as_ref().unwrap().close, "3210.00");
         assert_eq!(tick.adapter_id, KOTAK_NEO_ADAPTER_ID);
+        assert_eq!(tick.book_id, "kotak-nse-bse-cash");
+    }
+
+    #[test]
+    fn fo_json_on_nfo_book_stores_nfo_last_not_cash_reliance() {
+        let fo_v1 = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        let fo_v2 = r#"{"exchange_token":"12345","exchange":"nse_fo","ltp":"10.00"}"#;
+        assert!(quote_tick_from_kotak_json(fo_v1, received()).is_none());
+        assert!(quote_tick_from_kotak_json(fo_v2, received()).is_none());
+        assert!(quote_ticks_from_kotak_json_for_book(
+            fo_v1,
+            received(),
+            KOTAK_NSE_BSE_CASH_BOOK_ID
+        )
+        .is_empty());
+        assert!(quote_ticks_from_kotak_json_for_book(fo_v1, received(), "unknown-book").is_empty());
+
+        let tick = quote_tick_from_kotak_json_for_book(fo_v1, received(), KOTAK_NSE_NFO_BOOK_ID)
+            .expect("nfo tick");
+        assert_eq!(tick.instrument_id, "nse_fo|12345");
+        assert_eq!(tick.book_id, KOTAK_NSE_NFO_BOOK_ID);
+        assert_eq!(tick.adapter_id, KOTAK_NEO_ADAPTER_ID);
+        let last: f64 = tick.last.parse().unwrap();
+        assert!(last > 0.0);
+
+        let registry = desk_registry();
+        let mut book = TickBook::new();
+        apply_quote(&registry, &mut book, tick).unwrap();
+        let row = book
+            .get(KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345")
+            .expect("nfo stored");
+        let stored_last: f64 = row.last.parse().unwrap();
+        assert!(stored_last > 0.0);
+        assert_eq!(row.adapter_id, KOTAK_NEO_ADAPTER_ID);
+
+        let cash = quote_tick_from_kotak_json(FIXTURE, received()).expect("cash reliance");
+        apply_quote(&registry, &mut book, cash).unwrap();
+        assert!(book.get(KOTAK_NSE_NFO_BOOK_ID, "nse_cm|2885").is_none());
+        assert!(book
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885")
+            .is_some());
+        assert!(book.get(KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345").is_some());
+
+        let bse_fo =
+            r#"{"instrument_token":"1","exchange_segment":"bse_fo","last_traded_price":"10.00"}"#;
+        assert!(
+            quote_tick_from_kotak_json_for_book(bse_fo, received(), KOTAK_NSE_NFO_BOOK_ID)
+                .is_none()
+        );
+        let cde_fo =
+            r#"{"instrument_token":"1","exchange_segment":"cde_fo","last_traded_price":"10.00"}"#;
+        assert!(
+            quote_tick_from_kotak_json_for_book(cde_fo, received(), KOTAK_NSE_NFO_BOOK_ID)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_nfo_instrument_id_is_nse_fo_numeric_only() {
+        assert_eq!(
+            parse_nfo_instrument_id("nse_fo|12345").as_deref(),
+            Some("nse_fo|12345")
+        );
+        assert_eq!(
+            parse_nfo_instrument_id("NSE_FO%7C99").as_deref(),
+            Some("nse_fo|99")
+        );
+        assert!(parse_nfo_instrument_id("nse_cm|2885").is_none());
+        assert!(parse_nfo_instrument_id("bse_fo|1").is_none());
+        assert!(parse_nfo_instrument_id("nse_fo|").is_none());
+        assert!(parse_nfo_instrument_id("nse_fo|abc").is_none());
+        assert_eq!(
+            kotak_quote_book_id("nse_fo|12345"),
+            Some(KOTAK_NSE_NFO_BOOK_ID)
+        );
+        assert_eq!(
+            kotak_quote_book_id("nse_cm|2885"),
+            Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
+        );
+        assert!(kotak_quote_book_id("bse_fo|1").is_none());
     }
 }

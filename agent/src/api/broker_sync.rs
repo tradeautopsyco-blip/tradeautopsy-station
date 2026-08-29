@@ -13,6 +13,25 @@ fn credential_handle(slug: &str, connection_id: &str) -> String {
     )
 }
 
+/// Named-book runtime keyed by `book_id`. Never overwrites the shipping slug entry.
+fn insert_named_book_runtime(
+    map: &mut std::collections::HashMap<String, BrokerConnectionRuntime>,
+    slug: &str,
+    book_id: &str,
+    handle: Option<String>,
+    budget: u32,
+) {
+    if book_id == slug {
+        return;
+    }
+    match BrokerConnectionRuntime::on_start_for_book(slug, book_id, handle, budget) {
+        Ok(runtime) => {
+            map.insert(book_id.to_string(), runtime);
+        }
+        Err(err) => tracing::debug!(slug, book_id, error = %err, "named book runtime skipped"),
+    }
+}
+
 pub async fn start_handler(
     State(state): State<AppState>,
     Json(body): Json<BrokerSyncStartRequest>,
@@ -48,6 +67,21 @@ pub async fn start_handler(
                 }
             }
         }
+        if slug == "kotak_neo" {
+            let nfo_budget = state
+                .source_manifests
+                .iter()
+                .find(|m| m.book_id == crate::data::KOTAK_NSE_NFO_BOOK_ID)
+                .map(crate::data::shared_budget)
+                .unwrap_or(60);
+            insert_named_book_runtime(
+                &mut map,
+                &slug,
+                crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                Some(credential_handle(&slug, &body.broker_connection_id)),
+                nfo_budget,
+            );
+        }
     }
     state
         .instrument_master_cancel
@@ -58,6 +92,13 @@ pub async fn start_handler(
         &body.environment,
         &body.broker_connection_id,
     );
+    if slug == "kotak_neo" {
+        crate::api::desk::spawn_nfo_master_refresh(
+            &state,
+            &body.environment,
+            &body.broker_connection_id,
+        );
+    }
     if slug == "binance_com" {
         if let Some(default) = state.s1_desk_symbol.clone() {
             crate::data::ensure_binance_com_trade_stream(
@@ -98,6 +139,9 @@ pub async fn retry_handler(State(state): State<AppState>) -> Json<Value> {
             &environment,
             &connection_id,
         );
+        if slug == "kotak_neo" {
+            crate::api::desk::spawn_nfo_master_refresh(&state, &environment, &connection_id);
+        }
     }
     Json(json!({ "ok": true }))
 }
@@ -125,7 +169,11 @@ pub async fn stop_handler(State(state): State<AppState>) -> Json<Value> {
         .expect("broker connections mutex poisoned");
     if let Some(slug) = slug {
         map.remove(&slug);
+        if slug == "binance_com" {
+            map.remove(crate::data::BINANCE_COM_OPTIONS_BOOK_ID);
+        }
         if slug == "kotak_neo" {
+            map.remove(crate::data::KOTAK_NSE_NFO_BOOK_ID);
             drop(map);
             *state
                 .kotak_session_locator
@@ -145,4 +193,27 @@ pub async fn stop_handler(State(state): State<AppState>) -> Json<Value> {
         .lock()
         .expect("selected quote instrument poisoned") = None;
     Json(json!({ "ok": true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
+    use std::collections::HashMap;
+
+    #[test]
+    fn kotak_start_map_keeps_cash_slug_and_named_nfo() {
+        let slug = "kotak_neo".to_string();
+        let handle = Some("keychain:test:conn-1".to_string());
+        let mut map = HashMap::new();
+        let runtime = BrokerConnectionRuntime::on_start(slug.clone(), handle.clone(), 60);
+        map.insert(slug.clone(), runtime);
+        insert_named_book_runtime(&mut map, &slug, KOTAK_NSE_NFO_BOOK_ID, handle, 60);
+        let cash = map.get(&slug).expect("shipping slug stays");
+        assert_eq!(cash.book_id, KOTAK_NSE_BSE_CASH_BOOK_ID);
+        let nfo = map.get(KOTAK_NSE_NFO_BOOK_ID).expect("named NFO key");
+        assert_eq!(nfo.book_id, KOTAK_NSE_NFO_BOOK_ID);
+        assert_eq!(nfo.adapter_id, "kotak_neo");
+        assert_ne!(slug.as_str(), KOTAK_NSE_NFO_BOOK_ID);
+    }
 }

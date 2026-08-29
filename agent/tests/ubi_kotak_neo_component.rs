@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
     run_describe, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
-    UbiHostConfig, UbiHostState,
+    UbiHostConfig, UbiHostState, KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_kotak_session,
@@ -18,6 +18,8 @@ use ubi_support::{
 const TRADES_PATH: &str = "/quick/user/trades";
 /// 25-07-2026 10:15:30 IST → 04:45:30 UTC.
 const ITBEES_FILLED_AT_MS: i64 = 1_784_954_730_000;
+/// 25-07-2026 11:00:00 IST → 05:30:00 UTC.
+const NFO_FILLED_AT_MS: i64 = 1_784_957_400_000;
 /// 25-07-2026 14:05:00 IST → 08:35:00 UTC.
 const RELIANCE_FILLED_AT_MS: i64 = 1_784_968_500_000;
 
@@ -25,6 +27,7 @@ fn config() -> UbiHostConfig {
     UbiHostConfig {
         connection_id: "conn-kotak-001".into(),
         broker_slug: "kotak_neo".into(),
+        book_id: KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
         asset_class: "equities".into(),
         credentials: sentinel_kotak_session(),
     }
@@ -59,7 +62,11 @@ fn trade_book_rows_map_to_fill_events() {
 
     let (fills, state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
 
-    assert_eq!(fills.len(), 2, "only nse_cm CNC/MIS rows are ingested");
+    assert_eq!(
+        fills.len(),
+        3,
+        "cash CNC/MIS plus nse_fo NRML; cash CO dropped"
+    );
     let itbees = &fills[0];
     assert_eq!(itbees.fill_id, "FILL-1");
     assert_eq!(itbees.broker_slug, "kotak_neo");
@@ -78,7 +85,7 @@ fn trade_book_rows_map_to_fill_events() {
     assert!(itbees.fee_amount.is_none());
     assert!(itbees.fee_currency.is_none());
 
-    let reliance = &fills[1];
+    let reliance = &fills[2];
     assert_eq!(reliance.symbol, "RELIANCE");
     assert_eq!(reliance.side, "SELL");
     assert_eq!(reliance.product.as_deref(), Some("MIS"));
@@ -86,24 +93,42 @@ fn trade_book_rows_map_to_fill_events() {
     // No flId on this row: falls back to the exchange order id.
     assert_eq!(reliance.fill_id, "NSE998877");
 
+    let nfo = &fills[1];
+    assert_eq!(nfo.symbol, "NIFTY25JUL24000CE");
+    assert_eq!(nfo.exchange_segment.as_deref(), Some("nse_fo"));
+    assert_eq!(nfo.product.as_deref(), Some("NRML"));
+    assert_eq!(nfo.currency, "INR");
+    assert_eq!(nfo.side, "BUY");
+    assert_ne!(nfo.product.as_deref(), Some("MIS"));
+    assert_ne!(nfo.product.as_deref(), Some("CNC"));
+    assert_eq!(nfo.filled_at_unix_ms, NFO_FILLED_AT_MS);
+
     assert_component_never_saw_secrets(&state, &wasm);
 }
 
 #[test]
-fn fno_segments_and_refused_products_are_dropped() {
+fn nse_fo_rows_are_nfo_fills_not_cash() {
     let wasm = component_wasm("kotak_neo");
     let state = fixture_state(200, read_fixture("kotak_neo_trade_book.json"));
 
     let (fills, _state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
 
-    // B6 §12 / I-N4: nse_fo/NRML and CO rows must not appear as equities cash fills.
-    assert!(fills
+    let cash: Vec<_> = fills
         .iter()
-        .all(|f| f.exchange_segment.as_deref() == Some("nse_cm")));
-    assert!(fills
+        .filter(|f| f.exchange_segment.as_deref() == Some("nse_cm"))
+        .collect();
+    let nfo: Vec<_> = fills
+        .iter()
+        .filter(|f| f.exchange_segment.as_deref() == Some("nse_fo"))
+        .collect();
+    assert_eq!(cash.len(), 2);
+    assert!(cash
         .iter()
         .all(|f| matches!(f.product.as_deref(), Some("CNC") | Some("MIS"))));
-    assert!(!fills.iter().any(|f| f.symbol.contains("NIFTY")));
+    assert_eq!(nfo.len(), 1);
+    assert_eq!(nfo[0].product.as_deref(), Some("NRML"));
+    assert_eq!(nfo[0].symbol, "NIFTY25JUL24000CE");
+    assert_eq!(nfo[0].currency, "INR");
     assert!(!fills.iter().any(|f| f.symbol == "TCS"));
 }
 
@@ -116,7 +141,7 @@ fn cursor_since_filters_the_day_book() {
         &wasm,
         state,
         FillCursor {
-            since_unix_ms: Some(ITBEES_FILLED_AT_MS + 1),
+            since_unix_ms: Some(NFO_FILLED_AT_MS + 1),
             from_id: None,
             symbol: None,
         },
@@ -162,7 +187,7 @@ fn live_mode_host_attaches_session_headers_and_blob_base_url() {
     )
     .expect("live fetch_fills");
 
-    assert_eq!(fills.len(), 2);
+    assert_eq!(fills.len(), 3);
     let sent = transport.last().expect("request sent");
     // Base URL (including its /trading prefix) comes from the credential blob, not Wasm.
     // Host attaches trade-book `sId` = hsServerId outside the component (SDK TradeReportAPI).

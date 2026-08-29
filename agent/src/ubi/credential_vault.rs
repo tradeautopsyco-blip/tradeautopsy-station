@@ -25,12 +25,7 @@ pub trait BrokerCredentialVault: Send + Sync {
     ) -> Result<()>;
 
     /// Remove a vault entry (Connect rollback / Delete). Missing entry is Ok.
-    fn delete(
-        &self,
-        environment: &str,
-        broker_slug: &str,
-        connection_id: &str,
-    ) -> Result<()>;
+    fn delete(&self, environment: &str, broker_slug: &str, connection_id: &str) -> Result<()>;
 }
 
 #[derive(Default)]
@@ -67,12 +62,7 @@ impl BrokerCredentialVault for MemoryBrokerCredentialVault {
         Ok(())
     }
 
-    fn delete(
-        &self,
-        environment: &str,
-        broker_slug: &str,
-        connection_id: &str,
-    ) -> Result<()> {
+    fn delete(&self, environment: &str, broker_slug: &str, connection_id: &str) -> Result<()> {
         let key = CredentialBlob::account_key(environment, broker_slug, connection_id);
         self.inner.lock().expect("vault").remove(&key);
         Ok(())
@@ -170,7 +160,13 @@ impl BrokerCredentialVault for KeyringBrokerCredentialVault {
         connection_id: &str,
     ) -> Result<Option<CredentialBlob>> {
         let account = CredentialBlob::account_key(environment, broker_slug, connection_id);
-        if let Some(cached) = self.cache.lock().expect("vault cache").get(&account).cloned() {
+        if let Some(cached) = self
+            .cache
+            .lock()
+            .expect("vault cache")
+            .get(&account)
+            .cloned()
+        {
             return Ok(Some(cached));
         }
 
@@ -205,12 +201,7 @@ impl BrokerCredentialVault for KeyringBrokerCredentialVault {
         Ok(())
     }
 
-    fn delete(
-        &self,
-        environment: &str,
-        broker_slug: &str,
-        connection_id: &str,
-    ) -> Result<()> {
+    fn delete(&self, environment: &str, broker_slug: &str, connection_id: &str) -> Result<()> {
         let account = CredentialBlob::account_key(environment, broker_slug, connection_id);
         self.cache.lock().expect("vault cache").remove(&account);
         let service = keychain_service_for(broker_slug);
@@ -259,12 +250,7 @@ mod tests {
         assert_eq!(loaded, Some(blob));
         // Delete clears cache even if keyring has no entry.
         vault.delete("prod", "kotak_neo", "conn-1").unwrap();
-        assert!(vault
-            .cache
-            .lock()
-            .expect("cache")
-            .get(&account)
-            .is_none());
+        assert!(vault.cache.lock().expect("cache").get(&account).is_none());
     }
 
     #[test]
@@ -300,10 +286,6 @@ mod tests {
             .load("prod", "kotak_neo", "conn-migrate")
             .expect("load");
         assert_eq!(loaded, Some(blob));
-        assert!(vault
-            .cache
-            .lock()
-            .expect("cache")
-            .contains_key(&account));
+        assert!(vault.cache.lock().expect("cache").contains_key(&account));
     }
 }

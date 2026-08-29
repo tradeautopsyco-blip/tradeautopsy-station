@@ -15,15 +15,15 @@ use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
-use tradeautopsy_agent::{
-    BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, BLOCK_MARKER,
-};
+use tradeautopsy_agent::{BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, BLOCK_MARKER};
 
 async fn post_json(port: u16, path: &str, body: Value) -> reqwest::Response {
     let url = format!("http://127.0.0.1:{port}{path}");
     let payload = serde_json::to_vec(&body).expect("json");
     apply_wire_v1(
-        client().post(&url).header("content-type", "application/json"),
+        client()
+            .post(&url)
+            .header("content-type", "application/json"),
         "POST",
         path,
         &payload,
@@ -136,9 +136,13 @@ async fn b3_stop_then_l1_kill_still_publishes_sse_sync_stays_paused() {
     wait_ready(PORT).await;
 
     assert_eq!(
-        post_json(PORT, "/api/daemon/broker/sync/start", identity_start_body("binance_us"))
-            .await
-            .status(),
+        post_json(
+            PORT,
+            "/api/daemon/broker/sync/start",
+            identity_start_body("binance_us")
+        )
+        .await
+        .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(350)).await;
@@ -154,20 +158,17 @@ async fn b3_stop_then_l1_kill_still_publishes_sse_sync_stays_paused() {
     tokio::time::sleep(Duration::from_millis(80)).await;
     let polls_at_stop = counter.poll_count();
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(
-        counter.poll_count(),
-        polls_at_stop,
-        "Stop must freeze poll"
-    );
+    assert_eq!(counter.poll_count(), polls_at_stop, "Stop must freeze poll");
     assert_eq!(
         get_json(PORT, "/api/daemon/broker/sync-state").await["runtimeStatus"],
         "paused"
     );
 
     // Subscribe before fire so we catch kill_switch_state (B3: SSE stays live after Stop).
-    let sse = tokio::spawn(async move {
-        sse_sees(PORT, "kill_switch_state", Duration::from_secs(6)).await
-    });
+    let sse =
+        tokio::spawn(
+            async move { sse_sees(PORT, "kill_switch_state", Duration::from_secs(6)).await },
+        );
     tokio::time::sleep(Duration::from_millis(150)).await;
 
     let fire = post_json(
@@ -206,10 +207,8 @@ async fn b3_stop_then_l1_kill_still_publishes_sse_sync_stays_paused() {
 #[serial]
 async fn b3_stop_then_l3_dns_audit_dismiss_leaves_sync_paused() {
     const PORT: u16 = 19_477;
-    let hosts_path = std::env::temp_dir().join(format!(
-        "rta-b3-stop-kill-{}.hosts",
-        uuid::Uuid::new_v4()
-    ));
+    let hosts_path =
+        std::env::temp_dir().join(format!("rta-b3-stop-kill-{}.hosts", uuid::Uuid::new_v4()));
     std::fs::write(&hosts_path, "127.0.0.1 localhost\n").expect("seed hosts");
     std::env::set_var(
         "TRADEAUTOPSY_HOSTS_FILE",
@@ -228,9 +227,13 @@ async fn b3_stop_then_l3_dns_audit_dismiss_leaves_sync_paused() {
     wait_ready(PORT).await;
 
     assert_eq!(
-        post_json(PORT, "/api/daemon/broker/sync/start", identity_start_body("binance_us"))
-            .await
-            .status(),
+        post_json(
+            PORT,
+            "/api/daemon/broker/sync/start",
+            identity_start_body("binance_us")
+        )
+        .await
+        .status(),
         200
     );
     tokio::time::sleep(Duration::from_millis(350)).await;
@@ -267,7 +270,10 @@ async fn b3_stop_then_l3_dns_audit_dismiss_leaves_sync_paused() {
     assert_eq!(fire_json["dns_active"], true);
 
     let hosts = std::fs::read_to_string(&hosts_path).expect("hosts");
-    assert!(hosts.contains(BLOCK_MARKER), "L3 must write marker after Stop");
+    assert!(
+        hosts.contains(BLOCK_MARKER),
+        "L3 must write marker after Stop"
+    );
     assert!(
         hosts.contains("api.binance.com"),
         "COM Kill hosts must apply after Stop"
@@ -277,7 +283,9 @@ async fn b3_stop_then_l3_dns_audit_dismiss_leaves_sync_paused() {
     assert_eq!(audit["ok"], true);
     let entries = audit["entries"].as_array().expect("entries");
     assert!(
-        entries.iter().any(|e| e["event_type"] == "fire" && e["broker"] == "binance_com"),
+        entries
+            .iter()
+            .any(|e| e["event_type"] == "fire" && e["broker"] == "binance_com"),
         "audit fire row required: {entries:?}"
     );
 

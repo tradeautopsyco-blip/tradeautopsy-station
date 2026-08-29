@@ -11,8 +11,8 @@ use common::{
     TestAgentOptions, WireHeaderOverrides,
 };
 use tradeautopsy_agent::{
-    authorize_host_call, authorize_inferred_call, infer_capability, kotak_neo_s1k_manifest, obtain,
-    AuthMode, HostRefuse, ObtainStatus, R0_ALLOWED_HOSTS,
+    authorize_book_call, authorize_host_call, authorize_inferred_call, infer_capability,
+    kotak_neo_s1k_manifest, obtain, AuthMode, HostRefuse, ObtainStatus, R0_ALLOWED_HOSTS,
 };
 
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
@@ -260,12 +260,26 @@ fn mutations_quick_quotes_napi_csv_and_klines_stay_refused() {
         .expect("live v1 cash scrip CSV GET is allowlisted");
     let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
     assert_eq!(
-        infer_capability("GET", fo).unwrap_err(),
+        authorize_book_call(
+            "kotak-nse-bse-cash",
+            "lapi.kotaksecurities.com",
+            "GET",
+            fo,
+            false
+        )
+        .unwrap_err(),
         HostRefuse::PathNotAllowlisted
     );
     let fo_v1 = "/wso2-scripmaster/v1/prod/2026-08-27/transformed-v1/nse_fo-v1.csv";
     assert_eq!(
-        infer_capability("GET", fo_v1).unwrap_err(),
+        authorize_book_call(
+            "kotak-nse-bse-cash",
+            "lapi.kotaksecurities.com",
+            "GET",
+            fo_v1,
+            false
+        )
+        .unwrap_err(),
         HostRefuse::PathNotAllowlisted
     );
     assert!(R0_ALLOWED_HOSTS.contains(&"lapi.kotaksecurities.com"));

@@ -72,8 +72,117 @@ struct BarDeskInstrumentsTests {
         #expect(InstrumentTickBookId.make(segment: "bse_cm", instrumentToken: 1400) == "bse_cm|1400")
         #expect(InstrumentTickBookId.make(segment: "SPOT", instrumentToken: 0) == nil)
         #expect(InstrumentTickBookId.make(segment: "NSE", instrumentToken: 2885) == nil)
+        #expect(InstrumentTickBookId.make(segment: "nse_fo", instrumentToken: 12345) == nil)
         #expect(InstrumentTickBookId.queryEncode("nse_cm|2885").contains("%7C"))
         #expect(!InstrumentTickBookId.queryEncode("nse_cm|2885").contains("|"))
+        #expect(InstrumentTickBookId.queryEncode("nse_fo|12345").contains("%7C"))
+    }
+
+    @Test func nfoTickBookIdIsNonNilOnlyOnOptionsKotakPath() {
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "nse_fo",
+                instrumentToken: 12345,
+                forAsset: .options,
+                deskSlug: "kotak_neo"
+            ) == "nse_fo|12345"
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "nse_fo",
+                instrumentToken: 12345,
+                forAsset: .equity,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "nse_fo",
+                instrumentToken: 12345,
+                forAsset: .spot,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "nse_fo",
+                instrumentToken: 12345,
+                forAsset: .options,
+                deskSlug: "binance_com"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "nse_cm",
+                instrumentToken: 2885,
+                forAsset: .options,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "bse_fo",
+                instrumentToken: 12345,
+                forAsset: .options,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "cde_fo",
+                instrumentToken: 12345,
+                forAsset: .options,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(
+            InstrumentTickBookId.make(
+                segment: "mcx_fo",
+                instrumentToken: 12345,
+                forAsset: .options,
+                deskSlug: "kotak_neo"
+            ) == nil
+        )
+        #expect(InstrumentTickBookId.isNfoIdentity("nse_fo|12345"))
+        #expect(!InstrumentTickBookId.isNfoIdentity("nse_cm|2885"))
+        #expect(!InstrumentTickBookId.isNfoIdentity("BTCUSDT"))
+        #expect(!InstrumentTickBookId.isNfoIdentity("nse_fo|"))
+        #expect(!InstrumentTickBookId.isNfoIdentity("nse_fo|0"))
+    }
+
+    @Test func kotakDeskBookIsNfoOnOptionsWithoutCatalogRow() {
+        #expect(
+            BarDeskTemplate.deskBookId(slug: "kotak_neo", assetClass: .options) == "kotak-nse-nfo"
+        )
+        #expect(
+            BarDeskTemplate.deskBookId(slug: "kotak_neo", assetClass: .equity) == "kotak-nse-bse-cash"
+        )
+        #expect(
+            BarDeskTemplate.deskBookId(slug: "kotak_neo", assetClass: .spot) == "kotak-nse-bse-cash"
+        )
+        #expect(BarDeskTemplate.deskBookId(slug: "binance_com", assetClass: .options) == nil)
+        #expect(BarDeskTemplate.isKotakNfoDesk(slug: "kotak_neo", assetClass: .options))
+        #expect(!BarDeskTemplate.isKotakNfoDesk(slug: "kotak_neo", assetClass: .equity))
+        #expect(!BarDeskTemplate.isKotakNfoDesk(slug: "binance_com", assetClass: .options))
+
+        let nfoPath = DeskChainExtractQuery.path(
+            bookId: BarDeskTemplate.deskBookId(slug: "kotak_neo", assetClass: .options),
+            underlying: "BANKNIFTY"
+        )
+        #expect(nfoPath.contains("book=kotak-nse-nfo"))
+        #expect(nfoPath.contains("instrument=BANKNIFTY"))
+        let nfoOi = DeskChainExtractQuery.oiPath(
+            bookId: BarDeskTemplate.deskBookId(slug: "kotak_neo", assetClass: .options),
+            underlying: "BANKNIFTY"
+        )
+        #expect(nfoOi.contains("/api/station/oi?"))
+        #expect(nfoOi.contains("book=kotak-nse-nfo"))
+        #expect(nfoOi.contains("instrument=BANKNIFTY"))
+        let binancePath = DeskChainExtractQuery.path(
+            bookId: BarDeskTemplate.deskBookId(slug: "binance_com", assetClass: .options),
+            underlying: "BTCUSDT"
+        )
+        #expect(!binancePath.contains("book="))
     }
 
     @Test func kotakSearchResultIdentityIsTickBookNotTickerOnly() {
@@ -100,6 +209,24 @@ struct BarDeskInstrumentsTests {
         #expect(nse.exchange == "kotak_neo")
         #expect(nse.exchange != "NSE")
         #expect(nse.exchange != "binance_com")
+        #expect(nse.tickBookInstrumentId(for: .equity, deskSlug: "kotak_neo") == "nse_cm|2885")
+        #expect(nse.tickBookInstrumentId(for: .options, deskSlug: "kotak_neo") == nil)
+    }
+
+    @Test func nfoSearchResultIdentityIsSegmentTokenNotCash() {
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        #expect(nfo.tickBookInstrumentId == nil)
+        #expect(nfo.tickBookInstrumentId(for: .options, deskSlug: "kotak_neo") == "nse_fo|12345")
+        #expect(nfo.tickBookInstrumentId(for: .equity, deskSlug: "kotak_neo") == nil)
+        #expect(nfo.id == "nse_fo|12345")
+        #expect(nfo.venueLabel == "nse_fo")
     }
 
     @Test func binanceSearchResultDoesNotInventKotakToken() {

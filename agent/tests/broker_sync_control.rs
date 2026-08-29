@@ -34,10 +34,7 @@ async fn get_health_boot_id(port: u16) -> String {
         .json()
         .await
         .expect("health json");
-    body["boot_id"]
-        .as_str()
-        .expect("boot_id")
-        .to_string()
+    body["boot_id"].as_str().expect("boot_id").to_string()
 }
 
 async fn post_broker_sync_start(port: u16, body: Value) -> reqwest::Response {
@@ -45,7 +42,9 @@ async fn post_broker_sync_start(port: u16, body: Value) -> reqwest::Response {
     let url = format!("http://127.0.0.1:{port}{path}");
     let payload = serde_json::to_vec(&body).expect("json");
     apply_wire_v1(
-        client().post(&url).header("content-type", "application/json"),
+        client()
+            .post(&url)
+            .header("content-type", "application/json"),
         "POST",
         path,
         &payload,
@@ -123,7 +122,10 @@ async fn runtime_start_reports_syncing_and_polls_without_preconfigured_adapter()
     tokio::time::sleep(Duration::from_millis(450)).await;
     let after = get_broker_sync_state(PORT).await;
     assert_eq!(after["runtimeStatus"], "syncing");
-    assert!(counter.poll_count() >= 1, "expected at least one poll after start");
+    assert!(
+        counter.poll_count() >= 1,
+        "expected at least one poll after start"
+    );
 
     handle.abort();
 }
@@ -149,7 +151,10 @@ async fn stop_halts_polling_without_changing_agent_boot_id() {
     );
     tokio::time::sleep(Duration::from_millis(350)).await;
     let polls_before_stop = counter.poll_count();
-    assert!(polls_before_stop >= 2, "expected active polling before stop");
+    assert!(
+        polls_before_stop >= 2,
+        "expected active polling before stop"
+    );
 
     let boot_before = get_health_boot_id(PORT).await;
 
@@ -166,7 +171,10 @@ async fn stop_halts_polling_without_changing_agent_boot_id() {
     );
 
     let boot_after = get_health_boot_id(PORT).await;
-    assert_eq!(boot_before, boot_after, "agent process must not restart on stop");
+    assert_eq!(
+        boot_before, boot_after,
+        "agent process must not restart on stop"
+    );
 
     let state = get_broker_sync_state(PORT).await;
     assert_eq!(state["runtimeStatus"], "paused");
@@ -228,7 +236,10 @@ async fn start_after_stop_resumes_polling_with_fresh_vault_credentials() {
     tokio::time::sleep(Duration::from_millis(250)).await;
 
     let seen = start_keys.lock().expect("keys").clone();
-    assert_eq!(seen, vec!["first-key".to_string(), "second-key".to_string()]);
+    assert_eq!(
+        seen,
+        vec!["first-key".to_string(), "second-key".to_string()]
+    );
     assert!(counter.poll_count() >= 1, "resume should restart polling");
 
     let state = get_broker_sync_state(PORT).await;

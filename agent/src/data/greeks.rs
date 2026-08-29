@@ -44,7 +44,10 @@ fn contracts_input_honesty(envelope: super::contracts::ContractsEnvelope) -> Inp
 }
 
 pub fn extract_greeks(chain: InputHonesty) -> GreeksEnvelope {
-    extract_greeks_from(chain, contracts_input_honesty(extract_contracts()))
+    extract_greeks_from(
+        chain,
+        contracts_input_honesty(extract_contracts(Some(crate::data::KOTAK_NSE_NFO_BOOK_ID))),
+    )
 }
 
 pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) -> GreeksEnvelope {
@@ -111,10 +114,80 @@ mod tests {
 
     #[test]
     fn lit_chain_dark_contracts_is_inherited_dark_not_unavailable() {
-        // Production `extract_greeks(Lit)` reads real extract_contracts() — FO master hole.
+        // Production extract_contracts(nfo) with no store/rows is Unavailable.
         let envelope = extract_greeks(InputHonesty::Lit);
         assert_eq!(envelope.status, HonestyStatus::InheritedDark);
         assert_ne!(envelope.status, HonestyStatus::Unavailable);
+        assert_no_fixture_greeks(&envelope);
+    }
+
+    #[test]
+    fn lit_nfo_contracts_and_lit_chain_still_pricing_model_unspecified() {
+        use crate::data::{extract_contracts_from_rows, ContractRow, KOTAK_NSE_NFO_BOOK_ID};
+
+        let rows = [ContractRow {
+            instrument_id: "nse_fo|56526".to_string(),
+            lot: 65,
+            trading_symbol: "NIFTY2692221000PE".to_string(),
+            segment: "nse_fo".to_string(),
+            instrument_type: "OPTIDX".to_string(),
+            option_type: "PE".to_string(),
+            strike_raw: "2.1e+06".to_string(),
+            expiry_raw: "1474554600".to_string(),
+        }];
+        let contracts = extract_contracts_from_rows(Some(KOTAK_NSE_NFO_BOOK_ID), Some(&rows));
+        assert!(contracts.data.is_some(), "lit = data.is_some()");
+
+        let envelope = extract_greeks_from(InputHonesty::Lit, contracts_input_honesty(contracts));
+        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert!(envelope
+            .ineligible
+            .iter()
+            .any(|s| s == PRICING_MODEL_UNSPECIFIED));
+        assert_no_fixture_greeks(&envelope);
+    }
+
+    #[test]
+    fn glance_chain_success_plus_lit_contracts_still_pricing_model_unspecified() {
+        use crate::data::{
+            chain_input_honesty, extract_chain_from, extract_contracts_from_rows, ChainRow,
+            ContractRow, KOTAK_NSE_NFO_BOOK_ID,
+        };
+
+        let rows = [ChainRow {
+            instrument_id: "nse_fo|56526".to_string(),
+            lot: 65,
+            trading_symbol: "NIFTY2692221000PE".to_string(),
+            segment: "nse_fo".to_string(),
+            instrument_type: "OPTIDX".to_string(),
+            option_type: "PE".to_string(),
+            strike_raw: "2.1e+06".to_string(),
+            expiry_raw: "1474554600".to_string(),
+            last: None,
+        }];
+        let chain = extract_chain_from(Some(KOTAK_NSE_NFO_BOOK_ID), "NIFTY", Some(&rows), None);
+        let contracts = extract_contracts_from_rows(
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            Some(&[ContractRow {
+                instrument_id: "nse_fo|56526".to_string(),
+                lot: 65,
+                trading_symbol: "NIFTY2692221000PE".to_string(),
+                segment: "nse_fo".to_string(),
+                instrument_type: "OPTIDX".to_string(),
+                option_type: "PE".to_string(),
+                strike_raw: "2.1e+06".to_string(),
+                expiry_raw: "1474554600".to_string(),
+            }]),
+        );
+        let envelope = extract_greeks_from(
+            chain_input_honesty(&chain),
+            contracts_input_honesty(contracts),
+        );
+        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert!(envelope
+            .ineligible
+            .iter()
+            .any(|s| s == PRICING_MODEL_UNSPECIFIED));
         assert_no_fixture_greeks(&envelope);
     }
 

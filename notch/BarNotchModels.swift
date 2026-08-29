@@ -541,7 +541,11 @@ final class UserDefaultsBarArchetypeStore: BarArchetypeStore {
 
 struct InstrumentResult: Codable, Identifiable, Equatable {
     /// Kotak dual-list uses `segment|token`; Binance falls back to exchange:ticker.
-    var id: String { tickBookInstrumentId ?? "\(exchange):\(trading_symbol)" }
+    var id: String {
+        tickBookInstrumentId
+            ?? nfoListIdentity
+            ?? "\(exchange):\(trading_symbol)"
+    }
     let trading_symbol: String
     let name: String
     let exchange: String
@@ -549,17 +553,40 @@ struct InstrumentResult: Codable, Identifiable, Equatable {
     let instrument_token: Int64?
     let last_price: Double
 
+    /// Cash TickBook id. Equity/spot declare — never `nse_fo`.
     var tickBookInstrumentId: String? {
         InstrumentTickBookId.make(segment: segment, instrumentToken: instrument_token)
     }
 
-    /// Venue chip: `nse_cm` / `bse_cm` on Kotak, else catalog exchange (never invented `"NSE"`).
+    /// Book-aware id: NFO last strip may use `nse_fo|token` on Kotak options declare.
+    func tickBookInstrumentId(for assetClass: BarDeclareAssetClass, deskSlug: String?) -> String? {
+        InstrumentTickBookId.make(
+            segment: segment,
+            instrumentToken: instrument_token,
+            forAsset: assetClass,
+            deskSlug: deskSlug
+        )
+    }
+
+    /// Venue chip: `nse_cm` / `bse_cm` / `nse_fo` on Kotak, else catalog exchange (never invented `"NSE"`).
     var venueLabel: String {
-        let seg = (segment ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if InstrumentTickBookId.kotakCashSegments.contains(seg.lowercased()) {
-            return seg.lowercased()
+        let seg = (segment ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if InstrumentTickBookId.kotakCashSegments.contains(seg)
+            || seg == InstrumentTickBookId.kotakNfoSegment
+        {
+            return seg
         }
         return exchange
+    }
+
+    /// List identity for FO rows without treating FO as cash last.
+    private var nfoListIdentity: String? {
+        InstrumentTickBookId.make(
+            segment: segment,
+            instrumentToken: instrument_token,
+            forAsset: .options,
+            deskSlug: "kotak_neo"
+        )
     }
 }
 

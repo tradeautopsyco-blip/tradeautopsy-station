@@ -6,10 +6,11 @@
 //! HSM websocket skipped (WEBSOCKET.md: `mlhsm` not HTTP-allowlisted; `hsServerId` unspecified).
 
 use crate::data::{
-    apply_quote, authorize_inferred_call, depth_snapshots_from_kotak_json,
+    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json,
     json_array_first_object_keys, json_field_object_keys, json_first_nested_object_keys,
-    json_object_keys, quote_ticks_from_kotak_json, quotes_neosymbol_path, DepthBook, Registry,
-    TickBook, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
+    json_object_keys, kotak_quote_book_id, quote_ticks_from_kotak_json_for_book,
+    quotes_neosymbol_path, DepthBook, Registry, TickBook, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
 };
 use crate::kotak_scrip_master::KOTAK_NEO;
 use crate::ubi::{
@@ -85,9 +86,12 @@ pub fn ensure_kotak_rest_quote(
     if instrument.is_empty() || !instrument.contains('|') {
         return;
     }
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
     {
         let guard = book.lock().expect("tickbook mutex poisoned");
-        if guard.get(KOTAK_NEO, &instrument).is_some() {
+        if guard.get(book_id, &instrument).is_some() {
             clear_quote_fetch_class(&quote_fetch_error, &instrument);
             return;
         }
@@ -123,9 +127,12 @@ pub async fn await_kotak_rest_quote(
     if instrument.is_empty() || !instrument.contains('|') {
         return;
     }
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
     {
         let guard = book.lock().expect("tickbook mutex poisoned");
-        if guard.get(KOTAK_NEO, &instrument).is_some() {
+        if guard.get(book_id, &instrument).is_some() {
             clear_quote_fetch_class(&quote_fetch_error, &instrument);
             return;
         }
@@ -135,7 +142,7 @@ pub async fn await_kotak_rest_quote(
         guard.insert(instrument.clone())
     };
     if !we_own {
-        wait_for_inflight_quote(&book, &inflight, &quote_fetch_error, &instrument).await;
+        wait_for_inflight_quote(&book, &inflight, &quote_fetch_error, &instrument, book_id).await;
         return;
     }
     let loc = locator
@@ -195,12 +202,13 @@ async fn wait_for_inflight_quote(
     inflight: &Arc<Mutex<HashSet<String>>>,
     quote_fetch_error: &QuoteFetchErrorMap,
     instrument: &str,
+    book_id: &str,
 ) {
     for _ in 0..40 {
         tokio::time::sleep(Duration::from_millis(50)).await;
         {
             let guard = book.lock().expect("tickbook mutex poisoned");
-            if guard.get(KOTAK_NEO, instrument).is_some() {
+            if guard.get(book_id, instrument).is_some() {
                 return;
             }
         }
@@ -227,8 +235,24 @@ pub fn apply_kotak_quote_body(
     body: &str,
     received_at: chrono::DateTime<Utc>,
 ) -> usize {
+    apply_kotak_quote_body_for_book(
+        registry,
+        book,
+        body,
+        received_at,
+        KOTAK_NSE_BSE_CASH_BOOK_ID,
+    )
+}
+
+pub fn apply_kotak_quote_body_for_book(
+    registry: &Registry,
+    book: &mut TickBook,
+    body: &str,
+    received_at: chrono::DateTime<Utc>,
+    book_id: &str,
+) -> usize {
     let mut applied = 0;
-    for tick in quote_ticks_from_kotak_json(body, received_at) {
+    for tick in quote_ticks_from_kotak_json_for_book(body, received_at, book_id) {
         if apply_quote(registry, book, tick).is_ok() {
             applied += 1;
         }
@@ -269,7 +293,7 @@ pub fn ensure_kotak_rest_depth(
     {
         let guard = book.lock().expect("depthbook mutex poisoned");
         if guard
-            .get(KOTAK_NEO, &instrument)
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, &instrument)
             .is_some_and(|row| row.completeness)
         {
             return;
@@ -366,8 +390,12 @@ async fn fetch_and_apply(
     )
     .await?;
     let received_at = Utc::now();
+    let book_id = kotak_quote_book_id(instrument_id).ok_or(QuoteFetchError {
+        class: QuoteFetchErrorClass::QuotesHttp,
+    })?;
     let mut guard = book.lock().expect("tickbook mutex poisoned");
-    let applied = apply_kotak_quote_body(registry, &mut guard, &body, received_at);
+    let applied =
+        apply_kotak_quote_body_for_book(registry, &mut guard, &body, received_at, book_id);
     Ok((applied, body))
 }
 
@@ -420,7 +448,10 @@ pub async fn fetch_quotes_json(
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
     let path = quotes_neosymbol_path(instrument_id, quote_type);
-    authorize_inferred_call(&host, "GET", &path, true).map_err(|_| QuoteFetchError {
+    let book_id = kotak_quote_book_id(instrument_id).ok_or(QuoteFetchError {
+        class: QuoteFetchErrorClass::QuotesHttp,
+    })?;
+    authorize_book_call(book_id, &host, "GET", &path, true).map_err(|_| QuoteFetchError {
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
     let prepared = prepare_kotak_catalog_get(&path, &creds).map_err(|_| QuoteFetchError {
@@ -472,7 +503,7 @@ mod tests {
         let json = include_str!("../fixtures/kotak/quotes_neosymbol.json");
         let n = apply_kotak_quote_body(&registry, &mut book, json, Utc::now());
         assert_eq!(n, 1);
-        let row = book.get(KOTAK_NEO, "nse_cm|2885").unwrap();
+        let row = book.get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885").unwrap();
         assert!(row.last.parse::<f64>().unwrap() > 0.0);
         assert_eq!(row.adapter_id, KOTAK_NEO);
         let tick = quote_tick_from_kotak_json(json, Utc::now()).unwrap();
@@ -489,9 +520,13 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut ticks, json, Utc::now()),
             0
         );
-        assert!(ticks.get(KOTAK_NEO, "nse_cm|2885").is_none());
+        assert!(ticks
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885")
+            .is_none());
         assert_eq!(apply_kotak_depth_body(&mut depth, json, Utc::now()), 1);
-        let row = depth.get(KOTAK_NEO, "nse_cm|2885").unwrap();
+        let row = depth
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885")
+            .unwrap();
         assert!(row.completeness);
         assert!(!row.bids.is_empty());
         let snap = depth_snapshot_from_kotak_json(json, Utc::now()).unwrap();
@@ -517,7 +552,9 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
             0
         );
-        assert!(book.get(KOTAK_NEO, "nse_cm|2885").is_none());
+        assert!(book
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885")
+            .is_none());
         assert_eq!(
             class_for_unusable_quotes_body(json),
             QuoteFetchErrorClass::Session
@@ -543,7 +580,9 @@ mod tests {
             apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
             0
         );
-        assert!(book.get(KOTAK_NEO, "nse_cm|3721").is_none());
+        assert!(book
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|3721")
+            .is_none());
         assert_eq!(
             class_for_unusable_quotes_body(json),
             QuoteFetchErrorClass::QuotesUnusable
@@ -582,7 +621,7 @@ mod tests {
         assert!(book
             .lock()
             .expect("book")
-            .get(KOTAK_NEO, "nse_cm|2885")
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_cm|2885")
             .is_some());
     }
 
@@ -606,6 +645,143 @@ mod tests {
                 .lock()
                 .expect("errors")
                 .get("nse_cm|2885")
+                .map(String::as_str),
+            Some("session")
+        );
+    }
+
+    #[test]
+    fn fo_body_applies_to_nfo_book_not_cash() {
+        let registry = Registry::load(&[kotak_neo_quote_descriptor()]).unwrap();
+        let mut book = TickBook::new();
+        let json = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        assert_eq!(
+            apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
+            0
+        );
+        assert!(book
+            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, "nse_fo|12345")
+            .is_none());
+        assert_eq!(
+            apply_kotak_quote_body_for_book(
+                &registry,
+                &mut book,
+                json,
+                Utc::now(),
+                crate::data::KOTAK_NSE_NFO_BOOK_ID
+            ),
+            1
+        );
+        let row = book
+            .get(crate::data::KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345")
+            .unwrap();
+        assert!(row.last.parse::<f64>().unwrap() > 0.0);
+        assert_eq!(row.adapter_id, KOTAK_NEO);
+        assert!(book
+            .get(crate::data::KOTAK_NSE_NFO_BOOK_ID, "nse_cm|2885")
+            .is_none());
+    }
+
+    #[test]
+    fn quote_path_is_fenced_by_book() {
+        use crate::data::KOTAK_NSE_NFO_BOOK_ID;
+        let nfo = quotes_neosymbol_path("nse_fo|12345", QUOTE_TYPE_ALL);
+        authorize_book_call(
+            KOTAK_NSE_NFO_BOOK_ID,
+            "gw-napi.kotaksecurities.com",
+            "GET",
+            &nfo,
+            true,
+        )
+        .expect("nfo book may GET nse_fo quotes");
+        assert!(authorize_book_call(
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+            "gw-napi.kotaksecurities.com",
+            "GET",
+            &nfo,
+            true,
+        )
+        .is_err());
+        let cash = quotes_neosymbol_path("nse_cm|2885", QUOTE_TYPE_ALL);
+        authorize_book_call(
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+            "gw-napi.kotaksecurities.com",
+            "GET",
+            &cash,
+            true,
+        )
+        .expect("cash book may GET nse_cm quotes");
+        assert!(authorize_book_call(
+            KOTAK_NSE_NFO_BOOK_ID,
+            "gw-napi.kotaksecurities.com",
+            "GET",
+            &cash,
+            true,
+        )
+        .is_err());
+        assert_eq!(
+            kotak_quote_book_id("nse_fo|12345"),
+            Some(KOTAK_NSE_NFO_BOOK_ID)
+        );
+        assert_eq!(
+            kotak_quote_book_id("nse_cm|2885"),
+            Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
+        );
+    }
+
+    #[tokio::test]
+    async fn await_nfo_skips_http_when_nfo_slot_has_last() {
+        use crate::data::KOTAK_NSE_NFO_BOOK_ID;
+        let registry = Arc::new(Registry::load(&[kotak_neo_quote_descriptor()]).unwrap());
+        let mut book = TickBook::new();
+        let json = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        apply_kotak_quote_body_for_book(
+            registry.as_ref(),
+            &mut book,
+            json,
+            Utc::now(),
+            KOTAK_NSE_NFO_BOOK_ID,
+        );
+        let book = Arc::new(Mutex::new(book));
+        let errors: QuoteFetchErrorMap = Arc::new(Mutex::new(HashMap::new()));
+        await_kotak_rest_quote(
+            registry,
+            book.clone(),
+            Arc::new(crate::ubi::MemoryBrokerCredentialVault::new()),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(HashSet::new())),
+            errors.clone(),
+            "nse_fo|12345",
+        )
+        .await;
+        assert!(errors.lock().expect("errors").is_empty());
+        assert!(book
+            .lock()
+            .expect("book")
+            .get(KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345")
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn await_nfo_records_session_without_cash_master() {
+        let registry = Arc::new(Registry::load(&[kotak_neo_quote_descriptor()]).unwrap());
+        let book = Arc::new(Mutex::new(TickBook::new()));
+        let errors: QuoteFetchErrorMap = Arc::new(Mutex::new(HashMap::new()));
+        await_kotak_rest_quote(
+            registry,
+            book,
+            Arc::new(crate::ubi::MemoryBrokerCredentialVault::new()),
+            Arc::new(Mutex::new(None)),
+            Arc::new(Mutex::new(HashSet::new())),
+            errors.clone(),
+            "nse_fo|12345",
+        )
+        .await;
+        assert_eq!(
+            errors
+                .lock()
+                .expect("errors")
+                .get("nse_fo|12345")
                 .map(String::as_str),
             Some("session")
         );

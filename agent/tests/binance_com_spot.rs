@@ -74,17 +74,19 @@ async fn spot_client_fetches_my_trades() {
         .and(path("/api/v3/myTrades"))
         .and(header("X-MBX-APIKEY", "test-key"))
         .and(query_param("symbol", "BTCUSDT"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{
-            "symbol": "BTCUSDT",
-            "id": 28457,
-            "orderId": 100234,
-            "price": "4.00000100",
-            "qty": "12.00000000",
-            "commission": "0.01200000",
-            "commissionAsset": "BNB",
-            "time": 1499865549590_i64,
-            "isBuyer": true
-        }])))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!([{
+                "symbol": "BTCUSDT",
+                "id": 28457,
+                "orderId": 100234,
+                "price": "4.00000100",
+                "qty": "12.00000000",
+                "commission": "0.01200000",
+                "commissionAsset": "BNB",
+                "time": 1499865549590_i64,
+                "isBuyer": true
+            }])),
+        )
         .mount(&server)
         .await;
 

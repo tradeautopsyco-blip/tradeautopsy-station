@@ -21,7 +21,9 @@ async fn post_broker_sync_start(port: u16, body: Value) -> reqwest::Response {
     let url = format!("http://127.0.0.1:{port}{path}");
     let payload = serde_json::to_vec(&body).expect("json");
     apply_wire_v1(
-        client().post(&url).header("content-type", "application/json"),
+        client()
+            .post(&url)
+            .header("content-type", "application/json"),
         "POST",
         path,
         &payload,

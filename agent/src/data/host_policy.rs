@@ -89,7 +89,9 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("ohlcv", "GET", AuthMode::Public) if path == "/api/v3/klines" => true,
         ("order_book", "GET", AuthMode::Public) if path == "/api/v3/depth" => true,
         ("instrument_master", "GET", AuthMode::Public)
-            if path == "/api/v3/exchangeInfo" || is_kotak_cash_scrip_csv_path(path) =>
+            if path == "/api/v3/exchangeInfo"
+                || is_kotak_cash_scrip_csv_path(path)
+                || is_kotak_fo_scrip_csv_path(path) =>
         {
             true
         }
@@ -128,7 +130,7 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if p.ends_with("/script-details/1.0/masterscrip/file-paths") => {
             Ok(("instrument_master", AuthMode::PrivateRead))
         }
-        ("GET", p) if is_kotak_cash_scrip_csv_path(p) => {
+        ("GET", p) if is_kotak_cash_scrip_csv_path(p) || is_kotak_fo_scrip_csv_path(p) => {
             Ok(("instrument_master", AuthMode::Public))
         }
         ("GET", p) if is_kotak_depth_path(p) => Ok(("order_book", AuthMode::PrivateRead)),
@@ -156,16 +158,16 @@ fn normalize_request_path(path: &str) -> String {
 
 fn is_kotak_r0_host(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    host_allowed(&normalized) && normalized != "api.binance.com"
+    host_allowed(&normalized) && normalized.ends_with(".kotaksecurities.com")
 }
 
 /// Fence is (book, host, path prefix). Global R0 still gates which hosts this
 /// process may ever dial — do not add fapi/dapi/eapi here.
 ///
-/// Planned (host: None — never add to R0_ALLOWED_HOSTS until a named book + Skill A):
+/// Named book `kotak-nse-nfo` shares Kotak R0 hosts and may fetch FO scrip only.
+/// Planned (host: None — never add to R0_ALLOWED_HOSTS until that book is named):
 /// binance-com-usdm     fapi.binance.com
 /// binance-com-coinm    dapi.binance.com
-/// binance-com-options  eapi.binance.com
 /// binance-com-stocks   api.binance.com + /sapi/v1/equity/  (same host, blocked by prefix)
 ///
 /// Locks: locks/binance-com-spot.md + locks/kotak-nse-bse-cash.md (fetch 2026-08-22 IST).
@@ -183,15 +185,18 @@ pub fn authorize_book_call(
     authorize_inferred_call(host, method, path, attach_private)
 }
 
-fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(), HostRefuse> {
+/// Per-book host/path fence. Callers pass the connection's `book_id`, never a
+/// Start-slug lookup (`shipping_book_id_for_slug` stays spot/cash).
+pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(), HostRefuse> {
     let host_norm = host.trim().trim_end_matches('.').to_ascii_lowercase();
     let path_norm = normalize_request_path(path);
+    let path_lower = path_norm.to_ascii_lowercase();
     match book_id {
         "binance-com-spot" => {
             if host_norm != "api.binance.com" {
                 return Err(HostRefuse::HostNotAllowed);
             }
-            if !path_norm.to_ascii_lowercase().starts_with("/api/v3/") {
+            if !path_lower.starts_with("/api/v3/") {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
@@ -199,6 +204,31 @@ fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(), Hos
         "kotak-nse-bse-cash" => {
             if !is_kotak_r0_host(&host_norm) {
                 return Err(HostRefuse::HostNotAllowed);
+            }
+            if is_kotak_fo_scrip_csv_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if kotak_quotes_segment(&path_norm).is_some_and(|seg| !is_cash_quotes_segment(&seg)) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "kotak-nse-nfo" => {
+            if !is_kotak_r0_host(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if path_lower.starts_with("/api/v3/") || path_lower.starts_with("/eapi/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_fo_scrip_csv_path(&path_norm) && !is_kotak_nse_fo_scrip_csv_path(&path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_cash_scrip_csv_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if kotak_quotes_segment(&path_norm).is_some_and(|seg| !is_nfo_quotes_segment(&seg)) {
+                return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
         }
@@ -235,6 +265,92 @@ pub fn is_kotak_cash_scrip_csv_path(path: &str) -> bool {
     is_kotak_cash_csv_filename(filename)
 }
 
+/// Official sample lists `nse_fo.csv` / `bse_fo.csv` / `cde_fo.csv` / `mcx_fo.csv`.
+/// Cash book still refuses these; the named NFO book may fetch `nse_fo` scrip only.
+/// Query strings are stripped and a trailing `/` is trimmed before the filename check.
+pub fn is_kotak_fo_scrip_csv_path(path: &str) -> bool {
+    let lower = path.trim().to_ascii_lowercase();
+    let lower = lower.split('?').next().unwrap_or(&lower);
+    let lower = lower.trim_end_matches('/');
+    if !lower.contains("/wso2-scripmaster/") {
+        return false;
+    }
+    let filename = lower.rsplit('/').next().unwrap_or(lower);
+    is_kotak_fo_csv_filename(filename)
+}
+
+/// True only for `/wso2-scripmaster/` filenames `nse_fo.csv` / `nse_fo-v1.csv`
+/// (same versioned pattern as other FO CSV stems, but `nse_fo` only).
+pub fn is_kotak_nse_fo_scrip_csv_path(path: &str) -> bool {
+    let lower = path.trim().to_ascii_lowercase();
+    let lower = lower.split('?').next().unwrap_or(&lower);
+    let lower = lower.trim_end_matches('/');
+    if !lower.contains("/wso2-scripmaster/") {
+        return false;
+    }
+    let filename = lower.rsplit('/').next().unwrap_or(lower);
+    is_kotak_fo_csv_filename_stem(filename, "nse_fo")
+}
+
+fn is_kotak_fo_csv_filename(filename: &str) -> bool {
+    ["nse_fo", "bse_fo", "cde_fo", "mcx_fo"]
+        .into_iter()
+        .any(|stem| is_kotak_fo_csv_filename_stem(filename, stem))
+}
+
+fn is_kotak_fo_csv_filename_stem(filename: &str, stem: &str) -> bool {
+    let Some(rest) = filename.strip_prefix(stem) else {
+        return false;
+    };
+    let versioned = (rest.starts_with('-') || rest.starts_with('_')) && rest.ends_with(".csv");
+    rest == ".csv" || versioned
+}
+
+fn percent_decode_minimal(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = &raw[i + 1..i + 3];
+            if let Ok(value) = u8::from_str_radix(hex, 16) {
+                out.push(value as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Segment token from a quotes/neosymbol path (`nse_cm|2885` / `nse_fo|…`).
+fn kotak_quotes_segment(path: &str) -> Option<String> {
+    let lower = path.to_ascii_lowercase();
+    let idx = lower.find(super::kotak_quotes::QUOTES_NEOSYMBOL_MARK)?;
+    let rest = &path[idx + super::kotak_quotes::QUOTES_NEOSYMBOL_MARK.len()..];
+    let (symbols, _) = rest.rsplit_once('/')?;
+    if symbols.is_empty() {
+        return None;
+    }
+    let decoded = percent_decode_minimal(symbols);
+    let segment = decoded.split('|').next()?.trim().to_ascii_lowercase();
+    if segment.is_empty() {
+        None
+    } else {
+        Some(segment)
+    }
+}
+
+fn is_cash_quotes_segment(segment: &str) -> bool {
+    matches!(segment, "nse_cm" | "bse_cm")
+}
+
+fn is_nfo_quotes_segment(segment: &str) -> bool {
+    segment == "nse_fo"
+}
+
 fn is_kotak_cash_csv_filename(filename: &str) -> bool {
     for stem in ["nse_cm", "bse_cm"] {
         let Some(rest) = filename.strip_prefix(stem) else {
@@ -268,7 +384,9 @@ pub fn authorize_host_call(
     {
         return Err(HostRefuse::HostNotAllowed);
     }
-    if is_kotak_cash_scrip_csv_path(path) && host_norm != "lapi.kotaksecurities.com" {
+    if (is_kotak_cash_scrip_csv_path(path) || is_kotak_fo_scrip_csv_path(path))
+        && host_norm != "lapi.kotaksecurities.com"
+    {
         return Err(HostRefuse::HostNotAllowed);
     }
     if host_norm == "lapi.kotaksecurities.com"
@@ -502,8 +620,18 @@ mod tests {
         authorize_inferred_call("lapi.kotaksecurities.com", "GET", queried, false)
             .expect("cash CSV path with query string is allowlisted");
         let fo_q = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv?x=1";
+        let (fo_q_cap, fo_q_mode) = infer_capability("GET", fo_q).unwrap();
+        assert_eq!(fo_q_cap, "instrument_master");
+        assert_eq!(fo_q_mode, AuthMode::Public);
         assert_eq!(
-            infer_capability("GET", fo_q).unwrap_err(),
+            authorize_book_call(
+                "kotak-nse-bse-cash",
+                "lapi.kotaksecurities.com",
+                "GET",
+                fo_q,
+                false
+            )
+            .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -515,13 +643,30 @@ mod tests {
             HostRefuse::HostNotAllowed
         );
         let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
+        let (fo_cap, fo_mode) = infer_capability("GET", fo).unwrap();
+        assert_eq!(fo_cap, "instrument_master");
+        assert_eq!(fo_mode, AuthMode::Public);
         assert_eq!(
-            infer_capability("GET", fo).unwrap_err(),
+            authorize_book_call(
+                "kotak-nse-bse-cash",
+                "lapi.kotaksecurities.com",
+                "GET",
+                fo,
+                false
+            )
+            .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         let fo_v1 = "/wso2-scripmaster/v1/prod/2026-08-27/transformed-v1/nse_fo-v1.csv";
         assert_eq!(
-            infer_capability("GET", fo_v1).unwrap_err(),
+            authorize_book_call(
+                "kotak-nse-bse-cash",
+                "lapi.kotaksecurities.com",
+                "GET",
+                fo_v1,
+                false
+            )
+            .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
     }
@@ -557,8 +702,16 @@ mod tests {
             "/wso2-scripmaster/v1/prod/2026-08-27/transformed/cde_fo.csv",
         ] {
             assert!(!is_kotak_cash_scrip_csv_path(fo), "{fo}");
+            assert!(is_kotak_fo_scrip_csv_path(fo), "{fo}");
             assert_eq!(
-                infer_capability("GET", fo).unwrap_err(),
+                authorize_book_call(
+                    "kotak-nse-bse-cash",
+                    "lapi.kotaksecurities.com",
+                    "GET",
+                    fo,
+                    false
+                )
+                .unwrap_err(),
                 HostRefuse::PathNotAllowlisted,
                 "{fo}"
             );
@@ -750,7 +903,7 @@ mod tests {
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
-        for host in ["fapi.binance.com", "dapi.binance.com", "eapi.binance.com"] {
+        for host in ["fapi.binance.com", "dapi.binance.com"] {
             assert!(!host_allowed(host), "{host} must stay off R0_ALLOWED_HOSTS");
             assert_eq!(
                 authorize_book_call(
@@ -765,6 +918,19 @@ mod tests {
                 "{host}"
             );
         }
+        // eapi stays off R0 until binance-com-options is named.
+        assert!(!host_allowed("eapi.binance.com"));
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-spot",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/ticker",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
         authorize_book_call(
             "binance-com-spot",
             "api.binance.com",
@@ -775,6 +941,7 @@ mod tests {
         .expect("public spot ticker remains allowlisted");
         let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
         assert!(!is_kotak_cash_scrip_csv_path(fo));
+        assert!(is_kotak_fo_scrip_csv_path(fo));
         assert_eq!(
             authorize_book_call(
                 "kotak-nse-bse-cash",
@@ -785,6 +952,152 @@ mod tests {
             )
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn nfo_book_fence_allows_fo_scrip_and_refuses_cash_and_spot() {
+        let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
+        let fo_v1 = "/wso2-scripmaster/v1/prod/2026-08-27/transformed-v1/nse_fo-v1.csv";
+        authorize_book_fence("kotak-nse-nfo", "lapi.kotaksecurities.com", fo)
+            .expect("NFO book may fetch FO scrip");
+        authorize_book_call(
+            "kotak-nse-nfo",
+            "lapi.kotaksecurities.com",
+            "GET",
+            fo,
+            false,
+        )
+        .expect("NFO FO CSV infers instrument_master");
+        authorize_book_call(
+            "kotak-nse-nfo",
+            "lapi.kotaksecurities.com",
+            "GET",
+            fo_v1,
+            false,
+        )
+        .expect("NFO live v1 FO CSV is allowlisted");
+        assert!(is_kotak_nse_fo_scrip_csv_path(fo));
+        assert!(is_kotak_nse_fo_scrip_csv_path(fo_v1));
+        for other_fo in [
+            "/wso2-scripmaster/v1/prod/2025-01-22/transformed/cde_fo.csv",
+            "/wso2-scripmaster/v1/prod/2025-01-22/transformed/bse_fo.csv",
+            "/wso2-scripmaster/v1/prod/2025-01-22/transformed/mcx_fo.csv",
+        ] {
+            assert!(is_kotak_fo_scrip_csv_path(other_fo), "{other_fo}");
+            assert!(!is_kotak_nse_fo_scrip_csv_path(other_fo), "{other_fo}");
+            assert_eq!(
+                authorize_book_call(
+                    "kotak-nse-nfo",
+                    "lapi.kotaksecurities.com",
+                    "GET",
+                    other_fo,
+                    false,
+                )
+                .unwrap_err(),
+                HostRefuse::PathNotAllowlisted,
+                "{other_fo}"
+            );
+        }
+        let cash_csv = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_cm.csv";
+        assert_eq!(
+            authorize_book_fence("kotak-nse-nfo", "lapi.kotaksecurities.com", cash_csv)
+                .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "kotak-nse-nfo",
+                "api.binance.com",
+                "GET",
+                "/api/v3/ticker/price",
+                false
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        let cash_quote = "/script-details/1.0/quotes/neosymbol/nse_cm%7C2885/ltp";
+        assert_eq!(
+            authorize_book_fence("kotak-nse-nfo", "gw-napi.kotaksecurities.com", cash_quote)
+                .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        let nfo_quote = "/script-details/1.0/quotes/neosymbol/nse_fo%7C12345/ltp";
+        authorize_book_fence("kotak-nse-nfo", "gw-napi.kotaksecurities.com", nfo_quote)
+            .expect("NFO quotes path stays on this book");
+        authorize_book_call(
+            "kotak-nse-nfo",
+            "gw-napi.kotaksecurities.com",
+            "GET",
+            nfo_quote,
+            true,
+        )
+        .expect("NFO ltp is PrivateRead quote");
+        assert_eq!(
+            authorize_book_fence("binance-com-options", "eapi.binance.com", "/eapi/v1/ticker")
+                .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert!(!host_allowed("eapi.binance.com"));
+        assert_eq!(
+            authorize_book_fence(
+                "binance-com-usdm",
+                "api.binance.com",
+                "/api/v3/ticker/price"
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn cash_book_refuses_nfo_quote_path() {
+        let nfo_quote = "/script-details/1.0/quotes/neosymbol/nse_fo%7C12345/ltp";
+        assert_eq!(
+            authorize_book_fence(
+                "kotak-nse-bse-cash",
+                "gw-napi.kotaksecurities.com",
+                nfo_quote
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        let cash_quote = "/script-details/1.0/quotes/neosymbol/nse_cm%7C2885/ltp";
+        authorize_book_fence(
+            "kotak-nse-bse-cash",
+            "gw-napi.kotaksecurities.com",
+            cash_quote,
+        )
+        .expect("cash quotes remain on the cash book");
+    }
+
+    #[test]
+    fn spot_my_trades_stays_spot_and_eapi_stays_off() {
+        let (spot_cap, spot_mode) = infer_capability("GET", "/api/v3/myTrades").unwrap();
+        assert_eq!(spot_cap, "fills");
+        assert_eq!(spot_mode, AuthMode::PrivateRead);
+        authorize_book_call(
+            "binance-com-spot",
+            "api.binance.com",
+            "GET",
+            "/api/v3/myTrades",
+            true,
+        )
+        .expect("spot myTrades stays spot fills");
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/userTrades").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/userTrades",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
         );
     }
 }

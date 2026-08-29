@@ -4,6 +4,7 @@ use super::apply::quote_latest_state;
 use super::descriptor::DelayClass;
 use super::registry::Registry;
 use super::rights::Rights;
+use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::{SessionOhlc, Transport};
 use super::tickbook::TickBook;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -68,7 +69,14 @@ pub fn extract_quote(
     extract_quote_for(registry, book, instrument_id, now, freshness, None)
 }
 
+/// Slot prefix for TickBook lookup. Shipping slugs map to their book; fixtures
+/// and already-book ids keep the passed string (`shipping_book_id_for_slug` is None).
+fn tick_slot(id: &str) -> String {
+    shipping_book_id_for_slug(id).unwrap_or_else(|| id.to_string())
+}
+
 /// Like [`extract_quote`], but provenance and book rows prefer `adapter_id`.
+/// TickBook lookup prefers the shipping book slot, then the raw id (adapter/fixture).
 pub fn extract_quote_for(
     registry: &Registry,
     book: &TickBook,
@@ -76,6 +84,28 @@ pub fn extract_quote_for(
     now: DateTime<Utc>,
     freshness: Duration,
     adapter_id: Option<&str>,
+) -> QuoteEnvelope {
+    extract_quote_for_book(
+        registry,
+        book,
+        instrument_id,
+        now,
+        freshness,
+        adapter_id,
+        None,
+    )
+}
+
+/// Same as [`extract_quote_for`], but lookup uses `book_id` when set (named books
+/// such as `kotak-nse-nfo`). Shipping Start still uses [`extract_quote_for`].
+pub fn extract_quote_for_book(
+    registry: &Registry,
+    book: &TickBook,
+    instrument_id: &str,
+    now: DateTime<Utc>,
+    freshness: Duration,
+    adapter_id: Option<&str>,
+    book_id: Option<&str>,
 ) -> QuoteEnvelope {
     let identity = quote_latest_state();
     let descriptor = adapter_id
@@ -88,9 +118,20 @@ pub fn extract_quote_for(
         .map(|binding| binding.delay_class)
         .unwrap_or(DelayClass::Unknown);
 
-    let Some(row) = (match adapter_id {
-        Some(id) => book.get(id, instrument_id),
-        None => book
+    let named_book = book_id.map(str::trim).filter(|id| !id.is_empty());
+    let Some(row) = (match (named_book, adapter_id) {
+        (Some(slot), _) => book.get(slot, instrument_id),
+        (None, Some(id)) => {
+            let slot = tick_slot(id);
+            book.get(&slot, instrument_id).or_else(|| {
+                if slot != id {
+                    book.get(id, instrument_id)
+                } else {
+                    None
+                }
+            })
+        }
+        (None, None) => book
             .iter()
             .find_map(|(_, row)| (row.instrument_id == instrument_id).then_some(row)),
     }) else {
@@ -180,6 +221,7 @@ mod tests {
             age_unknown,
             transport: Transport::Fixture,
             adapter_id: "fixture_equity_quote".to_string(),
+            book_id: "fixture_equity_quote".to_string(),
             session_ohlc: None,
         }
     }

@@ -1,0 +1,11 @@
+{
+  "message": [
+    {
+      "last_traded_time": "26/08/2026 15:29:59",
+      "last_traded_price": "10.00",
+      "instrument_token": "12345",
+      "exchange_segment": "nse_fo",
+      "trading_symbol": "BANKNIFTY25SEP57500CE"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Kotak Neo NFO / F&O scrip master — v1 refused
+# Kotak Neo NFO / F&O scrip master — named book `kotak-nse-nfo`
 
 ---
 
@@ -6,30 +6,26 @@
 
 | Field            | Value                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
-| **Topic**        | Kotak Neo NSE F&O (NFO) scrip-master CSV — expiry list, option-symbol resolve, lot size as a contract field |
-| **Primary source** | [Kotak Neo Trade API guide](https://www.kotakneo.com/investing-guide/trading-account/kotak-neo-trade-api-guide/) · [Kotak-Neo/Kotak-neo-api-v2 `docs/Scrip_Master.md`](https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/docs/Scrip_Master.md) · Station [REST.md](./REST.md) · B6 [`docs/research/sheets/kotak_neo.md`](../../../research/sheets/kotak_neo.md) |
-| **Snapshot date** | 2026-08-27 |
-| **Source version** | Trade API guide page “Updated: 22 May 2026, 5:16 PM IST” · SDK package v2.0.0 / git `main` @ `8cee5bda63bd9334f8501bb23b7f1d2945f93397` · B6 SIGNED (cash only v1) |
-| **Staleness warning** | Re-verify against live `Scrip_Master.md`, the Trade API guide, and a cited live FO header row **before** any extract is written. This doc does **not** lift the v1 F&O refuse. |
+| **Topic**        | Kotak Neo NSE F&O (NFO) scrip-master CSV — column names, token, lot, tick, strike cell, expiry cell for book `kotak-nse-nfo` |
+| **Primary source** | Lock [`/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md`](/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md) (unsigned GET **2026-08-28 IST**) · live CSV `https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-28/transformed/nse_fo.csv` · [Kotak-Neo/Kotak-neo-api-v2 `docs/Scrip_Master.md`](https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/docs/Scrip_Master.md) · Station [REST.md](./REST.md) |
+| **Snapshot date** | 2026-08-28 |
+| **Source version** | Lock fetch 2026-08-28 IST, HTTP 200 · Trade API guide “Updated: 22 May 2026” · SDK `Scrip_Master.md` sample date `2025-01-22` (that dated URL returned **403** this fetch) |
+| **Staleness warning** | Re-verify the live dated `nse_fo.csv` header against the lock before changing extract field names. Strike **scale**, expiry **calendar conversion**, CNC on `nse_fo`, and a named greeks model remain unspecified — do not implement those paths from memory. |
 | **Author**       | TradeAutopsy Station |
 
 ---
 
-> ⚠️ **BLOCKER**
+> ⚠️ **BLOCKER** *(column **names** closed 2026-08-28 — remaining facts still NOT SPECIFIED IN SOURCE)*
 >
-> This slice is research only. Station v1 / B6 **refuses** F&O (`nse_fo`, `bse_fo`, `cde_fo`, `mcx_fo`) even when `filesPaths` lists them. The following facts are needed for a **later-phase** NFO extract and are **NOT SPECIFIED IN SOURCE** (official Kotak SDK + Trade API guide):
+> Live unsigned GET of `transformed/nse_fo.csv` (lock 2026-08-28 IST) names the 79 columns below. `pToken` is **absent**. The following are still **NOT SPECIFIED IN SOURCE** and must stay unimplemented:
 >
-> - Official NFO / `nse_fo.csv` column names, types, and units (the SDK return type is `object`; the sample is URL paths only).
-> - Which FO column is the instrument token (`pSymbol` vs `pToken` vs other). Cash live files use numeric `pSymbol` and have **no** `pToken` — that observation is cash-only ([REST.md](./REST.md)).
-> - Which FO column is lot size (`lLotSize` vs `iLotSize` vs other) and its unit (shares vs lots vs scaled integer).
-> - Which FO column is strike and its scale (raw vs ÷100). Header punctuation such as `dStrikePrice;` is unspecified officially.
-> - Which FO column is expiry (`pExpiryDate` vs `lExpiryDate` vs `pScripRefKey`) and whether the value is a calendar date, an epoch, or an epoch that needs an offset.
-> - BANKNIFTY (or any index/stock) lot size as a number.
-> - Weekly (or monthly) expiry weekday for BANKNIFTY / NIFTY / FINNIFTY / SENSEX.
-> - Whether live `filesPaths` always includes `nse_fo.csv` / `nse_fo-v1.csv` (founder 2026-08-27 file-paths log extracted **two cash URLs**; FO presence in that payload is unspecified).
-> - How to map the query “BANKNIFTY 57500 PE 29 Sep” onto a single tradable id from an official schema.
+> - Official **strike scale** (`dStrikePrice;` sample `2.1e+06` vs `21000` in `pTrdSymbol`). Do **not** ÷100. Do **not** invent **57500**. Store the raw cell.
+> - **Expiry integer → calendar** (`lExpiryDate ` / `pExpiryDate` sample `1474554600`). Offset / epoch meaning unspecified. Store the raw integer. Do not convert.
+> - Which lot column wins if `lLotSize` ≠ `iLotSize` (this sample they match at **65**). Skip the row. Do not guess.
+> - **CNC on `nse_fo`**. Do not enable. Do not invent a refuse.
+> - Named NFO **greeks / pricing model** (Black-76 or otherwise). See [`../nfo/OPTIONS-PRICING.md`](../nfo/OPTIONS-PRICING.md).
 >
-> Do **not** implement NFO extracts, do **not** allowlist `nse_fo`, and do **not** download `nse_fo.csv` into the repo until these are resolved from a primary source **and** B6 row 12 is explicitly re-signed. A Pre-trade strike grid that invents 57500 (or any ghost strike) while the master is refused is forbidden.
+> Cash book `kotak-nse-bse-cash` still **refuses FO**. Do not copy cash `pSymbolName`-as-token onto this book. Do not allowlist this FO URL on the cash book.
 
 ---
 
@@ -39,23 +35,20 @@ List every file, page, or paper you read to produce this document.
 
 | Source | URL / Citation | Date accessed | Notes |
 | ------ | -------------- | ------------- | ----- |
-| Trade API guide | https://www.kotakneo.com/investing-guide/trading-account/kotak-neo-trade-api-guide/ | 2026-08-27 | “downloadable CSV files containing all of the tradeable instruments”; path `{BASE_URL}/script-details/1.0/masterscrip/file-paths`. No CSV schema. |
-| SDK `docs/Scrip_Master.md` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/docs/Scrip_Master.md | 2026-08-27 | Sample `filesPaths` includes `nse_fo.csv`, `bse_fo.csv`, `cde_fo.csv`, `mcx_fo.csv`. Return type `object`. No column list. |
-| SDK `scrip_master_api.py` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/neo_api_client/api/scrip_master_api.py | 2026-08-27 | GET file-paths; optional `exchange_segment` substring filter; **does not** GET CSV bytes. |
-| SDK `settings.py` `exchange_segment` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/neo_api_client/settings.py | 2026-08-27 | `"NFO": "nse_fo"`, `"nfo": "nse_fo"`. Allowed values include `nse_fo` / `bse_fo` / `cde_fo` / `mcx_fo`. |
-| SDK README quotes | Kotak-neo-api-v2 README (quoted in [REST.md](./REST.md)) | 2026-08-26 | `exchange_segment` for quotes includes `nse_fo`, `bse_fo`, `cde_fo`, `mcx_fo`. |
-| Station REST scrip master | [`REST.md`](./REST.md) | 2026-08-27 | Cash CSV columns observed on `nse_cm-v1.csv` / `bse_cm-v1.csv`. F&O URLs refused. |
-| B6 sheet | [`docs/research/sheets/kotak_neo.md`](../../../research/sheets/kotak_neo.md) | 2026-08-27 | Row 1 cash only; row 12 refuse F&O; M1 refuse FO files even when listed. |
-| `kotak_scrip_master.rs` header | `agent/src/kotak_scrip_master.rs` (read-only this slice) | 2026-08-27 | Cash: token = `pSymbol`, ticker = `pSymbolName`. “F&O CSVs stay refused.” |
-| Station Data matrix | `agent/src/data/matrix.rs` `known_physics` (read-only this slice) | 2026-08-27 | `reference/expiry`, `reference/option_symbol` are BoundedSnapshot. No `lot_size` capability id. |
-| Station operations catalog | `agent/src/data/operations.rs` (read-only this slice) | 2026-08-27 | OpenAlgo nouns `expiry` → `reference/expiry`; `optionsymbol` → `reference/option_symbol`. |
-| `kotak_neo.s1k.v1` manifest | `agent/src/data/source_manifest.rs` (read-only this slice) | 2026-08-27 | Implemented: quotes, instruments, tradebook, depth. Coverage `nse_cm` / `bse_cm`. Comment: “no optionchain.” |
-| Glance chain hole | `agent/src/data/glance.rs` (read-only this slice) | 2026-08-27 | `extract_chain` / `extract_open_interest` return `unavailable` with `data: null`. |
-| OpenAlgo Kotak master (third-party) | https://github.com/marketcalls/openalgo/blob/main/broker/kotak/database/master_contract_db.py | 2026-08-27 | `process_kotak_nfo_csv` — **not** official Kotak schema. Maps FO files; Station v1 must not copy this into an extract. |
-| GitHub issue (user report, not schema) | https://github.com/Kotak-Neo/Kotak-neo-api-v2/issues/67 | 2026-08-27 | User report: `pexpirydate` / `lexpirydate` vs `pscriprefkey` inconsistency on options. **Not** official docs. |
-| GitHub issue (user report, not schema) | https://github.com/Kotak-Neo/kotak-neo-api/issues/104 | 2026-08-27 | v1-repo user paste of an `nse_fo.csv` header row. **Not** official docs. Not re-fetched as CSV bytes. |
+| NFO lock (charge / session / scrip-header SoT) | `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md` | 2026-08-28 | Named book `kotak-nse-nfo`. Unsigned GET 2026-08-28 IST. Header + sample row verbatim. |
+| Live NFO scrip CSV | `https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-28/transformed/nse_fo.csv` | 2026-08-28 IST | Unsigned GET, HTTP 200. Filename `transformed/nse_fo.csv` (not `-v1`). Do **not** commit CSV bytes. |
+| Same date `transformed-v1/nse_fo-v1.csv` | same host / date / `transformed-v1/` | 2026-08-28 IST | HTTP **403**. Not the live FO file. |
+| SDK sample dated `2025-01-22` FO CSV | SDK `Scrip_Master.md` sample path | 2026-08-28 IST | HTTP **403**. |
+| SDK `docs/Scrip_Master.md` | https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/docs/Scrip_Master.md | 2026-08-28 | Sample `filesPaths` lists `nse_fo.csv` (and BFO/CDS/MCX). Listing ≠ this book’s allowlist: **`nse_fo` only**. Return type `object`. No official column table. |
+| Trade API guide | https://www.kotakneo.com/investing-guide/trading-account/kotak-neo-trade-api-guide/ | 2026-08-28 | Downloadable CSV files; file-paths GET. No CSV schema. |
+| SDK `settings.py` `exchange_segment` | Kotak-neo-api-v2 | 2026-08-27 | `"NFO": "nse_fo"`. |
+| Station REST cash columns | [`REST.md`](./REST.md) | 2026-08-27 | Cash `nse_cm-v1.csv` / `bse_cm-v1.csv`: token = `pSymbol`, ticker = `pSymbolName`. **Cash-only.** Do not copy `pSymbolName`-as-token onto FO. |
+| `kotak_scrip_master.rs` header | `agent/src/kotak_scrip_master.rs` (not edited this slice) | 2026-08-27 | Cash parser. Cash book still refuses FO CSV. |
+| OPTIONS-PRICING.md | [`../nfo/OPTIONS-PRICING.md`](../nfo/OPTIONS-PRICING.md) | 2026-08-27 | Greeks model unspecified. No Black-76. |
+| OpenAlgo Kotak NFO mapper | https://github.com/marketcalls/openalgo/blob/main/broker/kotak/database/master_contract_db.py | 2026-08-27 | Third-party: `dStrikePrice/100`, `lExpiryDate+315513000`. **Not** official. Do not copy. |
+| B6 sheet | [`docs/research/sheets/kotak_neo.md`](../../../research/sheets/kotak_neo.md) | 2026-08-28 | Cash row 1 / row 12 / M1 still refuse FO **on the cash book**. Named NFO book is a different book. |
 
-This slice did **not** download `nse_fo.csv` / `nse_fo-v1.csv` bytes into the repo.
+This slice does **not** commit `nse_fo.csv` bytes into the repo.
 
 ---
 
@@ -66,17 +59,396 @@ as needed. Never merge two concepts into one block.*
 
 ---
 
-### File-paths payload lists F&O CSV URLs
+### Live FO CSV URL and 79-column header (column names specified)
 
-**Source:** SDK [`docs/Scrip_Master.md`](https://github.com/Kotak-Neo/Kotak-neo-api-v2/blob/main/docs/Scrip_Master.md) sample response (fetched 2026-08-27); Trade API guide “How to Fetch Live Market Data with Kotak Neo API” (updated 22 May 2026, fetched 2026-08-27)
+**Source:** Lock `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md` “Live FO scrip-master header”; unsigned GET 2026-08-28 IST, HTTP 200.
+
+**Verbatim definition / formula:**
+
+URL:
+
+```
+https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod/2026-08-28/transformed/nse_fo.csv
+```
+
+Header row VERBATIM (79 columns; `pToken` absent):
+
+```
+pSymbol,pGroup,pExchSeg,pInstType,pSymbolName,pTrdSymbol,pOptionType,pScripRefKey,pISIN,pAssetCode,pSubGroup,pCombinedSymbol,pDesc,pAmcCode,pContractId,dTickSize ,lLotSize,lExpiryDate ,lMultiplier ,lPrecision,dStrikePrice;,pExchange,pInstName,pExpiryDate,pIssueDate,pMaturityDate,pListingDate,pNoDelStartDate,pNoDelEndDate,pBookClsStartDate,pBookClsEndDate,pRecordDate,pCreditRating,pReAdminDate,pExpulsionDate,pLocalUpdateTime,pDeliveryUnits,pPriceUnits,pLastTradingDate,pTenderPeridEndDate,pTenderPeridStartDate,pSellVarMargin,pBuyVarMargin,pInstrumentInfo,pRemarksText,pSegment,pNav,pNavDate,pMfAmt,pSipSecurity,pFaceValue,pTrdUnits,pExerciseStartDate,pExerciseEndDate,pElmMargin,pVarMargin,pTotProposedLimitValue,pScripBasePrice,pSettlementType,pCurrectionTime,iPermittedToTrade,iBoardLotQty ,iMaxOrderSize ,iLotSize,dOpenInterest ,dHighPriceRange ,dLowPriceRange ,dPriceNum   ,dGenDen,dGenNum,dPriceQuatation ,dIssuerate ,dPriceDen,dWarningQty ,dIssueCapital ,dExposureMargin ,dMinRedemptionQty ,lFreezeQty,CASEligible
+```
+
+One sample data row VERBATIM (first data row this GET):
+
+```
+56526,XX,nse_fo,OPTIDX,NIFTY,NIFTY2692221000PE,PE,NIFTY22SEP2621000.00PE,,26000,,,,,,5,65,1474554600,-1,2,2.1e+06,NSE,OPTIDX,1474554600,1471564800,1474554600,1471564800,0,0,0,0,0,,0,0,1472316328,,,,,,,,,,FO,,,,,,,1474502400,1474554600,,,,15.0000,Cash,,1,1,1801.00,65,0,2015,5,1,1,1,0,0,1,0,1e+12,1,0,1801,false
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Token | `pSymbol` (`pToken` **absent**) | sample `56526` |
+| Segment | `pExchSeg` | `nse_fo` only on this book |
+| Inst type | `pInstType` | sample `OPTIDX` |
+| Option type | `pOptionType` | sample `PE` |
+| Underlying ticker | `pSymbolName` | sample `NIFTY` — **not** the token |
+| Trading symbol | `pTrdSymbol` | sample `NIFTY2692221000PE` |
+| Lot | `lLotSize` **and** `iLotSize` | sample both **65** |
+| Tick | `dTickSize ` (trailing space in the live header) | sample `5` |
+| Strike column name | `dStrikePrice;` (semicolon in the name) | sample `2.1e+06` |
+| Expiry | `lExpiryDate ` / `pExpiryDate` | sample `1474554600` |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Strike scale (see strike concept).
+- Expiry calendar conversion (see expiry concept).
+- Which lot column wins when they differ (see lot concept).
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Column **names** for this book are specified by the lock’s live header. A later CSV parser must match these names, including trailing spaces and the semicolon on `dStrikePrice;`.
+> - Tradable id is `nse_fo|{pSymbol}` → sample `nse_fo|56526`. Do not use `pSymbolName` (`NIFTY`) as the token.
+> - This URL is **not** allowlisted on `kotak-nse-bse-cash`. Cash still refuses FO.
+> - Do not commit the full CSV. Dated fixture above is one contract, not a global NIFTY lot.
+
+---
+
+### Token is `pSymbol`, not cash `pSymbolName`
+
+**Source:** Lock table “Role / Header name(s)”; sample row `56526,…,NIFTY,NIFTY2692221000PE,…`
 
 **Verbatim definition / formula:**
 
 ```
-The request retrieves downloadable CSV files containing all of the tradeable instruments.
+Token | pSymbol (pToken absent) | 56526
+Ticker / tradingsymbol | pSymbolName / pTrdSymbol | NIFTY / NIFTY2692221000PE
 ```
 
-SDK sample (abbreviated to the F&O paths; cash paths also present — see REST.md):
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| FO token | `pSymbol` | numeric string in sample `56526` |
+| FO `pToken` | **absent** on the live header | — |
+| FO `pSymbolName` | underlying ticker (`NIFTY`) | string — **not** token |
+| Cash token (other book) | live cash `pSymbol` numeric; cash ticker `pSymbolName` | REST.md 2026-08-27 — **do not copy as FO token** |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- None for the token **column name** on this snapshot. Scale of other fields remains blocked.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Cash `pSymbolName`-as-ticker must not be copied as the NFO instrument token. NFO token = `pSymbol`.
+> - `extract_contracts` `instrument_id` is `nse_fo|{token}` from `pSymbol`.
+
+---
+
+### Segment is `pExchSeg` = `nse_fo` only
+
+**Source:** Lock “Venue + asset class”; sample `pExchSeg=nse_fo`
+
+**Verbatim definition / formula:**
+
+```
+Segments allowed: nse_fo only
+Segments refused: nse_cm, bse_cm (cash — other book), bse_fo, cde_fo, mcx_fo, MCX, CDS, FX
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| `nse_fo` | This book’s only segment | segment id |
+| `nse_cm` / `bse_cm` | Cash book `kotak-nse-bse-cash` | other book |
+| `bse_fo` / `cde_fo` / `mcx_fo` | Refused on this book | segment id |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- None for the allowlist. CNC validity on `nse_fo` is still unspecified (see CNC concept).
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - `extract_contracts` for this book sets `segment` to `nse_fo`. Cash / spot / options books are not this extract (`Unavailable`, `data: None`).
+> - Cash book continues to refuse FO CSV even though this named book exists.
+
+---
+
+### Lot is `lLotSize` and `iLotSize` (sample 65); disagreement skips the row
+
+**Source:** Lock lot row + golden “qty>1 OPTIONS lot fixture”; sample both columns **65**.
+
+**Verbatim definition / formula:**
+
+```
+Lot | lLotSize and iLotSize | both 65
+Do not invent 25/50/75. Do not ship fo_mktlots.csv.
+Dated fixture below is one contract, not a global NIFTY/BANKNIFTY lot.
+```
+
+Lock remaining BLOCKER:
+
+```
+Which lot column wins if lLotSize ≠ iLotSize (this fixture they match).
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| `lLotSize` | Live header column | sample **65** |
+| `iLotSize` | Live header column | sample **65** |
+| Winner if they differ | **NOT SPECIFIED IN SOURCE** | skip row — do not guess |
+| BANKNIFTY / other contract lot | Must come from **that** row | not a constant |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Which column wins when `lLotSize` ≠ `iLotSize`.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Lot is a **JSON number** on the contract row (sample `65`, not `"65"`). It is a field, not a capability id.
+> - A CSV parser (not this extract’s injected-row path) that sees disagreeing lot columns **skips the row**. Do not pick one. Do not average. Do not invent 50.
+> - Empty NFO store → envelope `Unavailable` (not `Empty`-as-success, not last:0).
+
+---
+
+### Tick is `dTickSize ` (trailing space in the live header)
+
+**Source:** Lock tick row; header token `dTickSize ` with trailing space.
+
+**Verbatim definition / formula:**
+
+```
+Tick | dTickSize  (trailing space is in the live header) | 5
+Do not invent a tick.
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| `dTickSize ` | Header name includes trailing space | sample `5` |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Unit prose (points vs paise) beyond the raw cell.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Parser must not strip the header name into `dTickSize` unless a cited source says the wire is equivalent. This extract does not emit tick (lot + identity only). Do not invent a tick in code.
+
+---
+
+### Strike column `dStrikePrice;` — store raw; scale NOT SPECIFIED
+
+**Source:** Lock strike row; sample `2.1e+06` vs `21000` in `pTrdSymbol`.
+
+**Verbatim definition / formula:**
+
+```
+Strike | dStrikePrice; (semicolon in the name) | 2.1e+06 vs 21000 in pTrdSymbol — looks scaled; official scale NOT SPECIFIED IN SOURCE
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Column name | `dStrikePrice;` | semicolon is part of the name |
+| Sample cell | `2.1e+06` | raw |
+| `pTrdSymbol` substring | `21000` in `NIFTY2692221000PE` | not an official scale factor |
+| Official ÷100 (or any factor) | **NOT SPECIFIED IN SOURCE** | — |
+| Ghost strike 57500 | **not in this sample** | forbidden to invent |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Official scale. OpenAlgo `dStrikePrice / 100` is third-party, not this source.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Store `strike_raw` as the cell string (`2.1e+06`). Do **not** ÷100. Do **not** write 21000 or **57500** as a scaled strike.
+> - No strike grid on `extract_contracts`. Chain / Pre-trade ladders stay dark until scale is specified.
+
+---
+
+### Expiry `lExpiryDate ` / `pExpiryDate` — store raw integer; calendar NOT SPECIFIED
+
+**Source:** Lock expiry row; sample `1474554600`.
+
+**Verbatim definition / formula:**
+
+```
+Expiry | lExpiryDate  / pExpiryDate | 1474554600 (10-digit integer). Calendar conversion / epoch offset NOT SPECIFIED IN SOURCE
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| `lExpiryDate ` | Trailing space in the live header | sample `1474554600` |
+| `pExpiryDate` | Same sample integer | `1474554600` |
+| Calendar / epoch offset | **NOT SPECIFIED IN SOURCE** | — |
+| OpenAlgo `+ 315513000` | Third-party | not this source |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Whether the integer is Unix seconds, an offset epoch, or another clock. Do not convert to a calendar date.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Store `expiry_raw` as the integer string (`1474554600`). Do not apply OpenAlgo’s 10-year offset. Do not format `29-SEP-26` from memory.
+
+---
+
+### CNC on `nse_fo` remains unspecified
+
+**Source:** Lock products NOT SPECIFIED: “CNC on `nse_fo`”.
+
+**Verbatim definition / formula:**
+
+```
+CNC on nse_fo — no fetched page says “CNC is invalid on F&O”. README nse_fo expected list is NRML, MIS, BO (omits CNC; does not say invalid). Do not invent a CNC refuse. Do not enable CNC on this book until a page says it is valid.
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Products allowed | **NRML**; **MIS** scoped | lock |
+| CNC on `nse_fo` | **NOT SPECIFIED IN SOURCE** | — |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Validity of CNC on this segment.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - This extract does not enable or refuse CNC. Leave that path unimplemented. Cash CNC stays on the cash book.
+
+---
+
+### Greeks / pricing model remains unspecified
+
+**Source:** [`../nfo/OPTIONS-PRICING.md`](../nfo/OPTIONS-PRICING.md) BLOCKER; lock “Do not claim Greeks”; Quotes.md `quote_type` has no greeks.
+
+**Verbatim definition / formula:**
+
+```
+Named options model for NFO … NOT SPECIFIED IN SOURCE
+Do not implement Black-76 (or any pricing formula) from memory. Do not fill fixture Δ, Γ, Θ.
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Pricing model | **NOT SPECIFIED IN SOURCE** | — |
+| `derived/greeks` | Matrix BoundedSnapshot; extract stays a hole until a named model exists | identity |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Model name, day-count, rate source, IV convention, rupee scaling.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Lit NFO contract rows do **not** light greeks. `extract_greeks` with lit chain + lit contracts is still `Unavailable` + `pricing_model_unspecified`, `data: None`.
+> - Provenance `model` on contracts stays `"raw"` (CSV), not Black-76.
+
+---
+
+### Cash book still refuses FO
+
+**Source:** Lock “Cash book `kotak-nse-bse-cash` stays SHIPPING and still refuses FO”; B6 M1; `kotak_scrip_master.rs` cash-only parse.
+
+**Verbatim definition / formula:**
+
+```
+Do not allowlist this URL on book kotak-nse-bse-cash.
+Do not copy kotak-nse-bse-cash sessions, lots, or CNC+MIS onto this book.
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Cash book | `kotak-nse-bse-cash` | still refuses `nse_fo` / `*_fo.csv` |
+| NFO book | `kotak-nse-nfo` | this extract |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- None for the cash refuse.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - `extract_contracts(Some("kotak-nse-bse-cash"))` is `Unavailable`, `data: None` (cash is not NFO contracts). Do not parse FO CSV in the cash parser this slice.
+
+---
+
+### `extract_contracts` identity is `reference/derivative_contracts/bounded_snapshot`
+
+**Source:** `agent/src/data/matrix.rs` `known_physics`; `agent/src/data/contracts.rs`
+
+**Verbatim definition / formula:**
+
+```
+Family::Reference, capability derivative_contracts, Physics::BoundedSnapshot
+```
+
+Not `market/option_chain`. Not `market/order_book`. Not Market family.
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| Family | `reference` | identity |
+| Capability | `derivative_contracts` | identity |
+| Physics | `bounded_snapshot` | identity |
+| Lit | `InputHonesty::Lit` when `data.is_some()` | honesty.rs — **no** `HonestyStatus::Success` |
+| Empty NFO store | `Unavailable` | not Empty-as-success |
+| `canonical` / `persist_canonical` | false | envelope |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Strike grid, scaled strike, converted expiry (blocked above). AppState / CSV store wiring is out of this extract slice.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Hole / unknown book / `None` / cash / spot / options → `status: Unavailable`, `data: None`.
+> - `kotak-nse-nfo` with no rows → `Unavailable` (empty store is a hole until the parent wires a store).
+> - Non-empty injected rows → `data: Some({ identity, contract_count, rows })` with `lot` as a JSON **number**. Honesty lit = `data.is_some()`. Do not add a fifth honesty variant.
+> - Provenance `adapter_id` = `kotak_neo` when lit; `model` stays `"raw"`.
+
+---
+
+### File-paths sample lists more FO files; this book takes `nse_fo` only
+
+**Source:** SDK `Scrip_Master.md` sample `filesPaths` (fetched 2026-08-28); lock “Listing ≠ this book’s allowlist”.
+
+**Verbatim definition / formula:**
+
+SDK sample (abbreviated):
 
 ```json
 "filesPaths": [
@@ -87,480 +459,90 @@ SDK sample (abbreviated to the F&O paths; cash paths also present — see REST.m
 ]
 ```
 
-`scrip_master_api.py` (git `8cee5bda`): GET file-paths; if `exchange_segment` is passed, keep the first `filesPaths` entry whose URL contains that segment substring. It does **not** download the CSV.
+Live FO filename this lock: `transformed/nse_fo.csv` (not `-v1`). Dated `2025-01-22` and `transformed-v1/nse_fo-v1.csv` returned **403** on 2026-08-28.
 
 **Field / term reference:**
 
 | Term / Field | Source definition | Units / type |
 | ------------ | ----------------- | ------------ |
-| `filesPaths` | List of CSV URLs in the SDK sample | string[] |
-| `nse_fo.csv` | Filename in the SDK sample | filename |
-| `bse_fo.csv` | Filename in the SDK sample | filename |
-| `cde_fo.csv` | Filename in the SDK sample | filename |
-| `mcx_fo.csv` | Filename in the SDK sample | filename |
-| `baseFolder` | `https://lapi.kotaksecurities.com/wso2-scripmaster/v1/prod` (sample) | URL |
+| Live FO file | `…/2026-08-28/transformed/nse_fo.csv` | URL |
+| `bse_fo` / `cde_fo` / `mcx_fo` | Listed in SDK sample | **refused** on this book |
 
 **Gaps (NOT SPECIFIED IN SOURCE):**
 
 - Whether production `filesPaths` always includes every sample FO file.
-- Whether live FO uses `transformed/nse_fo.csv` (SDK sample) or `transformed-v1/nse_fo-v1.csv` (cash live pattern). Official sample is `transformed/nse_fo.csv` only.
-- Official CSV header row for any FO file.
 
 ---
 
 > **OUR INTERPRETATION**
 >
-> - Listing a URL is not permission to fetch it in Station v1. B6 row 12 / M1 refuse F&O files even when this sample lists them.
-> - A later-phase extract would start from the same file-paths GET already documented in REST.md, then take the `nse_fo` (NFO) URL — **only after** B6 is re-signed and the FO schema blocker above is closed.
-> - This slice does not fetch those bytes.
+> - Listing a URL is not permission to fetch BFO/CDS/MCX. This book is `nse_fo` only.
+> - Cash book still must not allowlist `_fo.csv`.
 
 ---
 
-### Station v1 / B6 refuses F&O segments and files
+### Third-party OpenAlgo NFO mapping is not official scale or expiry conversion
 
-**Source:** B6 [`docs/research/sheets/kotak_neo.md`](../../../research/sheets/kotak_neo.md) rows 1, 12, M1 (SIGNED); [REST.md](./REST.md) scrip-master interpretation; `kotak_scrip_master.rs` header comment “F&O CSVs stay refused.”
-
-**Verbatim definition / formula:**
-
-B6 row 1:
-
-```
-Asset class(es) when connected: equities cash v1 — segments nse_cm / bse_cm only. API also supports F&O — refuse F&O in v1
-```
-
-B6 row 12:
-
-```
-Refuse list v1: F&O segments (nse_fo, …); …
-```
-
-B6 M1:
-
-```
-Cash v1: use nse_cm / bse_cm only. Refuse F&O files (nse_fo, bse_fo, cde_fo, mcx_fo, …) even when listed in the sample filesPaths.
-```
-
-`kotak_scrip_master.rs` header (2026-08-27):
-
-```
-Live cash CSV token is pSymbol, ticker pSymbolName (no pToken). F&O CSVs stay refused.
-```
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| `nse_fo` | Refused v1 segment (B6 row 12; also an SDK `exchange_segment` value) | segment id |
-| `bse_fo` | Refused v1 segment | segment id |
-| `cde_fo` | Refused v1 segment | segment id |
-| `mcx_fo` | Refused v1 segment | segment id |
-| `nse_cm` / `bse_cm` | Cash v1 allowlist | segment id |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- No later-phase date in B6 for lifting the F&O refuse.
-- Whether a future lift is NFO-only (`nse_fo`) or also BFO / CDS / MCX.
-
----
-
-> **OUR INTERPRETATION**
->
-> - This document **does not** lift the refuse. Research only.
-> - Fills stay cash-only (`GET {baseUrl}/quick/user/trades`). Quotes/depth/scrip master in `kotak_neo.s1k.v1` stay `nse_cm` / `bse_cm`.
-> - Do not allowlist `nse_fo` / `nse_fo-v1.csv` / `*_fo.csv` in host policy. Do not extend `kotak_scrip_master.rs` to parse FO rows.
-
----
-
-### Segment alias: NFO → `nse_fo`
-
-**Source:** SDK `settings.py` `exchange_segment` map (git `8cee5bda`, fetched 2026-08-27)
+**Source:** OpenAlgo `process_kotak_nfo_csv` (fetched 2026-08-27). Official lock: scale and offset **NOT SPECIFIED**.
 
 **Verbatim definition / formula:**
 
 ```
-exchange_segment = {
-    ...
-    "NFO": "nse_fo", "nse_fo": "nse_fo", "nfo": "nse_fo",
-    "BFO": "bse_fo", "bse_fo": "bse_fo", "bfo": "bse_fo",
-    "CDS": "cde_fo", "cde_fo": "cde_fo", "cds": "cde_fo",
-    ...
-    "MCX": "mcx_fo", "mcx": "mcx_fo", "mcx_fo": "mcx_fo"
-}
-```
-
-`exchange_segment_allowed_values` includes both `NFO` / `nfo` and `nse_fo`.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| `NFO` | Maps to `nse_fo` | alias |
-| `nse_fo` | Canonical Kotak segment id for NSE F&O | segment id |
-| `BFO` | Maps to `bse_fo` | alias |
-| `CDS` | Maps to `cde_fo` | alias |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Official prose definition of “NFO” vs “NSE-FO” vs `nse_fo` outside this map.
-- Whether OpenAlgo’s stored exchange string `"NFO"` (third-party) is the Station TickBook identity. Station cash identity is `{segment}|{token}` with Kotak segment ids (`nse_cm|…`). FO identity shape is unspecified until an extract exists.
-
----
-
-> **OUR INTERPRETATION**
->
-> - In Kotak wire terms, NFO **is** `nse_fo`. A future extract’s tradable id should use the Kotak segment id (`nse_fo|…`), not a Zerodha-style `NFO:` prefix, unless a primary source says otherwise.
-> - v1 still refuses that segment.
-
----
-
-### Official F&O CSV schema is unspecified
-
-**Source:** SDK `Scrip_Master.md` “Return type: **object**”; sample JSON is `filesPaths` + `baseFolder` only. Trade API guide names the file-paths endpoint, not columns.
-
-**Verbatim definition / formula:**
-
-```
-### Return type
-
-**object**
-```
-
-No official table of FO (or cash) CSV headers appears in `Scrip_Master.md`. Cash headers in REST.md come from a **live unsigned GET** of `nse_cm-v1.csv` / `bse_cm-v1.csv` (2026-08-27), not from the SDK doc. This slice does **not** repeat that ritual for `nse_fo.csv`.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| CSV bytes at `filesPaths` | Downloadable instrument catalog (guide) | CSV |
-| FO header row | **NOT SPECIFIED IN SOURCE** (official) | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Every FO column name, including token, ticker, expiry, strike, option type, lot size, instrument type.
-- Whether FO files share the 80 cash headers observed 2026-08-27.
-- Whether FO `pSymbol` is numeric token (as cash live) or a text trading symbol (as the cash **fixture**).
-- Whether FO files include `pToken`.
-- Strike scale, expiry representation, lot-size unit.
-
----
-
-> **OUR INTERPRETATION**
->
-> - A future extract must parse columns from a **cited live FO header row**, the same way cash used the 2026-08-27 GET — after B6 lifts the refuse. Until then, leave the code path unimplemented.
-> - Third-party parsers (OpenAlgo, GitHub issues) are not a substitute for that citation. See the OpenAlgo concept below.
-> - Do not copy cash fixture `pToken` + text-`pSymbol` onto FO files from memory.
-
----
-
-### Cash token/ticker columns do not license FO columns
-
-**Source:** [REST.md](./REST.md) “Live cash CSV columns”; `kotak_scrip_master.rs` header
-
-**Verbatim definition / formula:**
-
-REST.md (2026-08-27):
-
-```
-Live cash CSV columns | Station unsigned GET 2026-08-27 of nse_cm-v1.csv / bse_cm-v1.csv
-(80 headers, no pToken). Token = pSymbol (numeric). Ticker = pSymbolName.
-Name = pDesc. Segment = pExchSeg.
-Official SDK does not document this schema.
-```
-
-`kotak_scrip_master.rs` header:
-
-```
-Live cash CSV token is pSymbol, ticker pSymbolName (no pToken). F&O CSVs stay refused.
-```
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| Cash `pSymbol` | Numeric instrument token (live lapi 2026-08-27) | integer (observed cash) |
-| Cash `pSymbolName` | Ticker (live lapi 2026-08-27) | string (observed cash) |
-| Cash `pToken` | Absent on live cash files; present on **test fixture** only | — |
-| FO `pSymbol` / `pToken` | **NOT SPECIFIED IN SOURCE** | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- FO token column.
-- FO ticker / trading-symbol column (`pTrdSymbol` vs `pSymbolName` vs `pScripRefKey`).
-- FO `pInstType` values as an official enum (Station cash parser refuses rows whose `pInstType` is `OPTIDX` / `FUTIDX` / … — that list is a v1 cash filter, not an official FO schema).
-
----
-
-> **OUR INTERPRETATION**
->
-> - Cash observation stays cash. Do not assume FO files use the same token/ticker split.
-> - The cash parser’s refused `pInstType` list (`FUTIDX`, `OPTIDX`, …) is a **v1 skip rule** for FO rows that might appear in a cash file, not documentation of the FO CSV.
-
----
-
-### Identity `reference/expiry` (BoundedSnapshot)
-
-**Source:** `agent/src/data/matrix.rs` `known_physics`; `agent/src/data/operations.rs` (`expiry` → `reference` / `expiry` / `BoundedSnapshot`); ADR 0002 (OpenAlgo Data nouns as the read vocabulary)
-
-**Verbatim definition / formula:**
-
-```
-(Family::Reference, "expiry") => Some(&[Physics::BoundedSnapshot])
-```
-
-Operation catalog: OpenAlgo noun `expiry` binds to capability id `expiry`, family `reference`, physics `BoundedSnapshot`.
-
-`kotak_neo.s1k.v1` implemented ops: `quotes`, `instruments`, `tradebook`, `depth`. **`expiry` is not claimed.** Coverage venues: `nse_cm`, `bse_cm`.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| Family | `reference` | identity family |
-| Capability id | `expiry` | snake_case id |
-| Physics | `BoundedSnapshot` | matrix physics |
-| Kotak v1 extract | **does not exist** | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Official Kotak field to distinct-list expiries for an underlying (see FO schema blocker).
-- Sort order, timezone, and whether the list is trading-day dates vs expiry-session timestamps.
-- Weekly vs monthly vs quarterly as Kotak-documented partitions.
-
----
-
-> **OUR INTERPRETATION**
->
-> - `reference/expiry` is already on the product matrix. It is **not** a later invented capability. What is missing is a Kotak **extract**.
-> - Until an NFO master extract exists, the honest envelope is **empty / unavailable**, not a hardcoded Thursday list and not a fixture.
-> - A future extract must return the **complete** expiry list present on the cited master for that underlying, or empty/unavailable. Partial “we know the near week” lists are a lie.
-
----
-
-### Identity `reference/option_symbol` (BoundedSnapshot)
-
-**Source:** `agent/src/data/matrix.rs` `known_physics`; `agent/src/data/operations.rs` (`optionsymbol` → `reference` / `option_symbol` / `BoundedSnapshot`)
-
-**Verbatim definition / formula:**
-
-```
-(Family::Reference, "option_symbol") => Some(&[Physics::BoundedSnapshot])
-```
-
-Operation catalog: OpenAlgo noun `optionsymbol` binds to capability id `option_symbol`.
-
-`kotak_neo.s1k.v1` does **not** claim `optionsymbol`. Glance `extract_chain` is a **different** identity (`market/option_chain`) and already returns `unavailable`.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| Family | `reference` | identity family |
-| Capability id | `option_symbol` | snake_case id |
-| Physics | `BoundedSnapshot` | matrix physics |
-| Resolve query (product) | Underlying + strike + CE/PE + expiry → tradable id | — |
-| Kotak v1 extract | **does not exist** | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Official Kotak composition of a tradable option id from those four parts.
-- Strike matching (57500 vs 5750000 vs `dStrikePrice` scale).
-- Put/call column (`pOptionType` `PE`/`CE` vs other).
-- Date matching (“29 Sep” vs `29-SEP-26` vs epoch).
-
----
-
-> **OUR INTERPRETATION**
->
-> - Worked example the extract must handle **without guessing a row**: BANKNIFTY 57500 PE 29 Sep → the tradable Kotak id from the master **or** empty/unavailable.
-> - Empty is correct when the master is refused, the row is absent, or the schema is still unspecified. A fixture token for 57500 is cheating.
-> - `reference/option_symbol` is a **single-contract resolve**. It is not `market/option_chain` (a bounded cross-section of many strikes). Do not implement chain by synthesizing strikes around 57500.
-
----
-
-### Lot size is a field on the contract, not a capability id
-
-**Source:** B6 row 8; `agent/src/data/matrix.rs` `known_physics` (no `lot_size` id); cash `KotakInstrument` in `kotak_scrip_master.rs` (token, ticker, name, segment — **no lot field**)
-
-**Verbatim definition / formula:**
-
-B6 row 8:
-
-```
-Calculation factors: qty (shares) × price INR; product CNC (delivery) vs MIS (intraday square-off);
-session calendar NSE/BSE; CalcProfile equities_inr_cash; lot/scrip multipliers from scrip master when needed
-```
-
-`known_physics` lists `expiry` and `option_symbol` under `Family::Reference`. It does **not** list `lot_size` / `lotsize` as a capability id.
-
-Cash `KotakInstrument` fields: `instrument_token`, `trading_symbol`, `name`, `segment`. No lot size.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| Lot / scrip multiplier | “from scrip master when needed” (B6 row 8) | field on a master row |
-| Capability id `lot_size` | **Not on the matrix** | — |
-| Official FO lot column | **NOT SPECIFIED IN SOURCE** | — |
-| BANKNIFTY lot quantity | **NOT SPECIFIED IN SOURCE** | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Official column name and unit for FO lot size.
-- Any numeric lot for BANKNIFTY, NIFTY, or stock options.
-- Whether lot size can differ by expiry of the same underlying.
-
----
-
-> **OUR INTERPRETATION**
->
-> - Lot size is **data on the contract row**, obtained from the cited master (or unavailable). It is not `obtain(lot_size)` and not a hardcoded 15 / 25 / 30.
-> - Cash v1 does not even store lot size on `KotakInstrument`. An NFO extract that needs lot must add a sourced field — after the FO schema is cited — not a constant.
-> - Do not ship Pre-trade quantity math that assumes BANKNIFTY lot = 30 (or any other memory value).
-
----
-
-### Extracts do not exist today — honest envelopes
-
-**Source:** `kotak_neo.s1k.v1` manifest; `glance.rs` chain/OI hole; `kotak_scrip_master.rs` cash-only parse; ADR 0002 “typed unsupported/unavailable”
-
-**Verbatim definition / formula:**
-
-`source_manifest.rs`:
-
-```
-/// Kotak S1k: quotes (REST latest_state) + REST depth bounded_snapshot + scrip master
-/// + session tradebook. No history, no HSM `isDepth`, no optionchain.
-```
-
-Implemented: `quotes`, `instruments`, `tradebook`, `depth`. Coverage: `nse_cm`, `bse_cm`.
-
-`glance.rs`:
-
-```
-//! S3 holes: options chain / OI widgets stay unavailable until those extracts exist.
-```
-
-`extract_chain` / `extract_open_interest`: `status: Unavailable`, `data: None`.
-
-ADR 0002 selection step 5: `typed unsupported/unavailable`.
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| `reference/expiry` extract | **does not exist** | — |
-| `reference/option_symbol` extract | **does not exist** | — |
-| NFO `instrument_master` extract | **does not exist** (cash master only) | — |
-| `market/option_chain` extract | exists as an **unavailable hole** (`glance.rs`) | envelope |
-| Lot size on cash `KotakInstrument` | **not stored** | — |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Wire JSON for a future expiry / option_symbol envelope (follow existing extract envelopes when that slice is signed; do not invent a new success shape here).
-
----
-
-> **OUR INTERPRETATION**
->
-> Honest envelopes for a future NFO extract (and for today’s UI, which must not pretend the extract exists):
->
-> | Ask | Honest result while master is refused / unimplemented |
-> | --- | --- |
-> | Expiry list for BANKNIFTY | complete list from master **or** empty / unavailable — never a guessed Thursday calendar |
-> | BANKNIFTY 57500 PE 29 Sep | tradable id from master **or** empty / unavailable — never a fixture token |
-> | Lot size for that contract | value from the master row **or** unavailable — never a hardcoded 30 |
->
-> Dark state is **no contracts**, not a demo chain. Empty is truth.
-
----
-
-### `market/option_chain` is not `reference/option_symbol`; ghost strikes are forbidden
-
-**Source:** `matrix.rs` (`option_chain` = market BoundedSnapshot; `option_symbol` = reference BoundedSnapshot); ADR 0002 “Option chain is not order-book depth”; `glance.rs` unavailable chain
-
-**Verbatim definition / formula:**
-
-```
-(Family::Market, "option_chain") => Some(&[Physics::BoundedSnapshot])
-(Family::Reference, "option_symbol") => Some(&[Physics::BoundedSnapshot])
-```
-
-ADR 0002:
-
-```
-Option chain is not order-book depth. REST option chain is a bounded market
-cross-section; ordered depth requires snapshot-plus-contiguous-deltas.
-```
-
-**Field / term reference:**
-
-| Term / Field | Source definition | Units / type |
-| ------------ | ----------------- | ------------ |
-| `market/option_chain` | BoundedSnapshot cross-section of contracts | market identity |
-| `reference/option_symbol` | Single-contract resolve | reference identity |
-| Ghost strike | Strike shown without a master row | forbidden (interpretation) |
-
-**Gaps (NOT SPECIFIED IN SOURCE):**
-
-- Official Kotak “option chain” REST (Quotes.md `quote_type` has `oi` / `scrip_details`; it is **not** documented as a chain table). Do not invent `/optionchain`.
-
----
-
-> **OUR INTERPRETATION**
->
-> - A chain table is a projection **over master rows** (plus quotes/OI if those extracts exist). Strikes that are not on the master are ghosts.
-> - While NFO master is v1-refused, a chain UI that paints 57500 (or any ATM ladder) is cheating. Show empty / unavailable.
-> - Do not “fill in” weekly strikes from a remembered NSE grid. Do not use a fixture list of 57500 as live state.
-
----
-
-### Third-party OpenAlgo NFO mapping is not official Kotak schema
-
-**Source:** OpenAlgo `broker/kotak/database/master_contract_db.py` `process_kotak_nfo_csv` (fetched 2026-08-27). REST.md already cites this file for **cash** columns. Official `Scrip_Master.md` still has no FO schema.
-
-**Verbatim definition / formula:**
-
-OpenAlgo `process_kotak_nfo_csv` (third-party; not Kotak docs):
-
-```
-tokensymbols["token"] = df["pSymbol"]
-tokensymbols["name"] = df["pSymbolName"]
-df["lExpiryDate"] = df["lExpiryDate"] + 315513000
-tokensymbols["expiry"] = pd.to_datetime(df["lExpiryDate"], unit="s")
-tokensymbols["expiry"] = tokensymbols["expiry"].dt.strftime("%d-%b-%y").str.upper()
 tokensymbols["strike"] = df["dStrikePrice"] / 100
+df["lExpiryDate"] = df["lExpiryDate"] + 315513000
 tokensymbols["lotsize"] = df["lLotSize"]
-tokensymbols["brsymbol"] = df["pTrdSymbol"]
-tokensymbols["brexchange"] = df["pExchSeg"]
-tokensymbols["exchange"] = "NFO"
-tokensymbols["instrumenttype"] = df["pOptionType"].str.replace("XX", "FUT")
 ```
-
-OpenAlgo FO fallback URL (same file `fallback_urls`): `…/transformed/nse_fo.csv` (not `-v1`). Cash fallback in the same dict uses `transformed-v1/{nse,bse}_cm-v1.csv`.
 
 **Field / term reference:**
 
 | Term / Field | Source definition | Units / type |
 | ------------ | ----------------- | ------------ |
-| OpenAlgo `pSymbol` (NFO) | Mapped to `token` in OpenAlgo | third-party mapping |
-| OpenAlgo `lExpiryDate` | Unix seconds **plus** `315513000` then formatted | third-party offset |
-| OpenAlgo `dStrikePrice` | Divided by 100 | third-party scale |
-| OpenAlgo `lLotSize` | Mapped to `lotsize` | third-party mapping |
-| Official meaning of those columns | **NOT SPECIFIED IN SOURCE** | — |
+| OpenAlgo ÷100 | Third-party | **not** this lock |
+| OpenAlgo `+315513000` | Third-party | **not** this lock |
+| Official meaning | **NOT SPECIFIED IN SOURCE** | — |
 
 **Gaps (NOT SPECIFIED IN SOURCE):**
 
-- Whether OpenAlgo’s +315513000 offset is correct, still required, or harmful on current lapi files (user issues #67 / #104 report expiry-field bugs; they are not official errata).
-- Whether `iLotSize` (seen in a **user** header paste, issue #104) is the field to use instead of `lLotSize`.
-- Whether live FO files use `dStrikePrice` or `dStrikePrice;` (OpenAlgo cash NSE path reads `dStrikePrice;`; NFO path strips `;` from headers first).
+- Whether OpenAlgo’s offset/scale is correct on 2026-08-28 lapi files.
 
 ---
 
 > **OUR INTERPRETATION**
 >
-> - Cite OpenAlgo here the same way REST.md cites it for cash: a **working third-party parser**, not a primary schema.
-> - A future Station extract must not copy the 10-year epoch offset, the ÷100 strike, or `lLotSize` until a **live FO header + sample row** is cited in this library (and B6 lifts the refuse).
-> - Do not treat GitHub issues as column authority. They are verification warnings: expiry fields have been reported inconsistent.
+> - Station stores raw strike and raw expiry. Do not copy OpenAlgo’s arithmetic.
+> - OpenAlgo’s `lLotSize` mapping agrees with the lock **when both lot columns match**; disagreement is still unspecified → skip row.
+
+---
+
+### `market/option_chain` is not this extract; ghost strikes are forbidden
+
+**Source:** `matrix.rs`; ADR 0002; lock “Strike grid stays dark”.
+
+**Verbatim definition / formula:**
+
+```
+(Family::Market, "option_chain") => BoundedSnapshot
+(Family::Reference, "derivative_contracts") => BoundedSnapshot
+```
+
+**Field / term reference:**
+
+| Term / Field | Source definition | Units / type |
+| ------------ | ----------------- | ------------ |
+| This extract | `reference/derivative_contracts` | bounded snapshot of master rows |
+| Chain | `market/option_chain` | different identity; not this slice |
+| Ghost 57500 | not in the lock sample | forbidden |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Strike scale, so a query “BANKNIFTY 57500 PE …” cannot be matched without guessing.
+
+---
+
+> **OUR INTERPRETATION**
+>
+> - Do not implement optionchain, glance/extract_chain, or a strike grid here.
+> - Empty/unavailable is correct for chain while scale is blocked. A fixture 57500 ladder is cheating.
 
 ---
 
@@ -569,17 +551,22 @@ OpenAlgo FO fallback URL (same file `fallback_urls`): `…/transformed/nse_fo.cs
 Facts that still need confirming against the live source or a test environment before
 code is written against them.
 
-- [ ] B6 row 12 / M1 still refuse F&O — this research pass must **not** flip them (confirm on the sheet)
-- [ ] Official Kotak doc or a cited live `nse_fo` / `nse_fo-v1.csv` **header row** names token, ticker, expiry, strike, option type, lot size
-- [ ] FO token column on live lapi matches or differs from cash `pSymbol` (do not assume; do not commit CSV bytes to git)
-- [ ] FO lot-size column and unit; BANKNIFTY lot is **that field’s value**, not a constant
-- [ ] Expiry column and representation (date vs epoch vs offset); weekday of weekly expiry remains unspecified until the master says so
-- [ ] Strike column and scale so “57500” can match a row without guessing
-- [ ] Live `filesPaths` includes `nse_fo` and which filename (`nse_fo.csv` vs `nse_fo-v1.csv`)
-- [ ] `reference/expiry` extract returns complete list or empty/unavailable — never a fixture week
-- [ ] `reference/option_symbol` for BANKNIFTY 57500 PE 29 Sep returns tradable id or empty — never a hardcoded token
-- [ ] Chain / Pre-trade strike grid is empty while NFO master is refused (no ghost 57500 ladder)
-- [ ] v1 host allowlist still drops `nse_fo` / `bse_fo` / `cde_fo` / `mcx_fo` / `*-fo.csv`
+- [x] Live `nse_fo.csv` header row (79 columns, `pToken` absent) cited from unsigned GET 2026-08-28 IST (lock)
+- [x] Token column = `pSymbol` (sample 56526); not cash `pSymbolName`-as-token
+- [x] Segment = `pExchSeg` = `nse_fo` only
+- [x] Lot columns `lLotSize` and `iLotSize` (sample both 65)
+- [x] Tick header `dTickSize ` (trailing space)
+- [x] Strike column name `dStrikePrice;` (semicolon); sample cell stored raw
+- [x] Expiry columns `lExpiryDate ` / `pExpiryDate` sample `1474554600` stored raw
+- [x] Live filename `transformed/nse_fo.csv` (not `-v1`; `-v1` was 403)
+- [x] Cash book `kotak-nse-bse-cash` still refuses FO
+- [ ] Official strike **scale** (do not ÷100; do not invent 57500)
+- [ ] Expiry integer → calendar / epoch offset
+- [ ] Which lot column wins if `lLotSize` ≠ `iLotSize` (skip row until specified)
+- [ ] CNC validity on `nse_fo`
+- [ ] Named greeks / pricing model (no Black-76)
+- [ ] AppState / CSV store wiring for production `extract_contracts(Some("kotak-nse-nfo"))` (parent slice)
+- [ ] FO REST quotes JSON LTP key (cash observed `ltp`; FO body not re-hit this lock)
 
 ---
 
@@ -590,19 +577,16 @@ a gap from memory or assumption rather than from the cited source.*
 
 | Temptation | What the source actually says | Resolution |
 | ---------- | ----------------------------- | ---------- |
-| BANKNIFTY lot = 30 (or 15 / 25) | Official Kotak docs do not state a lot quantity. B6 says lot comes from scrip master when needed. OpenAlgo maps `lLotSize` but does not publish BANKNIFTY’s value. | **NOT SPECIFIED IN SOURCE.** Lot is a field on the row or unavailable. |
-| Weekly expiry is Thursday | No Kotak or NSE rulebook is cited in this pass. SDK/guide do not mention weekday. | **NOT SPECIFIED IN SOURCE.** Do not hardcode Thursday. |
-| FO files use cash live columns (`pSymbol` token, `pSymbolName` ticker, no `pToken`) | REST.md observation is `nse_cm-v1.csv` / `bse_cm-v1.csv` only. `kotak_scrip_master.rs`: F&O CSVs stay refused. | Do not extend cash columns to FO. Token column on FO is **NOT SPECIFIED**. |
-| FO files use cash **fixture** `pToken` + text `pSymbol` | Fixture is for cash tests. Live cash has no `pToken`. | Self-audit only. FO `pToken` vs `pSymbol` remains unspecified. |
-| Copy OpenAlgo `process_kotak_nfo_csv` (`lExpiryDate+315513000`, `dStrikePrice/100`, `lLotSize`) | OpenAlgo is third-party code. Official `Scrip_Master.md` has no columns. | Recorded as third-party mapping. Not implementable schema. |
-| Treat GitHub issue #104 header dump as official schema | User paste on v1-repo issue; includes both `lLotSize` and `iLotSize`. Not `Scrip_Master.md`. | Cited as user report only. Do not implement from it. |
-| Treat issue #67 (`pexpirydate` off by 10 years) as the official expiry rule | User report on v2 repo, open as of fetch. | Gap / verification item. Not a formula to code. |
-| Invent NSE weekly strike interval (100 / 50) to build a 57500 ladder | No primary source in this inventory. | Forbidden ghost strikes. Empty chain while refused. |
-| `reference/lot_size` as a capability | Matrix has `expiry` and `option_symbol`, not `lot_size`. B6 row 8: multiplier from master. | Lot size is a **field**, not a capability id. |
-| Lift v1 refuse because `filesPaths` lists `nse_fo.csv` | B6 M1: refuse even when listed. REST.md: F&O stay refused. | Refuse unchanged. This doc does not allowlist `nse_fo`. |
-| Assume live FO filename is `nse_fo-v1.csv` because cash is `nse_cm-v1.csv` | SDK sample: `transformed/nse_fo.csv`. OpenAlgo FO fallback: same, not `-v1`. Cash live: `transformed-v1/nse_cm-v1.csv`. | FO live filename **NOT SPECIFIED**. Refuse patterns in REST.md already cover both. |
-| Guess “29 Sep” parses as 29-Sep-2026 | Year and calendar convention unspecified. | Option-symbol resolve stays unimplemented; empty/unavailable. |
-| Use glance `extract_chain` success path for Pre-trade | `glance.rs` returns `Unavailable` / `data: None`. | Keep dark state. Do not add a fixture chain in this slice. |
-| Download `nse_fo.csv` to “just see headers” | Task forbids fetching FO CSV bytes into the repo. Official schema still wouldn’t be the SDK doc. | Not fetched. Header remains a blocker. |
+| ÷100 strike because OpenAlgo / “looks scaled” (`2.1e+06` vs `21000`) | Lock: official scale **NOT SPECIFIED IN SOURCE**. Store raw. | `strike_raw` = cell string. No ÷100. No 21000. No **57500**. |
+| Convert `1474554600` with `+315513000` or Unix UTC | Lock: calendar / epoch offset **NOT SPECIFIED**. | `expiry_raw` = integer string. No conversion. |
+| Pick `lLotSize` over `iLotSize` (or the reverse) when they differ | Lock: which wins is **NOT SPECIFIED**. Sample they match at 65. | Skip the row. Do not guess. Fixture lot **65** is this dated contract only. |
+| Add `HonestyStatus::Success` for a lit master | `honesty.rs`: four variants; lit is `InputHonesty::Lit` when `data.is_some()`. | No fifth variant. Empty store → `Unavailable`, not Empty-as-success. |
+| Copy cash `pSymbolName` as FO token | Cash REST.md: ticker = `pSymbolName`. FO lock: token = `pSymbol` (`56526`); `pSymbolName` is `NIFTY`. | Do not copy cash token mapping. |
+| Allowlist FO CSV on `kotak-nse-bse-cash` | Lock: cash still refuses FO. Do not allowlist this URL on cash. | Cash extract path stays `Unavailable`. |
+| Invent tick 0.05 / lot 50 / BANKNIFTY 15 | Lock: lot/tick from the row; do not invent 25/50/75. | Lot from fixture row 65 only. No `fo_mktlots.csv`. |
+| Implement Black-76 because contracts are lit | OPTIONS-PRICING.md + lock: no named model. | Greeks stay `pricing_model_unspecified`. |
+| Enable CNC on `nse_fo` because “F&O is NRML” | Lock: CNC on `nse_fo` **NOT SPECIFIED**. Do not enable; do not invent refuse. | Leave unimplemented. |
+| Paint a strike grid / optionchain from the master | Lock: strike grid stays dark until scale + expiry conversion are specified. | No grid. No 57500. No glance/extract_chain this slice. |
+| Use SDK `2025-01-22` or `nse_fo-v1.csv` as live | This fetch: those URLs **403**. Live file is dated `2026-08-28` `transformed/nse_fo.csv`. | Cite the lock URL only. |
 
-No memory fills for lot size, expiry weekday, or FO columns. Official gaps stay `NOT SPECIFIED IN SOURCE`. v1 refuse is unchanged. No Rust/Swift was edited in this slice.
+No memory fills for strike scale, expiry conversion, lot-column winner, CNC, or greeks. Column **names** are cited from the lock’s 2026-08-28 header. Gaps stay `NOT SPECIFIED IN SOURCE`.

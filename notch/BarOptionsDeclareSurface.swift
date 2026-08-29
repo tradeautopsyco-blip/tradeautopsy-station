@@ -8,6 +8,7 @@ enum BarOptionsDeclareSurface {
 }
 
 /// Chain table is forbidden while the extract is dark. Ghost strike grids are cheating.
+/// Wire `"success"` is a glance status, not `HonestyStatus`.
 enum BarOptionsChainPresentation: Equatable {
     /// No underlying typed yet.
     case nothingDeclared
@@ -15,17 +16,21 @@ enum BarOptionsChainPresentation: Equatable {
     case unavailable
     /// Result set legitimately zero.
     case empty
+    /// Glance `status: success` — master rows may exist; still no invented strike grid.
+    case lit
 
-    static func from(underlying: String, chainStatus: HonestyStatus) -> BarOptionsChainPresentation {
+    static func from(underlying: String, chainStatus: String) -> BarOptionsChainPresentation {
         let und = underlying.trimmingCharacters(in: .whitespacesAndNewlines)
         if und.isEmpty { return .nothingDeclared }
-        switch chainStatus {
-        case .empty: return .empty
-        case .unavailable, .unusable, .inheritedDark: return .unavailable
+        let wire = chainStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch wire {
+        case "success": return .lit
+        case "empty": return .empty
+        default: return .unavailable
         }
     }
 
-    /// A strike table is only allowed on a lit complete snapshot. We never have that yet.
+    /// Strike scale / expiry conversion stay unspecified — never paint 57500.
     var showsStrikeGrid: Bool { false }
 }
 

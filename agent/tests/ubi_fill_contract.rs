@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tradeautopsy_agent::{
     host_allowed, run_fetch_fills, BrokerHttpFixture, FillCursor, HostCredentialBlob,
-    UbiHostConfig, UbiHostState, FORBIDDEN_COMPONENT_HEADERS,
+    UbiHostConfig, UbiHostState, BINANCE_COM_SPOT_BOOK_ID, FORBIDDEN_COMPONENT_HEADERS,
+    KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 
 fn workspace_agent_dir() -> PathBuf {
@@ -81,6 +82,7 @@ fn com_host_state() -> UbiHostState {
         UbiHostConfig {
             connection_id: "conn-com-001".into(),
             broker_slug: "binance_com".into(),
+            book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
             asset_class: "crypto_spot".into(),
             credentials: secret_blob(),
         },
@@ -103,6 +105,7 @@ fn kotak_host_state() -> UbiHostState {
         UbiHostConfig {
             connection_id: "conn-kotak-001".into(),
             broker_slug: "kotak_neo".into(),
+            book_id: KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
             asset_class: "equities".into(),
             credentials: secret_blob(),
         },

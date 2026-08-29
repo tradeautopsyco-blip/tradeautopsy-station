@@ -102,6 +102,8 @@ pub struct AppState {
     pub instrument_master: Arc<Mutex<ExchangeInfoSymbolCache>>,
     /// Kotak cash scrip master. Separate from `instrument_master` (do not blend).
     pub kotak_scrip_master: Arc<Mutex<KotakScripMaster>>,
+    /// Named NFO scrip master. Separate from cash; do not blend FO rows.
+    pub kotak_nfo_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
     /// Instruments that already have a public `@trade` stream task.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,
     /// Instruments that already have a public `@depth` stream task.

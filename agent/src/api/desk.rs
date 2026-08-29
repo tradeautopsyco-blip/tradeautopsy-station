@@ -3,10 +3,11 @@
 use super::AppState;
 use crate::data::{
     apply_history_series, authorize_inferred_call, binance_exchange_info_cache_path,
-    ensure_binance_com_depth_stream, ensure_binance_com_trade_stream, extract_quote_for,
-    normalize_quote_instrument, resolve_among, series_from_klines_json, validate_kline_request,
-    write_raw_cache, HistoryBook, InstrumentMasterErrorClass, InstrumentMasterFetchError,
-    InstrumentMasterStatus, QuoteStatus, Transport, DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT,
+    ensure_binance_com_depth_stream, ensure_binance_com_trade_stream, extract_quote_for_book,
+    normalize_quote_instrument, parse_nfo_instrument_id, resolve_among, series_from_klines_json,
+    validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
+    InstrumentMasterFetchError, InstrumentMasterStatus, QuoteStatus, Transport,
+    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -89,6 +90,30 @@ pub fn spawn_instrument_master_refresh(
         }
         _ => {}
     }
+}
+
+/// Named NFO book catalog. Cash `spawn_instrument_master_refresh` must not call this.
+pub fn spawn_nfo_master_refresh(state: &AppState, environment: &str, connection_id: &str) {
+    if !state.source_manifests.iter().any(|manifest| {
+        manifest.book_id == crate::data::KOTAK_NSE_NFO_BOOK_ID
+            && manifest.implemented.iter().any(|op| op == "instruments")
+    }) {
+        return;
+    }
+    crate::kotak_nfo_scrip::try_load_nfo_cache(
+        &state.instrument_master_cache_dir,
+        &state.kotak_nfo_scrip_master,
+    );
+    crate::kotak_nfo_scrip::spawn_refresh(
+        state.kotak_nfo_scrip_master.clone(),
+        state.broker_sync_control.credential_vault(),
+        environment.to_string(),
+        connection_id.to_string(),
+        state.instrument_master_cancel.clone(),
+        state.instrument_master_cache_dir.clone(),
+        state.broker_connections.clone(),
+        state.kotak_session_locator.clone(),
+    );
 }
 
 impl AppState {
@@ -230,7 +255,7 @@ impl AppState {
             .lock()
             .expect("kotak scrip master mutex poisoned")
             .contains_id(&id);
-        if !in_master {
+        if !in_master && parse_nfo_instrument_id(&id).is_none() {
             return;
         }
         crate::kotak_rest_quotes::ensure_kotak_rest_quote(
@@ -263,7 +288,7 @@ impl AppState {
             .lock()
             .expect("kotak scrip master mutex poisoned")
             .contains_id(&id);
-        if !in_master {
+        if !in_master && parse_nfo_instrument_id(&id).is_none() {
             return;
         }
         crate::kotak_rest_quotes::await_kotak_rest_quote(
@@ -291,6 +316,9 @@ impl AppState {
             return None;
         }
         if self.is_kotak_neo_desk() {
+            if let Some(id) = parse_nfo_instrument_id(raw) {
+                return Some(id);
+            }
             let (segment, token) = kotak_scrip_master::parse_instrument_id(raw)?;
             let id = kotak_scrip_master::instrument_id(&segment, token);
             let master = self
@@ -370,14 +398,16 @@ impl AppState {
             return "unavailable";
         };
         let adapter = self.active_adapter_id();
+        let named_book = parse_nfo_instrument_id(&instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID);
         let book = self.tickbook.lock().expect("tickbook mutex poisoned");
-        let env = extract_quote_for(
+        let env = extract_quote_for_book(
             self.quote_registry.as_ref(),
             &book,
             &instrument,
             Utc::now(),
             self.quote_freshness,
             adapter.as_deref(),
+            named_book,
         );
         if env.status != QuoteStatus::Unavailable {
             return quote_status_wire(env.status);

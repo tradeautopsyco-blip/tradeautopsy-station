@@ -8,8 +8,9 @@ mod ubi_support;
 
 use serial_test::serial;
 use tradeautopsy_agent::{
-    build_runtime_adapter, build_wasm_runtime_adapter, component_path_for_slug, uses_wasm_component,
-    BinanceComSpotBrokerAdapter, BrokerAdapter, CredentialBlob,
+    build_runtime_adapter, build_wasm_runtime_adapter, build_wasm_runtime_adapter_for_book,
+    component_path_for_slug, uses_wasm_component, BinanceComSpotBrokerAdapter, BrokerAdapter,
+    CredentialBlob, KOTAK_NSE_NFO_BOOK_ID,
 };
 use ubi_support::component_wasm;
 
@@ -87,6 +88,36 @@ fn b5_live_start_factory_selects_wasm_for_kotak_neo() {
     let adapter = build_runtime_adapter("kotak_neo", "conn-kotak-live-001", &blob)
         .expect("Start factory kotak_neo");
     assert_eq!(adapter.name(), "kotak_neo_wasm");
+}
+
+#[test]
+#[serial]
+fn named_nfo_book_loads_wasm_without_changing_default_start() {
+    let _ = component_wasm("kotak_neo");
+    let blob = CredentialBlob::KotakNeoTotpSession {
+        consumer_key: "ck".into(),
+        trade_token: "tt".into(),
+        sid: "sid".into(),
+        base_url: "https://cis.kotaksecurities.com".into(),
+        hs_server_id: "server4".into(),
+        expires_at: None,
+    };
+    let named = build_wasm_runtime_adapter_for_book(
+        "kotak_neo",
+        KOTAK_NSE_NFO_BOOK_ID,
+        "conn-kotak-nfo-001",
+        &blob,
+    )
+    .expect("named NFO book adapter");
+    assert_eq!(named.name(), "kotak_neo_wasm");
+
+    let shipping = build_wasm_runtime_adapter("kotak_neo", "conn-kotak-shipping-001", &blob)
+        .expect("shipping cash adapter");
+    assert_eq!(shipping.name(), "kotak_neo_wasm");
+
+    let start = build_runtime_adapter("kotak_neo", "conn-kotak-start-nfo-guard", &blob)
+        .expect("default Start stays shipping-book factory");
+    assert_eq!(start.name(), "kotak_neo_wasm");
 }
 
 #[test]

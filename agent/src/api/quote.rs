@@ -1,7 +1,10 @@
 //! S1 desk extract on Station loopback. TickBook ≠ BAR LiveBook. No ingestSignal. No Neon.
 
 use crate::api::AppState;
-use crate::data::{extract_quote_for, QuoteEnvelope, QuoteStatus};
+use crate::data::{
+    extract_quote_for_book, parse_nfo_instrument_id, QuoteEnvelope, QuoteStatus,
+    KOTAK_NSE_NFO_BOOK_ID,
+};
 use axum::extract::{Query, State};
 use axum::Json;
 use chrono::Utc;
@@ -23,18 +26,20 @@ pub async fn handler(
     let adapter = state.active_adapter_id();
     if raw.trim().is_empty() {
         let book = state.tickbook.lock().expect("tickbook mutex poisoned");
-        return Json(extract_quote_for(
+        return Json(extract_quote_for_book(
             state.quote_registry.as_ref(),
             &book,
             "",
             Utc::now(),
             state.quote_freshness,
             adapter.as_deref(),
+            None,
         ));
     }
 
     let instrument = match state.validated_quote_id(&raw) {
         Some(id) => {
+            let nfo = parse_nfo_instrument_id(&id).is_some();
             if state.should_subscribe_quote(&id) {
                 *state
                     .selected_quote_instrument
@@ -45,6 +50,12 @@ pub async fn handler(
                 } else {
                     state.subscribe_instrument(&id);
                 }
+            } else if state.is_kotak_neo_desk() && nfo {
+                *state
+                    .selected_quote_instrument
+                    .lock()
+                    .expect("selected quote instrument poisoned") = Some(id.clone());
+                state.prime_kotak_quote(&id).await;
             }
             id
         }
@@ -57,14 +68,16 @@ pub async fn handler(
         }
     };
 
+    let named_book = parse_nfo_instrument_id(&instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID);
     let book = state.tickbook.lock().expect("tickbook mutex poisoned");
-    let mut env = extract_quote_for(
+    let mut env = extract_quote_for_book(
         state.quote_registry.as_ref(),
         &book,
         &instrument,
         Utc::now(),
         state.quote_freshness,
         adapter.as_deref(),
+        named_book,
     );
     if env.status == QuoteStatus::Unavailable {
         if let Some(class) = state
@@ -102,5 +115,19 @@ mod tests {
                 .as_deref(),
             Some("nse_cm|2885")
         );
+    }
+
+    #[test]
+    fn nse_fo_extract_uses_nfo_book_spot_does_not() {
+        assert_eq!(
+            parse_nfo_instrument_id("nse_fo|12345").map(|_| KOTAK_NSE_NFO_BOOK_ID),
+            Some(KOTAK_NSE_NFO_BOOK_ID)
+        );
+        assert!(parse_nfo_instrument_id("nse_cm|2885")
+            .map(|_| KOTAK_NSE_NFO_BOOK_ID)
+            .is_none());
+        assert!(parse_nfo_instrument_id("btcusdt")
+            .map(|_| KOTAK_NSE_NFO_BOOK_ID)
+            .is_none());
     }
 }

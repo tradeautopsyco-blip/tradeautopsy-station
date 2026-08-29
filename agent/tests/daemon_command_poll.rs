@@ -14,10 +14,7 @@ use tradeautopsy_agent::BLOCK_MARKER;
 async fn daemon_command_poll_fog_of_war_level_3_writes_hosts_marker() {
     const AGENT_PORT: u16 = 39_610;
     let dir = std::env::temp_dir();
-    let hosts_path = dir.join(format!(
-        "rta-daemon-cmd-{}.hosts",
-        uuid::Uuid::new_v4()
-    ));
+    let hosts_path = dir.join(format!("rta-daemon-cmd-{}.hosts", uuid::Uuid::new_v4()));
     std::fs::write(&hosts_path, "127.0.0.1 localhost\n").expect("seed hosts");
     std::env::set_var(
         "TRADEAUTOPSY_HOSTS_FILE",

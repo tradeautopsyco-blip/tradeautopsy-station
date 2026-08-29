@@ -25,7 +25,10 @@ fn redaction_blocks_raw_auth_and_broker_payload_keys() {
         "raw_response": "{\"foo\":1}",
         "order_id": "42"
     });
-    assert!(RedactionBoundary::contains_forbidden_material(&payload, &[]));
+    assert!(RedactionBoundary::contains_forbidden_material(
+        &payload,
+        &[]
+    ));
     let redacted = RedactionBoundary::redact_for_upload(payload, &["abc"]).expect("redacted");
     assert!(redacted.get("apiSecret").is_none());
     assert!(redacted.get("raw_response").is_none());
@@ -41,12 +44,7 @@ fn behavioral_opt_out_suppresses_upload_path() {
         asset_class: "crypto".into(),
         environment: "prod".into(),
     };
-    assert!(!recorder.record_normalized(
-        &identity,
-        "broker_sync_stopped",
-        json!({}),
-        None,
-    ));
+    assert!(!recorder.record_normalized(&identity, "broker_sync_stopped", json!({}), None,));
     assert!(recorder.recorded_events().is_empty());
 }
 

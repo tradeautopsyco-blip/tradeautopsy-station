@@ -5,12 +5,12 @@ mod common;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{patch, post};
 use axum::{Json, Router};
-use std::sync::{Arc, Mutex};
 use common::{
     apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
 };
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[tokio::test]
@@ -137,14 +137,27 @@ async fn bar_declare_forwards_station_bearer_not_daemon_identity() {
     let out: Value = resp.json().await.expect("json");
     assert_eq!(out["declarationId"], "d-auth-test");
 
-    let headers = captured.lock().expect("lock").take().expect("headers captured");
+    let headers = captured
+        .lock()
+        .expect("lock")
+        .take()
+        .expect("headers captured");
     let auth = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    assert!(auth.starts_with("Bearer "), "Station Bearer must be forwarded");
-    assert!(headers.get("x-daemon-secret").is_none(), "must not forward wire secret");
-    assert!(headers.get("x-user-id").is_none(), "must not forward wire user hint as identity");
+    assert!(
+        auth.starts_with("Bearer "),
+        "Station Bearer must be forwarded"
+    );
+    assert!(
+        headers.get("x-daemon-secret").is_none(),
+        "must not forward wire secret"
+    );
+    assert!(
+        headers.get("x-user-id").is_none(),
+        "must not forward wire user hint as identity"
+    );
 
     handle.abort();
 }

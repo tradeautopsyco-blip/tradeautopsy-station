@@ -293,17 +293,40 @@ pub fn uses_wasm_component(broker_slug: &str) -> bool {
 }
 
 /// Build the sandboxed component adapter for a UBI broker; credentials stay host-side.
+/// Default Start always binds the shipping book (cash/spot).
 pub fn build_wasm_runtime_adapter(
     broker_slug: &str,
     connection_id: &str,
     blob: &CredentialBlob,
 ) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
+    let book_id = crate::data::shipping_book_id_for_slug(broker_slug)
+        .ok_or_else(|| anyhow::anyhow!("no shipping book for wasm slug {broker_slug}"))?;
+    build_wasm_runtime_adapter_for_book(broker_slug, &book_id, connection_id, blob)
+}
+
+/// Named-book Start. `book_id` must be a known manifest whose `adapter_id` matches `broker_slug`.
+/// Default Start must not call this — use [`build_wasm_runtime_adapter`].
+pub fn build_wasm_runtime_adapter_for_book(
+    broker_slug: &str,
+    book_id: &str,
+    connection_id: &str,
+    blob: &CredentialBlob,
+) -> anyhow::Result<Arc<dyn BrokerAdapter>> {
+    let manifest = crate::data::manifest_for_book_id(book_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown book_id {book_id}"))?;
+    if manifest.adapter_id != broker_slug {
+        anyhow::bail!(
+            "book {book_id} adapter {} does not match slug {broker_slug}",
+            manifest.adapter_id
+        );
+    }
     let descriptor = crate::ubi::descriptor_for_slug(broker_slug)
         .ok_or_else(|| anyhow::anyhow!("no catalog descriptor for {broker_slug}"))?;
     let transport = crate::ubi::ReqwestBrokerHttpTransport::shared()
         .map_err(|e| anyhow::anyhow!("ubi transport: {e}"))?;
     Ok(Arc::new(crate::ubi::WasmBrokerAdapter::new(
         broker_slug,
+        manifest.book_id,
         connection_id,
         descriptor.asset_class,
         HostCredentialBlob::from(blob),
@@ -505,5 +528,60 @@ mod b5_enforcer_sot_tests {
             Ok(_) => panic!("unsigned slug must fail closed"),
         };
         assert!(err.to_string().contains("unsupported broker"), "{}", err);
+    }
+
+    fn kotak_blob() -> CredentialBlob {
+        CredentialBlob::KotakNeoTotpSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://cis.kotaksecurities.com".into(),
+            hs_server_id: "server4".into(),
+            expires_at: None,
+        }
+    }
+
+    #[test]
+    fn wasm_for_book_refuses_unknown_and_slug_mismatch() {
+        let unknown = match build_wasm_runtime_adapter_for_book(
+            "kotak_neo",
+            "binance-com-usdm",
+            "conn-nfo",
+            &kotak_blob(),
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("usdm book stays dark"),
+        };
+        assert!(unknown.to_string().contains("unknown book_id"), "{unknown}");
+
+        let mismatch = match build_wasm_runtime_adapter_for_book(
+            "binance_com",
+            crate::data::KOTAK_NSE_NFO_BOOK_ID,
+            "conn-nfo",
+            &CredentialBlob::hmac("k", "s"),
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("COM slug must not bind NFO"),
+        };
+        assert!(
+            mismatch.to_string().contains("does not match"),
+            "{mismatch}"
+        );
+    }
+
+    #[test]
+    fn default_wasm_start_still_resolves_shipping_book() {
+        assert_eq!(
+            crate::data::shipping_book_id_for_slug("kotak_neo").as_deref(),
+            Some(crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID)
+        );
+        assert_eq!(
+            crate::data::shipping_book_id_for_slug("binance_com").as_deref(),
+            Some(crate::data::BINANCE_COM_SPOT_BOOK_ID)
+        );
+        assert_ne!(
+            crate::data::shipping_book_id_for_slug("kotak_neo").as_deref(),
+            Some(crate::data::KOTAK_NSE_NFO_BOOK_ID)
+        );
     }
 }

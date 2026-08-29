@@ -53,14 +53,20 @@ pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
 };
 pub use connection::BrokerConnectionRuntime;
-pub use contracts::extract_contracts;
+pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};
 pub use depthbook::DepthBook;
 pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
-    BINANCE_COM_ADAPTER_ID, KOTAK_NEO_ADAPTER_ID,
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
-pub use extract::{extract_quote, extract_quote_for, QuoteEnvelope, QuoteStatus};
-pub use glance::{extract_chain, extract_open_interest, GlanceEnvelope};
+pub use extract::{
+    extract_quote, extract_quote_for, extract_quote_for_book, QuoteEnvelope, QuoteStatus,
+};
+pub use glance::{
+    chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
+    extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
+};
 pub use greeks::extract_greeks;
 pub use history::{
     apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
@@ -70,8 +76,9 @@ pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;
 pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
-    authorize_book_call, authorize_host_call, authorize_inferred_call, infer_capability,
-    is_kotak_cash_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
+    authorize_book_call, authorize_book_fence, authorize_host_call, authorize_inferred_call,
+    infer_capability, is_kotak_cash_scrip_csv_path, is_kotak_fo_scrip_csv_path,
+    is_kotak_nse_fo_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
 pub use inherit::{capital_may_light, inherit};
@@ -91,17 +98,18 @@ pub use kotak_depth::{
     extract_depth, DepthEnvelope, DepthStatus,
 };
 pub use kotak_quotes::{
-    quote_tick_from_kotak_json, quote_ticks_from_kotak_json, quotes_neosymbol_path, QUOTE_TYPE_ALL,
-    QUOTE_TYPE_DEPTH,
+    kotak_quote_book_id, parse_nfo_instrument_id, quote_tick_from_kotak_json,
+    quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
 };
 pub use margin_estimate::extract_margin_estimate;
 pub use provenance::ProvenanceLine;
 pub use registry::Registry;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use source_manifest::{
-    describe, first_party_s0_manifests, kotak_neo_s1k_manifest, load_first_party_manifests,
-    manifest_for_book_id, manifest_for_slug, obtain, shared_budget, ObtainEnvelope, ObtainStatus,
-    SourceManifest,
+    describe, first_party_s0_manifests, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest,
+    load_first_party_manifests, manifest_for_book_id, manifest_for_slug, obtain, shared_budget,
+    shipping_book_id_for_slug, ObtainEnvelope, ObtainStatus, SourceManifest,
 };
 pub use tick::{QuoteTick, SessionOhlc, Transport};
 pub use tickbook::TickBook;

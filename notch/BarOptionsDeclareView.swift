@@ -67,10 +67,9 @@ struct BarOptionsDeclareView: View {
     }
 
     private var chainPresentation: BarOptionsChainPresentation {
-        let wire = HonestyStatus.fromWire(viewModel.deskChainStatus) ?? .unavailable
-        return BarOptionsChainPresentation.from(
+        BarOptionsChainPresentation.from(
             underlying: viewModel.barDeclarationSymbol,
-            chainStatus: wire,
+            chainStatus: viewModel.deskChainStatus,
         )
     }
 
@@ -79,6 +78,7 @@ struct BarOptionsDeclareView: View {
         case .nothingDeclared: return "—"
         case .unavailable: return "unavailable"
         case .empty: return "empty"
+        case .lit: return viewModel.deskChainStatus
         }
     }
 
@@ -97,6 +97,11 @@ struct BarOptionsDeclareView: View {
             }
         case .empty:
             emptyBlock(title: "No contracts", body: "Expiry list is empty — not a guessed strike grid.")
+        case .lit:
+            emptyBlock(
+                title: "chain snapshot live · no strike grid (raw strike/expiry)",
+                body: "Rows come from the NFO master. A missing master row means that strike is absent.",
+            )
         }
     }
 
@@ -382,7 +387,7 @@ struct BarOptionsDeclareView: View {
     }
 
     private var ladderProv: String {
-        "rung 1 · your typed numbers only. Rungs 2–5 inherit market/option_chain and stay dark while it is refused."
+        "rung 1 · your typed numbers only. Rungs 2–5 stay dark — σ / IV / greeks unspecified."
     }
 
     private var legendRow: some View {

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
     host_allowed, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
-    TransportResponse, UbiHostConfig, UbiHostState,
+    TransportResponse, UbiHostConfig, UbiHostState, BINANCE_COM_SPOT_BOOK_ID,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_hmac,
@@ -23,6 +23,7 @@ fn config() -> UbiHostConfig {
     UbiHostConfig {
         connection_id: "conn-com-001".into(),
         broker_slug: "binance_com".into(),
+        book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
         asset_class: "crypto_spot".into(),
         credentials: sentinel_hmac(),
     }

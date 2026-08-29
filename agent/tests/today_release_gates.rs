@@ -1,9 +1,7 @@
 //! Today v1 release gates.
 
-use tradeautopsy_agent::{
-    aggregate_known_pnl, is_aggregate_eligible, BrokerFill, RoundTripEngine,
-};
 use chrono::{TimeZone, Utc};
+use tradeautopsy_agent::{aggregate_known_pnl, is_aggregate_eligible, BrokerFill, RoundTripEngine};
 
 fn fill(id: &str, side: &str, qty: f64, price: f64) -> BrokerFill {
     BrokerFill {
@@ -57,7 +55,8 @@ fn today_trades_table_most_recent_first() {
 
     fn local_noon(date: NaiveDate) -> chrono::DateTime<Utc> {
         let local_dt = date.and_hms_opt(12, 0, 0).unwrap();
-        Local.from_local_datetime(&local_dt)
+        Local
+            .from_local_datetime(&local_dt)
             .single()
             .expect("local noon")
             .with_timezone(&Utc)

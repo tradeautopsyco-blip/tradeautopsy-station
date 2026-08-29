@@ -34,5 +34,7 @@ struct HonestyChipTests {
         #expect(HonestyStatus.fromWire(" inherited_dark ") == .inheritedDark)
         #expect(HonestyStatus.fromWire("fresh") == nil)
         #expect(HonestyStatus.fromWire("stale") == nil)
+        #expect(HonestyStatus.fromWire("success") == nil)
+        #expect(HonestyStatus.fromWire("lit") == nil)
     }
 }

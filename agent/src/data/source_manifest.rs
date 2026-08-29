@@ -226,6 +226,26 @@ fn quotes_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> 
     }
 }
 
+fn optionchain_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+) -> ManifestBinding {
+    ManifestBinding {
+        operation: "optionchain".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Market,
+        capability_id: "option_chain".into(),
+        physics: Physics::BoundedSnapshot,
+        auth_mode,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::research_fetch_only(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Realtime,
+    }
+}
+
 fn instruments_binding(
     adapter_id: &str,
     coverage: Coverage,
@@ -385,8 +405,38 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
     }
 }
 
+/// Named NFO book on the same `kotak_neo` adapter. Quotes + FO scrip master
+/// (`docs/reference/india/kotak-neo/NFO-SCRIP-MASTER.md`, header 2026-08-28).
+/// Slice 3: `optionchain` = master rows for (underlying, expiry) + optional last.
+/// Catalog / Start slug still ships cash.
+pub fn kotak_neo_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "kotak_neo.nfo.v1".into(),
+        adapter_id: "kotak_neo".into(),
+        book_id: "kotak-nse-nfo".into(),
+        implemented: vec!["quotes".into(), "instruments".into(), "optionchain".into()],
+        bindings: vec![
+            quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            optionchain_binding("kotak_neo", coverage, AuthMode::PrivateRead),
+        ],
+    }
+}
+
 pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
-    vec![binance_com_s1_manifest(), kotak_neo_s1k_manifest()]
+    // Cash stays before NFO so `manifest_for_slug("kotak_neo")` stays cash.
+    // No `binance_com.options.v1` until that book is named (lock + registry).
+    vec![
+        binance_com_s1_manifest(),
+        kotak_neo_s1k_manifest(),
+        kotak_neo_nfo_manifest(),
+    ]
 }
 
 pub fn manifest_for_slug(slug: &str) -> Option<SourceManifest> {
@@ -399,6 +449,12 @@ pub fn manifest_for_book_id(book_id: &str) -> Option<SourceManifest> {
     first_party_s0_manifests()
         .into_iter()
         .find(|manifest| manifest.book_id == book_id)
+}
+
+/// Current shipping book for this Start/Keychain slug. Not a class picker.
+/// Fixtures and unknown slugs → None (callers use their own id as the key prefix).
+pub fn shipping_book_id_for_slug(slug: &str) -> Option<String> {
+    manifest_for_slug(slug).map(|m| m.book_id)
 }
 
 pub fn load_first_party_manifests() -> Result<Vec<SourceManifest>, Vec<ManifestReject>> {
@@ -641,11 +697,12 @@ mod tests {
     #[test]
     fn first_party_manifests_load_fail_closed() {
         let loaded = load_first_party_manifests().expect("S0 first-party manifests must validate");
-        assert_eq!(loaded.len(), 2);
+        assert!(loaded.len() >= 3);
         assert!(manifest_for_book_id("binance-com-usdm").is_none());
         assert!(manifest_for_book_id("binance-com-coinm").is_none());
         assert!(manifest_for_book_id("binance-com-options").is_none());
         assert!(manifest_for_book_id("binance-com-stocks").is_none());
+        assert!(manifest_for_book_id("kotak-nse-nfo").is_some());
         assert_eq!(
             manifest_for_slug("binance_com").unwrap().manifest_id,
             "binance_com.s1.v1"
@@ -663,8 +720,56 @@ mod tests {
             manifest_for_slug("kotak_neo").unwrap().manifest_id,
             "kotak_neo.s1k.v1"
         );
-        assert_eq!(shared_budget(&loaded[0]), 6000);
-        assert_eq!(shared_budget(&loaded[1]), 60);
+        assert_eq!(
+            manifest_for_slug("kotak_neo").unwrap().book_id,
+            "kotak-nse-bse-cash"
+        );
+        let nfo = manifest_for_book_id("kotak-nse-nfo").unwrap();
+        assert_eq!(nfo.manifest_id, "kotak_neo.nfo.v1");
+        assert_eq!(nfo.adapter_id, "kotak_neo");
+        assert_eq!(
+            nfo.implemented,
+            vec!["quotes", "instruments", "optionchain"]
+        );
+        assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
+        assert!(nfo.implemented.iter().any(|op| op == "instruments"));
+        assert_eq!(
+            obtain(&nfo, "optionchain").status,
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            obtain(&nfo, "instruments").status,
+            ObtainStatus::Unavailable
+        );
+        let spot = manifest_for_book_id("binance-com-spot").unwrap();
+        let cash = manifest_for_book_id("kotak-nse-bse-cash").unwrap();
+        assert_eq!(shared_budget(&spot), 6000);
+        assert_eq!(shared_budget(&cash), 60);
+    }
+
+    #[test]
+    fn shipping_book_id_for_slug_maps_start_slugs_to_shipping_books_only() {
+        assert_eq!(
+            shipping_book_id_for_slug("binance_com").as_deref(),
+            Some("binance-com-spot")
+        );
+        assert_eq!(
+            shipping_book_id_for_slug("kotak_neo").as_deref(),
+            Some("kotak-nse-bse-cash")
+        );
+        let binance_book = shipping_book_id_for_slug("binance_com").expect("shipping book");
+        assert_eq!(binance_book, "binance-com-spot");
+        assert_ne!(binance_book, "binance-com-options");
+        assert_ne!(binance_book, "binance-com-usdm");
+        assert_ne!(binance_book, "binance-com-coinm");
+        assert_ne!(binance_book, "binance-com-stocks");
+        assert_ne!(
+            shipping_book_id_for_slug("kotak_neo").as_deref(),
+            Some("kotak-nse-nfo")
+        );
+        assert!(shipping_book_id_for_slug("fixture_equity_quote").is_none());
+        assert!(shipping_book_id_for_slug("binance-com-usdm").is_none());
+        assert!(shipping_book_id_for_slug("kotak-nse-nfo").is_none());
     }
 
     #[test]

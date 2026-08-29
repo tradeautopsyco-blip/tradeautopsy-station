@@ -9,9 +9,10 @@
 
 use super::binance_public::normalize_quote_instrument;
 use super::depthbook::DepthBook;
-use super::descriptor::BINANCE_COM_ADAPTER_ID;
+use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
 use super::host_policy::authorize_inferred_call;
 use super::kotak_depth::{DepthLevel, DepthSnapshot};
+use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::Transport;
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
@@ -151,6 +152,11 @@ fn qty_is_positive(qty: &str) -> bool {
     qty.parse::<f64>().map(|q| q > 0.0).unwrap_or(false)
 }
 
+fn binance_com_spot_book_id() -> String {
+    shipping_book_id_for_slug(BINANCE_COM_ADAPTER_ID)
+        .unwrap_or_else(|| BINANCE_COM_ADAPTER_ID.to_string())
+}
+
 /// Parse REST `GET /api/v3/depth` JSON (`lastUpdateId`, `bids`/`asks` as `[price, qty]`).
 pub fn depth_snapshot_from_binance_json(
     raw: &str,
@@ -168,6 +174,7 @@ pub fn depth_snapshot_from_binance_json(
     Some(DepthSnapshot {
         instrument_id: normalize_quote_instrument(symbol),
         adapter_id: BINANCE_COM_ADAPTER_ID.to_string(),
+        book_id: binance_com_spot_book_id(),
         bids,
         asks,
         completeness: true,
@@ -424,7 +431,7 @@ fn stamp_gap_unusable(
         snap.completeness = false;
         guard.upsert(snap);
     } else {
-        guard.invalidate(instrument, BINANCE_COM_ADAPTER_ID);
+        guard.invalidate(instrument, BINANCE_COM_SPOT_BOOK_ID);
     }
 }
 
@@ -509,7 +516,7 @@ async fn run_one_depth_connection(
     let mut local = {
         let guard = book.lock().expect("depthbook mutex poisoned");
         guard
-            .get(BINANCE_COM_ADAPTER_ID, symbol)
+            .get(BINANCE_COM_SPOT_BOOK_ID, symbol)
             .and_then(|row| row.sequence)
             .ok_or_else(|| anyhow::anyhow!("depth book missing sequence after apply"))?
     };
@@ -530,7 +537,7 @@ async fn run_one_depth_connection(
             DepthDeltaDecision::Discard => {}
             DepthDeltaDecision::Accept => {
                 let mut guard = book.lock().expect("depthbook mutex poisoned");
-                if let Some(row) = guard.get(BINANCE_COM_ADAPTER_ID, symbol).cloned() {
+                if let Some(row) = guard.get(BINANCE_COM_SPOT_BOOK_ID, symbol).cloned() {
                     let mut next = row;
                     apply_accepted_delta(&mut next, &update);
                     local = update.final_update_id;
@@ -582,6 +589,7 @@ mod tests {
         DepthSnapshot {
             instrument_id: "btcusdt".into(),
             adapter_id: BINANCE_COM_ADAPTER_ID.into(),
+            book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
             bids: vec![DepthLevel {
                 price: "100.00".into(),
                 quantity: "1".into(),
@@ -621,6 +629,7 @@ mod tests {
             .expect("fixture depth");
         assert_eq!(snap.instrument_id, "btcusdt");
         assert_eq!(snap.adapter_id, BINANCE_COM_ADAPTER_ID);
+        assert_eq!(snap.book_id, BINANCE_COM_SPOT_BOOK_ID);
         assert_eq!(snap.transport, Transport::Rest);
         assert_eq!(snap.sequence, Some(1027024));
         assert!(snap.completeness);
@@ -719,7 +728,7 @@ mod tests {
             ],
         );
         assert_eq!(err, Err(ManagedBookError::Gap));
-        book.invalidate("btcusdt", BINANCE_COM_ADAPTER_ID);
+        book.invalidate("btcusdt", BINANCE_COM_SPOT_BOOK_ID);
         let envelope = extract_depth(&book, "btcusdt", Some(BINANCE_COM_ADAPTER_ID));
         assert_eq!(envelope.status, DepthStatus::Unusable);
         assert_ne!(envelope.status, DepthStatus::Success);

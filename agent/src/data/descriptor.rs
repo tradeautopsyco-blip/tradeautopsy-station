@@ -55,6 +55,14 @@ pub struct Descriptor {
 
 pub const BINANCE_COM_ADAPTER_ID: &str = "binance_com";
 pub const KOTAK_NEO_ADAPTER_ID: &str = "kotak_neo";
+/// Shipping TickBook slot for `binance_com` (locks/binance-com-spot.md).
+pub const BINANCE_COM_SPOT_BOOK_ID: &str = "binance-com-spot";
+/// Named options book (slice 1 last). Same `binance_com` slug; Start still ships spot.
+pub const BINANCE_COM_OPTIONS_BOOK_ID: &str = "binance-com-options";
+/// Shipping TickBook slot for `kotak_neo` (locks/kotak-nse-bse-cash.md).
+pub const KOTAK_NSE_BSE_CASH_BOOK_ID: &str = "kotak-nse-bse-cash";
+/// Named NFO book (Gate 0). Same `kotak_neo` slug; Start still ships cash.
+pub const KOTAK_NSE_NFO_BOOK_ID: &str = "kotak-nse-nfo";
 
 fn market_quote_latest_state() -> Identity {
     Identity::new(

@@ -71,5 +71,8 @@ fn behavioral_opt_out_suppresses_uploads_while_recorder_allows_when_enabled() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0]["event_type"], "broker_partial_sync");
     assert_eq!(events[0]["environment"], "prod");
-    assert_eq!(events[0]["completeness"]["balances_holdings"]["current"], false);
+    assert_eq!(
+        events[0]["completeness"]["balances_holdings"]["current"],
+        false
+    );
 }
