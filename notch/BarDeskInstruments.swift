@@ -289,6 +289,26 @@ enum BarDeskTemplate {
     }
 }
 
+/// What `refreshDeskExtracts` is allowed to ask the agent for on this desk. Pure, so the
+/// decision is testable without an HTTP seam — a request that is never issued is the
+/// only honest way to prove a hole stays dark.
+struct DeskExtractPlan: Equatable {
+    /// Chain and OI are book-scoped. An options declare with no named book has nothing
+    /// to ask for — `chain_handler` can only answer dark — so it issues no glance at all
+    /// rather than sending a bookless request and painting the reply.
+    var fetchesGlance: Bool
+    /// The Kotak history obtain is licensed to the Kotak desk. No other desk borrows it.
+    var usesKotakHistoryObtain: Bool
+
+    static func resolve(slug: String?, assetClass: BarDeclareAssetClass) -> DeskExtractPlan {
+        let book = BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
+        return DeskExtractPlan(
+            fetchesGlance: !(assetClass == .options && book == nil),
+            usesKotakHistoryObtain: BarDeskTemplate.isKotakNeoDesk(slug: slug)
+        )
+    }
+}
+
 /// What an instrument id says it is, independent of the declare tab. The tab is a
 /// user preference; this is the instrument's own shape, and the shape wins.
 enum DeskInstrumentShape: Equatable {

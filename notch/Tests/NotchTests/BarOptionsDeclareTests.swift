@@ -377,6 +377,71 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskOiStatus == "unavailable")
     }
 
+    // MARK: - Bookless options desk asks for nothing (Binance never glances the NFO book)
+
+    @Test func binanceOptionsIssuesNoGlanceAtAll() {
+        let plan = DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options)
+        #expect(plan.fetchesGlance == false)
+        #expect(plan.usesKotakHistoryObtain == false)
+        // Same for the bare alias and for a desk with no slug at all — no book, no ask.
+        #expect(!DeskExtractPlan.resolve(slug: "binance", assetClass: .options).fetchesGlance)
+        #expect(!DeskExtractPlan.resolve(slug: nil, assetClass: .options).fetchesGlance)
+    }
+
+    @Test func kotakOptionsStillGlancesTheNamedNfoBook() {
+        let plan = DeskExtractPlan.resolve(slug: "kotak_neo", assetClass: .options)
+        #expect(plan.fetchesGlance)
+        #expect(plan.usesKotakHistoryObtain)
+
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.barDeclarationSymbol = "BANKNIFTY"
+        #expect(vm.deskChainExtractPath(symbol: "BANKNIFTY").contains("book=kotak-nse-nfo"))
+        #expect(vm.deskOiExtractPath(symbol: "BANKNIFTY").contains("book=kotak-nse-nfo"))
+    }
+
+    @Test func spotAndEquityGlanceIsUnchangedByTheOptionsSkip() {
+        // Only the bookless *options* case was narrowed — nothing else changed shape.
+        #expect(DeskExtractPlan.resolve(slug: "binance_com", assetClass: .spot).fetchesGlance)
+        #expect(DeskExtractPlan.resolve(slug: "kotak_neo", assetClass: .equity).fetchesGlance)
+    }
+
+    @Test func binanceSlugSwitchStopsTheNfoGlanceEntirely() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.barDeclarationSymbol = "BANKNIFTY"
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.deskChainStatus = "success"
+        vm.deskOiStatus = "success"
+
+        vm.activeBrokerSlug = "binance_com"
+
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(vm.deskOiStatus == "unavailable")
+        // No request follows the wipe, so the stale BANKNIFTY underlying still sitting in
+        // barDeclarationSymbol never reaches the wire — and nothing names the NFO book.
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).fetchesGlance)
+        #expect(!vm.deskChainExtractPath(symbol: "").contains("kotak-nse-nfo"))
+        #expect(!vm.deskOiExtractPath(symbol: "").contains("kotak-nse-nfo"))
+    }
+
+    @Test func binanceOptionsHistoryDoesNotBorrowTheKotakObtain() {
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).usesKotakHistoryObtain)
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .spot).usesKotakHistoryObtain)
+        #expect(DeskExtractPlan.resolve(slug: "kotak_neo", assetClass: .options).usesKotakHistoryObtain)
+
+        // A dark reply on the Binance options desk is "unavailable", never Kotak's
+        // "unsupported" — the two desks do not share a history verdict.
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.applyStationHistoryEnvelope([:])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskYahooHistoryStatus == "unavailable")
+    }
+
     @Test func optionsDeclareDoesNotBindUnderlyingTickerWithoutToken() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "kotak_neo"

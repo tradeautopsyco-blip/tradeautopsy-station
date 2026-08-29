@@ -1489,24 +1489,20 @@ public final class NotchViewModel: ObservableObject {
             raw = symbol
         }
         let encoded = InstrumentTickBookId.queryEncode(raw)
-        let kotak = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
-        let chainPath = deskChainExtractPath(symbol: symbol)
-        let oiPath = deskOiExtractPath(symbol: symbol)
+        let plan = DeskExtractPlan.resolve(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+        // Bookless options desk: nothing to ask for, so nothing is asked. The stale
+        // `barDeclarationSymbol` these paths would encode never reaches the wire.
+        let chainPath = plan.fetchesGlance ? deskChainExtractPath(symbol: symbol) : nil
+        let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
+        let historyPath = plan.usesKotakHistoryObtain
+            ? "/api/station/obtain?adapter=kotak_neo&operation=history"
+            : "/api/station/history?instrument=\(encoded)"
         let generation = deskExtractGeneration
         Task { [weak self] in
             guard let self else { return }
-            async let chain = self.getExtractJSON(chainPath)
-            async let oi = self.getExtractJSON(oiPath)
-            let licensedJSON: [String: Any]?
-            if kotak {
-                licensedJSON = await self.getExtractJSON(
-                    "/api/station/obtain?adapter=kotak_neo&operation=history"
-                )
-            } else {
-                licensedJSON = await self.getExtractJSON(
-                    "/api/station/history?instrument=\(encoded)"
-                )
-            }
+            async let chain = self.getExtractJSON(optional: chainPath)
+            async let oi = self.getExtractJSON(optional: oiPath)
+            let licensedJSON = await self.getExtractJSON(historyPath)
             let chainJSON = await chain
             let oiJSON = await oi
             await MainActor.run {
@@ -1514,10 +1510,18 @@ public final class NotchViewModel: ObservableObject {
                 // instrument/book that is no longer selected. Leave the holes dark.
                 guard generation == self.deskExtractGeneration else { return }
                 self.applyStationHistoryEnvelope(licensedJSON ?? [:])
+                // A skipped glance writes nothing: the hole keeps what invalidate set.
+                guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
             }
         }
+    }
+
+    /// A skipped row resolves to nil without a request — never a fetch of a sentinel path.
+    private func getExtractJSON(optional pathAndQuery: String?) async -> [String: Any]? {
+        guard let pathAndQuery else { return nil }
+        return await getExtractJSON(pathAndQuery)
     }
 
     private func getExtractJSON(_ pathAndQuery: String) async -> [String: Any]? {
