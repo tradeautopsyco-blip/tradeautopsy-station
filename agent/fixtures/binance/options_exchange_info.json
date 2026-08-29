@@ -1,0 +1,42 @@
+{
+  "timezone": "UTC",
+  "serverTime": 1756480000000,
+  "optionSymbols": [
+    {
+      "symbol": "BTC-200730-9000-C",
+      "underlying": "BTCUSDT",
+      "strikePrice": "9000.000",
+      "expiryDate": 1596067200000,
+      "side": "CALL",
+      "contractType": "CRYPTO_OPTIONS",
+      "status": "TRADING"
+    },
+    {
+      "symbol": "BTC-200730-9000-P",
+      "underlying": "BTCUSDT",
+      "strikePrice": "9000.000",
+      "expiryDate": 1596067200000,
+      "side": "PUT",
+      "contractType": "CRYPTO_OPTIONS",
+      "status": "TRADING"
+    },
+    {
+      "symbol": "BTC-200730-10000-C",
+      "underlying": "BTCUSDT",
+      "strikePrice": "10000.000",
+      "expiryDate": 1596067200000,
+      "side": "CALL",
+      "contractType": "CRYPTO_OPTIONS",
+      "status": "TRADING"
+    },
+    {
+      "symbol": "ETH-200730-400-C",
+      "underlying": "ETHUSDT",
+      "strikePrice": "400.000",
+      "expiryDate": 1596067200000,
+      "side": "CALL",
+      "contractType": "CRYPTO_OPTIONS",
+      "status": "TRADING"
+    }
+  ]
+}

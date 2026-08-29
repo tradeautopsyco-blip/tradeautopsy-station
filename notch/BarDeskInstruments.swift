@@ -315,9 +315,12 @@ enum BarDeskLastFormatting {
     }
 }
 
-/// What `refreshDeskExtracts` is allowed to ask the agent for on this desk. Pure, so the
-/// decision is testable without an HTTP seam — a request that is never issued is the
-/// only honest way to prove a hole stays dark.
+    /// What `refreshDeskExtracts` is allowed to ask the agent for on this desk. Pure, so the
+    /// decision is testable without an HTTP seam — a request that is never issued is the
+    /// only honest way to prove a hole stays dark.
+    ///
+    /// Bookless Binance Options with a leftover pair still asks for nothing. A dated
+    /// contract on that desk names `binance-com-options` on the glance path.
 struct DeskExtractPlan: Equatable {
     /// Chain and OI are book-scoped. An options declare with no named book has nothing
     /// to ask for — `chain_handler` can only answer dark — so it issues no glance at all
@@ -326,10 +329,15 @@ struct DeskExtractPlan: Equatable {
     /// The Kotak history obtain is licensed to the Kotak desk. No other desk borrows it.
     var usesKotakHistoryObtain: Bool
 
-    static func resolve(slug: String?, assetClass: BarDeclareAssetClass) -> DeskExtractPlan {
+    static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
         let book = BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
+        let cryptoDated = BarDeskTemplate.isBinanceOptionsDesk(
+            slug: slug,
+            assetClass: assetClass,
+            instrumentId: instrumentId
+        )
         return DeskExtractPlan(
-            fetchesGlance: !(assetClass == .options && book == nil),
+            fetchesGlance: cryptoDated || !(assetClass == .options && book == nil),
             usesKotakHistoryObtain: BarDeskTemplate.isKotakNeoDesk(slug: slug)
         )
     }
@@ -361,9 +369,9 @@ enum DeskInstrumentShape: Equatable {
 /// which id to quote, and which underlying the chain is keyed on. Resolve once at
 /// selection, then act — so no branch can rebind against a stale field.
 struct DeskInstrumentBind: Equatable {
-    /// Catalog book for chain/OI. **Nil on every Binance desk**: Binance never sends
-    /// `book=` and its glance is skipped outright, so there is no `binance-com-*`
-    /// book id to name here. Mirrors `BarDeskTemplate.deskBookId` exactly.
+    /// Catalog book for chain/OI on Kotak. **Nil on Binance bind** (`deskBookId` stays
+    /// nil so last routing can stay shape-based). Crypto Options glance names
+    /// `binance-com-options` on the extract path without storing it here.
     var bookId: String?
     /// Class implied by the instrument, or the caller's class when nothing is implied.
     var assetClass: BarDeclareAssetClass
@@ -482,9 +490,10 @@ struct DeskInstrumentBind: Equatable {
     }
 }
 
-/// `GET /api/station/chain` and `/api/station/oi` query. Named `book=` only when
-/// `deskBookId` is set. Instrument is the typed underlying ticker — never a cash
-/// token, never `s1_desk_symbol`.
+/// `GET /api/station/chain` and `/api/station/oi` query. Named `book=` when the
+/// desk has a catalog book (Kotak) or when glance names `binance-com-options`.
+/// Instrument is the NFO underlying ticker or the dated eapi contract — never a
+/// cash token, never `s1_desk_symbol`.
 enum DeskChainExtractQuery {
     static func path(bookId: String?, underlying: String) -> String {
         glancePath(operation: "chain", bookId: bookId, underlying: underlying)

@@ -1,0 +1,14 @@
+[
+  {
+    "symbol": "BTC-200730-9000-C",
+    "sumOpenInterest": "12.5",
+    "sumOpenInterestUsd": "1000.00",
+    "timestamp": "1596067200000"
+  },
+  {
+    "symbol": "BTC-200730-9000-P",
+    "sumOpenInterest": "3.0",
+    "sumOpenInterestUsd": "200.00",
+    "timestamp": "1596067200000"
+  }
+]

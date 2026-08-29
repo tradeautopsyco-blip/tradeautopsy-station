@@ -59,6 +59,8 @@ pub struct TestAgentOptions {
     pub plant_binance_s2_history: bool,
     /// Options last — plant committed eapi ticker JSON (no live eapi).
     pub plant_binance_options_quote: bool,
+    /// Options chain/OI — plant committed exchangeInfo + OI JSON (no live eapi).
+    pub plant_binance_options_chain: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -93,6 +95,7 @@ impl Default for TestAgentOptions {
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
+            plant_binance_options_chain: false,
         }
     }
 }
@@ -137,6 +140,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_kotak_nfo_contracts = opts.plant_kotak_nfo_contracts;
     cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
     cfg.plant_binance_options_quote = opts.plant_binance_options_quote;
+    cfg.plant_binance_options_chain = opts.plant_binance_options_chain;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

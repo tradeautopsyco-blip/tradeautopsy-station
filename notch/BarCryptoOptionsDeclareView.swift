@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Three-zone Options Pre-trade for the Binance crypto desk (dated European contracts,
 /// `BTC-260925-90000-C`). Money is USDT; there is no lot size, no NRML, no product code.
-/// Chain / OI / Greeks / σ / history stay honest-dark — Binance sends no `book=`, so the
-/// options glance is skipped. Last is the one live strip. Rung 1 runs on typed numbers.
+/// Chain and OI glance the named options book. Greeks / σ / payoff stay dark
+/// (`OPTIONS-PRICING.md` BLOCKER). Last is the live strip. Rung 1 runs on typed numbers.
 struct BarCryptoOptionsDeclareView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
@@ -40,6 +40,8 @@ struct BarCryptoOptionsDeclareView: View {
 
                 panelHead("Chain · around your strike", trailing: chainTrailing)
                 chainHost
+                panelHead("Open interest", trailing: oiTrailing)
+                oiHost
             }
         }
     }
@@ -129,7 +131,7 @@ struct BarCryptoOptionsDeclareView: View {
         case .unavailable:
             VStack(alignment: .leading, spacing: 8) {
                 HonestyChip(status: .unavailable)
-                Text("BoundedSnapshot is complete-or-refused. Binance names no catalog book, so the options glance is skipped and no strike grid can be drawn.")
+                Text("BoundedSnapshot is complete-or-refused. Chain rows come from eapi `optionSymbols` for this contract’s underlying and expiry — not from NFO, not from a fake `/optionChain`.")
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -141,6 +143,31 @@ struct BarCryptoOptionsDeclareView: View {
                 title: "chain snapshot live · no strike grid (raw strike/expiry)",
                 body: "Rows come from the Binance options catalog. A missing row means that contract is absent.",
             )
+        }
+    }
+
+    private var oiTrailing: String {
+        let wire = viewModel.deskOiStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if wire.isEmpty || wire == "unavailable" { return "unavailable" }
+        return viewModel.deskOiStatus
+    }
+
+    @ViewBuilder
+    private var oiHost: some View {
+        let wire = viewModel.deskOiStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if wire == "success" {
+            emptyBlock(
+                title: "open interest live · sumOpenInterest from eapi",
+                body: "LatestState for this underlying + expiry. Not depth. Not a strike grid.",
+            )
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HonestyChip(status: .unavailable)
+                Text("market/open_interest · `GET /eapi/v1/openInterest` `sumOpenInterest`. NFO quote JSON still does not name OI.")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -255,17 +282,17 @@ struct BarCryptoOptionsDeclareView: View {
 
     private var greeksProv: String {
         if hasLegs {
-            return "derived/greeks · inherited dark — named input market/option_chain is skipped on the Binance desk (no catalog book). A Greek without the chain is a lie, so this stays empty."
+            return "derived/greeks · inherited dark — OPTIONS-PRICING.md BLOCKER. A chain snapshot is not a pricer."
         }
         return "derived/greeks — waiting on a declared leg."
     }
 
     private var payoffHole: some View {
         VStack(spacing: 6) {
-            Text("chain unavailable")
+            Text("payoff unavailable")
                 .font(BarDS.monoFont(11, weight: .medium))
                 .foregroundColor(BarDS.Accent.red)
-            Text("derived/payoff inherits market/option_chain")
+            Text("derived/payoff stays dark — OPTIONS-PRICING.md BLOCKER. A chain snapshot is not a pricer.")
                 .font(BarDS.monoFont(10, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
         }
@@ -328,7 +355,7 @@ struct BarCryptoOptionsDeclareView: View {
                     .font(BarDS.monoFont(27, weight: .medium))
                     .foregroundColor(BarDS.Text.muted)
                 Text(hasLegs
-                    ? "The chain is a hole, so only the rung you typed can light. That is the honest answer."
+                    ? "Greeks stay dark, so only the rung you typed can light. That is the honest answer."
                     : "Add a leg and a contract count to see what this can cost you.")
                     .font(BarDS.bodyFont(11.5, weight: .regular))
                     .foregroundColor(BarDS.Text.secondary)

@@ -24,9 +24,20 @@ Ping every 3 minutes. Pong timeout: 10 minutes.
 
 ---
 
-## Slice 0 — ticker GET + last (quotes last only)
+## Slice 2 — chain snapshot + open interest
 
-Station slice 1 may ingest **public last** on book `binance-com-options`. Not optionchain, not `userTrades`, not order POSTs.
+Station may rebuild a **BoundedSnapshot** chain from `GET /eapi/v1/exchangeInfo` `optionSymbols[]` (same (`underlying`, `expiryDate`) as the declared mixed-case contract). Last overlay from TickBook `lastPrice` remains optional. Open interest is **LatestState** from `GET /eapi/v1/openInterest?underlyingAsset=&expiration=` → `sumOpenInterest` (string).
+
+There is **no** `/eapi/v1/optionChain`. Do not stuff ticker rows as a chain. Do not dial `/eapi/v1/depth` or `/eapi/v1/mark` this slice.
+
+Primary sources (accessed 2026-08-29):
+
+- Official CLI exchange-information / open-interest
+- Official OpenAPI-generated SDK `OpenInterestResponseInner` (`symbol`, `sumOpenInterest`, `sumOpenInterestUsd`, `timestamp`)
+- Live public `GET https://eapi.binance.com/eapi/v1/exchangeInfo` and `GET /eapi/v1/openInterest?underlyingAsset=BTC&expiration=260925` (field names only)
+
+`GET /eapi/v1/userTrades` stays off this slice. `POST /eapi/v1/order` is a mutation.
+
 
 | Item | Lock |
 |------|------|
@@ -130,6 +141,6 @@ RISK_LEVEL_CHANGE     Account risk level change (from 2023-08-29)
 
 ## TradeAutopsy Relevance
 
-Slice 1: public last on `binance-com-options` from `GET /eapi/v1/ticker` → `lastPrice` only. Spot BTCUSDT last stays on `binance-com-spot`. No optionchain, no userTrades, no eapi orders.
+Slice 2: public last + `optionSymbols` chain snapshot + `openInterest` `sumOpenInterest` on `binance-com-options`. Spot BTCUSDT last stays on `binance-com-spot`. No `/eapi/v1/optionChain`, no userTrades, no eapi orders.
 
 Options positions as behavioral risk remain a later slice (see MECHANICS.md).

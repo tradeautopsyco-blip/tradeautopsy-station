@@ -311,6 +311,10 @@ pub struct AgentConfig {
     pub plant_binance_s2_history: bool,
     /// Options last CI: plant committed eapi ticker JSON into TickBook. No live eapi.
     pub plant_binance_options_quote: bool,
+    /// Options chain/OI CI: plant committed exchangeInfo + OI JSON. No live eapi.
+    pub plant_binance_options_chain: bool,
+    /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
+    pub eapi_public_fetch: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
     pub instrument_master_cache_dir: PathBuf,
 }
@@ -426,6 +430,8 @@ impl AgentConfig {
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
+            plant_binance_options_chain: false,
+            eapi_public_fetch: true,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
@@ -483,6 +489,8 @@ impl AgentConfig {
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
+            plant_binance_options_chain: false,
+            eapi_public_fetch: false,
             instrument_master_cache_dir,
         }
     }
@@ -711,6 +719,19 @@ fn plant_binance_options_quote(
     }
 }
 
+fn plant_binance_options_chain(
+    symbols: &Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
+    oi: &Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
+) {
+    let info = include_str!("../fixtures/binance/options_exchange_info.json");
+    *symbols
+        .lock()
+        .expect("options option symbols mutex poisoned") =
+        crate::data::option_symbols_from_exchange_info_json(info);
+    let oi_json = include_str!("../fixtures/binance/options_open_interest.json");
+    *oi.lock().expect("options oi mutex poisoned") = crate::data::oi_rows_from_json(oi_json);
+}
+
 fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
@@ -875,6 +896,11 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_options_quote {
         plant_binance_options_quote(quote_registry.as_ref(), &tickbook);
     }
+    let options_option_symbols = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let options_oi_rows = Arc::new(std::sync::Mutex::new(Vec::new()));
+    if config.plant_binance_options_chain {
+        plant_binance_options_chain(&options_option_symbols, &options_oi_rows);
+    }
     if let Some(symbol) = config.s1_desk_symbol.clone() {
         tracing::info!(
             instrument = %symbol,
@@ -981,6 +1007,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         instrument_master,
         kotak_scrip_master,
         kotak_nfo_scrip_master,
+        options_option_symbols,
+        options_oi_rows,
+        eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,
         depth_streams,
         klines_inflight,

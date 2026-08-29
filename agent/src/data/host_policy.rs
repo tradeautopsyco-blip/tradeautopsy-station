@@ -97,8 +97,14 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("order_book", "GET", AuthMode::Public) if path == "/api/v3/depth" => true,
         ("instrument_master", "GET", AuthMode::Public)
             if path == "/api/v3/exchangeInfo"
+                || normalize_request_path(path) == "/eapi/v1/exchangeInfo"
                 || is_kotak_cash_scrip_csv_path(path)
                 || is_kotak_fo_scrip_csv_path(path) =>
+        {
+            true
+        }
+        ("open_interest", "GET", AuthMode::Public)
+            if normalize_request_path(path) == "/eapi/v1/openInterest" =>
         {
             true
         }
@@ -130,6 +136,12 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", "/api/v3/ticker/price") => Ok(("quote", AuthMode::Public)),
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/ticker" => {
             Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/exchangeInfo" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/openInterest" => {
+            Ok(("open_interest", AuthMode::Public))
         }
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
@@ -1213,38 +1225,40 @@ mod tests {
 
     #[test]
     fn options_eapi_public_reads_infer_on_options_book_only() {
-        for path in [
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
             "/eapi/v1/exchangeInfo",
+            false,
+        )
+        .expect("exchangeInfo is instrument_master on the options book");
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/openInterest?underlyingAsset=BTC&expiration=200730",
+            false,
+        )
+        .expect("openInterest is public on the options book");
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/exchangeInfo",
+            true,
+        )
+        .expect_err("public exchangeInfo must not attach private credentials");
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
             "/eapi/v1/openInterest",
-            "/eapi/v1/depth",
-        ] {
-            assert_eq!(
-                infer_capability("GET", path).unwrap_err(),
-                HostRefuse::PathNotAllowlisted,
-                "{path}"
-            );
-            assert_eq!(
-                authorize_book_call(
-                    "binance-com-options",
-                    "eapi.binance.com",
-                    "GET",
-                    path,
-                    false,
-                )
-                .unwrap_err(),
-                HostRefuse::PathNotAllowlisted,
-                "{path}"
-            );
-        }
+            true,
+        )
+        .expect_err("public openInterest must not attach private credentials");
         assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/exchangeInfo?underlying=BTC",
-                false,
-            )
-            .unwrap_err(),
+            infer_capability("GET", "/eapi/v1/depth").unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -1252,7 +1266,7 @@ mod tests {
                 "binance-com-options",
                 "eapi.binance.com",
                 "GET",
-                "/eapi/v1/openInterest?underlyingAsset=BTC&expiration=200730",
+                "/eapi/v1/depth",
                 false,
             )
             .unwrap_err(),

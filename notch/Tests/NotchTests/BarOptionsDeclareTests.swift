@@ -425,6 +425,40 @@ struct BarOptionsDeclareTests {
         #expect(!DeskExtractPlan.resolve(slug: nil, assetClass: .options).fetchesGlance)
     }
 
+    @Test func datedBinanceContractGlancesTheNamedOptionsBook() {
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .options,
+            instrumentId: "BTC-200730-9000-C"
+        )
+        #expect(plan.fetchesGlance)
+        #expect(!plan.usesKotakHistoryObtain)
+
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        #expect(vm.deskChainExtractPath(symbol: "BTC-200730-9000-C").contains("book=binance-com-options"))
+        #expect(vm.deskOiExtractPath(symbol: "BTC-200730-9000-C").contains("book=binance-com-options"))
+        #expect(vm.deskChainExtractPath(symbol: "BTC-200730-9000-C").contains("BTC-200730-9000-C"))
+        #expect(!vm.deskChainExtractPath(symbol: "BTC-200730-9000-C").contains("kotak-nse-nfo"))
+
+        // Typed leftover `BTC` must not replace the selected dated contract on glance.
+        vm.barDeclarationSymbol = "BTC"
+        #expect(vm.deskChainExtractPath(symbol: "BTC").contains("instrument=BTC-200730-9000-C"))
+        #expect(vm.deskOiExtractPath(symbol: "BTC").contains("instrument=BTC-200730-9000-C"))
+        #expect(!vm.deskOiExtractPath(symbol: "BTC").contains("instrument=BTC&"))
+    }
+
+    @Test func leftoverSpotPairOnOptionsTabStillIssuesNoGlance() {
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .options,
+            instrumentId: "BTCUSDT"
+        )
+        #expect(!plan.fetchesGlance)
+    }
+
     @Test func kotakOptionsStillGlancesTheNamedNfoBook() {
         let plan = DeskExtractPlan.resolve(slug: "kotak_neo", assetClass: .options)
         #expect(plan.fetchesGlance)

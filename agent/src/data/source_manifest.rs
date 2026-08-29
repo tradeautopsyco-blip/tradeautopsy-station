@@ -431,8 +431,9 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
 
 /// Named options book on the same `binance_com` adapter. Public last only
 /// (`GET /eapi/v1/ticker` → `lastPrice`). Lock: `locks/binance-com-options.md`
-/// Way 3 last-only — do not claim optionchain until a later lock slice.
-/// Catalog / Start slug still ships spot.
+/// Way 3 last + chain/OI snapshot from exchangeInfo / openInterest.
+/// Catalog / Start slug still ships spot. Obtain `optionchain` stays unsupported
+/// — Binance has no `/eapi/v1/optionChain`; Station glance rebuilds from master.
 pub fn binance_com_options_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["binance.com".into()],

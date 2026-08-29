@@ -1500,26 +1500,54 @@ public final class NotchViewModel: ObservableObject {
         return "/api/station/quote?instrument=\(encoded)\(book)"
     }
 
-    /// Testable chain glance path. `book=` comes from the current declare class; instrument is the typed underlying.
+    /// Testable chain glance path. Kotak names `deskBookId` and an underlying ticker.
+    /// Crypto Options names `binance-com-options` and the dated contract — bind `bookId`
+    /// stays nil. A leftover typed `BTC` must not replace `BTC-200730-9000-C`.
     func deskChainExtractPath(symbol: String) -> String {
         DeskChainExtractQuery.path(
-            bookId: BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass),
-            underlying: DeskChainExtractQuery.underlyingTicker(
-                preferred: symbol,
-                declarationSymbol: barDeclarationSymbol
-            )
+            bookId: glanceBookId(symbol: symbol),
+            underlying: glanceInstrument(symbol: symbol)
         )
     }
 
-    /// Same `book=` + underlying as chain. Do not send a TickBook token as the OI instrument.
+    /// Same `book=` + instrument as chain. Do not send a TickBook token as the OI instrument.
     func deskOiExtractPath(symbol: String) -> String {
         DeskChainExtractQuery.oiPath(
-            bookId: BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass),
-            underlying: DeskChainExtractQuery.underlyingTicker(
-                preferred: symbol,
-                declarationSymbol: barDeclarationSymbol
-            )
+            bookId: glanceBookId(symbol: symbol),
+            underlying: glanceInstrument(symbol: symbol)
         )
+    }
+
+    /// NFO glance is keyed on `pSymbolName`. Eapi chain/OI need the mixed-case contract
+    /// so `optionSymbols` can match and `openInterest` can take YYMMDD.
+    private func glanceInstrument(symbol: String) -> String {
+        let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
+        if BarDeskTemplate.isBinanceOptionsDesk(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: selected
+        ) {
+            return selected
+        }
+        return DeskChainExtractQuery.underlyingTicker(
+            preferred: symbol,
+            declarationSymbol: barDeclarationSymbol
+        )
+    }
+
+    private func glanceBookId(symbol: String) -> String? {
+        if let named = BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass) {
+            return named
+        }
+        let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
+        if BarDeskTemplate.isBinanceOptionsDesk(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: instrument
+        ) {
+            return "binance-com-options"
+        }
+        return nil
     }
 
     func refreshDeskExtracts(symbol: String, instrumentId: String? = nil) {
@@ -1533,7 +1561,11 @@ public final class NotchViewModel: ObservableObject {
             raw = symbol
         }
         let encoded = InstrumentTickBookId.queryEncode(raw)
-        let plan = DeskExtractPlan.resolve(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+        let plan = DeskExtractPlan.resolve(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: raw
+        )
         // Bookless options desk: nothing to ask for, so nothing is asked. The stale
         // `barDeclarationSymbol` these paths would encode never reaches the wire.
         let chainPath = plan.fetchesGlance ? deskChainExtractPath(symbol: symbol) : nil
@@ -2659,7 +2691,7 @@ public final class NotchViewModel: ObservableObject {
     func expandFromCollapsedChromeTap() {
         guard !isExpanded else { return }
         // `.now` — haptic on the same frame as the first pixels, not the next draw.
-        NotchHaptics.play(.light, at: .now)
+        NotchHaptics.play(.light)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = true
         }
@@ -2678,7 +2710,7 @@ public final class NotchViewModel: ObservableObject {
 
     public func collapseExpandedFromChromeTap() {
         guard isExpanded else { return }
-        NotchHaptics.play(.light, at: .now)
+        NotchHaptics.play(.light)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = false
         }

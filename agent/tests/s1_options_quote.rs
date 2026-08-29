@@ -263,7 +263,86 @@ async fn planted_options_last_does_not_light_chain_oi_or_spot() {
     handle.abort();
 }
 
-/// `GET /api/station/quote?book=binance-com-options` is the only way to read the
+#[tokio::test]
+async fn planted_options_master_lights_chain_and_oi_not_obtain_optionchain() {
+    const PORT: u16 = 19_521;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            plant_binance_options_chain: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/chain?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("options chain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(chain["status"], "success");
+    assert_eq!(chain["data"]["row_count"], 3);
+    assert_eq!(
+        chain["data"]["rows"][0]["instrument_id"],
+        "BTC-200730-9000-C"
+    );
+    assert_eq!(chain["data"]["rows"][0]["last"], "1.23");
+    assert!(
+        chain["data"]["rows"][0].get("lot").is_none() || chain["data"]["rows"][0]["lot"].is_null()
+    );
+
+    let eth: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/chain?book=binance-com-options&instrument=ETH-200730-400-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("eth chain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(eth["status"], "success");
+    assert_eq!(eth["data"]["row_count"], 1);
+
+    let oi: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/oi?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("options oi")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(oi["status"], "success");
+    assert_eq!(oi["data"]["sumOpenInterest"], "12.5");
+
+    let obtain_chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optionchain"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain optionchain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain_chain["status"], "unsupported");
+
+    handle.abort();
+}
+
 /// options book. Mixed case survives; the spot slot is never consulted.
 #[tokio::test]
 async fn quote_route_named_options_book_serves_mixed_case_last() {
@@ -385,7 +464,9 @@ async fn quote_route_spot_instrument_never_serves_options_last() {
     let client = reqwest::Client::new();
 
     for url in [
-        format!("http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT&book=binance-com-spot"),
+        format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT&book=binance-com-spot"
+        ),
         format!("http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT"),
     ] {
         let body: serde_json::Value = client

@@ -106,6 +106,12 @@ pub struct AppState {
     pub kotak_scrip_master: Arc<Mutex<KotakScripMaster>>,
     /// Named NFO scrip master. Separate from cash; do not blend FO rows.
     pub kotak_nfo_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+    /// `optionSymbols` from eapi exchangeInfo. Separate from spot `instrument_master`.
+    pub options_option_symbols: Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
+    /// Planted OI rows for CI. Live fetch fills this path when `eapi_public_fetch`.
+    pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
+    /// Prod dials eapi for chain/OI. Tests stay fixture-only.
+    pub eapi_public_fetch: bool,
     /// Instruments that already have a public `@trade` stream task.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,
     /// Instruments that already have a public `@depth` stream task.

@@ -7,11 +7,12 @@
 //! NFO lock: no Kotak `/optionchain`. Chain = FO master rows for
 //! (`pSymbolName` underlying, expiry) + optional last from TickBook.
 //! Quote JSON does not name an `oi` field → OI stays Unavailable.
-//! eapi lock slice 1: public last only. Chain / OI stay dark.
+//! eapi lock slice 2: last + `optionSymbols` chain + `sumOpenInterest` OI.
 //!
 //! Glance `status` uses [`GlanceStatus`] (depth-like). Success is not a fifth
 //! [`super::honesty::HonestyStatus`].
 
+use super::binance_options_oi::OptionsOiRow;
 use super::descriptor::{
     BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
     KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
@@ -44,10 +45,16 @@ pub struct GlanceEnvelope {
     pub persist_canonical: bool,
 }
 
+fn skip_zero_lot(lot: &i64) -> bool {
+    *lot == 0
+}
+
 /// One chain row. Strike/expiry stay raw. Last is optional per lock.
+/// `lot` is NFO only — Binance rows stay 0 and omit the field (lock: do not persist `unit`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ChainRow {
     pub instrument_id: String,
+    #[serde(skip_serializing_if = "skip_zero_lot")]
     pub lot: i64,
     pub trading_symbol: String,
     pub segment: String,
@@ -64,7 +71,8 @@ pub const SPOT_IS_NOT_CHAIN: &str = "spot_is_not_option_chain";
 pub const BOOK_REQUIRED: &str = "book_id_required";
 pub const FO_MASTER_UNSPECIFIED: &str = "nfo_scrip_master_refused";
 pub const OI_FIELD_UNSPECIFIED: &str = "oi_field_unspecified";
-pub const OPTIONS_CHAIN_NOT_THIS_SLICE: &str = "options_chain_not_this_slice";
+pub const OPTIONS_MASTER_UNSPECIFIED: &str = "options_exchange_info_unspecified";
+pub const OPTIONS_OI_UNSPECIFIED: &str = "options_open_interest_unspecified";
 
 fn chain_identity() -> Identity {
     Identity::new(
@@ -157,11 +165,25 @@ pub fn extract_chain_from(
         id if id == BINANCE_COM_SPOT_BOOK_ID => {
             dark_chain(Some(book), underlying_or_instrument, SPOT_IS_NOT_CHAIN)
         }
-        id if id == BINANCE_COM_OPTIONS_BOOK_ID => dark_chain(
-            Some(book),
-            underlying_or_instrument,
-            OPTIONS_CHAIN_NOT_THIS_SLICE,
-        ),
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => match rows {
+            None => dark_chain(
+                Some(book),
+                underlying_or_instrument,
+                OPTIONS_MASTER_UNSPECIFIED,
+            ),
+            Some([]) => dark_chain(
+                Some(book),
+                underlying_or_instrument,
+                OPTIONS_MASTER_UNSPECIFIED,
+            ),
+            Some(rows) => {
+                let overlaid: Vec<ChainRow> = rows
+                    .iter()
+                    .map(|row| overlay_last(book, row, tickbook))
+                    .collect();
+                lit_chain(identity, book, &instrument, &overlaid)
+            }
+        },
         id if id == KOTAK_NSE_NFO_BOOK_ID => match rows {
             None => dark_chain(Some(book), underlying_or_instrument, FO_MASTER_UNSPECIFIED),
             Some([]) => dark_chain(Some(book), underlying_or_instrument, FO_MASTER_UNSPECIFIED),
@@ -219,8 +241,16 @@ fn lit_chain(
 }
 
 /// Hole unless `book_id` names an OI book with a specified field. NFO quote JSON
-/// does not name `oi`. Options last-only lock does not ship OI.
+/// does not name `oi`. Options OI lights only with `sumOpenInterest` rows.
 pub fn extract_open_interest(book_id: Option<&str>, instrument_id: &str) -> GlanceEnvelope {
+    extract_open_interest_from(book_id, instrument_id, None)
+}
+
+pub fn extract_open_interest_from(
+    book_id: Option<&str>,
+    instrument_id: &str,
+    rows: Option<&[OptionsOiRow]>,
+) -> GlanceEnvelope {
     let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
         return dark_oi(book_id, instrument_id, BOOK_REQUIRED);
     };
@@ -232,10 +262,49 @@ pub fn extract_open_interest(book_id: Option<&str>, instrument_id: &str) -> Glan
         id if id == BINANCE_COM_SPOT_BOOK_ID => {
             dark_oi(Some(book), instrument_id, SPOT_IS_NOT_CHAIN)
         }
-        id if id == KOTAK_NSE_NFO_BOOK_ID || id == BINANCE_COM_OPTIONS_BOOK_ID => {
+        id if id == KOTAK_NSE_NFO_BOOK_ID => {
             dark_oi(Some(book), instrument_id, OI_FIELD_UNSPECIFIED)
         }
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => match rows {
+            Some(rows) if !rows.is_empty() => lit_oi(book, instrument_id, rows),
+            _ => dark_oi(Some(book), instrument_id, OPTIONS_OI_UNSPECIFIED),
+        },
         _ => dark_oi(Some(book), instrument_id, BOOK_REQUIRED),
+    }
+}
+
+fn lit_oi(book_id: &str, instrument_id: &str, rows: &[OptionsOiRow]) -> GlanceEnvelope {
+    let identity = oi_identity();
+    let wanted = instrument_id.trim();
+    let data = if let Some(row) = rows.iter().find(|row| row.symbol == wanted) {
+        serde_json::json!({
+            "identity": identity,
+            "symbol": row.symbol,
+            "sumOpenInterest": row.sum_open_interest,
+            "sumOpenInterestUsd": row.sum_open_interest_usd,
+            "timestamp": row.timestamp,
+        })
+    } else {
+        serde_json::json!({
+            "identity": identity,
+            "row_count": rows.len(),
+            "rows": rows,
+        })
+    };
+    GlanceEnvelope {
+        identity: identity.clone(),
+        instrument_id: display_instrument(Some(book_id), instrument_id),
+        status: GlanceStatus::Success,
+        data: Some(data),
+        provenance: ProvenanceLine {
+            identity,
+            model: "raw".to_string(),
+            input_at: None,
+            adapter_id: adapter_for_book(book_id).to_string(),
+        },
+        ineligible: Vec::new(),
+        canonical: false,
+        persist_canonical: false,
     }
 }
 
@@ -327,6 +396,33 @@ mod tests {
     }
 
     #[test]
+    fn options_master_rows_are_success_without_lot() {
+        let rows = [ChainRow {
+            instrument_id: "BTC-200730-9000-C".to_string(),
+            lot: 0,
+            trading_symbol: "BTC-200730-9000-C".to_string(),
+            segment: String::new(),
+            instrument_type: String::new(),
+            option_type: "CALL".to_string(),
+            strike_raw: "9000.000".to_string(),
+            expiry_raw: "1596067200000".to_string(),
+            last: None,
+        }];
+        let chain = extract_chain_from(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            "BTC-200730-9000-C",
+            Some(&rows),
+            None,
+        );
+        assert_eq!(chain.status, GlanceStatus::Success);
+        let data = chain.data.as_ref().unwrap();
+        assert_eq!(data["row_count"], 1);
+        assert_eq!(data["rows"][0]["instrument_id"], "BTC-200730-9000-C");
+        assert!(data["rows"][0].get("lot").is_none() || data["rows"][0]["lot"].is_null());
+        assert_eq!(chain.provenance.adapter_id, BINANCE_COM_ADAPTER_ID);
+    }
+
+    #[test]
     fn tickbook_last_overlays_nfo_row_without_upserting_chain() {
         let registry = Registry::load(&[kotak_neo_quote_descriptor()]).unwrap();
         let mut book = TickBook::new();
@@ -367,8 +463,38 @@ mod tests {
         assert!(options
             .ineligible
             .iter()
-            .any(|s| s == OPTIONS_CHAIN_NOT_THIS_SLICE));
+            .any(|s| s == OPTIONS_MASTER_UNSPECIFIED));
         assert_eq!(options.instrument_id, "BTC-200730-9000-C");
+        let options_oi =
+            extract_open_interest(Some(BINANCE_COM_OPTIONS_BOOK_ID), "BTC-200730-9000-C");
+        assert_eq!(options_oi.status, GlanceStatus::Unavailable);
+        assert!(options_oi
+            .ineligible
+            .iter()
+            .any(|s| s == OPTIONS_OI_UNSPECIFIED));
+        assert!(!options_oi
+            .ineligible
+            .iter()
+            .any(|s| s == OI_FIELD_UNSPECIFIED));
+    }
+
+    #[test]
+    fn options_oi_rows_are_success_on_sum_open_interest() {
+        let rows = [crate::data::OptionsOiRow {
+            symbol: "BTC-200730-9000-C".to_string(),
+            sum_open_interest: "12.5".to_string(),
+            sum_open_interest_usd: "100".to_string(),
+            timestamp: "1597026383085".to_string(),
+        }];
+        let oi = extract_open_interest_from(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            "BTC-200730-9000-C",
+            Some(&rows),
+        );
+        assert_eq!(oi.status, GlanceStatus::Success);
+        let data = oi.data.as_ref().unwrap();
+        assert_eq!(data["sumOpenInterest"], "12.5");
+        assert_eq!(data["symbol"], "BTC-200730-9000-C");
     }
 
     #[test]
