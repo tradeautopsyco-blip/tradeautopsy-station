@@ -51,7 +51,8 @@ pub use binance_klines::{
     KLINE_LIMIT_DEFAULT,
 };
 pub use binance_options_public::{
-    ensure_binance_com_options_quote, quote_tick_from_options_ticker_json,
+    ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
+    quote_tick_from_options_ticker_json,
 };
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,

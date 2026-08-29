@@ -37,6 +37,24 @@ pub fn binance_options_ticker_url(symbol: Option<&str>) -> String {
     }
 }
 
+/// Dated option contract in Binance shape (`BTC-200730-9000-C`): hyphen segments
+/// with a trailing C/P right. Shape only — mirrors Swift
+/// `InstrumentTickBookId.isDatedOptionContract`. Never a `segment|token` broker id.
+pub fn is_dated_option_contract(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    if trimmed.contains('|') {
+        return false;
+    }
+    let parts: Vec<&str> = trimmed.split('-').collect();
+    if parts.len() < 3 || parts.iter().any(|p| p.is_empty()) {
+        return false;
+    }
+    matches!(
+        parts[parts.len() - 1].to_ascii_uppercase().as_str(),
+        "C" | "P"
+    )
+}
+
 pub fn options_quote_stream_key(symbol: &str) -> String {
     format!(
         "{}\0{}",
@@ -191,6 +209,19 @@ mod tests {
         assert!(set.contains(&options_quote_stream_key("BTC-200730-9000-C")));
         assert!(!set.contains("btcusdt"));
         assert!(!set.contains("BTC-200730-9000-C"));
+    }
+
+    #[test]
+    fn dated_option_shape_is_not_a_bare_ticker_or_token() {
+        assert!(is_dated_option_contract("BTC-200730-9000-C"));
+        assert!(is_dated_option_contract("ETH-241227-4000-P"));
+        assert!(is_dated_option_contract("  BTC-200730-9000-c  "));
+        assert!(!is_dated_option_contract("BTCUSDT"));
+        assert!(!is_dated_option_contract("nse_fo|12345"));
+        assert!(!is_dated_option_contract("M-M"));
+        assert!(!is_dated_option_contract("BTC-200730-9000"));
+        assert!(!is_dated_option_contract("BTC--9000-C"));
+        assert!(!is_dated_option_contract(""));
     }
 
     #[test]

@@ -262,3 +262,192 @@ async fn planted_options_last_does_not_light_chain_oi_or_spot() {
 
     handle.abort();
 }
+
+/// `GET /api/station/quote?book=binance-com-options` is the only way to read the
+/// options book. Mixed case survives; the spot slot is never consulted.
+#[tokio::test]
+async fn quote_route_named_options_book_serves_mixed_case_last() {
+    const PORT: u16 = 19_512;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let body: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("options quote")
+        .json()
+        .await
+        .expect("json");
+    // REST ticker carries no server time: `age_unknown` → `unknown`, never invented freshness.
+    assert_eq!(body["status"], "unknown");
+    assert_ne!(body["status"], "unavailable");
+    assert_eq!(body["data"]["last"], "1.23");
+    assert_ne!(body["data"]["last"], "0");
+    assert_eq!(body["instrument_id"], "BTC-200730-9000-C");
+    assert_ne!(body["instrument_id"], "btc-200730-9000-c");
+    assert_eq!(body["provenance"]["adapter_id"], "binance_com");
+    assert_eq!(body["provenance"]["transport"], "rest");
+    assert_eq!(body["identity"]["capability_id"], "quote");
+    assert!(body["ineligible"].as_array().unwrap().is_empty());
+
+    // Options book requested with an NFO id must not serve NFO data.
+    let nfo: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C12345&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo on options book")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(nfo["status"], "unavailable");
+    assert!(nfo["data"].is_null());
+
+    handle.abort();
+}
+
+/// Chosen semantics: a dated contract routes to the options book by shape, with no
+/// `book=` — the desk binds these with `bookId == nil`. Never spot, never NFO.
+#[tokio::test]
+async fn quote_route_without_book_routes_dated_contract_by_shape() {
+    const PORT: u16 = 19_513;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bare options id")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unknown");
+    assert_eq!(body["data"]["last"], "1.23");
+    // Case is preserved — the spot resolver never rewrote the id.
+    assert_eq!(body["instrument_id"], "BTC-200730-9000-C");
+    assert_ne!(body["instrument_id"], "btc-200730-9000-c");
+    assert_eq!(body["provenance"]["adapter_id"], "binance_com");
+
+    // The lowercased spot form is a different id and stays a hole: the options
+    // row was read from `binance-com-options`, not from the spot slot.
+    let spot_form: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=btc-200730-9000-c"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("lowercased form")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(spot_form["status"], "unavailable");
+    assert!(spot_form["data"].is_null());
+
+    handle.abort();
+}
+
+/// A spot instrument can never pick up the options last, with or without `book=`.
+#[tokio::test]
+async fn quote_route_spot_instrument_never_serves_options_last() {
+    const PORT: u16 = 19_514;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    for url in [
+        format!("http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT&book=binance-com-spot"),
+        format!("http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT"),
+    ] {
+        let body: serde_json::Value = client
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .expect("spot quote")
+            .json()
+            .await
+            .expect("json");
+        assert_eq!(body["status"], "unavailable", "{url}");
+        assert!(body["data"].is_null(), "{url}");
+        assert_ne!(body["data"]["last"], "1.23", "{url}");
+        assert_eq!(body["instrument_id"], "btcusdt", "{url}");
+        assert_ne!(body["instrument_id"], "BTC-200730-9000-C", "{url}");
+    }
+
+    handle.abort();
+}
+
+/// Unplanted options book is `unavailable` and opens no spot stream. The stream-set
+/// seam itself is asserted in `api::quote::tests::dated_contract_records_options_key_and_no_spot_key`
+/// (`quote_streams` is not reachable over HTTP); here we prove the route stays a hole
+/// and never lights spot last / depth / history for the contract.
+#[tokio::test]
+async fn quote_route_options_book_unplanted_is_unavailable_and_opens_no_spot_stream() {
+    const PORT: u16 = 19_515;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let body: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("options quote")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert!(body["data"].is_null());
+    assert_eq!(body["instrument_id"], "BTC-200730-9000-C");
+
+    // The spot slot was not subscribed on the contract's account: a bare spot read
+    // stays a hole, and the lowercased contract id never became a spot instrument.
+    let spot: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=btc-200730-9000-c"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("spot read")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(spot["status"], "unavailable");
+    assert!(spot["data"].is_null());
+
+    handle.abort();
+}

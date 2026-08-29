@@ -4,7 +4,8 @@ use super::AppState;
 use crate::data::{
     apply_history_series, authorize_inferred_call, binance_exchange_info_cache_path,
     ensure_binance_com_depth_stream, ensure_binance_com_trade_stream, extract_quote_for_book,
-    normalize_quote_instrument, parse_nfo_instrument_id, resolve_among, series_from_klines_json,
+    is_dated_option_contract, normalize_options_instrument, normalize_quote_instrument,
+    parse_nfo_instrument_id, resolve_among, series_from_klines_json,
     validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
     InstrumentMasterFetchError, InstrumentMasterStatus, QuoteStatus, Transport,
     DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, KOTAK_NSE_NFO_BOOK_ID,
@@ -330,6 +331,12 @@ impl AppState {
             }
             return None;
         }
+        // Dated option contracts keep verbatim case; `resolve_instrument` would
+        // lowercase `BTC-200730-9000-C` into a spot-shaped id. The Kotak desk
+        // already returned above, so this never loosens a broker id.
+        if is_dated_option_contract(raw) {
+            return Some(normalize_options_instrument(raw));
+        }
         let id = self.resolve_instrument(raw);
         if self.is_binance_com_desk() {
             if self.is_binance_path(&id) {
@@ -357,7 +364,7 @@ impl AppState {
                     .contains_id(id);
         }
         if self.is_binance_com_desk() {
-            return self.is_binance_path(id);
+            return is_dated_option_contract(id) || self.is_binance_path(id);
         }
         false
     }
