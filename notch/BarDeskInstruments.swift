@@ -59,11 +59,38 @@ enum InstrumentTickBookId {
 
     /// True when `raw` is a well-formed `nse_fo|<token>` TickBook id.
     static func isNfoIdentity(_ raw: String) -> Bool {
+        segment(of: raw) == kotakNfoSegment
+    }
+
+    /// True when `raw` is a well-formed `nse_cm|` / `bse_cm|` cash TickBook id.
+    static func isCashIdentity(_ raw: String) -> Bool {
+        guard let seg = segment(of: raw) else { return false }
+        return kotakCashSegments.contains(seg)
+    }
+
+    /// Dated option contract in Binance shape (`BTC-200730-9000-C`): hyphen segments
+    /// with a trailing C/P right. Shape only — a new underlying needs no code change.
+    /// Never an OpenAlgo `NIFTY28NOV...CE` string parse.
+    static func isDatedOptionContract(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.contains("|") else { return false }
+        let parts = trimmed.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count >= 3, parts.allSatisfy({ !$0.isEmpty }) else { return false }
+        let right = parts[parts.count - 1].uppercased()
+        return right == "C" || right == "P"
+    }
+
+    /// NFO `nse_fo|token` from catalog fields regardless of desk — shape detection only.
+    /// Constructing one does not make it bindable; `shouldBindQuoteLast` still gates Last.
+    static func nfoIdentity(segment: String?, instrumentToken: Int64?) -> String? {
+        make(segment: segment, instrumentToken: instrumentToken, allowNfo: true)
+    }
+
+    /// Segment of a well-formed `<segment>|<positive token>` id, else nil.
+    private static func segment(of raw: String) -> String? {
         let parts = raw.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2 else { return false }
-        let seg = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard seg == kotakNfoSegment else { return false }
-        return Int64(parts[1]) ?? 0 > 0
+        guard parts.count == 2, Int64(parts[1]) ?? 0 > 0 else { return nil }
+        return parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     /// Encode `|` so `/api/station/quote?instrument=` survives URL parsing.
@@ -259,6 +286,153 @@ enum BarDeskTemplate {
     /// NFO last strip is allowed only on the named book (Kotak desk + options declare).
     static func isKotakNfoDesk(slug: String?, assetClass: BarDeclareAssetClass) -> Bool {
         isKotakNeoDesk(slug: slug) && assetClass == .options
+    }
+}
+
+/// What an instrument id says it is, independent of the declare tab. The tab is a
+/// user preference; this is the instrument's own shape, and the shape wins.
+enum DeskInstrumentShape: Equatable {
+    case kotakNfo
+    case kotakCash
+    /// Binance dated contract (`BTC-200730-9000-C`).
+    case binanceOption
+    /// Binance pair (`BTCUSDT`).
+    case binanceSpot
+    /// Nothing recognisable — keep the caller's class and let the desk refuse it.
+    case unknown
+
+    var impliedAssetClass: BarDeclareAssetClass? {
+        switch self {
+        case .kotakNfo, .binanceOption: return .options
+        case .kotakCash: return .equity
+        case .binanceSpot: return .spot
+        case .unknown: return nil
+        }
+    }
+}
+
+/// One resolved desk binding: which book to glance, which class to declare under,
+/// which id to quote, and which underlying the chain is keyed on. Resolve once at
+/// selection, then act — so no branch can rebind against a stale field.
+struct DeskInstrumentBind: Equatable {
+    /// Catalog book for chain/OI. **Nil on every Binance desk**: Binance never sends
+    /// `book=` and its glance is skipped outright, so there is no `binance-com-*`
+    /// book id to name here. Mirrors `BarDeskTemplate.deskBookId` exactly.
+    var bookId: String?
+    /// Class implied by the instrument, or the caller's class when nothing is implied.
+    var assetClass: BarDeclareAssetClass
+    /// `nse_fo|token`, `nse_cm|2885`, `BTCUSDT`, `BTC-200730-9000-C` — verbatim casing.
+    var tickBookId: String
+    /// Chain key: NFO wants `pSymbolName` (BANKNIFTY), not the contract ticker.
+    /// Empty when only a `segment|token` is known — callers fall back to the typed symbol.
+    var chainUnderlying: String
+    var shape: DeskInstrumentShape
+
+    /// Kotak-only identity picked up on a desk that cannot serve it (paste, stale row).
+    var isKotakIdentity: Bool {
+        shape == .kotakNfo || shape == .kotakCash
+    }
+
+    static func resolve(
+        _ result: InstrumentResult,
+        slug: String?,
+        currentClass: BarDeclareAssetClass
+    ) -> DeskInstrumentBind {
+        let ticker = BarBrokerTicker.normalize(raw: result.trading_symbol)
+            ?? result.trading_symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kotakDesk = BarDeskTemplate.isKotakNeoDesk(slug: slug)
+        let shape: DeskInstrumentShape
+        let tickBookId: String
+        if let nfo = InstrumentTickBookId.nfoIdentity(
+            segment: result.segment,
+            instrumentToken: result.instrument_token
+        ) {
+            shape = .kotakNfo
+            tickBookId = nfo
+        } else if let cash = InstrumentTickBookId.make(
+            segment: result.segment,
+            instrumentToken: result.instrument_token
+        ) {
+            shape = .kotakCash
+            tickBookId = cash
+        } else {
+            let exchange = result.exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            shape = binanceShape(
+                ticker,
+                // A catalog row can name the venue even when the desk slug does not.
+                binanceDesk: !kotakDesk
+                    && (DeskCatalogAllowlist.isBinanceDesk(slug)
+                        || exchange == "binance_com"
+                        || exchange == "binance")
+            )
+            tickBookId = shape == .unknown ? (result.tickBookInstrumentId ?? ticker) : ticker
+        }
+        // NFO chain is keyed on `pSymbolName`, never the strike-bearing contract ticker.
+        let underlying = shape == .kotakNfo
+            ? nonEmpty(result.name) ?? ticker
+            : ticker
+        return make(
+            shape: shape,
+            tickBookId: tickBookId,
+            chainUnderlying: underlying,
+            slug: slug,
+            currentClass: currentClass
+        )
+    }
+
+    /// Paste / type path: the id is all we have, so classify the string itself.
+    static func resolve(
+        rawId: String,
+        slug: String?,
+        currentClass: BarDeclareAssetClass
+    ) -> DeskInstrumentBind {
+        let trimmed = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shape: DeskInstrumentShape
+        if InstrumentTickBookId.isNfoIdentity(trimmed) {
+            shape = .kotakNfo
+        } else if InstrumentTickBookId.isCashIdentity(trimmed) {
+            shape = .kotakCash
+        } else {
+            shape = binanceShape(trimmed, binanceDesk: DeskCatalogAllowlist.isBinanceDesk(slug))
+        }
+        return make(
+            shape: shape,
+            tickBookId: trimmed,
+            // A `segment|token` is not an underlying — leave it empty rather than invent one.
+            chainUnderlying: trimmed.contains("|") ? "" : trimmed,
+            slug: slug,
+            currentClass: currentClass
+        )
+    }
+
+    /// Dated contract vs pair — only on a Binance desk, so `M-M`-style cash tickers can
+    /// never be read as options and an unknown desk still falls through to `.unknown`.
+    private static func binanceShape(_ ticker: String, binanceDesk: Bool) -> DeskInstrumentShape {
+        guard binanceDesk, !ticker.isEmpty else { return .unknown }
+        return InstrumentTickBookId.isDatedOptionContract(ticker) ? .binanceOption : .binanceSpot
+    }
+
+    private static func make(
+        shape: DeskInstrumentShape,
+        tickBookId: String,
+        chainUnderlying: String,
+        slug: String?,
+        currentClass: BarDeclareAssetClass
+    ) -> DeskInstrumentBind {
+        let assetClass = shape.impliedAssetClass ?? currentClass
+        return DeskInstrumentBind(
+            // Single source of truth for `book=` — nil for Binance falls out of it.
+            bookId: BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass),
+            assetClass: assetClass,
+            tickBookId: tickBookId,
+            chainUnderlying: chainUnderlying,
+            shape: shape
+        )
+    }
+
+    private static func nonEmpty(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

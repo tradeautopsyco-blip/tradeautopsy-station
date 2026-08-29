@@ -344,6 +344,101 @@ struct BrokerBridgeTests {
         #expect(vm.deskSelectedInstrumentId.isEmpty)
     }
 
+    @Test func selectSymbolKotakNfoKeepsChainOnTheNamedNfoBook() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        vm.selectSymbol(nfo)
+        #expect(vm.deskSelectedInstrumentId == "nse_fo|12345")
+        let chain = vm.deskChainExtractPath(symbol: "BANKNIFTY")
+        #expect(chain.contains("book=kotak-nse-nfo"))
+        #expect(chain.contains("instrument=BANKNIFTY"))
+        #expect(!chain.contains("57500"))
+    }
+
+    @Test func selectSymbolBinanceSpotPairUnderOptionsFallsBackToSpot() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        let pair = InstrumentResult(
+            trading_symbol: "BTCUSDT",
+            name: "Bitcoin",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 0
+        )
+        vm.selectSymbol(pair)
+        // The instrument is spot, so the Options tab does not survive the selection.
+        #expect(vm.declareAssetClass == .spot)
+        #expect(vm.deskSelectedInstrumentId == "BTCUSDT")
+        #expect(vm.barDeclarationLastError == nil)
+        let chain = vm.deskChainExtractPath(symbol: "BTCUSDT")
+        #expect(!chain.contains("kotak-nse-nfo"))
+        #expect(!chain.contains("book="))
+    }
+
+    @Test func selectSymbolBinanceContractKeepsOptionsWithDarkLastAndNoNfoBook() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        vm.declEntryPrice = ""
+        let contract = InstrumentResult(
+            trading_symbol: "BTC-200730-9000-C",
+            name: "BTC option",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 64000
+        )
+        vm.selectSymbol(contract)
+        #expect(vm.declareAssetClass == .options)
+        // Verbatim casing — the spot lowercase normalize is agent-side and spot-only.
+        #expect(vm.deskSelectedInstrumentId == "BTC-200730-9000-C")
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.declEntryPrice.isEmpty)
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(!vm.deskChainExtractPath(symbol: "BTC-200730-9000-C").contains("kotak-nse-nfo"))
+        #expect(!vm.deskOiExtractPath(symbol: "BTC-200730-9000-C").contains("kotak-nse-nfo"))
+    }
+
+    @Test func selectSymbolRefusesKotakIdentityOnBinanceDeskAndDropsNfoExtracts() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.barDeclarationSymbol = "BTCUSDT"
+        vm.deskChainStatus = "success"
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        vm.selectSymbol(nfo)
+        #expect(vm.barDeclarationLastError == "Select a Binance instrument")
+        // Refused: neither the symbol field nor the bound instrument moves.
+        #expect(vm.deskSelectedInstrumentId == "BTCUSDT")
+        #expect(vm.barDeclarationSymbol == "BTCUSDT")
+        // …and the NFO chain that was standing on screen goes dark.
+        #expect(vm.deskChainStatus == "unavailable")
+    }
+
     @Test func selectSymbolKotakOptionsWithoutTokenDoesNotPaintUnderlyingTicker() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "kotak_neo"

@@ -579,14 +579,10 @@ struct InstrumentResult: Codable, Identifiable, Equatable {
         return exchange
     }
 
-    /// List identity for FO rows without treating FO as cash last.
+    /// List identity for FO rows without treating FO as cash last. Shape only — the
+    /// desk-aware `tickBookInstrumentId(for:deskSlug:)` still gates what may bind Last.
     private var nfoListIdentity: String? {
-        InstrumentTickBookId.make(
-            segment: segment,
-            instrumentToken: instrument_token,
-            forAsset: .options,
-            deskSlug: "kotak_neo"
-        )
+        InstrumentTickBookId.nfoIdentity(segment: segment, instrumentToken: instrument_token)
     }
 }
 

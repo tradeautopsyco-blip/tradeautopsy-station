@@ -400,4 +400,178 @@ struct BarDeskInstrumentsTests {
         )
         #expect(loading.master_status == "loading")
     }
+
+    // MARK: - DeskInstrumentBind (the shape decides, not the tab)
+
+    @Test func resolvesKotakNfoResultToNamedNfoBookAndUnderlyingName() {
+        let nfo = InstrumentResult(
+            trading_symbol: "BANKNIFTY25SEP57500CE",
+            name: "BANKNIFTY",
+            exchange: "kotak_neo",
+            segment: "nse_fo",
+            instrument_token: 12345,
+            last_price: 0
+        )
+        let bind = DeskInstrumentBind.resolve(nfo, slug: "kotak_neo", currentClass: .options)
+        #expect(bind.shape == .kotakNfo)
+        #expect(bind.bookId == BarDeskTemplate.kotakNfoBookId)
+        #expect(bind.assetClass == .options)
+        #expect(bind.tickBookId == "nse_fo|12345")
+        // Chain is keyed on pSymbolName, never the strike-bearing contract ticker.
+        #expect(bind.chainUnderlying == "BANKNIFTY")
+    }
+
+    @Test func resolvesKotakCashResultToCashBookNotNfo() {
+        let cash = InstrumentResult(
+            trading_symbol: "NMDC",
+            name: "NMDC Limited",
+            exchange: "kotak_neo",
+            segment: "nse_cm",
+            instrument_token: 11532,
+            last_price: 0
+        )
+        let bind = DeskInstrumentBind.resolve(cash, slug: "kotak_neo", currentClass: .options)
+        #expect(bind.shape == .kotakCash)
+        #expect(bind.assetClass == .equity)
+        #expect(bind.tickBookId == "nse_cm|11532")
+        #expect(bind.bookId == BarDeskTemplate.kotakCashBookId)
+        #expect(bind.bookId != BarDeskTemplate.kotakNfoBookId)
+        #expect(!InstrumentTickBookId.isNfoIdentity(bind.tickBookId))
+    }
+
+    @Test func binanceSpotPairResolvesToSpotWithNoBook() {
+        let pair = InstrumentResult(
+            trading_symbol: "BTCUSDT",
+            name: "Bitcoin",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 0
+        )
+        let bind = DeskInstrumentBind.resolve(pair, slug: "binance_com", currentClass: .options)
+        #expect(bind.shape == .binanceSpot)
+        // The instrument is spot, so the class follows it off the Options tab.
+        #expect(bind.assetClass == .spot)
+        #expect(bind.tickBookId == "BTCUSDT")
+        #expect(bind.bookId == nil)
+    }
+
+    @Test func binanceDatedContractResolvesToOptionsWithNoBookAndVerbatimId() {
+        let contract = InstrumentResult(
+            trading_symbol: "BTC-200730-9000-C",
+            name: "BTC option",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 0
+        )
+        let bind = DeskInstrumentBind.resolve(contract, slug: "binance_com", currentClass: .options)
+        #expect(bind.shape == .binanceOption)
+        #expect(bind.assetClass == .options)
+        // Never lowercased, never rewritten into a TickBook segment id.
+        #expect(bind.tickBookId == "BTC-200730-9000-C")
+        #expect(bind.bookId == nil)
+        #expect(!InstrumentTickBookId.isNfoIdentity(bind.tickBookId))
+        #expect(!InstrumentTickBookId.isCashIdentity(bind.tickBookId))
+    }
+
+    @Test func datedOptionContractShapeIsNotABareTickerOrToken() {
+        #expect(InstrumentTickBookId.isDatedOptionContract("BTC-200730-9000-C"))
+        #expect(InstrumentTickBookId.isDatedOptionContract("ETH-241227-4000-P"))
+        #expect(!InstrumentTickBookId.isDatedOptionContract("BTCUSDT"))
+        #expect(!InstrumentTickBookId.isDatedOptionContract("nse_fo|12345"))
+        // Two segments is a hyphenated cash ticker, not a dated contract.
+        #expect(!InstrumentTickBookId.isDatedOptionContract("M-M"))
+        #expect(!InstrumentTickBookId.isDatedOptionContract("BTC-200730-9000"))
+    }
+
+    @Test func cashIdentityIsNotNfoIdentity() {
+        #expect(InstrumentTickBookId.isCashIdentity("nse_cm|2885"))
+        #expect(InstrumentTickBookId.isCashIdentity("bse_cm|500325"))
+        #expect(!InstrumentTickBookId.isCashIdentity("nse_fo|12345"))
+        #expect(!InstrumentTickBookId.isCashIdentity("nse_cm|0"))
+        #expect(!InstrumentTickBookId.isCashIdentity("BTCUSDT"))
+    }
+
+    @Test func rawIdPasteResolvesAllFourShapes() {
+        let nfo = DeskInstrumentBind.resolve(
+            rawId: "nse_fo|12345", slug: "kotak_neo", currentClass: .spot
+        )
+        #expect(nfo.shape == .kotakNfo)
+        #expect(nfo.assetClass == .options)
+        #expect(nfo.bookId == BarDeskTemplate.kotakNfoBookId)
+        // A segment|token is not an underlying — the caller falls back to the typed symbol.
+        #expect(nfo.chainUnderlying.isEmpty)
+
+        let cash = DeskInstrumentBind.resolve(
+            rawId: "nse_cm|2885", slug: "kotak_neo", currentClass: .options
+        )
+        #expect(cash.shape == .kotakCash)
+        #expect(cash.bookId == BarDeskTemplate.kotakCashBookId)
+
+        let spot = DeskInstrumentBind.resolve(
+            rawId: "BTCUSDT", slug: "binance_com", currentClass: .options
+        )
+        #expect(spot.shape == .binanceSpot)
+        #expect(spot.assetClass == .spot)
+        #expect(spot.bookId == nil)
+        #expect(spot.chainUnderlying == "BTCUSDT")
+
+        let contract = DeskInstrumentBind.resolve(
+            rawId: "BTC-200730-9000-C", slug: "binance_com", currentClass: .spot
+        )
+        #expect(contract.shape == .binanceOption)
+        #expect(contract.tickBookId == "BTC-200730-9000-C")
+        #expect(contract.bookId == nil)
+    }
+
+    @Test func kotakDeskNeverReadsAHyphenatedTickerAsAnOption() {
+        // `M-M`-style cash tickers must not classify as contracts on a Kotak desk.
+        let bind = DeskInstrumentBind.resolve(
+            rawId: "BTC-200730-9000-C", slug: "kotak_neo", currentClass: .spot
+        )
+        #expect(bind.shape == .unknown)
+        #expect(bind.assetClass == .spot)
+    }
+
+    @Test func unknownDeskKeepsTheLegacyLtpPathNotABinanceBind() {
+        // No slug and a non-Binance venue: this must stay `.unknown` so selectSymbol
+        // still routes it through fetchLTP rather than the Station quote path.
+        let nse = InstrumentResult(
+            trading_symbol: "RELIANCE",
+            name: "Reliance Industries",
+            exchange: "NSE",
+            segment: "NSE",
+            instrument_token: 2885,
+            last_price: 0
+        )
+        let bind = DeskInstrumentBind.resolve(nse, slug: nil, currentClass: .spot)
+        #expect(bind.shape == .unknown)
+        #expect(bind.assetClass == .spot)
+        #expect(bind.bookId == nil)
+        #expect(bind.tickBookId == "RELIANCE")
+
+        // A catalog row naming Binance binds as Binance even with no desk slug.
+        let pair = InstrumentResult(
+            trading_symbol: "BTCUSDT",
+            name: "Bitcoin",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 0
+        )
+        #expect(DeskInstrumentBind.resolve(pair, slug: nil, currentClass: .spot).shape == .binanceSpot)
+    }
+
+    @Test func binanceBindNeverCarriesTheNfoBook() {
+        for raw in ["BTCUSDT", "BTC-200730-9000-C", "ETHUSDT"] {
+            for klass in BarDeclareAssetClass.allCases {
+                let bind = DeskInstrumentBind.resolve(
+                    rawId: raw, slug: "binance_com", currentClass: klass
+                )
+                #expect(bind.bookId == nil)
+                #expect(bind.bookId != BarDeskTemplate.kotakNfoBookId)
+            }
+        }
+    }
 }

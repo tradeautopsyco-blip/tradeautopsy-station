@@ -1110,35 +1110,37 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
         if DeskCatalogAllowlist.refusesKotakSelection(result, deskSlug: resolvedDeskSlug) {
-            barDeclarationLastError = kotakInstrumentHint
-            showSymbolSuggestions = false
-            symbolSuggestions = []
-            symbolSearchHint = nil
+            refuseSelection(hint: kotakInstrumentHint)
             return
         }
         guard let ticker = BarBrokerTicker.normalize(raw: result.trading_symbol) else {
-            barDeclarationLastError = "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
-            showSymbolSuggestions = false
-            symbolSuggestions = []
-            symbolSearchHint = nil
+            refuseSelection(
+                hint: "Symbol must be a broker ticker (e.g. RELIANCE), not a company name."
+            )
             return
         }
+        // Resolve once, then act — no branch below re-derives the binding.
+        let bind = DeskInstrumentBind.resolve(
+            result,
+            slug: resolvedDeskSlug,
+            currentClass: declareAssetClass
+        )
         let kotakDesk = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
-        let tickId = result.tickBookInstrumentId(for: declareAssetClass, deskSlug: resolvedDeskSlug)
-        if kotakDesk, declareAssetClass == .options, tickId == nil {
-            barDeclarationLastError = kotakInstrumentHint
-            deskLastStatus = "unavailable"
-            deskQuoteCapability = "unavailable"
-            showSymbolSuggestions = false
-            symbolSuggestions = []
-            symbolSearchHint = nil
-            return
-        }
-        if kotakDesk, tickId == nil {
-            barDeclarationLastError = kotakInstrumentHint
-            showSymbolSuggestions = false
-            symbolSuggestions = []
-            symbolSearchHint = nil
+        if kotakDesk {
+            let wanted: DeskInstrumentShape = declareAssetClass == .options ? .kotakNfo : .kotakCash
+            guard bind.shape == wanted else {
+                if declareAssetClass == .options {
+                    deskLastStatus = "unavailable"
+                    deskQuoteCapability = "unavailable"
+                }
+                refuseSelection(hint: kotakInstrumentHint)
+                return
+            }
+        } else if bind.isKotakIdentity {
+            // Pasted/stale Kotak row on a desk that cannot serve it — the NFO extracts
+            // standing on screen belong to a book this desk never reads.
+            invalidateDeskMarketExtracts(reason: "select-symbol")
+            refuseSelection(hint: deskInstrumentHint)
             return
         }
         barDeclarationSymbol = ticker
@@ -1147,66 +1149,63 @@ public final class NotchViewModel: ObservableObject {
         showSymbolSuggestions = false
         symbolSuggestions = []
         symbolSearchHint = nil
-        if kotakDesk, let tickId {
-            deskSelectedInstrumentId = tickId
-            invalidateDeskMarketExtracts(reason: "select-symbol")
-            if result.last_price > 0 {
-                applyLTP(result.last_price)
-            }
-            fetchStationQuote(instrument: tickId)
-            refreshDeskExtracts(symbol: chainUnderlying(from: result, ticker: ticker), instrumentId: tickId)
-            return
+        // The tab follows the instrument when it is showing Options for something that is
+        // not an option (a Binance pair). Never the reverse — picking a contract does not
+        // silently arm the Options surface.
+        if declareAssetClass == .options, bind.assetClass != .options {
+            declareAssetClass = bind.assetClass
         }
-        let exchangeNorm = result.exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
-            || exchangeNorm == "binance_com"
-            || exchangeNorm == "binance"
-        {
-            deskSelectedInstrumentId = ticker
-            invalidateDeskMarketExtracts(reason: "select-symbol")
-            if declareAssetClass == .options {
-                refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
-                return
-            }
-            if result.last_price > 0 {
-                applyLTP(result.last_price)
-            }
-            fetchStationQuote(instrument: ticker)
-            refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
-            return
-        }
-        if kotakDesk, declareAssetClass == .options {
-            deskLastStatus = "unavailable"
-            deskQuoteCapability = "unavailable"
-            return
-        }
-        deskSelectedInstrumentId = result.tickBookInstrumentId ?? ticker
+        // Order matters: the id first, then invalidate (it reads the id to decide whether
+        // Last may survive), then fetch — which captures the generation it must match.
+        deskSelectedInstrumentId = bind.tickBookId
         invalidateDeskMarketExtracts(reason: "select-symbol")
-        if result.last_price > 0 {
-            applyLTP(result.last_price)
+        switch bind.shape {
+        case .kotakNfo, .kotakCash:
+            if result.last_price > 0 {
+                applyLTP(result.last_price)
+            }
+            fetchStationQuote(instrument: bind.tickBookId)
+        case .binanceOption:
+            // Last stays dark on the options declare — no eapi/spot price may paint it.
+            break
+        case .binanceSpot:
+            if result.last_price > 0 {
+                applyLTP(result.last_price)
+            }
+            fetchStationQuote(instrument: bind.tickBookId)
+        case .unknown:
+            if result.last_price > 0 {
+                applyLTP(result.last_price)
+            }
+            fetchLTP(
+                symbol: ticker,
+                exchange: result.exchange,
+                segment: result.segment ?? result.exchange
+            )
         }
-        fetchLTP(
-            symbol: ticker,
-            exchange: result.exchange,
-            segment: result.segment ?? result.exchange
-        )
-        refreshDeskExtracts(symbol: chainUnderlying(from: result, ticker: ticker), instrumentId: deskSelectedInstrumentId)
+        refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
+    }
+
+    /// Refuse a selection without binding it: the symbol field and the previous
+    /// instrument stay exactly as they were.
+    private func refuseSelection(hint: String) {
+        barDeclarationLastError = hint
+        showSymbolSuggestions = false
+        symbolSuggestions = []
+        symbolSearchHint = nil
+    }
+
+    /// Hint for an instrument the active desk cannot serve.
+    private var deskInstrumentHint: String {
+        DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
+            ? "Select a Binance instrument"
+            : kotakInstrumentHint
     }
 
     private var kotakInstrumentHint: String {
         declareAssetClass == .options
             ? "Select a Kotak NFO instrument"
             : "Select a Kotak cash instrument"
-    }
-
-    /// NFO chain instrument is `pSymbolName` (BANKNIFTY / NIFTY), not a cash token or trading-symbol.
-    /// Binance options keep the ticker — `deskBookId` is nil, so `book=` is omitted.
-    private func chainUnderlying(from result: InstrumentResult, ticker: String) -> String {
-        guard declareAssetClass == .options,
-              BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
-        else { return ticker }
-        let name = result.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? ticker : name
     }
 
     /// Active catalog slug for desk-honest Last/history routing.
