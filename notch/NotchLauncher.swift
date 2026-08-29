@@ -46,6 +46,14 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         globalHotkeyMonitor != nil || localHotkeyMonitor != nil
     }
 
+    var isPanelVisible: Bool {
+        panelController?.isPanelVisible ?? false
+    }
+
+    var panelFrame: NSRect {
+        panelController?.panelFrame ?? .zero
+    }
+
     public func toggle() {
         if isHostedByStation {
             // Station ⌥Space: expand/collapse PLAN over the focused app (not show/hide the pill).
@@ -89,6 +97,9 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         viewModel.ensureDictationWired()
         viewModel.startPolling()
         panelController?.show()
+        // First ⌥Space must not pay for a cold SwiftUI mount of the PLAN tree: `show()` mounts
+        // the expanded layer at final size (opacity 0, hit-test off) and pre-warms the backdrop.
+        panelController?.prewarmExpandedSurface()
     }
 
     public func dismiss() {
@@ -194,11 +205,15 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     func notifyMarketClose() {
         let msg = viewModel.sessionSummaryForClose()
         viewModel.lastAlert = msg
-        viewModel.isExpanded = true
+        withAnimation(NotchTheme.expandCollapseAnimation) {
+            viewModel.isExpanded = true
+        }
         viewModel.onRequestOrderFront?()
         Task {
             try? await Task.sleep(nanoseconds: 30_000_000_000)
-            viewModel.isExpanded = false
+            withAnimation(NotchTheme.expandCollapseAnimation) {
+                viewModel.isExpanded = false
+            }
         }
     }
 
@@ -240,7 +255,9 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
 
     private func expandToTab(_ tab: NotchTab) async {
         viewModel.selectTab(tab)
-        viewModel.isExpanded = true
+        withAnimation(NotchTheme.expandCollapseAnimation) {
+            viewModel.isExpanded = true
+        }
         viewModel.onRequestOrderFront?()
     }
 }

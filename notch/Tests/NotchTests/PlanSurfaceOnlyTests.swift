@@ -77,6 +77,83 @@ struct PlanSurfaceOnlyTests {
         launcher.dismiss()
     }
 
+    // ⌥Space on the Station-hosted Notch is a PLAN expand/collapse, never a visibility toggle:
+    // the pill must stay on screen across the whole summon.
+    @Test func hostedToggleKeepsPillVisibleInsteadOfHidingTheHud() {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
+        launcher.start()
+        #expect(launcher.isPanelVisible)
+
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded)
+        #expect(launcher.isPanelVisible)
+
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded == false)
+        #expect(launcher.isPanelVisible)
+
+        launcher.dismiss()
+    }
+
+    // Second ⌥Space mid-flight re-targets instead of leaving the window stuck at the expanded
+    // frame — the pending frame snap is cancelled and re-armed, never brick-walled.
+    @Test func rapidDoubleToggleSettlesCollapsedWithPanelBackAtPillFrame() async throws {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
+        launcher.start()
+
+        launcher.toggle()
+        launcher.toggle()
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded)
+        // Frame is already expanded on the same turn as the keypress — no window size animation.
+        #expect(launcher.viewModel.summonPanelAtExpandedFrame)
+
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded == false)
+
+        try await Task.sleep(nanoseconds: 500_000_000)
+        #expect(launcher.viewModel.summonPanelAtExpandedFrame == false)
+        #expect(launcher.isPanelVisible)
+
+        launcher.dismiss()
+    }
+
+    // Pre-warm: the expanded surface is laid out at final size while the window is still the
+    // pill, so the first summon composites an already-built tree. The pre-warm size must never
+    // leak into the collapsed window — that squashed the pill into a visibleFrame-sized layout.
+    @Test func startPrewarmsExpandedSurfaceSizeWithoutGrowingTheCollapsedPill() {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
+        launcher.start()
+
+        let prewarmed = launcher.viewModel.expandedSurfaceSize
+        #expect(launcher.viewModel.isExpanded == false)
+        #expect(prewarmed.width > 0)
+        #expect(prewarmed.height > 0)
+
+        let collapsedFrame = launcher.panelFrame
+        #expect(collapsedFrame.width < prewarmed.width)
+        #expect(collapsedFrame.height < prewarmed.height)
+
+        launcher.dismiss()
+    }
+
+    // The expanded window and the pre-warmed surface must be the same size: the surface is an
+    // overlay laid out at `expandedSurfaceSize`, so any divergence misaligns it in the window.
+    @Test func expandedPanelFrameMatchesPrewarmedSurfaceSize() {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
+        launcher.start()
+
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded)
+        #expect(launcher.panelFrame.size == launcher.viewModel.expandedSurfaceSize)
+
+        launcher.dismiss()
+    }
+
     @Test func chromeTapCollapseCollapsesExpandedPlanSurface() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         #expect(vm.isExpanded == false)

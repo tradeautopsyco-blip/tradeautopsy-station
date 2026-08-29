@@ -115,6 +115,9 @@ final class NotchPanelController {
     private var escCollapseMonitor: Any?
     /// Expanded panel body size — locked for session to avoid resize flicker on content changes.
     private var sessionLockedExpandedContentSize: CGSize?
+    /// Pending frame snap back to the pill — held while the collapse exit fade plays.
+    /// Cancelled when a second ⌥Space re-expands mid-flight (interruptible summon).
+    private var collapseFrameWorkItem: DispatchWorkItem?
     /// Screen-space grab for collapsed-pill drag (not SwiftUI translation — window would fight itself).
     private var pillDragStartMouse: NSPoint?
     private var pillDragStartOrigin: NSPoint?
@@ -131,6 +134,9 @@ final class NotchPanelController {
         let host = NSHostingController(
             rootView: NotchRootView(vm: viewModel, hostedExpandedContent: hostedExpandedContent)
         )
+        // The pre-warmed expanded layer is laid out at final size while the window is the
+        // collapsed pill — never let SwiftUI fitting size drive the panel frame.
+        host.sizingOptions = []
         self.hosting = host
 
         let panel = TradeAutopsyNotchPanel(
@@ -165,18 +171,35 @@ final class NotchPanelController {
             self?.endCollapsedPillDrag()
         }
 
+        // No `.receive(on:)` hop — the view model is @MainActor, so the frame snap lands on
+        // the same run-loop turn as the hotkey (Spotlight: respond on the event).
         viewModel.$isExpanded
-            .receive(on: DispatchQueue.main)
+            .dropFirst()
             .sink { [weak self] expanded in
                 guard let self, !self.chromeHiddenForCapture else { return }
                 self.panel.acceptsMouseMovedEvents = !expanded
-                self.layoutPanel(animated: true)
+                self.collapseFrameWorkItem?.cancel()
+                self.collapseFrameWorkItem = nil
                 if expanded {
+                    // Snap to the final frame instantly; only opacity + scale animate (SwiftUI).
+                    self.layoutPanel(expanded: true)
+                    self.viewModel.summonPanelAtExpandedFrame = true
                     self.showCollapseBackdropIfNeeded()
                     self.installEscCollapseMonitorIfNeeded()
                 } else {
                     self.hideCollapseBackdrop()
                     self.removeEscCollapseMonitor()
+                    // Hold the expanded frame while the exit fade plays, then snap to the pill.
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self, !self.viewModel.isExpanded else { return }
+                        self.viewModel.summonPanelAtExpandedFrame = false
+                        self.layoutPanel(expanded: false)
+                    }
+                    self.collapseFrameWorkItem = work
+                    DispatchQueue.main.asyncAfter(
+                        deadline: .now() + NotchTheme.summonFrameHoldDuration,
+                        execute: work
+                    )
                 }
             }
             .store(in: &subs)
@@ -189,7 +212,7 @@ final class NotchPanelController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.chromeHiddenForCapture else { return }
-                self.layoutPanel(animated: false)
+                self.layoutPanel(expanded: viewModel.isExpanded)
                 if self.viewModel.isExpanded {
                     self.layoutCollapseBackdrop()
                 }
@@ -211,7 +234,6 @@ final class NotchPanelController {
         if let m = escCollapseMonitor {
             NSEvent.removeMonitor(m)
         }
-        backdropPanel?.orderOut(nil)
         if let o = displayObserver {
             NotificationCenter.default.removeObserver(o)
         }
@@ -219,20 +241,46 @@ final class NotchPanelController {
             NotificationCenter.default.removeObserver(o)
         }
         saveWorkItem?.cancel()
+        collapseFrameWorkItem?.cancel()
+        if let backdrop = backdropPanel {
+            Task { @MainActor in
+                backdrop.orderOut(nil)
+            }
+        }
     }
 
     func show() {
         guard !chromeHiddenForCapture else { return }
         panel.acceptsMouseMovedEvents = !viewModel.isExpanded
-        layoutPanel(animated: false)
+        layoutPanel(expanded: viewModel.isExpanded)
         panel.orderFrontRegardless()
         if let view = panel.contentView {
             _ = panel.makeFirstResponder(view)
         }
         // Second layout pass: `NSScreen.main` / frames can be wrong on first launch tick.
         DispatchQueue.main.async { [weak self] in
-            self?.layoutPanel(animated: false)
+            guard let self else { return }
+            self.layoutPanel(expanded: self.viewModel.isExpanded)
         }
+        // Pre-warm the click-away backdrop so first ⌥Space doesn't allocate a window.
+        if backdropPanel == nil {
+            backdropPanel = makeCollapseBackdropPanel()
+        }
+    }
+
+    /// The pill/panel window is on screen. Station-hosted ⌥Space must never turn this off —
+    /// it expands and collapses PLAN, unlike the standalone `toggleVisibility` path.
+    var isPanelVisible: Bool { panel.isVisible }
+
+    var panelFrame: NSRect { panel.frame }
+
+    /// Force the always-mounted expanded layer through a real layout + display pass while it is
+    /// still invisible, so the first ⌥Space composites an already-built tree instead of paying
+    /// for the PLAN mount inside the first frames of the summon spring.
+    func prewarmExpandedSurface() {
+        guard !chromeHiddenForCapture else { return }
+        hosting.view.layoutSubtreeIfNeeded()
+        hosting.view.displayIfNeeded()
     }
 
     /// Keep the HUD above the focused app without stealing activation.
@@ -268,7 +316,7 @@ final class NotchPanelController {
             w.orderFrontRegardless()
         }
         windowsHiddenForCapture = []
-        layoutPanel(animated: false)
+        layoutPanel(expanded: viewModel.isExpanded)
         if viewModel.isExpanded {
             showCollapseBackdropIfNeeded()
             installEscCollapseMonitorIfNeeded()
@@ -342,12 +390,17 @@ final class NotchPanelController {
     }
 
     /// Station-hosted: expand/collapse PLAN surface while keeping the pill above other apps.
+    /// Flip state first — first pixels move on the same run loop as the hotkey; expand
+    /// orderFronts via `onRequestOrderFront`, so a separate bringToFront is pure extra
+    /// compositor work before anything visible changes.
     func toggleExpandedSurface() {
-        bringToFront()
         if viewModel.isExpanded {
             viewModel.collapseExpandedFromChromeTap()
         } else {
             viewModel.expandFromCollapsedChromeTap()
+            if !panel.isVisible {
+                show()
+            }
         }
     }
 
@@ -490,7 +543,9 @@ final class NotchPanelController {
         return false
     }
 
-    private func layoutPanel(animated: Bool) {
+    /// Spotlight rule: the window is never size-animated. Expand snaps to the final rect and
+    /// SwiftUI opacity/scale is the only motion; collapse snaps after the exit fade.
+    private func layoutPanel(expanded: Bool) {
         guard !chromeHiddenForCapture else { return }
         guard !isDraggingCollapsedPill else { return }
         guard let screen = NSScreen.main else { return }
@@ -505,7 +560,6 @@ final class NotchPanelController {
             rightMenu: screen.auxiliaryTopRightArea ?? .zero,
         )
 
-        let expanded = viewModel.isExpanded
         let expandedW: CGFloat
         let expandedContentH: CGFloat
         if let locked = sessionLockedExpandedContentSize {
@@ -554,15 +608,23 @@ final class NotchPanelController {
             expandedY = vf.maxY - 8 - expandedH
         }
 
-        let rect: NSRect
-        if expanded {
-            rect = NSRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH)
-        } else {
-            rect = NSRect(x: collapsedX, y: collapsedY, width: collapsedW, height: collapsedH)
+        // Clamp the expanded rect in both branches: the pre-warmed SwiftUI layer is laid out at
+        // this size while the window is still the pill, so it has to be the size the window will
+        // actually take — a small display clamps `expandedW`/`expandedH` down to `visibleFrame`.
+        let expandedRect = clampFrame(
+            NSRect(x: expandedX, y: expandedY, width: expandedW, height: expandedH),
+            to: vf
+        )
+        if viewModel.expandedSurfaceSize != expandedRect.size {
+            viewModel.expandedSurfaceSize = expandedRect.size
         }
-        var appliedRect = rect
-        if expanded || !hasNotch {
-            appliedRect = clampFrame(rect, to: vf)
+
+        var appliedRect: NSRect
+        if expanded {
+            appliedRect = expandedRect
+        } else {
+            let collapsed = NSRect(x: collapsedX, y: collapsedY, width: collapsedW, height: collapsedH)
+            appliedRect = hasNotch ? collapsed : clampFrame(collapsed, to: vf)
         }
         // Notched collapsed chip stays in the volume HUD slot. Saved drag origin
         // used to park it under the menu bar — a second blob.
@@ -575,21 +637,15 @@ final class NotchPanelController {
             }
         }
 
-        viewModel.notchTopInset = hasNotch ? notchTopInset : 0
+        // Guarded: this runs inside `$isExpanded`'s willSet, so an unconditional assignment
+        // would publish a redundant change on every summon.
+        let resolvedTopInset = hasNotch ? notchTopInset : 0
+        if viewModel.notchTopInset != resolvedTopInset {
+            viewModel.notchTopInset = resolvedTopInset
+        }
         panel.level = hasNotch && !expanded ? .statusBar : .floating
 
-        if animated {
-            // Keep AppKit frame motion in sync with SwiftUI `NotchTheme.springExpand`
-            // (critically damped settle). easeInEaseOut fought the spring and felt laggy.
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = NotchTheme.panelFrameAnimationDuration
-                ctx.timingFunction = NotchTheme.panelFrameTimingFunction
-                ctx.allowsImplicitAnimation = true
-                panel.animator().setFrame(appliedRect, display: true)
-            }
-        } else {
-            panel.setFrame(appliedRect, display: true)
-        }
+        panel.setFrame(appliedRect, display: true)
 
         if expanded {
             layoutCollapseBackdrop()
