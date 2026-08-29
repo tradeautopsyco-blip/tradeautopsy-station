@@ -2691,7 +2691,7 @@ public final class NotchViewModel: ObservableObject {
     func expandFromCollapsedChromeTap() {
         guard !isExpanded else { return }
         // `.now` — haptic on the same frame as the first pixels, not the next draw.
-        NotchHaptics.play(.light)
+        NotchHaptics.play(.light, at: .now)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = true
         }
@@ -2710,7 +2710,7 @@ public final class NotchViewModel: ObservableObject {
 
     public func collapseExpandedFromChromeTap() {
         guard isExpanded else { return }
-        NotchHaptics.play(.light)
+        NotchHaptics.play(.light, at: .now)
         withAnimation(NotchTheme.expandCollapseAnimation) {
             isExpanded = false
         }
