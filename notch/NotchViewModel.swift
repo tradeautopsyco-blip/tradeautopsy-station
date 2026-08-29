@@ -199,7 +199,13 @@ public final class NotchViewModel: ObservableObject {
     @Published var pulseAttention: PulseAttention = .none
     @Published public var brokerSessionActive: Bool = false
     /// Catalog slug of the active UBI sync (`binance_com` / `kotak_neo`) — desk honesty (R7).
-    @Published public var activeBrokerSlug: String?
+    /// The slug picks `deskBookId`, so a change must drop the previous desk's extracts.
+    @Published public var activeBrokerSlug: String? {
+        didSet {
+            guard oldValue != activeBrokerSlug else { return }
+            invalidateDeskMarketExtracts(reason: "broker-slug")
+        }
+    }
     /// Quote currency for Notch/Today formatting; follows active connection (never FX-blend).
     @Published public var deskQuoteCurrency: String?
     /// Calc profile id for the active connection (`crypto_spot_usd` / `equities_inr_cash`).
@@ -386,6 +392,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskInstrumentsCapability: String = "unavailable"
     /// Last selected TickBook id (`nse_cm|2885`, `nse_fo|token`, or Binance pair).
     @Published var deskSelectedInstrumentId: String = ""
+    /// Bumped on every desk rebind (symbol, asset class, broker slug). An extract
+    /// Task carries the generation it started under and drops its apply once this moves,
+    /// so a slow reply for the previous instrument can never paint the current one.
+    private(set) var deskExtractGeneration: UInt64 = 0
+    /// What caused the last invalidation — `select-symbol` / `asset-class` / `broker-slug`.
+    private(set) var deskExtractInvalidationReason: String?
 
     /// Called from `NotchPanelController` to front the panel when expanding explicitly.
     var onRequestOrderFront: (() -> Void)?
@@ -1137,6 +1149,7 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchHint = nil
         if kotakDesk, let tickId {
             deskSelectedInstrumentId = tickId
+            invalidateDeskMarketExtracts(reason: "select-symbol")
             if result.last_price > 0 {
                 applyLTP(result.last_price)
             }
@@ -1150,9 +1163,8 @@ public final class NotchViewModel: ObservableObject {
             || exchangeNorm == "binance"
         {
             deskSelectedInstrumentId = ticker
+            invalidateDeskMarketExtracts(reason: "select-symbol")
             if declareAssetClass == .options {
-                deskLastStatus = "unavailable"
-                deskQuoteCapability = "unavailable"
                 refreshDeskExtracts(symbol: ticker, instrumentId: ticker)
                 return
             }
@@ -1169,6 +1181,7 @@ public final class NotchViewModel: ObservableObject {
             return
         }
         deskSelectedInstrumentId = result.tickBookInstrumentId ?? ticker
+        invalidateDeskMarketExtracts(reason: "select-symbol")
         if result.last_price > 0 {
             applyLTP(result.last_price)
         }
@@ -1358,12 +1371,11 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func reconcileDeskLastForAssetClass() {
+        // Wipe first: the old class's chain/OI belong to a book this class may not read.
+        invalidateDeskMarketExtracts(reason: "asset-class")
         if declareAssetClass == .options {
             if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
                 fetchStationQuote(instrument: deskSelectedInstrumentId)
-            } else {
-                deskLastStatus = "unavailable"
-                deskQuoteCapability = "unavailable"
             }
             refreshDeskExtracts(symbol: barDeclarationSymbol, instrumentId: deskSelectedInstrumentId)
             return
@@ -1422,6 +1434,29 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Drop every market extract bound to the previous instrument/book, and move the
+    /// generation so any in-flight fetch started before this call cannot apply.
+    ///
+    /// Chain and OI always go dark: they are book-scoped, and the book changes with the
+    /// asset class and the broker slug. Last goes dark only when the new binding is not
+    /// allowed to show one (Binance options, a cash token under an options declare) —
+    /// otherwise the fetch that follows this call repaints it.
+    ///
+    /// Call this *before* `refreshDeskExtracts`, never after: the fetch captures the
+    /// generation it must still match at apply time.
+    @discardableResult
+    func invalidateDeskMarketExtracts(reason: String) -> UInt64 {
+        deskExtractGeneration &+= 1
+        deskExtractInvalidationReason = reason
+        deskChainStatus = "unavailable"
+        deskOiStatus = "unavailable"
+        if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+        }
+        return deskExtractGeneration
+    }
+
     /// Testable chain glance path. `book=` comes from the current declare class; instrument is the typed underlying.
     func deskChainExtractPath(symbol: String) -> String {
         DeskChainExtractQuery.path(
@@ -1458,6 +1493,7 @@ public final class NotchViewModel: ObservableObject {
         let kotak = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
         let chainPath = deskChainExtractPath(symbol: symbol)
         let oiPath = deskOiExtractPath(symbol: symbol)
+        let generation = deskExtractGeneration
         Task { [weak self] in
             guard let self else { return }
             async let chain = self.getExtractJSON(chainPath)
@@ -1475,6 +1511,9 @@ public final class NotchViewModel: ObservableObject {
             let chainJSON = await chain
             let oiJSON = await oi
             await MainActor.run {
+                // The desk rebound while this was in flight — these rows are for an
+                // instrument/book that is no longer selected. Leave the holes dark.
+                guard generation == self.deskExtractGeneration else { return }
                 self.applyStationHistoryEnvelope(licensedJSON ?? [:])
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"

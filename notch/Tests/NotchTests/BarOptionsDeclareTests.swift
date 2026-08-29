@@ -269,6 +269,114 @@ struct BarOptionsDeclareTests {
         #expect(vm.declEntryPrice.isEmpty)
     }
 
+    // MARK: - Rebind invalidation (chain/OI must not survive a desk change)
+
+    @Test func assetClassSwitchWipesChainAndOiSynchronously() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.barDeclarationSymbol = "BANKNIFTY"
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.deskChainStatus = "success"
+        vm.deskOiStatus = "success"
+
+        vm.declareAssetClass = .spot
+
+        // No await: the wipe lands on the class change, not on the HTTP reply.
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(vm.deskOiStatus == "unavailable")
+        #expect(vm.deskExtractInvalidationReason == "asset-class")
+    }
+
+    @Test func brokerSlugSwitchWipesChainAndOiSynchronously() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.barDeclarationSymbol = "BANKNIFTY"
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.deskChainStatus = "success"
+        vm.deskOiStatus = "success"
+
+        vm.activeBrokerSlug = "binance_com"
+
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(vm.deskOiStatus == "unavailable")
+        #expect(vm.deskExtractInvalidationReason == "broker-slug")
+        // The NFO chain is gone before any Binance path is built.
+        #expect(!vm.deskChainExtractPath(symbol: "BTCUSDT").contains("kotak-nse-nfo"))
+    }
+
+    @Test func repeatedSlugAssignmentDoesNotInvalidate() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        let generation = vm.deskExtractGeneration
+        vm.deskChainStatus = "success"
+
+        // Sync-state polls re-assign the same slug every tick — that is not a rebind.
+        vm.activeBrokerSlug = "kotak_neo"
+
+        #expect(vm.deskExtractGeneration == generation)
+        #expect(vm.deskChainStatus == "success")
+    }
+
+    @Test func staleExtractGenerationDoesNotPaintCurrentDesk() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+
+        // Generation an in-flight BANKNIFTY chain fetch would be carrying.
+        let inFlight = vm.deskExtractGeneration
+        vm.activeBrokerSlug = "binance_com"
+        #expect(vm.deskExtractGeneration != inFlight)
+        #expect(vm.invalidateDeskMarketExtracts(reason: "select-symbol") != inFlight)
+    }
+
+    @Test func optionsClassSwitchWipesBinanceLastAndChainTogether() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "data": ["last": "65000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        vm.deskChainStatus = "success"
+        #expect(vm.deskLastStatus == "fresh")
+
+        vm.declareAssetClass = .options
+
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.deskChainStatus == "unavailable")
+    }
+
+    @Test func invalidationKeepsLastThatTheNewBindingIsAllowedToShow() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "nse_fo|12345",
+            "data": ["last": "245.50"],
+            "provenance": ["adapter_id": "kotak_neo"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+
+        vm.invalidateDeskMarketExtracts(reason: "select-symbol")
+
+        // NFO last is still bindable here — only the book-scoped rows go dark.
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(vm.deskOiStatus == "unavailable")
+    }
+
     @Test func optionsDeclareDoesNotBindUnderlyingTickerWithoutToken() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "kotak_neo"
