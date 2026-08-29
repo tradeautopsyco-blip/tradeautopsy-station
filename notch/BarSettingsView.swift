@@ -115,6 +115,7 @@ struct BarSettingsView: View {
             syncStatusBar
             brokerMetricsGrid
             connectedBrokerCard
+            deskCapabilityRow
             brokerActionRow
 
             Rectangle()
@@ -316,6 +317,63 @@ struct BarSettingsView: View {
             }
         }()
         return Text(title)
+            .font(BarDS.bodyFont(10, weight: .medium))
+            .foregroundColor(fg)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(bg)
+            .clipShape(Capsule())
+    }
+
+    private var deskCapabilityRow: some View {
+        HStack(spacing: 8) {
+            settingsCapabilityBadge(
+                title: "Quote",
+                status: viewModel.deskQuoteCapability
+            )
+            instrumentsSettingsBadge
+            settingsCapabilityBadge(
+                title: "Account",
+                status: DeskCapabilityChrome.accountStatus(
+                    funds: viewModel.deskFundsCapability,
+                    fills: viewModel.deskFillsCapability
+                )
+            )
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 8)
+        .accessibilityLabel("Quote \(viewModel.deskQuoteCapability), instruments \(viewModel.deskInstrumentsCapability), account \(DeskCapabilityChrome.accountStatus(funds: viewModel.deskFundsCapability, fills: viewModel.deskFillsCapability))")
+    }
+
+    @ViewBuilder
+    private var instrumentsSettingsBadge: some View {
+        let status = viewModel.deskInstrumentsCapability
+        if DeskCapabilityChrome.showsRetryInstruments(status: status) {
+            Button {
+                Task { await viewModel.retryInstruments() }
+            } label: {
+                settingsCapabilityBadge(title: "Instruments", status: status)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Instruments \(status). Retry instruments")
+        } else {
+            settingsCapabilityBadge(title: "Instruments", status: status)
+        }
+    }
+
+    private func settingsCapabilityBadge(title: String, status: String) -> some View {
+        let dotName = DeskCapabilityChrome.dotName(forStatus: status)
+        let (fg, bg): (Color, Color) = {
+            switch dotName {
+            case "teal":
+                return (BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.12))
+            case "amber":
+                return (BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.12))
+            default:
+                return (BarDS.Accent.red, BarDS.Accent.red.opacity(0.12))
+            }
+        }()
+        return Text(DeskCapabilityChrome.pillLabel(kind: title, status: status))
             .font(BarDS.bodyFont(10, weight: .medium))
             .foregroundColor(fg)
             .padding(.vertical, 4)

@@ -440,7 +440,7 @@ struct BarNotchShell: View {
             }
 
             brokerConnectionPill
-
+            deskCapabilityPills
             statePill
         }
         .padding(.vertical, 11)
@@ -467,6 +467,67 @@ struct BarNotchShell: View {
         .padding(.horizontal, 10)
         .background(style.bg)
         .clipShape(Capsule())
+    }
+
+    /// Quote vs account stay independent — quote can be green while funds/fills are not.
+    private var deskCapabilityPills: some View {
+        HStack(spacing: 6) {
+            capabilityPill(
+                title: "Quote",
+                status: viewModel.deskQuoteCapability
+            )
+            instrumentsCapabilityPill
+            capabilityPill(
+                title: "Account",
+                status: DeskCapabilityChrome.accountStatus(
+                    funds: viewModel.deskFundsCapability,
+                    fills: viewModel.deskFillsCapability
+                )
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var instrumentsCapabilityPill: some View {
+        let status = viewModel.deskInstrumentsCapability
+        if DeskCapabilityChrome.showsRetryInstruments(status: status) {
+            Button {
+                Task { await viewModel.retryInstruments() }
+            } label: {
+                capabilityPill(title: "Instruments", status: status)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Instruments \(status). Retry instruments")
+        } else {
+            capabilityPill(title: "Instruments", status: status)
+        }
+    }
+
+    private func capabilityPill(title: String, status: String) -> some View {
+        let dotName = DeskCapabilityChrome.dotName(forStatus: status)
+        let (dot, fg, bg): (Color, Color, Color) = {
+            switch dotName {
+            case "teal":
+                return (BarDS.Accent.teal, BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+            case "amber":
+                return (BarDS.Accent.amber, BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
+            default:
+                return (BarDS.Accent.red, BarDS.Accent.red, BarDS.Accent.red.opacity(0.10))
+            }
+        }()
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(dot)
+                .frame(width: 6, height: 6)
+            Text(DeskCapabilityChrome.pillLabel(kind: title, status: status))
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(fg)
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .background(bg)
+        .clipShape(Capsule())
+        .accessibilityLabel("\(title) \(status)")
     }
 
     private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
