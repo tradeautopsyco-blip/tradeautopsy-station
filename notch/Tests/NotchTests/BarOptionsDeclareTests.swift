@@ -4,10 +4,47 @@ import Testing
 
 @MainActor
 struct BarOptionsDeclareTests {
-    @Test func optionsTabUsesThreeZoneSpotDoesNot() {
-        #expect(BarOptionsDeclareSurface.usesThreeZone(for: .options))
-        #expect(!BarOptionsDeclareSurface.usesThreeZone(for: .spot))
-        #expect(!BarOptionsDeclareSurface.usesThreeZone(for: .equity))
+    @Test func optionsSurfaceSplitsByDeskNotByAssetClassAlone() {
+        // Kotak NFO keeps the three-zone surface.
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345"
+        ) == .nfoThreeZone)
+        #expect(BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345"
+        ))
+
+        // Binance + a dated contract is the crypto surface — never three-zone.
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: "binance_com", instrumentId: "BTC-200730-9000-C"
+        ) == .cryptoOptions)
+        #expect(BarOptionsDeclareSurface.usesCryptoOptions(
+            for: .options, slug: "binance_com", instrumentId: "BTC-200730-9000-C"
+        ))
+        #expect(!BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: "binance_com", instrumentId: "BTC-200730-9000-C"
+        ))
+
+        // A pair left sitting on the Options tab is not crypto options.
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
+        ) == .standardForm)
+
+        // Spot / equity never leave the standard form on either desk.
+        for slug in ["kotak_neo", "binance_com"] {
+            for klass in [BarDeclareAssetClass.spot, .equity] {
+                #expect(BarOptionsDeclareSurface.surface(
+                    for: klass, slug: slug, instrumentId: "BTC-200730-9000-C"
+                ) == .standardForm)
+            }
+        }
+
+        // No desk at all: nothing is licensed, so nothing splits.
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: nil, instrumentId: "BTC-200730-9000-C"
+        ) == .standardForm)
+        #expect(!BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: nil, instrumentId: "nse_fo|12345"
+        ))
     }
 
     @Test func darkChainNeverShowsStrikeGrid() {
@@ -458,5 +495,130 @@ struct BarOptionsDeclareTests {
         ])
         #expect(vm.deskLastStatus == "unavailable")
         #expect(vm.declEntryPrice.isEmpty)
+    }
+
+    // MARK: - Crypto options desk (Binance + dated contract)
+
+    @Test func binanceDatedContractBindsPremiumVerbatim() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTC-200730-9000-C",
+            "data": ["last": "0.001"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskQuoteCapability == "fresh")
+        // %.2f would print 0.00 — the wire string is the only honest seed.
+        #expect(vm.declEntryPrice == "0.001")
+        #expect(vm.declEntryPrice != "0.00")
+    }
+
+    /// The eapi ticker is REST with no exchange timestamp, so every options tick carries
+    /// `age_unknown` and the envelope says `unknown` — never `fresh`. Last must still bind:
+    /// `unknown` is a freshness claim the desk declines to make, not a hole.
+    @Test func binanceOptionsEnvelopeIsUnknownFreshnessAndStillBinds() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "unknown",
+            "instrument_id": "BTC-200730-9000-C",
+            "data": ["last": "0.001", "as_of": "2026-08-29T00:00:00.000Z"],
+            "provenance": ["adapter_id": "binance_com", "transport": "rest"],
+        ])
+        #expect(vm.deskLastStatus == "unknown")
+        #expect(vm.deskQuoteCapability == "unknown")
+        #expect(vm.declEntryPrice == "0.001")
+        // `unknown` is not honesty dialect, so the strip prints the wire word, not a chip.
+        #expect(HonestyStatus.fromWire(vm.deskLastStatus) == nil)
+    }
+
+    @Test func kotakDeskRefusesTheCryptoOptionsEnvelope() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTC-200730-9000-C",
+            "data": ["last": "0.001"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.declEntryPrice.isEmpty)
+    }
+
+    @Test func optionsBindTruthTableIsTwoKeyed() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.declareAssetClass = .options
+
+        vm.activeBrokerSlug = "kotak_neo"
+        #expect(vm.shouldBindQuoteLast(adapter: "kotak_neo", instrumentId: "nse_fo|12345"))
+        #expect(!vm.shouldBindQuoteLast(adapter: "kotak_neo", instrumentId: "nse_cm|2885"))
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
+
+        vm.activeBrokerSlug = "binance_com"
+        #expect(vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTCUSDT"))
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "nse_fo|12345"))
+        #expect(!vm.shouldBindQuoteLast(adapter: nil, instrumentId: ""))
+    }
+
+    @Test func optionsQuotePathNamesTheEapiBookOnlyForDatedBinance() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        let crypto = vm.deskQuoteExtractPath(instrument: "BTC-200730-9000-C")
+        #expect(crypto.contains("instrument=BTC-200730-9000-C"))
+        #expect(crypto.contains("&book=binance-com-options"))
+        // A pair on the same desk is not the options book.
+        #expect(!vm.deskQuoteExtractPath(instrument: "BTCUSDT").contains("book="))
+
+        vm.activeBrokerSlug = "kotak_neo"
+        #expect(!vm.deskQuoteExtractPath(instrument: "nse_fo|12345").contains("book="))
+        #expect(vm.deskQuoteExtractPath(instrument: "nse_fo|12345").contains("instrument=nse_fo%7C12345"))
+        vm.declareAssetClass = .equity
+        #expect(!vm.deskQuoteExtractPath(instrument: "nse_cm|2885").contains("book="))
+    }
+
+    @Test func cryptoOptionsLastGoesDarkWhenTheTabRebindsOntoAPair() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTC-200730-9000-C",
+            "data": ["last": "0.001"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+
+        // Rebind onto a pair: the premium standing on screen belongs to a contract that
+        // is no longer selected, and a spot last may not stand in for it.
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.invalidateDeskMarketExtracts(reason: "select-symbol")
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTCUSDT"))
+
+        // And the same transition through the class switch stays dark.
+        vm.declareAssetClass = .spot
+        vm.declareAssetClass = .options
+        #expect(vm.deskLastStatus == "unavailable")
     }
 }

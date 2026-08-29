@@ -1,9 +1,39 @@
 import Foundation
 
-/// Pre-trade Options uses the three-zone HTML surface. Spot / equity keep the existing form.
+/// Pre-trade Options is not one surface. Kotak NFO keeps the three-zone HTML surface;
+/// a dated Binance contract gets the crypto surface; everything else — spot, equity, and
+/// a bookless pair left sitting on the Options tab — keeps the standard form.
+/// The split lives here and in the flow routing, never inside a declare view.
 enum BarOptionsDeclareSurface {
-    static func usesThreeZone(for asset: BarDeclareAssetClass) -> Bool {
-        asset == .options
+    enum Surface: Equatable {
+        /// Kotak NFO options desk.
+        case nfoThreeZone
+        /// Binance desk + `.options` + dated contract.
+        case cryptoOptions
+        /// Spot / equity / bookless options.
+        case standardForm
+    }
+
+    static func surface(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Surface {
+        if BarDeskTemplate.isKotakNfoDesk(slug: slug, assetClass: asset) {
+            return .nfoThreeZone
+        }
+        if BarDeskTemplate.isBinanceOptionsDesk(
+            slug: slug,
+            assetClass: asset,
+            instrumentId: instrumentId
+        ) {
+            return .cryptoOptions
+        }
+        return .standardForm
+    }
+
+    static func usesThreeZone(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Bool {
+        surface(for: asset, slug: slug, instrumentId: instrumentId) == .nfoThreeZone
+    }
+
+    static func usesCryptoOptions(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Bool {
+        surface(for: asset, slug: slug, instrumentId: instrumentId) == .cryptoOptions
     }
 }
 

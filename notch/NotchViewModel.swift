@@ -1166,8 +1166,10 @@ public final class NotchViewModel: ObservableObject {
             }
             fetchStationQuote(instrument: bind.tickBookId)
         case .binanceOption:
-            // Last stays dark on the options declare — no eapi/spot price may paint it.
-            break
+            // The dated contract is the binding, so the eapi book may answer for it. The
+            // catalog row's own `last_price` is spot-shaped — it never seeds the premium,
+            // and `/instruments/ltp` is a Kotak seam that no-ops here.
+            fetchStationQuote(instrument: bind.tickBookId)
         case .binanceSpot:
             if result.last_price > 0 {
                 applyLTP(result.last_price)
@@ -1278,8 +1280,7 @@ public final class NotchViewModel: ObservableObject {
             deskQuoteCapability = "unavailable"
             return
         }
-        let encoded = InstrumentTickBookId.queryEncode(instrument)
-        guard let url = URL(string: "\(baseURL())/api/station/quote?instrument=\(encoded)") else {
+        guard let url = URL(string: "\(baseURL())\(deskQuoteExtractPath(instrument: instrument))") else {
             return
         }
         Task {
@@ -1327,15 +1328,28 @@ public final class NotchViewModel: ObservableObject {
             deskLastStatus = status
         }
         deskQuoteCapability = deskLastStatus
-        if let data = json["data"] as? [String: Any], let last = Self.parseQuoteLast(data), last > 0 {
+        if let data = json["data"] as? [String: Any],
+           let last = Self.parseQuoteLastRaw(data),
+           last.value > 0
+        {
             barLtpFetchError = nil
-            applyLTP(last)
+            applyLTP(last.value, rawLast: last.raw)
         }
     }
 
-    /// Options last is NFO TickBook only. Binance spot / eapi last must not paint options declare.
+    /// Options last is desk-scoped: a Kotak NFO TickBook id, or a dated Binance contract on
+    /// the Binance desk. A Binance *pair* — and any spot envelope answering for one — must
+    /// not paint the options declare, so the instrument shape is the discriminator here,
+    /// never the adapter or the desk alone.
     func shouldBindQuoteLast(adapter: String?, instrumentId: String) -> Bool {
         if declareAssetClass == .options {
+            if BarDeskTemplate.isBinanceOptionsDesk(
+                slug: resolvedDeskSlug,
+                assetClass: declareAssetClass,
+                instrumentId: instrumentId
+            ) {
+                return true
+            }
             if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug) {
                 return false
             }
@@ -1355,8 +1369,15 @@ public final class NotchViewModel: ObservableObject {
         return true
     }
 
-    func applyLTP(_ ltp: Double) {
-        if declareAssetClass == .options {
+    /// `rawLast` is the wire string the Double was parsed from, kept verbatim on the crypto
+    /// options path where `%.2f` would round a sub-cent premium to `0.00`.
+    func applyLTP(_ ltp: Double, rawLast: String? = nil) {
+        let cryptoOptions = BarDeskTemplate.isBinanceOptionsDesk(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: deskSelectedInstrumentId
+        )
+        if declareAssetClass == .options, !cryptoOptions {
             if DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug) { return }
             if !BarDeskTemplate.isKotakNfoDesk(slug: resolvedDeskSlug, assetClass: declareAssetClass) {
                 return
@@ -1365,7 +1386,11 @@ public final class NotchViewModel: ObservableObject {
         if declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || declEntryPrice == "0"
         {
-            declEntryPrice = String(format: "%.2f", ltp)
+            declEntryPrice = BarDeskLastFormatting.entryPrice(
+                rawLast: rawLast,
+                value: ltp,
+                preservesPrecision: cryptoOptions
+            )
         }
     }
 
@@ -1387,14 +1412,21 @@ public final class NotchViewModel: ObservableObject {
     }
 
     static func parseQuoteLast(_ data: [String: Any]) -> Double? {
+        parseQuoteLastRaw(data)?.value
+    }
+
+    /// Parsed last plus the wire string it came from (nil when the wire sent a number).
+    /// Sub-cent premiums survive only as the string — re-formatting the Double loses them.
+    static func parseQuoteLastRaw(_ data: [String: Any]) -> (value: Double, raw: String?)? {
         if let s = data["last"] as? String {
-            return Double(s)
+            guard let d = Double(s) else { return nil }
+            return (d, s)
         }
         if let d = data["last"] as? Double {
-            return d
+            return (d, nil)
         }
         if let i = data["last"] as? Int {
-            return Double(i)
+            return (Double(i), nil)
         }
         return nil
     }
@@ -1454,6 +1486,18 @@ public final class NotchViewModel: ObservableObject {
             deskQuoteCapability = "unavailable"
         }
         return deskExtractGeneration
+    }
+
+    /// Testable quote path. Only the crypto options desk names a book — `binance-com-options`
+    /// is the eapi book, and no other desk sends `book=` on a quote at all.
+    func deskQuoteExtractPath(instrument: String) -> String {
+        let encoded = InstrumentTickBookId.queryEncode(instrument)
+        let book = BarDeskTemplate.isBinanceOptionsDesk(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: instrument
+        ) ? "&book=binance-com-options" : ""
+        return "/api/station/quote?instrument=\(encoded)\(book)"
     }
 
     /// Testable chain glance path. `book=` comes from the current declare class; instrument is the typed underlying.

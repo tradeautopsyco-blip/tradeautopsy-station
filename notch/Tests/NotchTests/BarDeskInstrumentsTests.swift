@@ -574,4 +574,55 @@ struct BarDeskInstrumentsTests {
             }
         }
     }
+
+    // MARK: - Crypto options desk predicate + last formatting
+
+    @Test func binanceOptionsDeskNeedsDeskClassAndDatedContract() {
+        #expect(BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "binance_com", assetClass: .options, instrumentId: "BTC-200730-9000-C"
+        ))
+        #expect(BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "binance", assetClass: .options, instrumentId: "ETH-240927-3000-P"
+        ))
+        // A pair on the Options tab is not a contract.
+        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "binance_com", assetClass: .options, instrumentId: "BTCUSDT"
+        ))
+        // NFO identity never reads as a Binance contract.
+        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "binance_com", assetClass: .options, instrumentId: "nse_fo|12345"
+        ))
+        // Wrong desk, wrong class, no desk.
+        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "kotak_neo", assetClass: .options, instrumentId: "BTC-200730-9000-C"
+        ))
+        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
+            slug: "binance_com", assetClass: .spot, instrumentId: "BTC-200730-9000-C"
+        ))
+        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
+            slug: nil, assetClass: .options, instrumentId: "BTC-200730-9000-C"
+        ))
+        // The two options desks are disjoint.
+        #expect(!BarDeskTemplate.isKotakNfoDesk(slug: "binance_com", assetClass: .options))
+    }
+
+    @Test func subCentPremiumSurvivesAsTheWireString() {
+        #expect(BarDeskLastFormatting.entryPrice(
+            rawLast: "0.001", value: 0.001, preservesPrecision: true
+        ) == "0.001")
+        #expect(BarDeskLastFormatting.entryPrice(
+            rawLast: nil, value: 1234.5, preservesPrecision: false
+        ) == "1234.50")
+        // NFO formats from the Double even when a string arrived.
+        #expect(BarDeskLastFormatting.entryPrice(
+            rawLast: "1.23", value: 1.23, preservesPrecision: false
+        ) == "1.23")
+        // No string to keep — the Double is all there is.
+        #expect(BarDeskLastFormatting.entryPrice(
+            rawLast: nil, value: 0.001, preservesPrecision: true
+        ) == "0.00")
+        #expect(BarDeskLastFormatting.entryPrice(
+            rawLast: "  0.0012  ", value: 0.0012, preservesPrecision: true
+        ) == "0.0012")
+    }
 }

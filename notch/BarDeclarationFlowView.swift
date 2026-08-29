@@ -62,7 +62,12 @@ struct BarDeclarationFlowView: View {
 
                 archetypeTabRow
 
-                if BarOptionsDeclareSurface.usesThreeZone(for: viewModel.declareAssetClass) {
+                switch BarOptionsDeclareSurface.surface(
+                    for: viewModel.declareAssetClass,
+                    slug: viewModel.resolvedDeskSlug,
+                    instrumentId: viewModel.deskSelectedInstrumentId,
+                ) {
+                case .nfoThreeZone:
                     BarOptionsDeclareView(
                         viewModel: viewModel,
                         sideBuy: $sideBuy,
@@ -72,7 +77,17 @@ struct BarDeclarationFlowView: View {
                         submitHint: submitReadiness.hint,
                         onConfirm: { Task { await submit() } },
                     )
-                } else {
+                case .cryptoOptions:
+                    BarCryptoOptionsDeclareView(
+                        viewModel: viewModel,
+                        sideBuy: $sideBuy,
+                        stopLossText: $stopLossText,
+                        targetPriceText: $targetPriceText,
+                        submitReady: submitReadiness.ready,
+                        submitHint: submitReadiness.hint,
+                        onConfirm: { Task { await submit() } },
+                    )
+                case .standardForm:
                     BarSectionLabel(text: "State check")
                     stateCheckCard
 

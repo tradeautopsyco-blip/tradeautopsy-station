@@ -287,6 +287,32 @@ enum BarDeskTemplate {
     static func isKotakNfoDesk(slug: String?, assetClass: BarDeclareAssetClass) -> Bool {
         isKotakNeoDesk(slug: slug) && assetClass == .options
     }
+
+    /// Crypto options desk: Binance slug + options declare + a dated contract binding.
+    /// A leftover `BTCUSDT` on the Options tab is a pair, not a contract — the instrument
+    /// shape is the discriminator, never the desk alone.
+    static func isBinanceOptionsDesk(
+        slug: String?,
+        assetClass: BarDeclareAssetClass,
+        instrumentId: String
+    ) -> Bool {
+        DeskCatalogAllowlist.isBinanceDesk(slug)
+            && assetClass == .options
+            && InstrumentTickBookId.isDatedOptionContract(instrumentId)
+    }
+}
+
+/// Entry-price seed from a wire last. An eapi premium of `0.001` through `%.2f` prints
+/// `0.00` — a lie — so the crypto options path keeps the wire string verbatim.
+/// NFO / cash keep the two-decimal format off the parsed Double.
+enum BarDeskLastFormatting {
+    static func entryPrice(rawLast: String?, value: Double, preservesPrecision: Bool) -> String {
+        if preservesPrecision {
+            let trimmed = (rawLast ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return String(format: "%.2f", value)
+    }
 }
 
 /// What `refreshDeskExtracts` is allowed to ask the agent for on this desk. Pure, so the
