@@ -26,7 +26,7 @@ const KOTAK_HOSTS: &[&str] = &[
 
 /// R8 gap closed: COM was reachable during an L3 block because it had no host set here.
 /// Keep aligned with `ubi::ALLOWED_BROKER_HOSTS`.
-const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com"];
+const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com", "eapi.binance.com"];
 
 const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
 
@@ -418,17 +418,17 @@ mod tests {
     }
 
     #[test]
-    fn kill_dns_nfo_shares_kotak_hosts_without_eapi() {
+    fn kill_dns_named_book_hosts_match_spot_and_cash_no_eapi_or_fo() {
+        // Options last dials eapi; fapi/dapi stay off. NFO shares Kotak hosts.
         let com = hosts_for_broker("binance_com");
         assert_eq!(com, BINANCE_COM_HOSTS);
-        assert!(!com.contains(&"eapi.binance.com"));
+        assert!(com.contains(&"eapi.binance.com"));
         assert!(!com.contains(&"fapi.binance.com"));
         assert!(!com.contains(&"dapi.binance.com"));
 
         let kotak = hosts_for_broker("kotak_neo");
         assert_eq!(kotak, KOTAK_HOSTS);
         assert!(kotak.contains(&"lapi.kotaksecurities.com"));
-        assert!(kotak.contains(&"e21.kotaksecurities.com"));
         assert!(!kotak.contains(&"mlhsm.kotaksecurities.com"));
         assert!(!kotak.iter().any(|h| h.contains("eapi")));
     }

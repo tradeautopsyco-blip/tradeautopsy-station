@@ -429,11 +429,32 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
     }
 }
 
+/// Named options book on the same `binance_com` adapter. Public last only
+/// (`GET /eapi/v1/ticker` → `lastPrice`). Lock: `locks/binance-com-options.md`
+/// Way 3 last-only — do not claim optionchain until a later lock slice.
+/// Catalog / Start slug still ships spot.
+pub fn binance_com_options_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_options".into()],
+        history_range: None,
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "binance_com.options.v1".into(),
+        adapter_id: "binance_com".into(),
+        book_id: "binance-com-options".into(),
+        implemented: vec!["quotes".into()],
+        bindings: vec![quotes_binding("binance_com", coverage, AuthMode::Public)],
+    }
+}
+
 pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
+    // Spot then options so `manifest_for_slug("binance_com")` stays spot.
     // Cash stays before NFO so `manifest_for_slug("kotak_neo")` stays cash.
-    // No `binance_com.options.v1` until that book is named (lock + registry).
     vec![
         binance_com_s1_manifest(),
+        binance_com_options_manifest(),
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
     ]
@@ -700,7 +721,24 @@ mod tests {
         assert!(loaded.len() >= 3);
         assert!(manifest_for_book_id("binance-com-usdm").is_none());
         assert!(manifest_for_book_id("binance-com-coinm").is_none());
-        assert!(manifest_for_book_id("binance-com-options").is_none());
+        let options = manifest_for_book_id("binance-com-options").expect("options book");
+        assert_eq!(options.manifest_id, "binance_com.options.v1");
+        assert_eq!(options.adapter_id, "binance_com");
+        assert_eq!(options.book_id, "binance-com-options");
+        assert_eq!(options.implemented, vec!["quotes"]);
+        assert!(!options.implemented.iter().any(|op| op == "optionchain"));
+        assert_eq!(
+            obtain(&options, "optionchain").status,
+            ObtainStatus::Unsupported
+        );
+        let quotes_bind = options
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "quotes")
+            .expect("options quotes binding");
+        assert_eq!(quotes_bind.auth_mode, AuthMode::Public);
+        assert_eq!(quotes_bind.capability_id, "quote");
+        assert_eq!(shared_budget(&options), 60);
         assert!(manifest_for_book_id("binance-com-stocks").is_none());
         assert!(manifest_for_book_id("kotak-nse-nfo").is_some());
         assert_eq!(
@@ -745,6 +783,7 @@ mod tests {
         let cash = manifest_for_book_id("kotak-nse-bse-cash").unwrap();
         assert_eq!(shared_budget(&spot), 6000);
         assert_eq!(shared_budget(&cash), 60);
+        assert_ne!(shared_budget(&spot), shared_budget(&options));
     }
 
     #[test]

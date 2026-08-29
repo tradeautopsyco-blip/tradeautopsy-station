@@ -3,6 +3,7 @@
 mod apply;
 mod binance_depth;
 mod binance_klines;
+mod binance_options_public;
 mod binance_public;
 mod connection;
 mod contracts;
@@ -49,6 +50,9 @@ pub use binance_klines::{
     series_from_klines_json, validate_kline_request, HistorySeries, DEFAULT_HISTORY_INTERVAL,
     KLINE_LIMIT_DEFAULT,
 };
+pub use binance_options_public::{
+    ensure_binance_com_options_quote, quote_tick_from_options_ticker_json,
+};
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
 };
@@ -64,8 +68,8 @@ pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, QuoteEnvelope, QuoteStatus,
 };
 pub use glance::{
-    chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
-    extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
+    chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest, ChainRow,
+    GlanceEnvelope, GlanceStatus,
 };
 pub use greeks::extract_greeks;
 pub use history::{

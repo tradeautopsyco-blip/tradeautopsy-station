@@ -3,11 +3,10 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    depth_obtain_data, describe, extract_chain_from,
-    extract_depth, extract_licensed_history, extract_quote_for_book, history_obtain_data, obtain,
-    parse_nfo_instrument_id, DepthStatus, GlanceStatus, ObtainEnvelope, ObtainStatus, QuoteStatus,
-    Registry, SourceManifest, TickBook, DEFAULT_HISTORY_INTERVAL,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    depth_obtain_data, describe, extract_chain_from, extract_depth, extract_licensed_history,
+    extract_quote_for_book, history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus,
+    GlanceStatus, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
+    DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -162,6 +161,7 @@ fn enricher(
         ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
+        ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
         _ => None,
     }
 }
@@ -679,11 +679,19 @@ mod tests {
                 .book_id,
             "kotak-nse-bse-cash"
         );
-        assert!(resolve_manifest(&manifests, Some("binance_com"), Some("binance-com-options")).is_none());
-        assert!(resolve_manifest(&manifests, None, Some("binance-com-options")).is_none());
+        let options =
+            resolve_manifest(&manifests, Some("binance_com"), Some("binance-com-options")).unwrap();
+        assert_eq!(options.book_id, "binance-com-options");
+        assert_eq!(options.manifest_id, "binance_com.options.v1");
+        assert_eq!(
+            resolve_manifest(&manifests, None, Some("binance-com-options"))
+                .unwrap()
+                .book_id,
+            "binance-com-options"
+        );
         assert!(enricher("binance-com-spot", "optionchain").is_none());
         assert!(enricher("binance-com-usdm", "quotes").is_none());
-        assert!(enricher("binance-com-options", "quotes").is_none());
+        assert!(enricher("binance-com-options", "quotes").is_some());
         assert!(enricher("binance-com-options", "optionchain").is_none());
         assert!(enricher("kotak-nse-nfo", "quotes").is_some());
         assert!(enricher("kotak-nse-nfo", "instruments").is_some());
@@ -696,7 +704,62 @@ mod tests {
             crate::data::obtain(spot, "optionchain").status,
             ObtainStatus::Unsupported
         );
-        assert!(manifests.iter().all(|m| m.book_id != "binance-com-options"));
+        let options_m = manifests
+            .iter()
+            .find(|m| m.book_id == "binance-com-options")
+            .unwrap();
+        assert_eq!(
+            crate::data::obtain(options_m, "optionchain").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            crate::data::obtain(options_m, "quotes").status,
+            ObtainStatus::Unavailable
+        );
+    }
+
+    #[test]
+    fn options_obtain_quotes_succeeds_only_with_last_in_that_slot() {
+        use crate::data::{
+            apply_quote, binance_com_quote_descriptor, extract_quote_for_book,
+            quote_tick_from_options_ticker_json, TickBook, BINANCE_COM_OPTIONS_BOOK_ID,
+        };
+        let registry =
+            crate::data::Registry::load(&[binance_com_quote_descriptor()]).expect("spot quote");
+        let empty = TickBook::new();
+        let missing = extract_quote_for_book(
+            &registry,
+            &empty,
+            "BTC-200730-9000-C",
+            chrono::Utc::now(),
+            std::time::Duration::from_millis(1000),
+            Some("binance_com"),
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+        );
+        assert_eq!(missing.status, QuoteStatus::Unavailable);
+        assert!(tickbook_quote_obtain_data(&missing).is_none());
+        assert!(missing.data.is_none());
+
+        let mut book = TickBook::new();
+        let json = include_str!("../../fixtures/binance/options_ticker.json");
+        let tick = quote_tick_from_options_ticker_json(json, chrono::Utc::now()).unwrap();
+        apply_quote(&registry, &mut book, tick).unwrap();
+        let quote = extract_quote_for_book(
+            &registry,
+            &book,
+            "BTC-200730-9000-C",
+            chrono::Utc::now(),
+            std::time::Duration::from_millis(1000),
+            Some("binance_com"),
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+        );
+        let data = tickbook_quote_obtain_data(&quote).expect("options last is obtain success");
+        assert_ne!(quote.status, QuoteStatus::Unavailable);
+        assert_eq!(data["last"], "1.23");
+        assert_ne!(data["last"], "0");
+        assert_eq!(quote.instrument_id, "BTC-200730-9000-C");
+        assert_eq!(quote.provenance.adapter_id, "binance_com");
+        assert!(book.get("binance-com-spot", "BTC-200730-9000-C").is_none());
     }
 
     #[test]

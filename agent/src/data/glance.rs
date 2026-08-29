@@ -7,6 +7,7 @@
 //! NFO lock: no Kotak `/optionchain`. Chain = FO master rows for
 //! (`pSymbolName` underlying, expiry) + optional last from TickBook.
 //! Quote JSON does not name an `oi` field → OI stays Unavailable.
+//! eapi lock slice 1: public last only. Chain / OI stay dark.
 //!
 //! Glance `status` uses [`GlanceStatus`] (depth-like). Success is not a fifth
 //! [`super::honesty::HonestyStatus`].
@@ -63,6 +64,7 @@ pub const SPOT_IS_NOT_CHAIN: &str = "spot_is_not_option_chain";
 pub const BOOK_REQUIRED: &str = "book_id_required";
 pub const FO_MASTER_UNSPECIFIED: &str = "nfo_scrip_master_refused";
 pub const OI_FIELD_UNSPECIFIED: &str = "oi_field_unspecified";
+pub const OPTIONS_CHAIN_NOT_THIS_SLICE: &str = "options_chain_not_this_slice";
 
 fn chain_identity() -> Identity {
     Identity::new(
@@ -83,7 +85,7 @@ fn oi_identity() -> Identity {
 fn display_instrument(book_id: Option<&str>, raw: &str) -> String {
     let trimmed = raw.trim();
     match book_id.map(str::trim).filter(|id| !id.is_empty()) {
-        Some(id) if id == KOTAK_NSE_NFO_BOOK_ID => {
+        Some(id) if id == KOTAK_NSE_NFO_BOOK_ID || id == BINANCE_COM_OPTIONS_BOOK_ID => {
             trimmed.to_string()
         }
         _ => trimmed.to_ascii_lowercase(),
@@ -135,7 +137,7 @@ pub fn extract_chain(book_id: Option<&str>, underlying_or_instrument: &str) -> G
 
 /// Rebuild from caller-supplied master rows + optional TickBook last.
 /// Empty store → Unavailable. Matching rows → Success even when last is missing
-/// (NFO lock allows structure-without-last).
+/// (NFO and eapi locks allow structure-without-last).
 pub fn extract_chain_from(
     book_id: Option<&str>,
     underlying_or_instrument: &str,
@@ -155,9 +157,11 @@ pub fn extract_chain_from(
         id if id == BINANCE_COM_SPOT_BOOK_ID => {
             dark_chain(Some(book), underlying_or_instrument, SPOT_IS_NOT_CHAIN)
         }
-        id if id == BINANCE_COM_OPTIONS_BOOK_ID => {
-            dark_chain(Some(book), underlying_or_instrument, FO_MASTER_UNSPECIFIED)
-        }
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => dark_chain(
+            Some(book),
+            underlying_or_instrument,
+            OPTIONS_CHAIN_NOT_THIS_SLICE,
+        ),
         id if id == KOTAK_NSE_NFO_BOOK_ID => match rows {
             None => dark_chain(Some(book), underlying_or_instrument, FO_MASTER_UNSPECIFIED),
             Some([]) => dark_chain(Some(book), underlying_or_instrument, FO_MASTER_UNSPECIFIED),
@@ -214,12 +218,9 @@ fn lit_chain(
     }
 }
 
-/// Hole unless `book_id` + a named OI snapshot. NFO quote JSON does not name `oi`.
+/// Hole unless `book_id` names an OI book with a specified field. NFO quote JSON
+/// does not name `oi`. Options last-only lock does not ship OI.
 pub fn extract_open_interest(book_id: Option<&str>, instrument_id: &str) -> GlanceEnvelope {
-    extract_open_interest_from(book_id, instrument_id)
-}
-
-pub fn extract_open_interest_from(book_id: Option<&str>, instrument_id: &str) -> GlanceEnvelope {
     let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
         return dark_oi(book_id, instrument_id, BOOK_REQUIRED);
     };
@@ -232,7 +233,6 @@ pub fn extract_open_interest_from(book_id: Option<&str>, instrument_id: &str) ->
             dark_oi(Some(book), instrument_id, SPOT_IS_NOT_CHAIN)
         }
         id if id == KOTAK_NSE_NFO_BOOK_ID || id == BINANCE_COM_OPTIONS_BOOK_ID => {
-            // NFO quote JSON does not name `oi`. eapi OI is not in this commit.
             dark_oi(Some(book), instrument_id, OI_FIELD_UNSPECIFIED)
         }
         _ => dark_oi(Some(book), instrument_id, BOOK_REQUIRED),
@@ -362,6 +362,13 @@ mod tests {
         let spot = extract_chain(Some(BINANCE_COM_SPOT_BOOK_ID), "BTCUSDT");
         assert_eq!(spot.status, GlanceStatus::Unavailable);
         assert!(spot.ineligible.iter().any(|s| s == SPOT_IS_NOT_CHAIN));
+        let options = extract_chain(Some(BINANCE_COM_OPTIONS_BOOK_ID), "BTC-200730-9000-C");
+        assert_eq!(options.status, GlanceStatus::Unavailable);
+        assert!(options
+            .ineligible
+            .iter()
+            .any(|s| s == OPTIONS_CHAIN_NOT_THIS_SLICE));
+        assert_eq!(options.instrument_id, "BTC-200730-9000-C");
     }
 
     #[test]

@@ -74,7 +74,7 @@ pub use data::{
     extract_quote_for, extract_quote_for_book, fixture_quote_descriptor, infer_capability, inherit,
     is_kotak_fo_scrip_csv_path, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
     kotak_neo_s1k_manifest, normalize_quote_instrument, obtain, quote_tick_from_binance_json,
-    quote_tick_from_kotak_json, resolve_desk_instrument,
+    quote_tick_from_kotak_json, quote_tick_from_options_ticker_json, resolve_desk_instrument,
     ApplyError, AuthMode, ContractRow, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope,
     GlanceStatus, HistoryBook, HistoryEnvelope, HistoryStatus, HonestyStatus, HostRefuse,
     InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus, ObtainEnvelope, ObtainStatus,
@@ -297,6 +297,8 @@ pub struct AgentConfig {
     pub kill_policy: KillPolicy,
     /// S1 desk: public Binance last-price stream (`AGENT_S1_DESK_SYMBOL`). `None` = no WS.
     pub s1_desk_symbol: Option<String>,
+    /// Optional options contract (`AGENT_S1_OPTIONS_SYMBOL`). Unset = no default dial.
+    pub s1_options_symbol: Option<String>,
     /// Quote extract freshness window (`AGENT_S1_FRESHNESS_MS`, default 2000).
     pub quote_freshness: Duration,
     /// Slice F CI: plant cash CSV + quote JSON into TickBook / scrip master. No live session.
@@ -307,6 +309,8 @@ pub struct AgentConfig {
     pub plant_kotak_nfo_contracts: bool,
     /// S2 CI: plant committed klines JSON into HistoryBook. No live Binance.
     pub plant_binance_s2_history: bool,
+    /// Options last CI: plant committed eapi ticker JSON into TickBook. No live eapi.
+    pub plant_binance_options_quote: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
     pub instrument_master_cache_dir: PathBuf,
 }
@@ -408,6 +412,10 @@ impl AgentConfig {
                 .ok()
                 .map(|s| crate::data::normalize_quote_instrument(&s))
                 .filter(|s| !s.is_empty()),
+            s1_options_symbol: std::env::var("AGENT_S1_OPTIONS_SYMBOL")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             quote_freshness: std::env::var("AGENT_S1_FRESHNESS_MS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -417,6 +425,7 @@ impl AgentConfig {
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
+            plant_binance_options_quote: false,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
@@ -467,11 +476,13 @@ impl AgentConfig {
             fact_clock_ms: None,
             kill_policy: KillPolicy::default(),
             s1_desk_symbol: None,
+            s1_options_symbol: None,
             quote_freshness: Duration::from_millis(2000),
             plant_kotak_s1k_fixtures: false,
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
+            plant_binance_options_quote: false,
             instrument_master_cache_dir,
         }
     }
@@ -686,6 +697,20 @@ fn plant_kotak_nfo_contracts(
         .active_broker_slug = Some(crate::data::KOTAK_NEO_ADAPTER_ID.to_string());
 }
 
+/// Headless options last: committed eapi ticker JSON into `binance-com-options`. No live eapi.
+fn plant_binance_options_quote(
+    registry: &crate::data::Registry,
+    tickbook: &Arc<Mutex<crate::data::TickBook>>,
+) {
+    let json = include_str!("../fixtures/binance/options_ticker.json");
+    if let Some(tick) = crate::data::quote_tick_from_options_ticker_json(json, Utc::now()) {
+        let mut book = tickbook.lock().expect("tickbook mutex poisoned");
+        if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
+            tracing::warn!(error = %err, "options fixture: quote plant refused");
+        }
+    }
+}
+
 fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
@@ -847,6 +872,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_s2_history {
         plant_binance_s2_history(&historybook);
     }
+    if config.plant_binance_options_quote {
+        plant_binance_options_quote(quote_registry.as_ref(), &tickbook);
+    }
     if let Some(symbol) = config.s1_desk_symbol.clone() {
         tracing::info!(
             instrument = %symbol,
@@ -947,6 +975,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         historybook,
         quote_freshness: config.quote_freshness,
         s1_desk_symbol: config.s1_desk_symbol.clone(),
+        s1_options_symbol: config.s1_options_symbol.clone(),
         source_manifests,
         broker_connections,
         instrument_master,

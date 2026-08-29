@@ -24,9 +24,37 @@ Ping every 3 minutes. Pong timeout: 10 minutes.
 
 ---
 
+## Slice 0 — ticker GET + last (quotes last only)
+
+Station slice 1 may ingest **public last** on book `binance-com-options`. Not optionchain, not `userTrades`, not order POSTs.
+
+| Item | Lock |
+|------|------|
+| Host | `eapi.binance.com` (`https://eapi.binance.com`) |
+| Method + path | `GET /eapi/v1/ticker` — 24hr ticker price change statistics |
+| Last field | `lastPrice` (string) |
+| Symbol | hyphenated contract id, e.g. `BTC-200730-9000-C`. **Do not** `to_ascii_lowercase` (not a spot `BTCUSDT` pair). |
+| Auth | public (`security: []`) |
+| Response | JSON array of objects (`symbol`, `lastPrice`, …). Optional `?symbol=` filters one contract. |
+
+Primary sources (accessed 2026-08-28):
+
+- Binance developers catalog: `GET /eapi/v1/ticker` — [24hr Ticker Price Change Statistics](https://developers.binance.com/docs/derivatives/options-trading/market-data/24hr-Ticker-Price-Change-Statistics)
+- Binance CLI example: `binance-cli derivatives-options ticker24hr-price-change-statistics --symbol BTC-200730-9000-C`
+- OpenAPI (`binance-european-options-openapi.yml`): path `/eapi/v1/ticker` GET, property `lastPrice` type string
+
+WS last on `<symbol>@ticker`: stream exists (`T` = transaction time). The **last price field on the WS payload is NOT SPECIFIED IN SOURCE in this lock** — do not map spot `@trade` `p` or invent `c`. Slice 1 last is REST `lastPrice`.
+
+No default subscribe symbol in this lock. Do not auto-dial a contract unless an env/lock names one later.
+
+`GET /eapi/v1/userTrades` stays off this slice. `POST /eapi/v1/order` is a mutation.
+
+---
+
 ## Key Endpoints (from changelog)
 
 ```
+GET    /eapi/v1/ticker              24hr ticker (lastPrice) — slice 0 last lock
 GET    /eapi/v1/exchangeInfo        Exchange info, symbols, filters, rate limits
 GET    /eapi/v1/account             Account info (includes riskLevel field)
 GET    /eapi/v1/marginAccount       Margin account info (includes riskLevel)
@@ -102,4 +130,6 @@ RISK_LEVEL_CHANGE     Account risk level change (from 2023-08-29)
 
 ## TradeAutopsy Relevance
 
-Options positions are crypto-native risk that affects behavioral state (e.g. hedging vs speculating, premium burn as loss-chasing signal). Future slice, not current build scope.
+Slice 1: public last on `binance-com-options` from `GET /eapi/v1/ticker` → `lastPrice` only. Spot BTCUSDT last stays on `binance-com-spot`. No optionchain, no userTrades, no eapi orders.
+
+Options positions as behavioral risk remain a later slice (see MECHANICS.md).

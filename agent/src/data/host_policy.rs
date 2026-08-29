@@ -40,6 +40,8 @@ impl HostRefuse {
 
 pub const R0_ALLOWED_HOSTS: &[&str] = &[
     "api.binance.com",
+    // Named book `binance-com-options` (slice 1 last = REST lastPrice).
+    "eapi.binance.com",
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
     "mis.kotaksecurities.com",
@@ -85,7 +87,12 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
     let method = method.to_ascii_uppercase();
     let path = path.trim();
     match (capability_id, method.as_str(), auth_mode) {
-        ("quote", "GET", AuthMode::Public) if path == "/api/v3/ticker/price" => true,
+        ("quote", "GET", AuthMode::Public)
+            if path == "/api/v3/ticker/price"
+                || normalize_request_path(path) == "/eapi/v1/ticker" =>
+        {
+            true
+        }
         ("ohlcv", "GET", AuthMode::Public) if path == "/api/v3/klines" => true,
         ("order_book", "GET", AuthMode::Public) if path == "/api/v3/depth" => true,
         ("instrument_master", "GET", AuthMode::Public)
@@ -121,6 +128,9 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
     let path = path.trim();
     match (method.as_str(), path) {
         ("GET", "/api/v3/ticker/price") => Ok(("quote", AuthMode::Public)),
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/ticker" => {
+            Ok(("quote", AuthMode::Public))
+        }
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
         ("GET", "/api/v3/exchangeInfo") => Ok(("instrument_master", AuthMode::Public)),
@@ -162,7 +172,8 @@ fn is_kotak_r0_host(host: &str) -> bool {
 }
 
 /// Fence is (book, host, path prefix). Global R0 still gates which hosts this
-/// process may ever dial — do not add fapi/dapi/eapi here.
+/// process may ever dial — do not add fapi/dapi here. `eapi.binance.com` is
+/// named for book `binance-com-options` (REST lastPrice only).
 ///
 /// Named book `kotak-nse-nfo` shares Kotak R0 hosts and may fetch FO scrip only.
 /// Planned (host: None — never add to R0_ALLOWED_HOSTS until that book is named):
@@ -197,6 +208,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !path_lower.starts_with("/api/v3/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "binance-com-options" => {
+            if host_norm != "eapi.binance.com" {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !path_lower.starts_with("/eapi/") {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
@@ -918,8 +938,8 @@ mod tests {
                 "{host}"
             );
         }
-        // eapi stays off R0 until binance-com-options is named.
-        assert!(!host_allowed("eapi.binance.com"));
+        // eapi is on R0 for the named options book; the spot fence still refuses it.
+        assert!(host_allowed("eapi.binance.com"));
         assert_eq!(
             authorize_book_call(
                 "binance-com-spot",
@@ -1033,12 +1053,23 @@ mod tests {
             true,
         )
         .expect("NFO ltp is PrivateRead quote");
+        authorize_book_fence("binance-com-options", "eapi.binance.com", "/eapi/v1/ticker")
+            .expect("named options book may GET eapi ticker");
+        assert!(host_allowed("eapi.binance.com"));
         assert_eq!(
-            authorize_book_fence("binance-com-options", "eapi.binance.com", "/eapi/v1/ticker")
+            authorize_book_fence("kotak-nse-nfo", "eapi.binance.com", "/eapi/v1/ticker")
                 .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_fence(
+                "kotak-nse-nfo",
+                "gw-napi.kotaksecurities.com",
+                "/eapi/v1/ticker"
+            )
+            .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
-        assert!(!host_allowed("eapi.binance.com"));
         assert_eq!(
             authorize_book_fence(
                 "binance-com-usdm",
@@ -1047,6 +1078,115 @@ mod tests {
             )
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn options_book_fence_allows_eapi_ticker_and_refuses_spot_cluster() {
+        authorize_book_fence("binance-com-options", "eapi.binance.com", "/eapi/v1/ticker")
+            .expect("options fence allows eapi ticker");
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/ticker",
+            false,
+        )
+        .expect("options public ticker infers quote");
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/ticker?symbol=BTC-200730-9000-C",
+            false,
+        )
+        .expect("optional symbol query stays quote");
+        assert_eq!(
+            authorize_book_fence(
+                "binance-com-options",
+                "api.binance.com",
+                "/api/v3/ticker/price"
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "api.binance.com",
+                "GET",
+                "/api/v3/ticker/price",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        let (cap, mode) = infer_capability("GET", "/eapi/v1/ticker").unwrap();
+        assert_eq!(cap, "quote");
+        assert_eq!(mode, AuthMode::Public);
+        assert_eq!(
+            infer_capability("POST", "/eapi/v1/order").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert!(is_mutation("POST", "/eapi/v1/order"));
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/userTrades").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/userTrades",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-spot",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/userTrades",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_host_call(
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/userTrades",
+                "fills",
+                AuthMode::Public,
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/fapi/v1/premiumIndex",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_fence("binance-com-spot", "eapi.binance.com", "/eapi/v1/ticker")
+                .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_fence("kotak-nse-bse-cash", "eapi.binance.com", "/eapi/v1/ticker")
+                .unwrap_err(),
+            HostRefuse::HostNotAllowed
         );
     }
 
@@ -1072,7 +1212,87 @@ mod tests {
     }
 
     #[test]
-    fn spot_my_trades_stays_spot_and_eapi_stays_off() {
+    fn options_eapi_public_reads_infer_on_options_book_only() {
+        for path in [
+            "/eapi/v1/exchangeInfo",
+            "/eapi/v1/openInterest",
+            "/eapi/v1/depth",
+        ] {
+            assert_eq!(
+                infer_capability("GET", path).unwrap_err(),
+                HostRefuse::PathNotAllowlisted,
+                "{path}"
+            );
+            assert_eq!(
+                authorize_book_call(
+                    "binance-com-options",
+                    "eapi.binance.com",
+                    "GET",
+                    path,
+                    false,
+                )
+                .unwrap_err(),
+                HostRefuse::PathNotAllowlisted,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/exchangeInfo?underlying=BTC",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/openInterest?underlyingAsset=BTC&expiration=200730",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/depth?symbol=BTC-200730-9000-C",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+
+        for path in [
+            "/eapi/v1/exchangeInfo",
+            "/eapi/v1/openInterest",
+            "/eapi/v1/depth",
+            "/eapi/v1/ticker",
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-spot", "eapi.binance.com", "GET", path, false)
+                    .unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "{path}"
+            );
+            assert_eq!(
+                authorize_book_call("binance-com-spot", "api.binance.com", "GET", path, false)
+                    .unwrap_err(),
+                HostRefuse::PathNotAllowlisted,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn options_user_trades_is_not_spot_my_trades() {
         let (spot_cap, spot_mode) = infer_capability("GET", "/api/v3/myTrades").unwrap();
         assert_eq!(spot_cap, "fills");
         assert_eq!(spot_mode, AuthMode::PrivateRead);
@@ -1085,7 +1305,36 @@ mod tests {
         )
         .expect("spot myTrades stays spot fills");
         assert_eq!(
-            infer_capability("GET", "/eapi/v1/userTrades").unwrap_err(),
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/api/v3/myTrades",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "api.binance.com",
+                "GET",
+                "/api/v3/myTrades",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/userTrades?symbol=BTC-200730-9000-C",
+                true,
+            )
+            .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -1094,10 +1343,10 @@ mod tests {
                 "eapi.binance.com",
                 "GET",
                 "/eapi/v1/userTrades",
-                true,
+                false,
             )
             .unwrap_err(),
-            HostRefuse::HostNotAllowed
+            HostRefuse::PathNotAllowlisted
         );
     }
 }

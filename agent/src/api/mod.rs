@@ -94,6 +94,8 @@ pub struct AppState {
     pub historybook: Arc<Mutex<HistoryBook>>,
     pub quote_freshness: Duration,
     pub s1_desk_symbol: Option<String>,
+    /// Dev default for a Binance options ticker. `None` until that desk is subscribed.
+    pub s1_options_symbol: Option<String>,
     /// First-party S0 manifests. Fail-closed at boot.
     pub source_manifests: Arc<Vec<SourceManifest>>,
     /// Persistent connected-broker runtimes. Handles only — never raw secrets.

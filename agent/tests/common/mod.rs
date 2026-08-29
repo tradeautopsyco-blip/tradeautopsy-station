@@ -57,6 +57,8 @@ pub struct TestAgentOptions {
     pub plant_kotak_nfo_contracts: bool,
     /// S2 — plant committed Binance klines JSON (no live Binance).
     pub plant_binance_s2_history: bool,
+    /// Options last — plant committed eapi ticker JSON (no live eapi).
+    pub plant_binance_options_quote: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -90,6 +92,7 @@ impl Default for TestAgentOptions {
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
             plant_binance_s2_history: false,
+            plant_binance_options_quote: false,
         }
     }
 }
@@ -133,6 +136,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_kotak_nfo_quote = opts.plant_kotak_nfo_quote;
     cfg.plant_kotak_nfo_contracts = opts.plant_kotak_nfo_contracts;
     cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
+    cfg.plant_binance_options_quote = opts.plant_binance_options_quote;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

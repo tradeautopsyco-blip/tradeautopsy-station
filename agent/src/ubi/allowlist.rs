@@ -6,6 +6,7 @@
 pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     // binance_com (never binance.us — B6 refuse list)
     "api.binance.com",
+    "eapi.binance.com",
     // kotak_neo — trading base comes from login validate `baseUrl` (SDK hosts).
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
@@ -39,6 +40,7 @@ mod tests {
     #[test]
     fn allowlist_includes_binance_com_and_kotak() {
         assert!(host_allowed("api.binance.com"));
+        assert!(host_allowed("eapi.binance.com"));
         assert!(host_allowed("API.Binance.COM"));
         assert!(host_allowed("cis.kotaksecurities.com"));
         assert!(host_allowed("e21.kotaksecurities.com"));

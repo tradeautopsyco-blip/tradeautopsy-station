@@ -66,6 +66,24 @@ pub async fn start_handler(
                     runtime.subscribe(default);
                 }
             }
+            let options_budget = state
+                .source_manifests
+                .iter()
+                .find(|manifest| manifest.book_id == crate::data::BINANCE_COM_OPTIONS_BOOK_ID)
+                .map(crate::data::shared_budget)
+                .unwrap_or(60);
+            insert_named_book_runtime(
+                &mut map,
+                &slug,
+                crate::data::BINANCE_COM_OPTIONS_BOOK_ID,
+                Some(credential_handle(&slug, &body.broker_connection_id)),
+                options_budget,
+            );
+            if let Some(opt_sym) = state.s1_options_symbol.as_deref() {
+                if let Some(opt_rt) = map.get_mut(crate::data::BINANCE_COM_OPTIONS_BOOK_ID) {
+                    opt_rt.subscribe(opt_sym);
+                }
+            }
         }
         if slug == "kotak_neo" {
             let nfo_budget = state
@@ -112,6 +130,9 @@ pub async fn start_handler(
                 &state.depth_streams,
                 &default,
             );
+        }
+        if let Some(opt_sym) = state.s1_options_symbol.as_deref() {
+            crate::data::ensure_binance_com_options_quote(&state.quote_streams, opt_sym);
         }
     }
     Ok(Json(json!({ "ok": true })))

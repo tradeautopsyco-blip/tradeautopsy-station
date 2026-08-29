@@ -3,8 +3,8 @@
 
 use crate::api::AppState;
 use crate::data::{
-    extract_chain_from, extract_open_interest_from, parse_nfo_instrument_id, ChainRow,
-    GlanceEnvelope, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    extract_chain_from, extract_open_interest, parse_nfo_instrument_id, ChainRow, GlanceEnvelope,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -90,5 +90,5 @@ pub async fn oi_handler(
 ) -> Json<GlanceEnvelope> {
     let book = query_book(&query);
     let instrument = query_instrument(&query);
-    Json(extract_open_interest_from(book.as_deref(), &instrument))
+    Json(extract_open_interest(book.as_deref(), &instrument))
 }
