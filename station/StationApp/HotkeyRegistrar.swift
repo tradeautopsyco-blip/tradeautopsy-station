@@ -160,8 +160,17 @@ public final class HotkeyRegistrar: HotkeyRegistering {
                 )
                 guard paramStatus == noErr else { return paramStatus }
                 let registrar = Unmanaged<HotkeyRegistrar>.fromOpaque(userData).takeUnretainedValue()
-                DispatchQueue.main.async {
-                    registrar.handleCarbonHotKey(id: hotKeyID.id)
+                // Carbon delivers on the app event target (main thread) — handle synchronously
+                // so the Notch summon starts on the same run-loop turn as the keypress.
+                // An async hop here costs 1–2 frames of visible latency on ⌥Space.
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated {
+                        registrar.handleCarbonHotKey(id: hotKeyID.id)
+                    }
+                } else {
+                    DispatchQueue.main.async {
+                        registrar.handleCarbonHotKey(id: hotKeyID.id)
+                    }
                 }
                 return noErr
             },

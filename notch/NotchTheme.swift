@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SwiftUI
 
 /// Aero-Glass design tokens — TradeAutopsy notch.
@@ -89,6 +88,21 @@ enum NotchTheme {
     /// Expand / collapse chrome — critically damped (Apple default UI spring).
     static let springExpand = Animation.spring(response: 0.35, dampingFraction: 1.0, blendDuration: 0)
 
+    /// ⌥Space summon — Spotlight pop: opacity + slight scale only, no travel, no bounce
+    /// (a keypress has no flick momentum). Interruptible: retargets from presentation value.
+    static let springSummon = Animation.spring(response: 0.22, dampingFraction: 1.0, blendDuration: 0)
+
+    /// Scale the expanded surface enters from (Spotlight ≈ 0.96 → 1.0). Reduce Motion: no scale.
+    static var summonScaleFrom: CGFloat {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 1.0 : 0.96
+    }
+
+    /// How long the `NSPanel` holds the expanded frame after collapse so the exit fade can
+    /// play before the window snaps back to the pill. Never animate the frame itself.
+    static var summonFrameHoldDuration: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.2 : 0.18
+    }
+
     /// Sidebar / content remaps — snappier critical settle.
     static let springContent = Animation.spring(response: 0.28, dampingFraction: 1.0, blendDuration: 0)
 
@@ -100,7 +114,7 @@ enum NotchTheme {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             return .easeInOut(duration: 0.2)
         }
-        return springExpand
+        return springSummon
     }
 
     static var contentAnimation: Animation {
@@ -108,20 +122,6 @@ enum NotchTheme {
             return .easeInOut(duration: 0.15)
         }
         return springContent
-    }
-
-    /// AppKit panel frame timing matched to `springExpand` settle (critically damped ~0.35s).
-    static var panelFrameAnimationDuration: TimeInterval {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.2 : 0.38
-    }
-
-    /// Soft ease-out that approximates a critically damped spring settle (no overshoot).
-    static var panelFrameTimingFunction: CAMediaTimingFunction {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            return CAMediaTimingFunction(name: .easeInEaseOut)
-        }
-        // controlPoints ≈ Apple response 0.35, damping 1.0 (fast attack, soft settle)
-        return CAMediaTimingFunction(controlPoints: 0.22, 1.0, 0.36, 1.0)
     }
 }
 

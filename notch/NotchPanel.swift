@@ -69,21 +69,46 @@ struct NotchRootView: View {
         self.hostedExpandedContent = hostedExpandedContent
     }
 
-    private var expansion: CGFloat {
-        vm.isExpanded ? 1.0 : 0.0
+    /// Spotlight summon: the window never animates its frame — the controller snaps it to the
+    /// final rect and only these compositor properties move (opacity + scale, no travel).
+    private var summonScale: CGFloat {
+        if reduceMotion { return 1.0 }
+        return vm.isExpanded ? 1.0 : 0.96
     }
 
-    /// Spatial: expand/collapse along the notch axis (top). Reduce Motion → opacity only.
-    private var expandedTransition: AnyTransition {
-        reduceMotion
-            ? .opacity
-            : .opacity.combined(with: .move(edge: .top))
+    /// Pill hides while the window still holds the expanded frame (collapse exit fade) —
+    /// otherwise it would render centered in the big rect.
+    private var showsCollapsedPill: Bool {
+        !vm.isExpanded && !vm.summonPanelAtExpandedFrame
     }
 
     var body: some View {
+        ZStack(alignment: .top) {
+            if showsCollapsedPill {
+                collapsedLayer
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // `overlay`, not a ZStack sibling: the pre-warmed expanded layer is laid out at the full
+        // expanded size while the window is still the pill, and as a sibling it would size this
+        // container to ~visibleFrame and lay the pill out inside that instead of the pill window.
+        // An overlay overflows its parent without ever feeding size back into it.
+        .overlay(alignment: .top) { expandedLayer }
+        .ignoresSafeArea()
+        .animation(NotchTheme.expandCollapseAnimation, value: vm.isExpanded)
+        .onChange(of: vm.isExpanded) { _, _ in
+            vm.syncBarLiveStatePollingForVisibility()
+        }
+        .onChange(of: vm.activeTab) { _, _ in
+            vm.syncBarLiveStatePollingForVisibility()
+        }
+    }
+
+    private var collapsedLayer: some View {
         ZStack {
             Group {
-                if vm.hasPhysicalNotch, !vm.isExpanded {
+                if vm.hasPhysicalNotch {
                     Color.black
                 } else if reduceTransparency {
                     Color(hex: "#0d0d0d").opacity(0.97)
@@ -102,32 +127,56 @@ struct NotchRootView: View {
                     .allowsHitTesting(false)
             }
 
+            CollapsedNotchView(viewModel: vm)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .clipShape(
+            NotchShape(
+                expansionProgress: 0,
+                hardwareChin: vm.hasPhysicalNotch,
+            )
+        )
+    }
+
+    /// Always mounted (pre-warmed at `start()`): first ⌥Space is never a cold SwiftUI mount.
+    /// Laid out at the final expanded size even while the window is the collapsed pill, so
+    /// the summon does zero layout — only opacity and scale composite in.
+    private var expandedLayer: some View {
+        ZStack {
             Group {
-                if vm.isExpanded {
-                    if let hostedExpandedContent {
-                        hostedExpandedContent()
-                            .transition(expandedTransition)
-                    } else {
-                        ExpandedNotchView(viewModel: vm)
-                            .transition(expandedTransition)
-                    }
+                if reduceTransparency {
+                    Color(hex: "#0d0d0d").opacity(0.97)
                 } else {
-                    CollapsedNotchView(viewModel: vm)
-                        .transition(.opacity)
+                    NotchTheme.bgApp
+                        .background(.ultraThinMaterial)
+                }
+            }
+
+            vm.backgroundPulseColor
+                .opacity(vm.backgroundPulseOpacity)
+                .allowsHitTesting(false)
+
+            if vm.killSwitchActive {
+                Color.taDanger.opacity(0.12)
+                    .allowsHitTesting(false)
+            }
+
+            Group {
+                if let hostedExpandedContent {
+                    hostedExpandedContent()
+                } else {
+                    ExpandedNotchView(viewModel: vm)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
-        .clipShape(
-            NotchShape(
-                expansionProgress: expansion,
-                hardwareChin: vm.hasPhysicalNotch && !vm.isExpanded,
-            )
+        .frame(
+            width: vm.expandedSurfaceSize.width > 0 ? vm.expandedSurfaceSize.width : nil,
+            height: vm.expandedSurfaceSize.height > 0 ? vm.expandedSurfaceSize.height : nil
         )
+        .clipShape(NotchShape(expansionProgress: 1))
         .overlay {
-            if vm.isExpanded, !vm.hasPhysicalNotch {
+            if !vm.hasPhysicalNotch {
                 RoundedRectangle(cornerRadius: BarDS.Radius.sheet, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
@@ -143,18 +192,16 @@ struct NotchRootView: View {
                     )
             }
         }
+        .compositingGroup()
+        // Constant radius — shadow fades with the surface, its radius never animates.
         .shadow(
             color: vm.isExpanded && !vm.hasPhysicalNotch ? Color.black.opacity(0.55) : .clear,
-            radius: vm.isExpanded ? 28 : 0,
-            y: vm.isExpanded ? 10 : 0
+            radius: 28,
+            y: 10
         )
-        .animation(NotchTheme.expandCollapseAnimation, value: vm.isExpanded)
-        .animation(NotchTheme.expandCollapseAnimation, value: expansion)
-        .onChange(of: vm.isExpanded) { _, _ in
-            vm.syncBarLiveStatePollingForVisibility()
-        }
-        .onChange(of: vm.activeTab) { _, _ in
-            vm.syncBarLiveStatePollingForVisibility()
-        }
+        .opacity(vm.isExpanded ? 1 : 0)
+        .scaleEffect(summonScale, anchor: .top)
+        .allowsHitTesting(vm.isExpanded)
+        .accessibilityHidden(!vm.isExpanded)
     }
 }

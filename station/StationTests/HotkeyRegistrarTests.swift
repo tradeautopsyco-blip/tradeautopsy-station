@@ -144,6 +144,23 @@ struct HotkeyRegistrarTests {
         #expect(floatingNotch.toggleCallCount == 1)
     }
 
+    // The Notch summon must start on the same run-loop turn as the keypress. If the Carbon
+    // handler ever hops through DispatchQueue.main.async again, the toggle would still be 0 here.
+    @Test func carbonHotKeyRunsHandlerSynchronouslyOnMain() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        var toggledOnSameTurn = false
+        registrar.registerToggleNotch {
+            floatingNotch.toggle()
+            toggledOnSameTurn = true
+        }
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 1)
+
+        #expect(toggledOnSameTurn)
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
     @Test func systemSettingsDeepLinkUsesInputMonitoringPane() {
         #expect(
             InputMonitoringWarning.systemSettingsURL.absoluteString
