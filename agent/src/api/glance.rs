@@ -75,7 +75,7 @@ fn options_chain_rows(state: &AppState, instrument: &str) -> Vec<ChainRow> {
     chain_rows_for_contract(instrument, &master)
 }
 
-async fn ensure_options_master(state: &AppState) {
+pub(crate) async fn ensure_options_master(state: &AppState) {
     {
         let master = state
             .options_option_symbols
@@ -111,7 +111,7 @@ async fn ensure_options_master(state: &AppState) {
         .expect("options option symbols mutex poisoned") = rows;
 }
 
-async fn fetch_options_oi(state: &AppState, instrument: &str) -> Vec<OptionsOiRow> {
+pub(crate) async fn fetch_options_oi(state: &AppState, instrument: &str) -> Vec<OptionsOiRow> {
     {
         let planted = state
             .options_oi_rows
@@ -148,6 +148,28 @@ async fn fetch_options_oi(state: &AppState, instrument: &str) -> Vec<OptionsOiRo
         return Vec::new();
     }
     oi_rows_from_json(&resp.body)
+}
+
+/// Obtain enriches synchronously, but the OI snapshot is an async fetch. Land
+/// the rows in the shared store so the enricher only ever reads state.
+pub(crate) async fn ensure_options_oi(state: &AppState, instrument: &str) {
+    {
+        let planted = state
+            .options_oi_rows
+            .lock()
+            .expect("options oi mutex poisoned");
+        if !planted.is_empty() {
+            return;
+        }
+    }
+    let rows = fetch_options_oi(state, instrument).await;
+    if rows.is_empty() {
+        return;
+    }
+    *state
+        .options_oi_rows
+        .lock()
+        .expect("options oi mutex poisoned") = rows;
 }
 
 pub async fn chain_handler(

@@ -15,6 +15,11 @@ pub struct ProvenanceLine {
     pub input_at: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub adapter_id: String,
+    /// Upstream path this envelope's data actually came from. Empty when the
+    /// book's official path is NOT SPECIFIED — a Success must never name a
+    /// path the venue does not have.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub path: String,
 }
 
 impl ProvenanceLine {
@@ -24,6 +29,7 @@ impl ProvenanceLine {
             model: "raw".to_string(),
             input_at: None,
             adapter_id: String::new(),
+            path: String::new(),
         }
     }
 }
@@ -65,6 +71,7 @@ mod tests {
             model: "raw".to_string(),
             input_at: None,
             adapter_id: String::new(),
+            path: String::new(),
         };
         assert!(!greeks_may_render_number(
             HonestyStatus::Unavailable,
@@ -79,6 +86,7 @@ mod tests {
             model: "raw".to_string(),
             input_at: Some("2026-08-27T18:00:00Z".to_string()),
             adapter_id: String::new(),
+            path: String::new(),
         };
         assert!(!greeks_may_render_number(
             HonestyStatus::InheritedDark,
@@ -92,6 +100,7 @@ mod tests {
         assert_eq!(json["model"], "raw");
         assert!(json.get("input_at").is_none());
         assert!(json.get("adapter_id").is_none());
+        assert!(json.get("path").is_none());
         assert_eq!(json["identity"]["capability_id"], "greeks");
     }
 }

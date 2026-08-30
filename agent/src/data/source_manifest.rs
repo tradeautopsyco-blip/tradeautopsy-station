@@ -149,6 +149,10 @@ pub struct ObtainEnvelope {
     pub status: ObtainStatus,
     pub data: Option<serde_json::Value>,
     pub provenance_adapter_id: Option<String>,
+    /// Upstream path behind a Success. `None` until an enricher names one —
+    /// a Success may never claim a path the venue does not have.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance_path: Option<String>,
 }
 
 /// Host-owned obtain. Implemented ops without a live snapshot stay `unavailable`.
@@ -162,6 +166,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
             status: ObtainStatus::Unsupported,
             data: None,
             provenance_adapter_id: None,
+            provenance_path: None,
         };
     }
     if !manifest.implemented.iter().any(|noun| noun == operation) {
@@ -172,6 +177,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
             status: ObtainStatus::Unsupported,
             data: None,
             provenance_adapter_id: None,
+            provenance_path: None,
         };
     }
     ObtainEnvelope {
@@ -181,6 +187,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
         status: ObtainStatus::Unavailable,
         data: None,
         provenance_adapter_id: Some(manifest.adapter_id.clone()),
+        provenance_path: None,
     }
 }
 
@@ -893,6 +900,7 @@ mod tests {
             status: ObtainStatus::Unsupported,
             data: None,
             provenance_adapter_id: None,
+            provenance_path: None,
         };
         assert!(!is_empty_success(&envelope));
         assert!(is_empty_success(&ObtainEnvelope {
@@ -902,6 +910,7 @@ mod tests {
             status: ObtainStatus::Success,
             data: None,
             provenance_adapter_id: Some("binance_com".into()),
+            provenance_path: None,
         }));
     }
 }

@@ -128,6 +128,23 @@ fn dark_oi(book_id: Option<&str>, instrument: &str, ineligible: &str) -> GlanceE
     }
 }
 
+/// Upstream path a lit chain was rebuilt from. NFO chain comes from the FO
+/// scrip master, so it must never name an eapi path.
+fn chain_path_for_book(book_id: &str) -> &'static str {
+    match book_id {
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/exchangeInfo",
+        _ => "",
+    }
+}
+
+/// Upstream path a lit OI came from. NFO OI is still a hole, so it names nothing.
+fn oi_path_for_book(book_id: &str) -> &'static str {
+    match book_id {
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/openInterest",
+        _ => "",
+    }
+}
+
 fn adapter_for_book(book_id: &str) -> &'static str {
     match book_id {
         id if id == KOTAK_NSE_NFO_BOOK_ID => KOTAK_NEO_ADAPTER_ID,
@@ -233,6 +250,7 @@ fn lit_chain(
             model: "raw".to_string(),
             input_at: None,
             adapter_id: adapter_for_book(book_id).to_string(),
+            path: chain_path_for_book(book_id).to_string(),
         },
         ineligible: Vec::new(),
         canonical: false,
@@ -301,6 +319,7 @@ fn lit_oi(book_id: &str, instrument_id: &str, rows: &[OptionsOiRow]) -> GlanceEn
             model: "raw".to_string(),
             input_at: None,
             adapter_id: adapter_for_book(book_id).to_string(),
+            path: oi_path_for_book(book_id).to_string(),
         },
         ineligible: Vec::new(),
         canonical: false,
