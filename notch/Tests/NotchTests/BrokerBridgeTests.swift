@@ -414,6 +414,91 @@ struct BrokerBridgeTests {
         #expect(!vm.deskOiExtractPath(symbol: "BTC-200730-9000-C").contains("kotak-nse-nfo"))
     }
 
+    @Test func selectSymbolRebindingToAnotherPairReseedsEntryFromTheNewLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSyncClass = "synced"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .spot
+        let btc = InstrumentResult(
+            trading_symbol: "BTCUSDT",
+            name: "Bitcoin",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 65000
+        )
+        vm.selectSymbol(btc)
+        #expect(vm.declEntryPrice == "65000.00")
+
+        let eth = InstrumentResult(
+            trading_symbol: "ETHUSDT",
+            name: "Ethereum",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 3000
+        )
+        vm.selectSymbol(eth)
+
+        // Rebinding is a new instrument, so the previous pair's Last must not stand in the
+        // Entry field the user is about to declare against.
+        #expect(vm.deskSelectedInstrumentId == "ETHUSDT")
+        #expect(vm.declEntryPrice == "3000.00")
+    }
+
+    @Test func selectSymbolSamePairKeepsATypedEntry() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSyncClass = "synced"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .spot
+        let eth = InstrumentResult(
+            trading_symbol: "ETHUSDT",
+            name: "Ethereum",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 3000
+        )
+        vm.selectSymbol(eth)
+        vm.declEntryPrice = "1.23"
+
+        // Re-picking the row already bound is not a rebind — the typed Entry is the user's.
+        vm.selectSymbol(eth)
+
+        #expect(vm.deskSelectedInstrumentId == "ETHUSDT")
+        #expect(vm.declEntryPrice == "1.23")
+    }
+
+    @Test func liveTickDoesNotClobberATypedEntryAfterRebinding() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSyncClass = "synced"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .spot
+        let eth = InstrumentResult(
+            trading_symbol: "ETHUSDT",
+            name: "Ethereum",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 3000
+        )
+        vm.selectSymbol(eth)
+        vm.declEntryPrice = "1.23"
+
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "ETHUSDT",
+            "data": ["last": "3500"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+
+        // Seeding is a bind-time act, not a tick-time one.
+        #expect(vm.declEntryPrice == "1.23")
+    }
+
     @Test func selectSymbolRefusesKotakIdentityOnBinanceDeskAndDropsNfoExtracts() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"

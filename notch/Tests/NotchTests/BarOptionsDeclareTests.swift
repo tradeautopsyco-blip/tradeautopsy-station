@@ -747,6 +747,23 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskExtractGeneration == generation)
     }
 
+    @Test func pastedContractDropsTheLeftoverSpotEntry() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSyncClass = "synced"
+        vm.declareAssetClass = .spot
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.declEntryPrice = "65000.00"
+
+        vm.barDeclarationSymbol = "BTC-260925-145000-C"
+        vm.commitDeskSymbol()
+
+        // A spot-shaped Last is not a premium: it must not stand in Entry while the eapi
+        // book answers for the contract now bound.
+        #expect(vm.deskSelectedInstrumentId == "BTC-260925-145000-C")
+        #expect(vm.declEntryPrice.isEmpty)
+    }
+
     @Test func pastingAContractOnTheSpotTabDoesNotArmOptions() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"

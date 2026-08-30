@@ -376,6 +376,28 @@ impl AppState {
         );
     }
 
+    /// Wait for one unsigned COM `GET /api/v3/ticker/price` before the caller
+    /// subscribes this id. Ordering is load-bearing: once `subscribe_instrument`
+    /// binds the trade stream, `apply_quote` refuses the REST tick `RestClosed`
+    /// and Last stays empty until the first `@trade` arrives.
+    ///
+    /// Skips when TickBook already has a last for the id, and when the id is
+    /// already subscribed — boot's bound `btcusdt` therefore costs nothing.
+    /// Depth and klines are untouched; they still ride `subscribe_instrument`.
+    pub async fn prime_binance_spot_ticker(&self, instrument: &str) {
+        if !self.is_binance_com_desk() {
+            return;
+        }
+        crate::data::await_binance_spot_ticker_price(
+            self.quote_registry.clone(),
+            self.tickbook.clone(),
+            self.com_ticker_inflight.clone(),
+            self.quote_fetch_error.clone(),
+            instrument,
+        )
+        .await;
+    }
+
     pub fn validated_quote_id(&self, raw: &str) -> Option<String> {
         let raw = raw.trim();
         if raw.is_empty() {

@@ -129,6 +129,9 @@ pub struct AppState {
     pub kotak_session_locator: crate::kotak_rest_quotes::SessionLocator,
     /// In-flight Kotak REST quote GETs (not book.subscribe — REST must stay open).
     pub kotak_quote_inflight: Arc<Mutex<HashSet<String>>>,
+    /// In-flight COM `ticker/price` GETs, so two loopback quotes on one id share
+    /// a call. Separate from `klines_inflight` (that keys on instrument+interval).
+    pub com_ticker_inflight: Arc<Mutex<HashSet<String>>>,
     /// In-flight Kotak REST depth GETs (`quote_type=depth` only).
     pub kotak_depth_inflight: Arc<Mutex<HashSet<String>>>,
     /// Shared catalog fetch status (not an ObtainStatus variant).

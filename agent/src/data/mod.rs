@@ -7,6 +7,7 @@ mod binance_options_chain;
 mod binance_options_oi;
 mod binance_options_public;
 mod binance_public;
+mod binance_spot_ticker;
 mod book_identity;
 mod connection;
 mod contracts;
@@ -69,6 +70,7 @@ pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
     spawn_binance_com_trade_loop,
 };
+pub use binance_spot_ticker::await_binance_spot_ticker_price;
 pub use book_identity::{book_accepts_symbol, query_symbol};
 pub use connection::BrokerConnectionRuntime;
 pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};

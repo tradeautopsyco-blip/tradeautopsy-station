@@ -409,6 +409,14 @@ mod tests {
             binance_spot_weight("/api/v3/openOrders", "symbol=BTCUSDT"),
             6
         );
+        // `ticker/price` is the desk's prime call. `symbol=` keeps it at 2;
+        // the no-symbol form is 4 and must never be built (see
+        // `data::binance_spot_ticker`). `24hr` is the expensive neighbour.
+        assert_eq!(
+            binance_spot_weight("/api/v3/ticker/price", "symbol=ETHUSDT"),
+            2
+        );
+        assert_eq!(binance_spot_weight("/api/v3/ticker/price", ""), 4);
         assert_eq!(binance_spot_weight("/api/v3/ticker/24hr", ""), 80);
         assert_eq!(
             binance_spot_weight("/api/v3/ticker/24hr", "symbol=BTCUSDT"),

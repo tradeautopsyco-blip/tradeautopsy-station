@@ -895,6 +895,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     ));
     let kotak_session_locator = Arc::new(std::sync::Mutex::new(None));
     let kotak_quote_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let com_ticker_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
     let kotak_depth_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
     let instrument_master_status = Arc::new(std::sync::Mutex::new(
         crate::data::InstrumentMasterStatus::default(),
@@ -1015,6 +1016,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         klines_inflight,
         kotak_session_locator,
         kotak_quote_inflight,
+        com_ticker_inflight,
         kotak_depth_inflight,
         instrument_master_status,
         instrument_master_cancel,

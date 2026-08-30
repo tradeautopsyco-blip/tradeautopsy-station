@@ -1192,6 +1192,15 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// A new instrument is a new price: the Entry seeded from the previous binding's Last
+    /// must not stand while the new book answers. Re-picking the same id is not a rebind,
+    /// so a typed Entry survives a repeat selection or a blur.
+    private func clearEntryIfRebinding(to newId: String) {
+        if newId != deskSelectedInstrumentId {
+            declEntryPrice = ""
+        }
+    }
+
     func selectSymbol(_ result: InstrumentResult) {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
@@ -1243,6 +1252,7 @@ public final class NotchViewModel: ObservableObject {
         }
         // Order matters: the id first, then invalidate (it reads the id to decide whether
         // Last may survive), then fetch — which captures the generation it must match.
+        clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
         invalidateDeskMarketExtracts(reason: "select-symbol")
         switch bind.shape {
@@ -1325,6 +1335,7 @@ public final class NotchViewModel: ObservableObject {
         //
         // Order matters: the id first, then invalidate (it reads the id to decide whether
         // Last may survive), then fetch — which captures the generation it must match.
+        clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
         invalidateDeskMarketExtracts(reason: "commit-symbol")
         // No `applyLTP` seed: there is no catalog row here, and a spot-shaped last never

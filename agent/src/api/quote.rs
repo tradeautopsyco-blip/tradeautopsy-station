@@ -80,6 +80,12 @@ pub async fn handler(
                     if state.is_kotak_neo_desk() {
                         state.prime_kotak_quote(&id).await;
                     } else {
+                        // Order is load-bearing. The REST last must land before
+                        // the trade stream subscribes this id, or `apply_quote`
+                        // refuses it `RestClosed` and Last stays empty until the
+                        // first `@trade`. Depth and klines still ride the
+                        // subscribe, unchanged.
+                        state.prime_binance_spot_ticker(&id).await;
                         state.subscribe_instrument(&id);
                     }
                 }
