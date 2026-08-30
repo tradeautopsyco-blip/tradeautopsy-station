@@ -388,7 +388,10 @@ async fn planted_options_master_lights_chain_and_oi_on_glance_and_obtain() {
     assert_eq!(obtain_chain["status"], "success");
     assert_ne!(obtain_chain["status"], "unsupported");
     // Same rows through either door.
-    assert_eq!(obtain_chain["data"]["row_count"], chain["data"]["row_count"]);
+    assert_eq!(
+        obtain_chain["data"]["row_count"],
+        chain["data"]["row_count"]
+    );
     assert_eq!(obtain_chain["data"]["row_count"], 3);
     assert_eq!(
         obtain_chain["data"]["rows"][0]["instrument_id"],

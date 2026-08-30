@@ -987,6 +987,79 @@ mod tests {
         );
     }
 
+    /// `/eapi/v1/optionChain` is NOT SPECIFIED on the official MarketDataApi.
+    /// Station's `optionchain` noun is a catalog noun served from
+    /// `exchangeInfo` — it must never open that path, and `/eapi/v1/depth`
+    /// stays shut until its own lock slice.
+    #[test]
+    fn options_book_refuses_option_chain_and_depth_paths() {
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/optionChain").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/depth").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/optionChain",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/depth",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        // The two paths the chain and OI nouns actually ride stay open.
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/exchangeInfo",
+                false,
+            )
+            .expect("chain snapshot path stays allowlisted"),
+            ("instrument_master", AuthMode::Public)
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/openInterest",
+                false,
+            )
+            .expect("OI path stays allowlisted"),
+            ("open_interest", AuthMode::Public)
+        );
+        // Spot still cannot dial eapi at all, by either path.
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-spot",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/exchangeInfo",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+    }
+
     #[test]
     fn nfo_book_fence_allows_fo_scrip_and_refuses_cash_and_spot() {
         let fo = "/wso2-scripmaster/v1/prod/2025-01-22/transformed/nse_fo.csv";
