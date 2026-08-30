@@ -246,6 +246,29 @@ fn optionchain_binding(
     }
 }
 
+/// Open interest is `market/open_interest` LatestState. Mirrors
+/// [`optionchain_binding`] but stays a separate binding — OI never rides the
+/// chain binding.
+fn open_interest_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+) -> ManifestBinding {
+    ManifestBinding {
+        operation: "open_interest".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Market,
+        capability_id: "open_interest".into(),
+        physics: Physics::LatestState,
+        auth_mode,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::research_fetch_only(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Realtime,
+    }
+}
+
 fn instruments_binding(
     adapter_id: &str,
     coverage: Coverage,
@@ -445,8 +468,16 @@ pub fn binance_com_options_manifest() -> SourceManifest {
         manifest_id: "binance_com.options.v1".into(),
         adapter_id: "binance_com".into(),
         book_id: "binance-com-options".into(),
-        implemented: vec!["quotes".into()],
-        bindings: vec![quotes_binding("binance_com", coverage, AuthMode::Public)],
+        implemented: vec![
+            "quotes".into(),
+            "optionchain".into(),
+            "open_interest".into(),
+        ],
+        bindings: vec![
+            quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
+            optionchain_binding("binance_com", coverage.clone(), AuthMode::Public),
+            open_interest_binding("binance_com", coverage, AuthMode::Public),
+        ],
     }
 }
 
@@ -726,10 +757,51 @@ mod tests {
         assert_eq!(options.manifest_id, "binance_com.options.v1");
         assert_eq!(options.adapter_id, "binance_com");
         assert_eq!(options.book_id, "binance-com-options");
-        assert_eq!(options.implemented, vec!["quotes"]);
-        assert!(!options.implemented.iter().any(|op| op == "optionchain"));
+        assert_eq!(
+            options.implemented,
+            vec!["quotes", "optionchain", "open_interest"]
+        );
+        assert!(options.implemented.iter().any(|op| op == "optionchain"));
+        assert!(options.implemented.iter().any(|op| op == "open_interest"));
+        // Implemented with no planted snapshot is Unavailable, never Unsupported.
         assert_eq!(
             obtain(&options, "optionchain").status,
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            obtain(&options, "open_interest").status,
+            ObtainStatus::Unavailable
+        );
+        let chain_bind = options
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "optionchain")
+            .expect("options optionchain binding");
+        assert_eq!(chain_bind.capability_id, "option_chain");
+        assert_eq!(chain_bind.physics, Physics::BoundedSnapshot);
+        assert_eq!(chain_bind.auth_mode, AuthMode::Public);
+        // OI is its own binding; it never rides the chain binding.
+        let oi_bind = options
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "open_interest")
+            .expect("options open_interest binding");
+        assert_eq!(oi_bind.capability_id, "open_interest");
+        assert_eq!(oi_bind.physics, Physics::LatestState);
+        assert_eq!(oi_bind.auth_mode, AuthMode::Public);
+        // Spot and cash never grow a chain noun from the options book.
+        let spot = manifest_for_book_id("binance-com-spot").expect("spot book");
+        assert_eq!(
+            obtain(&spot, "optionchain").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&spot, "open_interest").status,
+            ObtainStatus::Unsupported
+        );
+        let cash = manifest_for_book_id("kotak-nse-bse-cash").expect("cash book");
+        assert_eq!(
+            obtain(&cash, "optionchain").status,
             ObtainStatus::Unsupported
         );
         let quotes_bind = options
