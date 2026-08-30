@@ -227,8 +227,9 @@ fn validate_descriptor(descriptor: &Descriptor) -> Vec<Reject> {
 mod tests {
     use super::*;
     use crate::data::descriptor::{
-        fixture_account_descriptor, fixture_quote_descriptor, DelayClass, Limits,
+        fixture_account_descriptor, fixture_quote_descriptor, DelayClass, Descriptor, Limits,
     };
+    use crate::data::rights::Rights;
     use crate::data::identity::{CapabilityId, Family, Physics};
 
     fn load_ok(descriptors: &[Descriptor]) -> Registry {
@@ -382,6 +383,45 @@ mod tests {
                 .any(|reject| matches!(reject, Reject::MarketAccountIdCollision { .. })),
             "expected MarketAccountIdCollision, got {rejects:?}"
         );
+    }
+
+    #[test]
+    fn rejects_market_force_order_complete_event_sequence() {
+        let mut descriptor = fixture_quote_descriptor();
+        descriptor.identity = Identity::new(
+            Family::Market,
+            CapabilityId::new("force_order").expect("force_order id"),
+            Physics::CompleteEventSequence,
+        );
+        let rejects = load_err(&[descriptor]);
+        assert!(
+            rejects
+                .iter()
+                .any(|reject| matches!(reject, Reject::CapabilityPhysicsMismatch { .. })),
+            "expected CapabilityPhysicsMismatch, got {rejects:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_market_force_order_lossy_as_research() {
+        let descriptor = Descriptor {
+            adapter_id: "binance_public".to_string(),
+            identity: Identity::new(
+                Family::Market,
+                CapabilityId::new("force_order").expect("force_order id"),
+                Physics::LossyEventObservation,
+            ),
+            rights: Some(Rights::research_fetch_only()),
+            delay_class: DelayClass::Realtime,
+            limits: Limits::default(),
+            account: None,
+            installed_source: None,
+        };
+        let registry = load_ok(&[descriptor.clone()]);
+        assert_eq!(registry.len(), 1);
+        let rights = descriptor.rights.expect("rights");
+        assert!(rights.research_fetch);
+        assert!(!rights.store);
     }
 
     #[test]

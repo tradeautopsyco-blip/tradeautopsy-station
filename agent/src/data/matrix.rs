@@ -255,6 +255,35 @@ mod tests {
     }
 
     #[test]
+    fn force_order_is_lossy_not_complete() {
+        assert!(known_id_physics_ok(
+            Family::Market,
+            "force_order",
+            Physics::LossyEventObservation
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Market,
+            "force_order",
+            Physics::CompleteEventSequence
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Market,
+            "force_order",
+            Physics::LatestState
+        ));
+        assert!(known_id_physics_ok(
+            Family::Market,
+            "public_trade",
+            Physics::CompleteEventSequence
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Market,
+            "public_trade",
+            Physics::LossyEventObservation
+        ));
+    }
+
+    #[test]
     fn derivative_contracts_is_reference_bounded_snapshot() {
         assert!(known_id_physics_ok(
             Family::Reference,

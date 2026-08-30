@@ -596,6 +596,70 @@ mod tests {
     }
 
     #[test]
+    fn forceorder_complete_binding_refused() {
+        let manifest = SourceManifest {
+            manifest_id: "fixture.forceorder".into(),
+            adapter_id: "binance_com".into(),
+            book_id: String::new(),
+            implemented: vec!["forceorder".into()],
+            bindings: vec![ManifestBinding {
+                operation: "forceorder".into(),
+                adapter_id: "binance_com".into(),
+                family: Family::Market,
+                capability_id: "force_order".into(),
+                physics: Physics::CompleteEventSequence,
+                auth_mode: AuthMode::Public,
+                transports: vec![TransportKind::Rest],
+                rights: Rights::research_fetch_only(),
+                limits: Limits::default(),
+                coverage: Coverage::default(),
+                delay_class: DelayClass::Unknown,
+            }],
+        };
+        let rejects = validate_manifest(&manifest);
+        assert!(
+            rejects.contains(&ManifestReject::IdentityMismatch)
+                || rejects.contains(&ManifestReject::CapabilityPhysicsMismatch),
+            "rejects={rejects:?}"
+        );
+        assert!(describe(&manifest).is_err());
+    }
+
+    #[test]
+    fn shipping_obtain_forceorder_unsupported() {
+        assert_eq!(
+            obtain(&binance_com_s1_manifest(), "forceorder").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&kotak_neo_s1k_manifest(), "forceorder").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&binance_com_options_manifest(), "forceorder").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&kotak_neo_nfo_manifest(), "forceorder").status,
+            ObtainStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn spot_and_cash_tradebook_fills_are_bounded_snapshot() {
+        for manifest in [binance_com_s1_manifest(), kotak_neo_s1k_manifest()] {
+            let tradebook = manifest
+                .bindings
+                .iter()
+                .find(|binding| binding.operation == "tradebook")
+                .expect("tradebook binding");
+            assert_eq!(tradebook.capability_id, "fills");
+            assert_eq!(tradebook.physics, Physics::BoundedSnapshot);
+            assert_ne!(tradebook.physics, Physics::CompleteEventSequence);
+        }
+    }
+
+    #[test]
     fn execution_noun_is_rejected() {
         let manifest = SourceManifest {
             manifest_id: "fixture.exec".into(),

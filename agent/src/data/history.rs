@@ -298,6 +298,15 @@ mod tests {
     }
 
     #[test]
+    fn licensed_history_is_ohlcv_not_force_order() {
+        let env = extract_licensed_history(&HistoryBook::new(), "btcusdt", Some("1m"), None);
+        assert_eq!(env.identity.capability_id.as_str(), "ohlcv");
+        assert_ne!(env.identity.capability_id.as_str(), "force_order");
+        assert_eq!(env.identity.physics, Physics::HistoricalSeries);
+        assert!(!env.canonical);
+    }
+
+    #[test]
     fn unsupported_interval_and_range_are_ineligible_null() {
         let book = HistoryBook::new();
         let interval = extract_licensed_history(&book, "btcusdt", Some("2m"), None);

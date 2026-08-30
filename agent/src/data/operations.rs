@@ -140,6 +140,13 @@ pub const OPENALGO_OPERATIONS: &[Operation] = &[
         AuthMode::Public
     ),
     read_op!(
+        "forceorder",
+        Family::Market,
+        "force_order",
+        Physics::LossyEventObservation,
+        AuthMode::Public
+    ),
+    read_op!(
         "optiongreeks",
         Family::Derived,
         "greeks",

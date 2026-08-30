@@ -227,6 +227,34 @@ mod tests {
     }
 
     #[test]
+    fn force_order_does_not_mutate_tickbook_last() {
+        let registry = desk_registry();
+        let mut book = TickBook::new();
+        book.subscribe(BINANCE_COM_SPOT_BOOK_ID, "btcusdt");
+
+        let trade = quote_tick_from_binance_json(
+            r#"{"e":"trade","E":1,"s":"BTCUSDT","p":"100.00","T":1672515782136}"#,
+            received(),
+        )
+        .unwrap();
+        apply_quote(&registry, &mut book, trade).unwrap();
+        assert_eq!(
+            book.get(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
+                .map(|row| row.last.as_str()),
+            Some("100.00")
+        );
+
+        let force = r#"{"e":"forceOrder","E":1,"s":"BTCUSDT","o":{"s":"BTCUSDT","S":"SELL"}}"#;
+        assert!(quote_tick_from_binance_json(force, received()).is_none());
+        assert_eq!(
+            book.get(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
+                .map(|row| row.last.as_str()),
+            Some("100.00")
+        );
+        assert!(book.get(BINANCE_COM_SPOT_BOOK_ID, "ethusdt").is_none());
+    }
+
+    #[test]
     fn stream_applies_and_rest_closes_when_subscribed() {
         let registry = desk_registry();
         let mut book = TickBook::new();

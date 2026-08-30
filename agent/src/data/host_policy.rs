@@ -937,18 +937,13 @@ mod tests {
         );
         for host in ["fapi.binance.com", "dapi.binance.com"] {
             assert!(!host_allowed(host), "{host} must stay off R0_ALLOWED_HOSTS");
-            assert_eq!(
-                authorize_book_call(
-                    "binance-com-spot",
-                    host,
-                    "GET",
-                    "/fapi/v1/premiumIndex",
-                    false
-                )
-                .unwrap_err(),
-                HostRefuse::HostNotAllowed,
-                "{host}"
-            );
+            for path in ["/fapi/v1/premiumIndex", "/fapi/v1/forceOrders"] {
+                assert_eq!(
+                    authorize_book_call("binance-com-spot", host, "GET", path, false).unwrap_err(),
+                    HostRefuse::HostNotAllowed,
+                    "{host}{path}"
+                );
+            }
         }
         // eapi is on R0 for the named options book; the spot fence still refuses it.
         assert!(host_allowed("eapi.binance.com"));

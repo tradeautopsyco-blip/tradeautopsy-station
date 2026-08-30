@@ -14,6 +14,7 @@ mod contracts;
 mod depthbook;
 mod descriptor;
 mod extract;
+mod force_order;
 mod glance;
 mod greeks;
 mod history;
@@ -82,6 +83,10 @@ pub use descriptor::{
 };
 pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, QuoteEnvelope, QuoteStatus,
+};
+pub use force_order::{
+    extract_force_order, reject_lossy_as_complete, ForceOrderEnvelope, LossyStatus,
+    LOSSY_CANNOT_CLAIM_COMPLETE,
 };
 pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
