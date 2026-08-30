@@ -2,8 +2,8 @@
 
 use crate::api::AppState;
 use crate::data::{
-    ensure_binance_com_options_quote, extract_quote_for_book, is_dated_option_contract,
-    normalize_options_instrument, parse_nfo_instrument_id, QuoteEnvelope, QuoteStatus,
+    extract_quote_for_book, is_dated_option_contract, normalize_options_instrument,
+    parse_nfo_instrument_id, quote_subscription_for, QuoteEnvelope, QuoteStatus, QuoteSubscription,
     BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
@@ -37,27 +37,6 @@ pub(crate) fn named_book_for(
     parse_nfo_instrument_id(instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID)
 }
 
-/// What the quote route may open for `id`. Dated option contracts take the
-/// options-quote record only — never spot `@trade` / depth / klines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QuoteSubscription {
-    OptionsQuote,
-    Desk,
-    None,
-}
-
-/// Way 3 last-only: shape, not `book=`, decides the stream. `desk_would_subscribe`
-/// is `AppState::should_subscribe_quote`.
-pub(crate) fn quote_subscription_for(id: &str, desk_would_subscribe: bool) -> QuoteSubscription {
-    if is_dated_option_contract(id) {
-        return QuoteSubscription::OptionsQuote;
-    }
-    if desk_would_subscribe {
-        return QuoteSubscription::Desk;
-    }
-    QuoteSubscription::None
-}
-
 pub async fn handler(
     State(state): State<AppState>,
     Query(query): Query<QuoteQuery>,
@@ -89,7 +68,9 @@ pub async fn handler(
                         .selected_quote_instrument
                         .lock()
                         .expect("selected quote instrument poisoned") = Some(id.clone());
-                    ensure_binance_com_options_quote(&state.quote_streams, &id);
+                    // Shape bind: options record + unbind spot. Do not subscribe_instrument
+                    // (that helper is “COM desk is on,” not “this id is spot”).
+                    state.bind_spot_market(&id);
                 }
                 QuoteSubscription::Desk => {
                     *state
@@ -153,6 +134,8 @@ pub async fn handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::desk::bind_spot_market_ids;
+    use crate::data::MarketBind;
 
     #[test]
     fn empty_instrument_query_is_unresolved() {
@@ -239,7 +222,10 @@ mod tests {
         let id = crate::data::normalize_options_instrument("  BTC-200730-9000-C  ");
         assert_eq!(id, "BTC-200730-9000-C");
         assert_ne!(id, "btc-200730-9000-c");
-        assert_ne!(id, crate::data::normalize_quote_instrument("BTC-200730-9000-C"));
+        assert_ne!(
+            id,
+            crate::data::normalize_quote_instrument("BTC-200730-9000-C")
+        );
         assert_eq!(
             named_book_for(&id, Some(BINANCE_COM_OPTIONS_BOOK_ID)),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
@@ -274,13 +260,16 @@ mod tests {
         let spawned = std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashSet::<String>::new(),
         ));
-        ensure_binance_com_options_quote(&spawned, "BTC-200730-9000-C");
+        let trade = MarketBind::new();
+        let depth = MarketBind::new();
+        bind_spot_market_ids("BTC-200730-9000-C", &trade, &depth, &spawned);
         let set = spawned.lock().expect("quote stream set poisoned");
         assert_eq!(set.len(), 1);
-        assert!(set.contains(&format!(
-            "{BINANCE_COM_OPTIONS_BOOK_ID}\0BTC-200730-9000-C"
-        )));
-        // `ensure_binance_com_trade_stream` inserts the bare lowercased spot id.
+        assert!(set.contains(&format!("{BINANCE_COM_OPTIONS_BOOK_ID}\0BTC-200730-9000-C")));
+        // Spot trade bind is MarketBind — dated must not lowercase into it.
+        assert!(trade.current().is_none());
+        assert!(depth.current().is_none());
+        assert_ne!(trade.current().as_deref(), Some("btc-200730-9000-c"));
         assert!(!set.contains("btc-200730-9000-c"));
         assert!(!set.contains("BTC-200730-9000-C"));
         assert!(!set.contains("btcusdt"));

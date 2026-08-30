@@ -2,13 +2,13 @@
 
 use super::AppState;
 use crate::data::{
-    apply_history_series, authorize_inferred_call, binance_exchange_info_cache_path,
-    ensure_binance_com_depth_stream, ensure_binance_com_trade_stream, extract_quote_for_book,
+    apply_history_series, binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
+    ensure_binance_com_options_quote, ensure_binance_com_trade_stream, extract_quote_for_book,
     is_dated_option_contract, normalize_options_instrument, normalize_quote_instrument,
-    parse_nfo_instrument_id, resolve_among, series_from_klines_json,
-    validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
-    InstrumentMasterFetchError, InstrumentMasterStatus, QuoteStatus, Transport,
-    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, KOTAK_NSE_NFO_BOOK_ID,
+    parse_nfo_instrument_id, resolve_among, series_from_klines_json, validate_kline_request,
+    write_raw_cache, HistoryBook, InstrumentMasterErrorClass, InstrumentMasterFetchError,
+    InstrumentMasterStatus, MarketBind, QuoteStatus, Transport, DEFAULT_HISTORY_INTERVAL,
+    KLINE_LIMIT_DEFAULT, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -21,12 +21,47 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::egress::{EgressCall, Lane};
+
+/// Listing changes are rare; the symbol set does not need refetching per call.
+const EXCHANGE_INFO_MAX_AGE_MS: i64 = 300_000;
+/// Two charts on the same series are one call.
+const KLINES_MAX_AGE_MS: i64 = 2_000;
+
 const BINANCE_COM: &str = "binance_com";
 const REFRESH_BACKOFFS: [Duration; 3] = [
     Duration::from_secs(5),
     Duration::from_secs(30),
     Duration::from_secs(120),
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BindSpotKind {
+    Options,
+    Kotak,
+    Spot,
+}
+
+/// Shape dispatch for COM bind. Dated never lowercases into the trade/depth slot.
+pub(crate) fn bind_spot_market_ids(
+    id: &str,
+    trade: &MarketBind,
+    depth: &MarketBind,
+    quote_streams: &Arc<Mutex<HashSet<String>>>,
+) -> BindSpotKind {
+    if is_dated_option_contract(id) {
+        ensure_binance_com_options_quote(quote_streams, id);
+        trade.bind(None);
+        depth.bind(None);
+        return BindSpotKind::Options;
+    }
+    if id.contains('|') {
+        return BindSpotKind::Kotak;
+    }
+    ensure_binance_com_trade_stream(trade, id);
+    ensure_binance_com_depth_stream(depth, id);
+    BindSpotKind::Spot
+}
 
 pub(crate) fn instrument_master_target(slug: &str) -> Option<&'static str> {
     match slug {
@@ -212,6 +247,14 @@ impl AppState {
     }
 
     pub fn subscribe_instrument(&self, instrument: &str) {
+        if is_dated_option_contract(instrument) {
+            let id = normalize_options_instrument(instrument);
+            if id.is_empty() {
+                return;
+            }
+            self.bind_spot_market(&id);
+            return;
+        }
         let id = normalize_quote_instrument(instrument);
         if id.is_empty() {
             return;
@@ -228,19 +271,41 @@ impl AppState {
                 }
             }
         }
-        if self.is_binance_path(&id) {
-            ensure_binance_com_trade_stream(
-                self.quote_registry.clone(),
-                self.tickbook.clone(),
-                &self.quote_streams,
-                &id,
-            );
-            ensure_binance_com_depth_stream(self.depthbook.clone(), &self.depth_streams, &id);
-            // REST.md: unsigned GET /api/v3/klines on api.binance.com (NONE). Not uiKlines.
-            ensure_binance_klines(self.historybook.clone(), &self.klines_inflight, &id);
+        self.bind_spot_market(&id);
+    }
+
+    /// Dispatch on instrument *shape*, not `is_binance_path` (that is "COM desk is on").
+    /// Dated → options record + unbind spot. Kotak `|` → REST kick. Else spot binds.
+    pub fn bind_spot_market(&self, id: &str) {
+        match bind_spot_market_ids(id, &self.com_trade, &self.com_depth, &self.quote_streams) {
+            BindSpotKind::Options => self.replace_klines_bind(None),
+            BindSpotKind::Kotak => self.kick_kotak_rest_quote(id),
+            BindSpotKind::Spot => {
+                let spot = normalize_quote_instrument(id);
+                self.replace_klines_bind(Some(spot.as_str()).filter(|s| !s.is_empty()));
+            }
         }
-        if self.is_kotak_neo_desk() {
-            self.kick_kotak_rest_quote(&id);
+    }
+
+    fn replace_klines_bind(&self, next: Option<&str>) {
+        let interval = DEFAULT_HISTORY_INTERVAL;
+        let old = self.com_klines.current();
+        if old.as_deref() == next {
+            return;
+        }
+        if let Some(old_id) = old {
+            let key = format!("{old_id}\0{interval}");
+            self.klines_inflight
+                .lock()
+                .expect("klines inflight poisoned")
+                .remove(&key);
+        }
+        match next {
+            Some(spot) if !spot.is_empty() => {
+                self.com_klines.bind(Some(spot.to_string()));
+                ensure_binance_klines(self.historybook.clone(), &self.klines_inflight, spot);
+            }
+            _ => self.com_klines.bind(None),
         }
     }
 
@@ -669,43 +734,34 @@ pub fn spawn_kotak_scrip_master_refresh(
 async fn fetch_com_exchange_info(
     cache_dir: &Path,
 ) -> Result<ExchangeInfoSymbolCache, InstrumentMasterFetchError> {
-    crate::data::authorize_inferred_call("api.binance.com", "GET", "/api/v3/exchangeInfo", false)
-        .map_err(|_| {
+    // Unparameterised exchangeInfo is weight 20 (spot/REST.md:68) and the symbol
+    // set changes on listing events, not per call.
+    let call = EgressCall::get(
+        crate::data::BINANCE_COM_SPOT_BOOK_ID,
+        "api.binance.com",
+        "/api/v3/exchangeInfo",
+        Lane::MarketData,
+    )
+    .with_max_age_ms(EXCHANGE_INFO_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let resp = crate::egress::shared().send(&call).await.map_err(|_| {
         InstrumentMasterFetchError::new(InstrumentMasterErrorClass::ExchangeInfoHttp, None)
     })?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|_| {
-            InstrumentMasterFetchError::new(InstrumentMasterErrorClass::ExchangeInfoHttp, None)
-        })?;
-    let resp = client
-        .get("https://api.binance.com/api/v3/exchangeInfo")
-        .send()
-        .await
-        .map_err(|_| {
-            InstrumentMasterFetchError::new(InstrumentMasterErrorClass::ExchangeInfoHttp, None)
-        })?;
-    let status = resp.status();
-    if !status.is_success() {
+    let status = resp.status;
+    if !resp.is_success() {
         return Err(InstrumentMasterFetchError::new(
             InstrumentMasterErrorClass::ExchangeInfoHttp,
-            Some(status.as_u16()),
+            Some(status),
         ));
     }
-    let body = resp.text().await.map_err(|_| {
-        InstrumentMasterFetchError::new(
-            InstrumentMasterErrorClass::ExchangeInfoHttp,
-            Some(status.as_u16()),
-        )
-    })?;
+    let body = resp.body;
     let cache = ExchangeInfoSymbolCache::from_exchange_info_json(&body).map_err(|_| {
-        InstrumentMasterFetchError::new(InstrumentMasterErrorClass::Empty, Some(status.as_u16()))
+        InstrumentMasterFetchError::new(InstrumentMasterErrorClass::Empty, Some(status))
     })?;
     if cache.is_empty() {
         return Err(InstrumentMasterFetchError::new(
             InstrumentMasterErrorClass::Empty,
-            Some(status.as_u16()),
+            Some(status),
         ));
     }
     write_raw_cache(
@@ -720,27 +776,30 @@ async fn fetch_com_klines(
     interval: &str,
     limit: u32,
 ) -> anyhow::Result<crate::data::HistorySeries> {
-    authorize_inferred_call("api.binance.com", "GET", "/api/v3/klines", false)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
     validate_kline_request(interval, Some(limit))
         .map_err(|e| anyhow::anyhow!("{}", e.as_ineligible()))?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
-    let url = format!(
-        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&limit={}",
+    let call = EgressCall::get(
+        crate::data::BINANCE_COM_SPOT_BOOK_ID,
+        "api.binance.com",
+        "/api/v3/klines",
+        Lane::MarketData,
+    )
+    .with_query(format!(
+        "symbol={}&interval={}&limit={}",
         symbol.trim().to_ascii_uppercase(),
         interval,
         limit
-    );
-    let body = client
-        .get(&url)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
-    series_from_klines_json(&body, symbol, interval, Transport::Rest)
+    ))
+    .with_max_age_ms(KLINES_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let resp = crate::egress::shared()
+        .send(&call)
+        .await
+        .map_err(anyhow::Error::new)?;
+    if !resp.is_success() {
+        return Err(anyhow::anyhow!("klines http {}", resp.status));
+    }
+    series_from_klines_json(&resp.body, symbol, interval, Transport::Rest)
         .ok_or_else(|| anyhow::anyhow!("klines body unusable"))
 }
 
@@ -783,5 +842,40 @@ mod tests {
         assert_ne!(instrument_master_target("binance_com"), Some("kotak_neo"));
         assert_eq!(instrument_master_target("fixture"), None);
         assert_eq!(instrument_master_target("zerodha"), None);
+    }
+
+    #[test]
+    fn subscribe_instrument_dated_does_not_insert_into_depth_bind() {
+        let trade = MarketBind::new();
+        let depth = MarketBind::new();
+        let streams = Arc::new(Mutex::new(HashSet::new()));
+        let kind = bind_spot_market_ids("BTC-260925-145000-C", &trade, &depth, &streams);
+        assert_eq!(kind, BindSpotKind::Options);
+        assert!(trade.current().is_none());
+        assert!(depth.current().is_none());
+        assert_ne!(depth.current().as_deref(), Some("btc-260925-145000-c"));
+        assert_ne!(depth.current().as_deref(), Some("BTC-260925-145000-C"));
+        let set = streams.lock().expect("quote stream set poisoned");
+        assert!(set.contains(&format!(
+            "{}\0BTC-260925-145000-C",
+            crate::data::BINANCE_COM_OPTIONS_BOOK_ID
+        )));
+        assert!(!set.contains("btc-260925-145000-c"));
+    }
+
+    #[test]
+    fn subscribe_instrument_spot_replaces_trade_and_depth_bind() {
+        let trade = MarketBind::new();
+        let depth = MarketBind::new();
+        let streams = Arc::new(Mutex::new(HashSet::new()));
+        bind_spot_market_ids("ETHUSDT", &trade, &depth, &streams);
+        bind_spot_market_ids("BTCUSDT", &trade, &depth, &streams);
+        assert_eq!(trade.current().as_deref(), Some("btcusdt"));
+        assert_eq!(depth.current().as_deref(), Some("btcusdt"));
+        assert_ne!(trade.current().as_deref(), Some("ethusdt"));
+        assert!(streams
+            .lock()
+            .expect("quote stream set poisoned")
+            .is_empty());
     }
 }

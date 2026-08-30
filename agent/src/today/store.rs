@@ -27,8 +27,8 @@ pub struct TodayStore {
 
 impl TodayStore {
     pub fn open(path: &std::path::Path) -> anyhow::Result<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("open today db {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("open today db {}", path.display()))?;
         conn.execute_batch(
             r#"
 PRAGMA journal_mode = WAL;

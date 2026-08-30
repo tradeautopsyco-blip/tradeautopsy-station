@@ -67,10 +67,7 @@ fn value_contains_forbidden_key(value: &Value) -> bool {
     match value {
         Value::Object(map) => {
             for (key, child) in map {
-                if FORBIDDEN_KEYS
-                    .iter()
-                    .any(|f| key.eq_ignore_ascii_case(f))
-                {
+                if FORBIDDEN_KEYS.iter().any(|f| key.eq_ignore_ascii_case(f)) {
                     return true;
                 }
                 if value_contains_forbidden_key(child) {
@@ -87,11 +84,7 @@ fn value_contains_forbidden_key(value: &Value) -> bool {
 fn strip_forbidden_keys(value: &mut Value) {
     match value {
         Value::Object(map) => {
-            map.retain(|key, _| {
-                !FORBIDDEN_KEYS
-                    .iter()
-                    .any(|f| key.eq_ignore_ascii_case(f))
-            });
+            map.retain(|key, _| !FORBIDDEN_KEYS.iter().any(|f| key.eq_ignore_ascii_case(f)));
             for child in map.values_mut() {
                 strip_forbidden_keys(child);
             }

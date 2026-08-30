@@ -119,17 +119,7 @@ pub async fn start_handler(
     }
     if slug == "binance_com" {
         if let Some(default) = state.s1_desk_symbol.clone() {
-            crate::data::ensure_binance_com_trade_stream(
-                state.quote_registry.clone(),
-                state.tickbook.clone(),
-                &state.quote_streams,
-                &default,
-            );
-            crate::data::ensure_binance_com_depth_stream(
-                state.depthbook.clone(),
-                &state.depth_streams,
-                &default,
-            );
+            state.bind_spot_market(&default);
         }
         if let Some(opt_sym) = state.s1_options_symbol.as_deref() {
             crate::data::ensure_binance_com_options_quote(&state.quote_streams, opt_sym);

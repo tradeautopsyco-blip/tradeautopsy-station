@@ -51,7 +51,9 @@ impl StationTokenStore for KeyringStationTokenStore {
     fn save(&self, tokens: &StationTokens) -> Result<()> {
         let entry = keyring::Entry::new(SERVICE, USER).context("keyring entry")?;
         let json = serde_json::to_string(tokens).context("serialize station tokens")?;
-        entry.set_password(&json).context("keyring set station tokens")?;
+        entry
+            .set_password(&json)
+            .context("keyring set station tokens")?;
         Ok(())
     }
 

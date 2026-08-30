@@ -15,6 +15,7 @@ mod broker_validation;
 mod data;
 mod device_login;
 mod dns_block;
+mod egress;
 mod event_bus;
 mod exchange_info;
 mod fact_outbox;
@@ -86,7 +87,27 @@ pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
     DeviceLoginPublic, StationSessionIdentity,
 };
-pub use dns_block::{hosts_for_broker, BLOCK_MARKER};
+pub use dns_block::{arm_venue_ban, clear_venue_ban, hosts_for_broker, BlockReason, BLOCK_MARKER};
+
+/// Test seams for the multi-owner hosts file. Integration tests drive the
+/// kill-switch side of the registry through these; production code calls the
+/// kill switch's own paths.
+pub fn dns_apply_hosts_block_for_tests(broker: &str) -> Result<(), String> {
+    dns_block::apply_hosts_block(broker)
+}
+
+pub fn dns_disable_block_for_tests() -> Result<(), String> {
+    dns_block::disable_block()
+}
+
+pub fn dns_is_block_active_for_tests() -> bool {
+    dns_block::is_block_active()
+}
+pub use egress::{
+    Decision as EgressDecision, EgressCall, EgressError, EgressRequest, EgressResponse,
+    EgressTransport, Lane, Outcome as EgressOutcome, RefuseKind, RefuseReason, VenueEgress,
+    VenuePosture,
+};
 pub use event_bus::{AgentEvent, EventBus};
 pub use exchange_info::{
     is_usd_pegged_stablecoin, is_usd_quoted_symbol, live_com_filters_ready, resolve_symbol_assets,
@@ -749,6 +770,12 @@ fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) 
 
 pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let event_bus = EventBus::new(2048);
+    // Per-venue egress posture reaches Notch over the same SSE stream as broker
+    // sync. Every slot is reported on every change, so a banned venue never
+    // blanks a live one.
+    egress::shared_engine().attach_event_bus(Arc::new(event_bus.clone()));
+    // Ring 3: a venue IP ban is mirrored into /etc/hosts for the life of the ban.
+    egress::shared_engine().enable_hosts_backstop();
     let runtime = Arc::new(AgentRuntime::new());
     let metrics = Arc::new(AgentMetrics::default());
     if let Some(mp) = config.metrics_port {
@@ -855,7 +882,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     );
     let broker_connections = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let quote_streams = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
-    let depth_streams = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let com_trade = crate::data::MarketBind::new();
+    let com_depth = crate::data::MarketBind::new();
+    let com_klines = crate::data::MarketBind::new();
     let klines_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
     let instrument_master = Arc::new(std::sync::Mutex::new(ExchangeInfoSymbolCache::empty()));
     let kotak_scrip_master = Arc::new(std::sync::Mutex::new(
@@ -900,37 +929,6 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let options_oi_rows = Arc::new(std::sync::Mutex::new(Vec::new()));
     if config.plant_binance_options_chain {
         plant_binance_options_chain(&options_option_symbols, &options_oi_rows);
-    }
-    if let Some(symbol) = config.s1_desk_symbol.clone() {
-        tracing::info!(
-            instrument = %symbol,
-            "s1 desk: public last-price stream (TickBook, not LiveBook); env is a dev default"
-        );
-        crate::data::ensure_binance_com_trade_stream(
-            quote_registry.clone(),
-            tickbook.clone(),
-            &quote_streams,
-            &symbol,
-        );
-        crate::data::ensure_binance_com_depth_stream(depthbook.clone(), &depth_streams, &symbol);
-        crate::api::desk::spawn_binance_klines_refresh(historybook.clone(), symbol);
-        crate::api::desk::try_load_binance_cache(
-            &instrument_master_cache_dir,
-            &instrument_master,
-            &instrument_master_status,
-        );
-        crate::api::desk::spawn_exchange_info_refresh(
-            instrument_master.clone(),
-            instrument_master_status.clone(),
-            instrument_master_cancel.clone(),
-            instrument_master_cache_dir.clone(),
-            broker_connections.clone(),
-            false,
-        );
-    } else {
-        tracing::info!(
-            "s1 desk: no runtime subscription yet — TickBook empty until Start or quote resolve"
-        );
     }
 
     let injected_station_tokens = config.station_token_store.is_some();
@@ -1011,7 +1009,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         options_oi_rows,
         eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,
-        depth_streams,
+        com_trade,
+        com_depth,
+        com_klines,
         klines_inflight,
         kotak_session_locator,
         kotak_quote_inflight,
@@ -1022,6 +1022,36 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         selected_quote_instrument: Arc::new(std::sync::Mutex::new(None)),
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
+    crate::data::spawn_binance_com_trade_loop(
+        state.quote_registry.clone(),
+        state.tickbook.clone(),
+        state.com_trade.subscribe(),
+    );
+    crate::data::spawn_binance_com_depth_loop(state.depthbook.clone(), state.com_depth.subscribe());
+    if let Some(symbol) = state.s1_desk_symbol.clone() {
+        tracing::info!(
+            instrument = %symbol,
+            "s1 desk: public last-price stream (TickBook, not LiveBook); env is a dev default"
+        );
+        state.bind_spot_market(&symbol);
+        crate::api::desk::try_load_binance_cache(
+            &state.instrument_master_cache_dir,
+            &state.instrument_master,
+            &state.instrument_master_status,
+        );
+        crate::api::desk::spawn_exchange_info_refresh(
+            state.instrument_master.clone(),
+            state.instrument_master_status.clone(),
+            state.instrument_master_cancel.clone(),
+            state.instrument_master_cache_dir.clone(),
+            state.broker_connections.clone(),
+            false,
+        );
+    } else {
+        tracing::info!(
+            "s1 desk: no runtime subscription yet — TickBook empty until Start or quote resolve"
+        );
+    }
     let router = api::router(state.clone());
 
     metrics.set_uptime_secs(runtime.uptime_secs());

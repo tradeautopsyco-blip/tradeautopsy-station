@@ -4,9 +4,7 @@
 //! never echoes tokens, TOTP, or MPIN.
 
 use crate::api::AppState;
-use crate::ubi::{
-    mint_totp_session, KotakMintRequest, ReqwestKotakSessionHttp,
-};
+use crate::ubi::{mint_totp_session, KotakMintRequest, ReqwestKotakSessionHttp};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;

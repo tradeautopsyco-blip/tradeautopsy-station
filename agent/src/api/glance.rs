@@ -3,8 +3,8 @@
 
 use crate::api::AppState;
 use crate::data::{
-    authorize_book_call, chain_rows_for_contract, expiration_from_dated_contract,
-    extract_chain_from, extract_open_interest, extract_open_interest_from, oi_rows_from_json,
+    chain_rows_for_contract, expiration_from_dated_contract, extract_chain_from,
+    extract_open_interest, extract_open_interest_from, oi_rows_from_json,
     option_symbols_from_exchange_info_json, parse_nfo_instrument_id,
     underlying_asset_from_dated_contract, ChainRow, GlanceEnvelope, OptionsOiRow,
     BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
@@ -13,6 +13,13 @@ use axum::extract::{Query, State};
 use axum::Json;
 use serde::Deserialize;
 use std::time::Duration;
+
+use crate::egress::{EgressCall, Lane};
+
+/// Options contract lists change on expiry boundaries, not per request.
+const EXCHANGE_INFO_MAX_AGE_MS: i64 = 300_000;
+/// Open interest is a slow series; one call serves every panel asking at once.
+const OPEN_INTEREST_MAX_AGE_MS: i64 = 5_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -78,37 +85,23 @@ async fn ensure_options_master(state: &AppState) {
             return;
         }
     }
-    if authorize_book_call(
+    // The engine runs the same `authorize_book_call` fence before it charges
+    // anything, so the check is not repeated here.
+    let call = EgressCall::get(
         BINANCE_COM_OPTIONS_BOOK_ID,
         "eapi.binance.com",
-        "GET",
         "/eapi/v1/exchangeInfo",
-        false,
+        Lane::MarketData,
     )
-    .is_err()
-    {
+    .with_max_age_ms(EXCHANGE_INFO_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return;
+    };
+    if !resp.is_success() {
         return;
     }
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-    else {
-        return;
-    };
-    let Ok(resp) = client
-        .get("https://eapi.binance.com/eapi/v1/exchangeInfo")
-        .send()
-        .await
-    else {
-        return;
-    };
-    if !resp.status().is_success() {
-        return;
-    }
-    let Ok(body) = resp.text().await else {
-        return;
-    };
-    let rows = option_symbols_from_exchange_info_json(&body);
+    let rows = option_symbols_from_exchange_info_json(&resp.body);
     if rows.is_empty() {
         return;
     }
@@ -137,36 +130,24 @@ async fn fetch_options_oi(state: &AppState, instrument: &str) -> Vec<OptionsOiRo
     let Some(expiration) = expiration_from_dated_contract(instrument) else {
         return Vec::new();
     };
-    let path =
-        format!("/eapi/v1/openInterest?underlyingAsset={underlying}&expiration={expiration}");
-    if authorize_book_call(
+    let call = EgressCall::get(
         BINANCE_COM_OPTIONS_BOOK_ID,
         "eapi.binance.com",
-        "GET",
-        &path,
-        false,
+        "/eapi/v1/openInterest",
+        Lane::MarketData,
     )
-    .is_err()
-    {
+    .with_query(format!(
+        "underlyingAsset={underlying}&expiration={expiration}"
+    ))
+    .with_max_age_ms(OPEN_INTEREST_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return Vec::new();
+    };
+    if !resp.is_success() {
         return Vec::new();
     }
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-    else {
-        return Vec::new();
-    };
-    let url = format!("https://eapi.binance.com{path}");
-    let Ok(resp) = client.get(&url).send().await else {
-        return Vec::new();
-    };
-    if !resp.status().is_success() {
-        return Vec::new();
-    }
-    let Ok(body) = resp.text().await else {
-        return Vec::new();
-    };
-    oi_rows_from_json(&body)
+    oi_rows_from_json(&resp.body)
 }
 
 pub async fn chain_handler(

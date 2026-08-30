@@ -97,10 +97,9 @@ pub struct ReqwestKotakSessionHttp {
 
 impl ReqwestKotakSessionHttp {
     pub fn new() -> Result<Self, String> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| format!("kotak http client: {e}"))?;
+        // A clone of the egress client, so login shares the desk's connection
+        // pool. Admission happens per call in `post_json`.
+        let client = crate::egress::shared_client();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -122,16 +121,67 @@ impl KotakSessionHttp for ReqwestKotakSessionHttp {
         headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> Result<(u16, String), String> {
-        self.runtime.block_on(async {
+        // TOTP login is outside the R0 *data* fence — no capability covers
+        // `/login/1.0/*` — but it reaches Kotak's hosts, so it is metered and it
+        // obeys a freeze. A login retry storm is a real way to earn a 429.
+        let engine = crate::egress::shared_engine();
+        let host = crate::egress::split_url(url)
+            .map(|(h, _, _)| h)
+            .ok_or_else(|| "kotak http: unparseable url".to_string())?;
+        // A non-venue URL (a local server in tests) has no venue budget to spend.
+        let permit = if crate::egress::is_venue_host(&host) {
+            match engine.admit_auth(&host, crate::egress::Lane::PrivateRead, 0) {
+                crate::egress::Decision::Admit(permit) => Some(permit),
+                crate::egress::Decision::Refuse(reason) => {
+                    return Err(format!("kotak http: {reason}"));
+                }
+            }
+        } else {
+            None
+        };
+
+        let sent = self.runtime.block_on(async {
             let mut builder = self.client.post(url).json(body);
             for (name, value) in headers {
                 builder = builder.header(name.as_str(), value.as_str());
             }
             let response = builder.send().await.map_err(|e| redact_http_err(&e))?;
             let status = response.status().as_u16();
+            let response_headers: Vec<(String, String)> = response
+                .headers()
+                .iter()
+                .map(|(n, v)| {
+                    (
+                        n.as_str().to_string(),
+                        v.to_str().unwrap_or_default().to_string(),
+                    )
+                })
+                .collect();
             let text = response.text().await.map_err(|e| redact_http_err(&e))?;
-            Ok((status, text))
-        })
+            Ok::<_, String>((status, response_headers, text))
+        });
+
+        match sent {
+            Ok((status, response_headers, text)) => {
+                if let Some(permit) = permit {
+                    engine.record(
+                        permit,
+                        &crate::egress::Outcome::http(
+                            status,
+                            crate::ubi::redact_response_headers(&response_headers),
+                            &text,
+                        ),
+                    );
+                }
+                Ok((status, text))
+            }
+            Err(e) => {
+                if let Some(permit) = permit {
+                    engine.record(permit, &crate::egress::Outcome::Transport);
+                }
+                Err(e)
+            }
+        }
     }
 }
 

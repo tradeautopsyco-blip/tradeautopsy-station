@@ -296,10 +296,7 @@ mod tests {
     #[test]
     fn recent_fills_round_trip_keeps_inr_cash_fields() {
         // I-N3
-        let dir = std::env::temp_dir().join(format!(
-            "ta-recent-fills-inr-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ta-recent-fills-inr-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("recent.db");
         let _ = std::fs::remove_file(&path);
@@ -330,4 +327,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-

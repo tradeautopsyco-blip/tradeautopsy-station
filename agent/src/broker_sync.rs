@@ -3,7 +3,7 @@
 use crate::bar_fill_ingress::{
     post_bar_broker_fill_ingress, BarBrokerFillIngressConfig, BarFillIngestSource,
 };
-use crate::broker::{BrokerAdapter, BrokerError, BrokerFill};
+use crate::broker::{slug_to_slot, BrokerAdapter, BrokerError, BrokerFill};
 use crate::broker_data_class::BrokerDataClass;
 use crate::event_bus::{AgentEvent, EventBus};
 use crate::recent_trades::RecentTradesStore;
@@ -138,7 +138,23 @@ fn broker_err_as_str(e: &BrokerError) -> String {
                 "rate_limited".to_string()
             }
         }
+        BrokerError::VenueStopped { until_ms } => {
+            if let Some(ms) = until_ms {
+                format!("venue_stopped:until_ms={ms}")
+            } else {
+                "venue_stopped".to_string()
+            }
+        }
     }
+}
+
+fn is_venue_stop(err: &BrokerError) -> bool {
+    matches!(err, BrokerError::VenueStopped { .. })
+}
+
+fn engine_until_ms(slot: Option<&str>) -> Option<i64> {
+    slot.and_then(|s| crate::egress::shared_engine().posture_for(s))
+        .and_then(|p| p.until_ms)
 }
 
 fn mark_class_success(
@@ -160,17 +176,24 @@ fn mark_class_failure(
     err: &BrokerError,
     cfg: &BrokerSyncConfig,
     class_failures: &mut u32,
+    slot: Option<&str>,
 ) {
     let entry = completeness.get_mut(class);
     entry.current = false;
     entry.last_error_category = Some(err.category().to_string());
+    let from_engine = engine_until_ms(slot);
 
     match err {
         BrokerError::RateLimited { retry_after_ms } => {
-            let until = retry_after_ms.unwrap_or_else(|| {
-                Utc::now().timestamp_millis() + cfg.rate_limit_default_backoff_ms
+            let until = from_engine.unwrap_or_else(|| {
+                retry_after_ms.unwrap_or_else(|| {
+                    Utc::now().timestamp_millis() + cfg.rate_limit_default_backoff_ms
+                })
             });
             entry.rate_limited_until_ms = Some(until);
+        }
+        BrokerError::VenueStopped { until_ms } => {
+            entry.rate_limited_until_ms = from_engine.or(*until_ms);
         }
         BrokerError::Http(_) => {
             *class_failures = class_failures.saturating_add(1);
@@ -230,6 +253,16 @@ fn failure_sse_class(consec: u32, cfg: &BrokerSyncConfig, circuit_open: bool) ->
     } else {
         "synced"
     }
+}
+
+/// How long the poll loop should wait (and skip `poll_fills`) for a banned/backoff
+/// slot. Cap at 60s so a 5-minute ban cannot hang a test. `None` means poll.
+fn venue_stop_sleep(posture: &crate::egress::VenuePosture, now_ms: i64) -> Option<Duration> {
+    if posture.posture != "banned" && posture.posture != "backoff" {
+        return None;
+    }
+    let remaining_ms = (posture.until_ms.unwrap_or(now_ms) - now_ms).max(0) as u64;
+    Some(Duration::from_millis(remaining_ms.min(60_000)))
 }
 
 pub fn spawn_toolbar_coalesce_task(
@@ -336,6 +369,16 @@ pub fn spawn_broker_poll_loop(
 
             tokio::time::sleep(sleep_dur).await;
 
+            if let Some(slot) = slug_to_slot(adapter.name()) {
+                let engine = crate::egress::shared_engine();
+                if let Some(p) = engine.posture_for(slot) {
+                    if let Some(wait) = venue_stop_sleep(&p, engine.now_ms()) {
+                        tokio::time::sleep(wait).await;
+                        continue;
+                    }
+                }
+            }
+
             let circuit_open = {
                 let st = status_arc.lock().expect("mux");
                 st.circuit_open
@@ -354,6 +397,7 @@ pub fn spawn_broker_poll_loop(
             let mut any_class_error = false;
             let mut last_err_msg: Option<String> = None;
             let mut new_fills: Vec<BrokerFill> = Vec::new();
+            let slot = slug_to_slot(adapter.name());
 
             if let Ok(fills) = &fills_result {
                 new_fills = match store.merge_poll(fills) {
@@ -386,7 +430,9 @@ pub fn spawn_broker_poll_loop(
                     class_failures.insert(BrokerDataClass::FillsTradeHistory, 0);
                     st.last_fills_count = fills_result.as_ref().ok().map(|fills| fills.len());
                 } else if let Err(e) = &fills_result {
-                    any_class_error = true;
+                    if !is_venue_stop(e) {
+                        any_class_error = true;
+                    }
                     last_err_msg = Some(broker_err_as_str(e));
                     let count = class_failures
                         .entry(BrokerDataClass::FillsTradeHistory)
@@ -397,6 +443,7 @@ pub fn spawn_broker_poll_loop(
                         e,
                         &cfg,
                         count,
+                        slot,
                     );
                 }
 
@@ -409,7 +456,9 @@ pub fn spawn_broker_poll_loop(
                     class_failures.insert(BrokerDataClass::BalancesHoldings, 0);
                     st.last_balances = balances_result.as_ref().ok().cloned();
                 } else if let Err(e) = &balances_result {
-                    any_class_error = true;
+                    if !is_venue_stop(e) {
+                        any_class_error = true;
+                    }
                     last_err_msg = Some(broker_err_as_str(e));
                     let count = class_failures
                         .entry(BrokerDataClass::BalancesHoldings)
@@ -420,6 +469,7 @@ pub fn spawn_broker_poll_loop(
                         e,
                         &cfg,
                         count,
+                        slot,
                     );
                 }
 
@@ -427,7 +477,9 @@ pub fn spawn_broker_poll_loop(
                     mark_class_success(&mut st.data_classes, BrokerDataClass::OpenOrders, ok_ms);
                     class_failures.insert(BrokerDataClass::OpenOrders, 0);
                 } else if let Err(e) = &open_orders_result {
-                    any_class_error = true;
+                    if !is_venue_stop(e) {
+                        any_class_error = true;
+                    }
                     last_err_msg = Some(broker_err_as_str(e));
                     let count = class_failures
                         .entry(BrokerDataClass::OpenOrders)
@@ -438,6 +490,7 @@ pub fn spawn_broker_poll_loop(
                         e,
                         &cfg,
                         count,
+                        slot,
                     );
                 }
 
@@ -526,4 +579,230 @@ pub fn spawn_broker_stack(
         None,
     );
     poll
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::broker::BrokerError;
+    use crate::broker_data_class::{BrokerDataClass, BrokerDataClassCompleteness};
+    use crate::event_bus::AgentEvent;
+    use async_trait::async_trait;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Mutex;
+
+    struct AlwaysVenueStoppedAdapter;
+
+    #[async_trait]
+    impl BrokerAdapter for AlwaysVenueStoppedAdapter {
+        fn name(&self) -> &'static str {
+            "always_venue_stopped"
+        }
+
+        async fn poll_fills(
+            &self,
+            _since: Option<DateTime<Utc>>,
+        ) -> Result<Vec<BrokerFill>, BrokerError> {
+            Err(BrokerError::VenueStopped { until_ms: None })
+        }
+    }
+
+    struct AlwaysHttpFailAdapter;
+
+    #[async_trait]
+    impl BrokerAdapter for AlwaysHttpFailAdapter {
+        fn name(&self) -> &'static str {
+            "always_http_fail"
+        }
+
+        async fn poll_fills(
+            &self,
+            _since: Option<DateTime<Utc>>,
+        ) -> Result<Vec<BrokerFill>, BrokerError> {
+            Err(BrokerError::Http("unit-fail".into()))
+        }
+
+        async fn poll_balances_holdings(&self) -> Result<BrokerBalancesSnapshot, BrokerError> {
+            Err(BrokerError::Http("unit-fail".into()))
+        }
+
+        async fn poll_open_orders(&self) -> Result<BrokerOpenOrdersSnapshot, BrokerError> {
+            Err(BrokerError::Http("unit-fail".into()))
+        }
+    }
+
+    fn fail_cfg() -> BrokerSyncConfig {
+        BrokerSyncConfig {
+            initial_startup_delay: Duration::ZERO,
+            base_poll_interval: Duration::from_millis(15),
+            coalesce_window: Duration::from_millis(10),
+            failure_escalate_after: 3,
+            backoff_tick_1: Duration::from_millis(20),
+            backoff_tick_2: Duration::from_millis(20),
+            failures_until_open: 5,
+            ..BrokerSyncConfig::default()
+        }
+    }
+
+    fn temp_store() -> RecentTradesStore {
+        let path = std::env::temp_dir().join(format!(
+            "rta-venue-stop-{}-{}.db",
+            std::process::id(),
+            ulid::Ulid::new()
+        ));
+        RecentTradesStore::open(&path).expect("recent trades store")
+    }
+
+    #[test]
+    fn mark_class_failure_venue_stopped_does_not_open_circuit_after_five() {
+        let kill_before = crate::dns_block::is_block_active();
+        let mut completeness = BrokerDataClassCompleteness::default();
+        let cfg = BrokerSyncConfig::default();
+        let mut class_failures = 0u32;
+        let err = BrokerError::VenueStopped { until_ms: None };
+        for _ in 0..5 {
+            mark_class_failure(
+                &mut completeness,
+                BrokerDataClass::FillsTradeHistory,
+                &err,
+                &cfg,
+                &mut class_failures,
+                None,
+            );
+        }
+        assert_eq!(class_failures, 0);
+        assert!(
+            !completeness.fills_trade_history.requires_manual_retry,
+            "VenueStopped must not open the class circuit"
+        );
+        assert_eq!(crate::dns_block::is_block_active(), kill_before);
+    }
+
+    #[test]
+    fn mark_class_failure_http_still_opens_after_five() {
+        let mut completeness = BrokerDataClassCompleteness::default();
+        let cfg = BrokerSyncConfig::default();
+        let mut class_failures = 0u32;
+        let err = BrokerError::Http("unit-fail".into());
+        for _ in 0..5 {
+            mark_class_failure(
+                &mut completeness,
+                BrokerDataClass::FillsTradeHistory,
+                &err,
+                &cfg,
+                &mut class_failures,
+                None,
+            );
+        }
+        assert_eq!(class_failures, 5);
+        assert!(completeness.fills_trade_history.requires_manual_retry);
+    }
+
+    async fn run_polls(
+        adapter: Arc<dyn BrokerAdapter>,
+        cfg: BrokerSyncConfig,
+    ) -> (BrokerRuntimeState, Vec<String>) {
+        let store = temp_store();
+        let since = Arc::new(RwLock::new(None));
+        let bus = EventBus::new(64);
+        let mut rx = bus.subscribe();
+        let status_arc = Arc::new(Mutex::new(BrokerRuntimeState::default()));
+        let (tx, mut coalesce_rx) = mpsc::channel(8);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let handle = spawn_broker_poll_loop(
+            adapter,
+            store,
+            since,
+            cfg,
+            bus,
+            status_arc.clone(),
+            tx,
+            None,
+            None,
+            Some(cancel.clone()),
+            None,
+        );
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        cancel.store(true, Ordering::Relaxed);
+        handle.abort();
+        while coalesce_rx.try_recv().is_ok() {}
+
+        let mut classes = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let AgentEvent::BrokerSyncState { payload } = ev {
+                if let Some(c) = payload.get("class").and_then(|v| v.as_str()) {
+                    classes.push(c.to_string());
+                }
+            }
+        }
+        let snap = status_arc.lock().expect("status").clone();
+        (snap, classes)
+    }
+
+    #[tokio::test]
+    async fn mark_class_failure_five_venue_stopped_keeps_poll_circuit_closed() {
+        let kill_before = crate::dns_block::is_block_active();
+        let (snap, classes) = run_polls(Arc::new(AlwaysVenueStoppedAdapter), fail_cfg()).await;
+        assert!(
+            !snap.circuit_open,
+            "five VenueStopped must not open the circuit, consecutive={}",
+            snap.consecutive_failures
+        );
+        assert!(
+            !classes.iter().any(|c| c == "disconnected"),
+            "VenueStopped must not emit disconnected SSE, got {classes:?}"
+        );
+        assert_eq!(crate::dns_block::is_block_active(), kill_before);
+    }
+
+    #[tokio::test]
+    async fn mark_class_failure_http_poll_still_opens_after_five() {
+        let (snap, _) = run_polls(Arc::new(AlwaysHttpFailAdapter), fail_cfg()).await;
+        assert!(
+            snap.circuit_open,
+            "ordinary Http must still open after 5, consecutive={}",
+            snap.consecutive_failures
+        );
+    }
+
+    fn posture(posture: &'static str, until_ms: Option<i64>) -> crate::egress::VenuePosture {
+        crate::egress::VenuePosture {
+            venue: "binance_com".into(),
+            posture,
+            until_ms,
+            meters: vec![],
+        }
+    }
+
+    #[test]
+    fn venue_stop_sleep_banned_waits_remaining_capped() {
+        let now = 1_000_000;
+        assert_eq!(
+            venue_stop_sleep(&posture("banned", Some(now + 10_000)), now),
+            Some(Duration::from_millis(10_000))
+        );
+        assert_eq!(
+            venue_stop_sleep(&posture("banned", Some(now + 300_000)), now),
+            Some(Duration::from_secs(60))
+        );
+    }
+
+    #[test]
+    fn venue_stop_sleep_backoff_waits_remaining() {
+        let now = 1_000_000;
+        assert_eq!(
+            venue_stop_sleep(&posture("backoff", Some(now + 4_000)), now),
+            Some(Duration::from_millis(4_000))
+        );
+    }
+
+    #[test]
+    fn venue_stop_sleep_live_polls_now() {
+        let now = 1_000_000;
+        assert_eq!(venue_stop_sleep(&posture("live", None), now), None);
+        assert_eq!(
+            venue_stop_sleep(&posture("live", Some(now + 10_000)), now),
+            None
+        );
+    }
 }

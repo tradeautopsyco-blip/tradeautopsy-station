@@ -29,9 +29,7 @@ pub enum DeskHonesty {
     /// Single active (or homogeneous) currency — safe to format one hero number.
     Single(DeskProfile),
     /// Mixed USD+INR (or other) — do **not** blend; surface per-connection honesty.
-    DualNoBlend {
-        profiles: Vec<DeskProfile>,
-    },
+    DualNoBlend { profiles: Vec<DeskProfile> },
     /// No usable catalog connection.
     None,
 }

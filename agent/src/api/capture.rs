@@ -51,7 +51,10 @@ pub async fn accept_handler(
     };
     // Local outbox partition key from wire hint — not Console identity (A8 IV).
     let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return validation_error("x-user-id (wire hint) missing after wire verification", request_id);
+        return validation_error(
+            "x-user-id (wire hint) missing after wire verification",
+            request_id,
+        );
     };
 
     if body
@@ -163,9 +166,7 @@ pub(crate) async fn forward_daemon_json_with_optional_429_retry(
             .request(method.clone(), &url)
             .header("x-request-id", request_id_owned.as_str());
         let req = if let Some(b) = body { req.json(b) } else { req };
-        let req = upstream
-            .authorize_brain(req)
-            .map_err(|e| e.to_string())?;
+        let req = upstream.authorize_brain(req).map_err(|e| e.to_string())?;
         let resp = req.send().await.map_err(|e| e.to_string())?;
         let status = resp.status();
         if retry_on_429

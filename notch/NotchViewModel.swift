@@ -114,6 +114,90 @@ struct RecentTradeRow: Identifiable, Equatable {
     var filledAtMs: Int
 }
 
+/// One meter inside a venue egress posture (Rust `MeterPosture`). Parsed loosely from SSE JSON.
+struct VenueMeterPosture: Equatable {
+    var meter: String
+    var posture: String
+    var untilMs: Int64?
+    var budgetLimit: UInt32?
+    var used: UInt32?
+    var inflight: UInt32
+
+    init(
+        meter: String,
+        posture: String,
+        untilMs: Int64? = nil,
+        budgetLimit: UInt32? = nil,
+        used: UInt32? = nil,
+        inflight: UInt32 = 0
+    ) {
+        self.meter = meter
+        self.posture = posture
+        self.untilMs = untilMs
+        self.budgetLimit = budgetLimit
+        self.used = used
+        self.inflight = inflight
+    }
+
+    init?(payload: [String: Any]) {
+        let meter = (payload["meter"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !meter.isEmpty else { return nil }
+        self.meter = meter
+        self.posture = (payload["posture"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "live"
+        self.untilMs = VenuePosture.parseInt64(payload["until_ms"])
+        self.budgetLimit = VenuePosture.parseUInt32(payload["budget_limit"])
+        self.used = VenuePosture.parseUInt32(payload["used"])
+        self.inflight = VenuePosture.parseUInt32(payload["inflight"]) ?? 0
+    }
+}
+
+/// Slot-wide venue egress posture (Rust `VenuePosture`). Keys: `binance_com`, `kotak_neo`.
+struct VenuePosture: Equatable {
+    var venue: String
+    var posture: String
+    var untilMs: Int64?
+    var meters: [VenueMeterPosture]
+
+    init(venue: String, posture: String, untilMs: Int64? = nil, meters: [VenueMeterPosture] = []) {
+        self.venue = venue
+        self.posture = posture
+        self.untilMs = untilMs
+        self.meters = meters
+    }
+
+    init?(payload: [String: Any]) {
+        let venue = (payload["venue"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !venue.isEmpty else { return nil }
+        self.venue = venue
+        self.posture = (payload["posture"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "live"
+        self.untilMs = Self.parseInt64(payload["until_ms"])
+        let rawMeters = payload["meters"] as? [[String: Any]] ?? []
+        self.meters = rawMeters.compactMap { VenueMeterPosture(payload: $0) }
+    }
+
+    static func parseInt64(_ value: Any?) -> Int64? {
+        switch value {
+        case let v as Int64: return v
+        case let v as Int: return Int64(v)
+        case let v as UInt64: return Int64(bitPattern: v)
+        case let v as Double: return Int64(v)
+        case let v as NSNumber: return v.int64Value
+        default: return nil
+        }
+    }
+
+    static func parseUInt32(_ value: Any?) -> UInt32? {
+        switch value {
+        case let v as UInt32: return v
+        case let v as Int: return v >= 0 ? UInt32(v) : nil
+        case let v as Int64: return v >= 0 && v <= Int64(UInt32.max) ? UInt32(v) : nil
+        case let v as Double: return v >= 0 ? UInt32(v) : nil
+        case let v as NSNumber: return v.uint32Value
+        default: return nil
+        }
+    }
+}
+
 struct TAIMessage: Identifiable {
     var id = UUID()
     var role: String
@@ -235,6 +319,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var daemonConnectionState: DaemonConnectionState = .idle
     @Published var daemonProtocolError: DaemonProtocolErrorClass?
     @Published var brokerSyncClass: String = "not_connected"
+    /// Per-venue egress posture from SSE `venue_egress_state` (`binance_com` / `kotak_neo`).
+    @Published var venuePostureBySlug: [String: VenuePosture] = [:]
     /// Last successful `/api/daemon/broker/sync-state` poll (`lastPollAtMs` or now).
     @Published var brokerSyncLastPollAtMs: Int?
     @Published var sessionState: String = "active"
@@ -3057,6 +3143,12 @@ public final class NotchViewModel: ObservableObject {
             recomputeBarSurfacePhase()
             return true
 
+        case "venue_egress_state":
+            if let parsed = VenuePosture(payload: payload) {
+                venuePostureBySlug[parsed.venue] = parsed
+            }
+            return true
+
         default:
             return false
         }
@@ -3859,8 +3951,8 @@ extension NotchViewModel {
         } else if let mapped = DeskMoneyFormatting.calcProfileId(forBrokerSlug: activeBrokerSlug) {
             deskCalcProfileId = mapped
         }
-        if brokerSyncClass == "not_connected" || brokerSyncClass == "disconnected" {
-            // Keep last known currency for display honesty; clear slug so dual logic stays accurate.
+        if brokerSyncClass == "not_connected" {
+            // Start-off only: founder Stop. Do not clear on `disconnected` (poll-circuit) or COM banned.
             activeBrokerSlug = nil
         }
     }
@@ -3935,12 +4027,31 @@ extension NotchViewModel {
         }
     }
 
-    /// Pure pill chrome mapping (testable).
+    /// Pure pill chrome mapping (testable). Two-arg form ignores venue posture.
     static func brokerPillChrome(
         brokerSyncClass: String,
         slug: String?
     ) -> (dotName: String, label: String) {
+        brokerPillChrome(brokerSyncClass: brokerSyncClass, slug: slug, venuePosture: nil)
+    }
+
+    /// One pill + subtitle. Banned/backoff on the active slug wins over sync class.
+    static func brokerPillChrome(
+        brokerSyncClass: String,
+        slug: String?,
+        venuePosture: VenuePosture?
+    ) -> (dotName: String, label: String) {
         let name = brokerDisplayName(forSlug: slug)
+        switch venuePosture?.posture.lowercased() {
+        case "banned":
+            let clock = relativeUntilSuffix(untilMs: venuePosture?.untilMs)
+            return ("red", "\(name) · banned\(clock)")
+        case "backoff":
+            let clock = relativeUntilSuffix(untilMs: venuePosture?.untilMs)
+            return ("amber", "\(name) · paused\(clock)")
+        default:
+            break
+        }
         switch brokerSyncClass.lowercased() {
         case "synced":
             return ("teal", "\(name) · live")
@@ -3951,6 +4062,18 @@ extension NotchViewModel {
         default:
             return ("red", "No broker · offline")
         }
+    }
+
+    /// Compact remaining-time suffix from `until_ms`, or empty when absent/elapsed.
+    static func relativeUntilSuffix(untilMs: Int64?) -> String {
+        guard let untilMs else { return "" }
+        let remainingMs = untilMs - Int64(Date().timeIntervalSince1970 * 1000)
+        guard remainingMs > 0 else { return "" }
+        let secs = remainingMs / 1000
+        if secs < 60 { return " · \(secs)s" }
+        let mins = secs / 60
+        if mins < 60 { return " · \(mins)m" }
+        return " · \(mins / 60)h"
     }
 
     /// Settings primary CTA: open Station Brokers only when sync is offline.

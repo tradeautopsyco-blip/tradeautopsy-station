@@ -1,6 +1,8 @@
 use crate::api::desk::quote_status_wire;
 use crate::api::AppState;
-use crate::data::{extract_quote, extract_quote_for, QuoteStatus};
+use crate::data::{
+    extract_quote, extract_quote_for, quote_subscription_for, QuoteStatus, QuoteSubscription,
+};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::Json;
@@ -174,8 +176,12 @@ pub async fn get_ltp(
     }
 
     let tick_id = state.validated_quote_id(&symbol).unwrap_or_default();
-    if !tick_id.is_empty() && state.should_subscribe_quote(&tick_id) {
-        state.subscribe_instrument(&tick_id);
+    if !tick_id.is_empty() {
+        match quote_subscription_for(&tick_id, state.should_subscribe_quote(&tick_id)) {
+            QuoteSubscription::OptionsQuote => state.bind_spot_market(&tick_id),
+            QuoteSubscription::Desk => state.subscribe_instrument(&tick_id),
+            QuoteSubscription::None => {}
+        }
     }
     if !tick_id.is_empty() {
         let book = state.tickbook.lock().expect("tickbook mutex poisoned");

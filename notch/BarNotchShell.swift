@@ -531,9 +531,12 @@ struct BarNotchShell: View {
     }
 
     private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
+        let slug = viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+        let postureKey = slug.trimmingCharacters(in: .whitespacesAndNewlines)
         let chrome = NotchViewModel.brokerPillChrome(
             brokerSyncClass: viewModel.brokerSyncClass,
-            slug: viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+            slug: slug,
+            venuePosture: postureKey.isEmpty ? nil : viewModel.venuePostureBySlug[postureKey]
         )
         switch chrome.dotName {
         case "teal":

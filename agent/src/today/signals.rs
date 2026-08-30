@@ -118,7 +118,11 @@ fn compute_baselines(trips: &[RoundTrip]) -> Baselines {
     let mut per_day: BTreeMap<String, usize> = BTreeMap::new();
     let mut notionals = Vec::new();
     for trip in trips {
-        let day = trip.closed_at.with_timezone(&Local).date_naive().to_string();
+        let day = trip
+            .closed_at
+            .with_timezone(&Local)
+            .date_naive()
+            .to_string();
         *per_day.entry(day).or_default() += 1;
         notionals.push(trip.qty * trip.avg_entry_price);
     }
@@ -196,7 +200,8 @@ fn flag_for_trip(
         label = "Oversized".to_string();
     }
 
-    if severity == FlagSeverity::Clean && today_trips.len() as f64 > baselines.median_trades_per_day + 1.0
+    if severity == FlagSeverity::Clean
+        && today_trips.len() as f64 > baselines.median_trades_per_day + 1.0
         && today_idx >= 2
     {
         severity = FlagSeverity::Watch;
@@ -216,9 +221,8 @@ fn loss_chasing_signal(
         return BehaviorSignal {
             kind: SignalKind::LossChasing,
             severity: FlagSeverity::Watch,
-            description:
-                "Still learning your baseline — signals activate after ~10 round-trips."
-                    .to_string(),
+            description: "Still learning your baseline — signals activate after ~10 round-trips."
+                .to_string(),
         };
     }
 
@@ -227,8 +231,7 @@ fn loss_chasing_signal(
             let gap = minutes_between(prev.closed_at, trip.opened_at);
             prev.realized_pnl_usd.unwrap_or(0.0) < 0.0
                 && gap <= LOSS_CHASE_GAP_MINS
-                && trip.qty * trip.avg_entry_price
-                    > prev.qty * prev.avg_entry_price * 1.05
+                && trip.qty * trip.avg_entry_price > prev.qty * prev.avg_entry_price * 1.05
         })
     });
 
@@ -265,8 +268,8 @@ fn revenge_signal(
         return BehaviorSignal {
             kind: SignalKind::Revenge,
             severity: FlagSeverity::Watch,
-            description:
-                "Still learning your baseline — revenge signals need more history.".to_string(),
+            description: "Still learning your baseline — revenge signals need more history."
+                .to_string(),
         };
     }
 
@@ -297,8 +300,8 @@ fn overtrading_signal(count: usize, baselines: &Baselines, learning: bool) -> Be
         return BehaviorSignal {
             kind: SignalKind::Overtrading,
             severity: FlagSeverity::Watch,
-            description:
-                "Still learning your baseline — trade-count signals need more history.".to_string(),
+            description: "Still learning your baseline — trade-count signals need more history."
+                .to_string(),
         };
     }
 
@@ -337,8 +340,8 @@ fn position_sizing_signal(
         return BehaviorSignal {
             kind: SignalKind::PositionSizing,
             severity: FlagSeverity::Watch,
-            description:
-                "Still learning your size baseline — sizing signals need more history.".to_string(),
+            description: "Still learning your size baseline — sizing signals need more history."
+                .to_string(),
         };
     }
 

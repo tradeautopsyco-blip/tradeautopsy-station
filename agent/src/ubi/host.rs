@@ -97,6 +97,9 @@ pub struct UbiHostState {
     pub calls: Vec<BrokerHttpRequest>,
     /// True if any credential substring was about to be returned to the component.
     pub credential_leak_attempted: bool,
+    /// Budgets, freezes, and bans for this connection's venue. Injectable so a
+    /// test that exercises a 429 does not freeze the venue for the whole process.
+    egress: Arc<crate::egress::VenueEgress>,
     ctx: WasiCtx,
     table: ResourceTable,
 }
@@ -120,14 +123,34 @@ impl UbiHostState {
     }
 
     pub fn with_mode(config: UbiHostConfig, mode: BrokerHttpMode) -> Self {
+        Self::with_mode_and_egress(config, mode, crate::egress::shared_engine())
+    }
+
+    pub fn with_mode_and_egress(
+        config: UbiHostConfig,
+        mode: BrokerHttpMode,
+        egress: Arc<crate::egress::VenueEgress>,
+    ) -> Self {
         Self {
             config,
             mode,
             calls: Vec::new(),
             credential_leak_attempted: false,
+            egress,
             ctx: WasiCtx::builder().build(),
             table: ResourceTable::new(),
         }
+    }
+
+    /// An isolated engine, for tests that must drive a 429 or a 418 without
+    /// freezing the venue for every other test in the process.
+    #[cfg(test)]
+    fn live_isolated(config: UbiHostConfig, transport: Arc<dyn BrokerHttpTransport>) -> Self {
+        Self::with_mode_and_egress(
+            config,
+            BrokerHttpMode::Live(transport),
+            Arc::new(crate::egress::VenueEgress::with_system_clock()),
+        )
     }
 
     fn response_contains_secret(&self, body: &str, headers: &[(String, String)]) -> bool {
@@ -239,18 +262,62 @@ impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
                         request.body.as_deref(),
                     )
                 };
+                // Admission. The fence already passed above; this is the
+                // budget, the freeze, and the ban — the parts that need a clock.
+                let query_string = query
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join("&");
+                let lane = if attach_private {
+                    crate::egress::Lane::PrivateRead
+                } else {
+                    crate::egress::Lane::MarketData
+                };
+                let engine = self.egress.clone();
+                let egress_req = crate::egress::EgressRequest {
+                    book_id,
+                    host: &target_host,
+                    method: &request.method,
+                    path: &request.path,
+                    query: &query_string,
+                    lane,
+                    weight_hint: None,
+                };
+                let permit = match engine.admit(&egress_req) {
+                    crate::egress::Decision::Admit(permit) => permit,
+                    // The component is told to stop. It never sleeps and retries;
+                    // the engine owns the clock.
+                    crate::egress::Decision::Refuse(reason) => {
+                        return Ok(BrokerHttpResponse {
+                            status: 0,
+                            headers: vec![],
+                            body: String::new(),
+                            error_class: Some(reason.as_str().to_string()),
+                        });
+                    }
+                };
+
                 match transport.send(&prepared) {
                     Ok(response) => {
+                        let headers = redact_response_headers(&response.headers);
+                        engine.record(
+                            permit,
+                            &crate::egress::Outcome::http(
+                                response.status,
+                                headers.clone(),
+                                &response.body,
+                            ),
+                        );
                         let error_class = classify_response(response.status, &response.body);
-                        (
-                            response.status,
-                            redact_response_headers(&response.headers),
-                            response.body,
-                            error_class,
-                        )
+                        (response.status, headers, response.body, error_class)
                     }
-                    // Transport errors carry no body the component can trust.
-                    Err(_) => (0, vec![], String::new(), Some("network".to_string())),
+                    // Transport errors carry no body the component can trust — and
+                    // are not a venue instruction, so nothing freezes.
+                    Err(_) => {
+                        engine.record(permit, &crate::egress::Outcome::Transport);
+                        (0, vec![], String::new(), Some("network".to_string()))
+                    }
                 }
             }
         };
@@ -471,7 +538,7 @@ mod tests {
     #[test]
     fn live_mode_attaches_hmac_auth_outside_the_component() {
         let transport = Arc::new(RecordingTransport::ok(200, "[]"));
-        let mut state = UbiHostState::live(
+        let mut state = UbiHostState::live_isolated(
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
@@ -522,7 +589,7 @@ mod tests {
             ],
             body: "{\"code\":-1003}".into(),
         })));
-        let mut state = UbiHostState::live(
+        let mut state = UbiHostState::live_isolated(
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
@@ -557,7 +624,7 @@ mod tests {
         let transport = Arc::new(RecordingTransport::new(Err(
             "network: <redacted-url>".to_string()
         )));
-        let mut state = UbiHostState::live(
+        let mut state = UbiHostState::live_isolated(
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "kotak_neo".into(),
@@ -624,7 +691,7 @@ mod tests {
             200,
             r#"{"symbol":"BTCUSDT","price":"1"}"#,
         ));
-        let mut state = UbiHostState::live(
+        let mut state = UbiHostState::live_isolated(
             UbiHostConfig {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
@@ -651,6 +718,7 @@ mod tests {
             },
         )
         .expect("live ok");
+        assert_eq!(resp.error_class, None, "egress refused the call");
         let sent = transport.last().expect("request sent");
         assert_eq!(
             sent.url,

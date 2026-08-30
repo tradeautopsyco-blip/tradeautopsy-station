@@ -133,7 +133,8 @@ async fn poll_workos_device_code(
     http: &reqwest::Client,
     pending: &DeviceLoginPending,
 ) -> Result<WorkOsMintProof> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(pending.public.expires_in.max(30));
+    let deadline =
+        std::time::Instant::now() + Duration::from_secs(pending.public.expires_in.max(30));
     let mut interval = Duration::from_secs(pending.public.interval);
 
     loop {
@@ -246,7 +247,10 @@ pub async fn prove_station_session(
 
     let resp = http
         .get(format!("{base}/api/auth/station/session"))
-        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_token}"))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {access_token}"),
+        )
         .send()
         .await
         .context("Console station/session network")?;

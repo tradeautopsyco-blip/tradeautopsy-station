@@ -139,11 +139,7 @@ pub async fn station_auth_session_handler(State(state): State<AppState>) -> Resp
     let tokens = match state.station_token_store.load() {
         Ok(Some(t)) => t,
         Ok(None) => {
-            return (
-                StatusCode::OK,
-                Json(json!({ "signed_in": false })),
-            )
-                .into_response();
+            return (StatusCode::OK, Json(json!({ "signed_in": false }))).into_response();
         }
         Err(err) => {
             return (

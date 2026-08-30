@@ -531,4 +531,186 @@ struct BrokerBridgeTests {
         #expect(vm.deskInstrumentsCapability == "unavailable")
         #expect(vm.deskQuoteCurrency == "INR")
     }
+
+    @Test func venueEgressStateBannedDoesNotClearComSlug() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "binance_com",
+            "quoteCurrency": "USDT",
+        ])
+        #expect(vm.activeBrokerSlug == "binance_com")
+        #expect(vm.brokerSyncClass == "synced")
+
+        let untilMs: Int64 = 4_102_444_800_000
+        let applied = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "binance_com",
+                "posture": "banned",
+                "until_ms": untilMs,
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(applied)
+        #expect(vm.activeBrokerSlug == "binance_com")
+        #expect(vm.brokerSyncClass == "synced")
+        #expect(vm.venuePostureBySlug["binance_com"]?.venue == "binance_com")
+        #expect(vm.venuePostureBySlug["binance_com"]?.posture == "banned")
+        #expect(vm.venuePostureBySlug["binance_com"]?.untilMs == untilMs)
+    }
+
+    @Test func venueEgressStateComBannedLeavesKotakLiveInMap() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        let kotakApplied = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "kotak_neo",
+                "posture": "live",
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(kotakApplied)
+        #expect(vm.venuePostureBySlug["kotak_neo"]?.posture == "live")
+
+        let untilMs: Int64 = 4_102_444_800_000
+        let comApplied = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "binance_com",
+                "posture": "banned",
+                "until_ms": untilMs,
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(comApplied)
+        #expect(vm.venuePostureBySlug["binance_com"]?.posture == "banned")
+        #expect(vm.venuePostureBySlug["kotak_neo"]?.posture == "live")
+        #expect(vm.venuePostureBySlug.count == 2)
+    }
+
+    @Test func venueEgressStateDoesNotChangeKillOverlay() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        #expect(vm.killSwitchOverlayVisible == false)
+        #expect(vm.killSwitchActive == false)
+
+        let untilMs: Int64 = 4_102_444_800_000
+        let venueApplied = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "binance_com",
+                "posture": "banned",
+                "until_ms": untilMs,
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(venueApplied)
+        #expect(vm.killSwitchOverlayVisible == false)
+        #expect(vm.killSwitchActive == false)
+
+        let killApplied = vm.applyDaemonEventPayload(
+            type: "kill_switch_state",
+            payload: [
+                "active": true,
+                "level": "L2",
+                "countdown_secs": 90,
+                "requires_ack": true,
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(killApplied)
+        #expect(vm.killSwitchActive == true)
+        #expect(vm.killSwitchLevel == "L2")
+        #expect(vm.killSwitchCountdownSecs == 90)
+        #expect(vm.killSwitchRequiresAck == true)
+        #expect(vm.killSwitchOverlayVisible == true)
+    }
+
+    @Test func applyDeskHonestyDisconnectedKeepsComSlug() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "binance_com",
+            "quoteCurrency": "USDT",
+        ])
+        #expect(vm.activeBrokerSlug == "binance_com")
+
+        let applied = vm.applyDaemonEventPayload(
+            type: "broker_sync_state",
+            payload: [
+                "class": "disconnected",
+                "brokerSlug": "binance_com",
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(applied)
+        #expect(vm.brokerSyncClass == "disconnected")
+        #expect(vm.activeBrokerSlug == "binance_com")
+    }
+
+    @Test func brokerPillChromeBannedComIsNotNoBrokerOffline() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "binance_com",
+            "quoteCurrency": "USDT",
+        ])
+        let untilMs: Int64 = 4_102_444_800_000
+        _ = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "binance_com",
+                "posture": "banned",
+                "until_ms": untilMs,
+            ],
+            immediateToolbarShow: false
+        )
+        let chrome = NotchViewModel.brokerPillChrome(
+            brokerSyncClass: vm.brokerSyncClass,
+            slug: vm.activeBrokerSlug,
+            venuePosture: vm.venuePostureBySlug["binance_com"]
+        )
+        #expect(chrome.label != "No broker · offline")
+        #expect(chrome.label.hasPrefix("Binance.com · banned"))
+        #expect(chrome.dotName == "amber" || chrome.dotName == "red")
+    }
+
+    @Test func brokerPillChromeKotakLiveIndependentOfComBanned() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "kotak_neo",
+            "quoteCurrency": "INR",
+        ])
+        _ = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "kotak_neo",
+                "posture": "live",
+            ],
+            immediateToolbarShow: false
+        )
+        let untilMs: Int64 = 4_102_444_800_000
+        _ = vm.applyDaemonEventPayload(
+            type: "venue_egress_state",
+            payload: [
+                "venue": "binance_com",
+                "posture": "banned",
+                "until_ms": untilMs,
+            ],
+            immediateToolbarShow: false
+        )
+        #expect(vm.activeBrokerSlug == "kotak_neo")
+        #expect(vm.venuePostureBySlug["binance_com"]?.posture == "banned")
+        #expect(vm.venuePostureBySlug["kotak_neo"]?.posture == "live")
+
+        let chrome = NotchViewModel.brokerPillChrome(
+            brokerSyncClass: vm.brokerSyncClass,
+            slug: vm.activeBrokerSlug,
+            venuePosture: vm.venuePostureBySlug["kotak_neo"]
+        )
+        #expect(chrome.label == "Kotak Neo · live")
+        #expect(chrome.dotName == "teal")
+        #expect(chrome.label != "No broker · offline")
+    }
 }

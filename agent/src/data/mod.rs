@@ -7,6 +7,7 @@ mod binance_options_chain;
 mod binance_options_oi;
 mod binance_options_public;
 mod binance_public;
+mod book_identity;
 mod connection;
 mod contracts;
 mod depthbook;
@@ -26,9 +27,11 @@ mod klines_pager;
 mod kotak_depth;
 mod kotak_quotes;
 mod margin_estimate;
+mod market_bind;
 mod matrix;
 mod operations;
 mod provenance;
+mod quote_subscription;
 mod registry;
 mod resolve;
 mod rights;
@@ -40,8 +43,9 @@ mod tickbook;
 pub use apply::{apply_quote, ApplyError};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_depth::{
-    depth_snapshot_from_binance_json, ensure_binance_com_depth_stream, validate_depth_delta,
-    DepthDelta, DepthDeltaDecision, DepthSyncPhase, DEPTH_COM_HOST, DEPTH_PATH,
+    depth_snapshot_from_binance_json, ensure_binance_com_depth_stream,
+    spawn_binance_com_depth_loop, validate_depth_delta, DepthDelta, DepthDeltaDecision,
+    DepthSyncPhase, DEPTH_COM_HOST, DEPTH_PATH,
 };
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_klines::{
@@ -63,7 +67,9 @@ pub use binance_options_public::{
 };
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
+    spawn_binance_com_trade_loop,
 };
+pub use book_identity::{book_accepts_symbol, query_symbol};
 pub use connection::BrokerConnectionRuntime;
 pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};
 pub use depthbook::DepthBook;
@@ -115,7 +121,9 @@ pub use kotak_quotes::{
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
 };
 pub use margin_estimate::extract_margin_estimate;
+pub use market_bind::MarketBind;
 pub use provenance::ProvenanceLine;
+pub use quote_subscription::{quote_subscription_for, QuoteSubscription};
 pub use registry::Registry;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use source_manifest::{

@@ -5,7 +5,8 @@
 **Schema:** `schema.yaml` (13,311 lines), `schema__2_.yaml` (duplicate, same)  
 **Snapshot date:** 2026-07-02  
 **Klines re-fetched:** 2026-08-26 from [binance-spot-api-docs `rest-api.md`](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) (Kline/Candlestick + General API Information + Request Security) · [Market Data Only FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md) · [errors.md](https://github.com/binance/binance-spot-api-docs/blob/master/errors.md)  
-**Reviewed:** Klines / `historical_series` section yes (2026-08-26). Remainder of this file: no.
+**Depth weight table re-fetched:** 2026-08-30 from [binance-spot-api-docs `rest-api.md` Order book](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) (`GET /api/v3/depth`). Default `limit` is 100; maximum 5000.  
+**Reviewed:** Klines / `historical_series` section yes (2026-08-26). Depth weight table yes (2026-08-30). Remainder of this file: no.
 
 ---
 
@@ -122,10 +123,19 @@ Security: NONE
 
 ### Order Book
 ```
-GET /api/v3/depth    Weight: 5–250 depending on limit
+GET /api/v3/depth
 Security: NONE
 ```
-Params: `symbol`, `limit` (default 100, max 5000)
+Params: `symbol` (mandatory), `limit` (INT, optional; **default 100**, maximum 5000). If `limit > 5000`, only 5000 entries are returned.
+
+**Weight** — adjusted by `limit`. Source: [binance-spot-api-docs `rest-api.md` Order book](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md) fetched 2026-08-30.
+
+| Limit     | Weight |
+|-----------|--------|
+| 1–100     | 5      |
+| 101–500   | 25     |
+| 501–1000  | 50     |
+| 1001–5000 | 250    |
 
 ### Recent Trades
 ```

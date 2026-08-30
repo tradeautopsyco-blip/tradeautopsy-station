@@ -7,19 +7,21 @@
 //! steps 1–7 and per-event update procedure) and REST.md `GET /api/v3/depth`
 //! (Security NONE). Depth events must not enter TickBook.
 
+use super::binance_options_public::is_dated_option_contract;
 use super::binance_public::normalize_quote_instrument;
 use super::depthbook::DepthBook;
 use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
-use super::host_policy::authorize_inferred_call;
 use super::kotak_depth::{DepthLevel, DepthSnapshot};
+use super::market_bind::{run_bound_com_ws_loop, MarketBind};
 use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::Transport;
+use crate::egress::{EgressCall, EgressError, Lane};
 use chrono::{DateTime, Utc};
 use futures::{Stream, StreamExt};
 use serde_json::Value;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::watch;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -330,52 +332,120 @@ pub fn apply_managed_snapshot(
     Ok(snapshot)
 }
 
-/// Starts a `@depth` stream once per instrument. Subsequent calls are no-ops.
-pub fn ensure_binance_com_depth_stream(
-    depthbook: Arc<Mutex<DepthBook>>,
-    spawned: &Arc<Mutex<HashSet<String>>>,
-    symbol: &str,
-) {
-    let instrument = normalize_quote_instrument(symbol);
-    if instrument.is_empty() {
+/// REPLACE the bound depth id. Does not spawn. Dated ids unbind (never lowercase).
+pub fn ensure_binance_com_depth_stream(bind: &MarketBind, symbol: &str) {
+    if is_dated_option_contract(symbol) {
+        bind.bind(None);
         return;
     }
-    {
-        let mut guard = spawned.lock().expect("depth stream set poisoned");
-        if !guard.insert(instrument.clone()) {
-            return;
-        }
+    let instrument = normalize_quote_instrument(symbol);
+    if instrument.is_empty() {
+        bind.bind(None);
+        return;
     }
-    spawn_binance_com_depth_loop(depthbook, instrument);
+    bind.bind(Some(instrument));
 }
 
-pub fn spawn_binance_com_depth_loop(book: Arc<Mutex<DepthBook>>, symbol: String) {
+/// Reconnect pacing. The old fixed 2s retry, combined with a `limit=5000`
+/// snapshot at weight 250, could spend 7500 weight/min against a 6000/min budget
+/// from a single symbol — and because a 418 arrived as an ordinary `Err`, the ban
+/// response itself drove the retry. Both halves are fixed here: the wait grows,
+/// and a venue stop is obeyed on the venue's clock. Live reconnect lives in
+/// `run_bound_com_ws_loop`; these helpers stay for the regression tests.
+#[cfg(test)]
+const DEPTH_RECONNECT_BASE_MS: i64 = 2_000;
+#[cfg(test)]
+const DEPTH_RECONNECT_CAP_MS: i64 = 120_000;
+
+/// How long to wait before the next connection attempt.
+///
+/// A venue stop outranks the backoff ladder: if the engine says the slot is
+/// banned until T, waiting anything less than T is just re-asking for the ban.
+#[cfg(test)]
+fn depth_reconnect_wait_ms(err: Option<&anyhow::Error>, attempt: u32, now_ms: i64) -> i64 {
+    super::market_bind::com_ws_reconnect_wait_ms(err, attempt, now_ms)
+}
+
+/// Pull an egress refusal out of an error chain, if the failure was one.
+#[cfg(test)]
+fn egress_until_ms(err: &anyhow::Error) -> Option<i64> {
+    err.chain()
+        .find_map(|e| e.downcast_ref::<EgressError>())
+        .and_then(|e| e.until_ms())
+}
+
+fn is_egress_refusal(err: &anyhow::Error) -> bool {
+    err.chain().any(|e| {
+        matches!(
+            e.downcast_ref::<EgressError>(),
+            Some(EgressError::Refused(_))
+        )
+    })
+}
+
+pub fn spawn_binance_com_depth_loop(
+    book: Arc<Mutex<DepthBook>>,
+    rx: watch::Receiver<Option<String>>,
+) {
     tokio::spawn(async move {
-        let url = binance_public_depth_stream_url(&symbol);
-        tracing::info!(instrument = %symbol, url = %url, "s1 desk: binance_com depth stream");
-        loop {
-            if let Err(err) = run_one_depth_connection(&book, &url, &symbol).await {
-                tracing::warn!(instrument = %symbol, error = %err, "s1 desk: depth stream ended");
+        run_bound_com_ws_loop(rx, move |symbol| {
+            let book = book.clone();
+            async move {
+                let url = binance_public_depth_stream_url(&symbol);
+                tracing::info!(instrument = %symbol, url = %url, "s1 desk: binance_com depth stream");
+                let result = run_one_depth_connection(&book, &url, &symbol).await;
+                if let Err(err) = &result {
+                    if is_egress_refusal(err) {
+                        tracing::warn!(
+                            instrument = %symbol,
+                            error = %err,
+                            "s1 desk: depth stream refused by egress — not retrying on our own clock"
+                        );
+                    } else {
+                        tracing::warn!(instrument = %symbol, error = %err, "s1 desk: depth stream ended");
+                    }
+                }
+                result
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
+        })
+        .await;
     });
 }
 
+/// Two identical panels asking for the same book must not become two weight-250
+/// calls. Anything younger than this is served from the engine's coalescing cache.
+const DEPTH_SNAPSHOT_MAX_AGE_MS: i64 = 1_000;
+
 async fn fetch_binance_depth_snapshot(symbol: &str) -> anyhow::Result<DepthSnapshot> {
-    authorize_inferred_call(DEPTH_COM_HOST, "GET", DEPTH_PATH, false)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
-    let body = client
-        .get(depth_snapshot_url(symbol))
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
-    depth_snapshot_from_binance_json(&body, symbol, Utc::now())
+    let query = format!(
+        "symbol={}&limit={DEPTH_SNAPSHOT_LIMIT}",
+        symbol.trim().to_ascii_uppercase()
+    );
+    let call = EgressCall::get(
+        BINANCE_COM_SPOT_BOOK_ID,
+        DEPTH_COM_HOST,
+        DEPTH_PATH,
+        Lane::MarketData,
+    )
+    .with_query(query)
+    .with_max_age_ms(DEPTH_SNAPSHOT_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+
+    // The engine performs the R0 fence check, charges the weight, and records the
+    // response. A 429/418 becomes a typed refusal here rather than an opaque `Err`.
+    let response = crate::egress::shared()
+        .send(&call)
+        .await
+        .map_err(anyhow::Error::new)?;
+
+    if !response.is_success() {
+        return Err(anyhow::anyhow!(
+            "depth snapshot http {status}",
+            status = response.status
+        ));
+    }
+
+    depth_snapshot_from_binance_json(&response.body, symbol, Utc::now())
         .ok_or_else(|| anyhow::anyhow!("depth snapshot unusable"))
 }
 
@@ -555,6 +625,74 @@ async fn run_one_depth_connection(
 
 #[cfg(test)]
 mod tests {
+    use crate::egress::{EgressError, RefuseKind, RefuseReason};
+
+    fn refusal_err(kind: RefuseKind, until_ms: Option<i64>) -> anyhow::Error {
+        anyhow::Error::new(EgressError::Refused(RefuseReason::new(kind, until_ms)))
+    }
+
+    /// The regression this whole engine exists for: a fixed 2s retry against a
+    /// weight-250 snapshot spends 7500 weight/min from one symbol on a 6000/min
+    /// budget. The wait must grow instead.
+    #[test]
+    fn depth_reconnect_backs_off_instead_of_hammering_at_two_seconds() {
+        let now = 1_000_000;
+        let err = anyhow::anyhow!("stream ended");
+        let first = depth_reconnect_wait_ms(Some(&err), 1, now);
+        let later = depth_reconnect_wait_ms(Some(&err), 6, now);
+        assert!(first >= DEPTH_RECONNECT_BASE_MS, "got {first}");
+        assert!(later > first, "backoff must grow: {first} -> {later}");
+    }
+
+    #[test]
+    fn depth_reconnect_never_exceeds_its_cap() {
+        let now = 1_000_000;
+        let err = anyhow::anyhow!("stream ended");
+        for attempt in 0..40 {
+            let wait = depth_reconnect_wait_ms(Some(&err), attempt, now);
+            assert!(
+                wait <= DEPTH_RECONNECT_CAP_MS + DEPTH_RECONNECT_CAP_MS / 2,
+                "attempt {attempt} waited {wait}"
+            );
+        }
+    }
+
+    /// A ban carries the venue's own clock. Retrying before it expires is just
+    /// re-asking to be banned, so the venue's timestamp outranks our ladder.
+    #[test]
+    fn a_venue_ban_outranks_the_backoff_ladder() {
+        let now = 1_000_000;
+        let banned = refusal_err(RefuseKind::Banned, Some(now + 900_000));
+        let wait = depth_reconnect_wait_ms(Some(&banned), 1, now);
+        assert_eq!(wait, 900_000);
+    }
+
+    #[test]
+    fn an_expired_ban_falls_back_to_the_ladder() {
+        let now = 1_000_000;
+        let stale = refusal_err(RefuseKind::Banned, Some(now - 5_000));
+        let wait = depth_reconnect_wait_ms(Some(&stale), 1, now);
+        assert!(wait >= DEPTH_RECONNECT_BASE_MS && wait <= DEPTH_RECONNECT_CAP_MS * 2);
+    }
+
+    #[test]
+    fn a_clean_close_waits_the_base_interval() {
+        let wait = depth_reconnect_wait_ms(None, 0, 1_000_000);
+        assert!(wait >= DEPTH_RECONNECT_BASE_MS);
+        assert!(wait < DEPTH_RECONNECT_BASE_MS * 2);
+    }
+
+    #[test]
+    fn egress_refusals_are_recognised_through_the_error_chain() {
+        let wrapped = refusal_err(RefuseKind::Frozen, Some(42)).context("depth snapshot");
+        assert!(is_egress_refusal(&wrapped));
+        assert_eq!(egress_until_ms(&wrapped), Some(42));
+
+        let ordinary = anyhow::anyhow!("connection reset");
+        assert!(!is_egress_refusal(&ordinary));
+        assert_eq!(egress_until_ms(&ordinary), None);
+    }
+
     use super::*;
     use crate::data::depthbook::DepthBook;
     use crate::data::descriptor::KOTAK_NEO_ADAPTER_ID;

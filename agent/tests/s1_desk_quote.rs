@@ -1,4 +1,9 @@
-//! S1 desk extract is on Station loopback without live Binance (CI). WS is env-gated.
+//! S1 desk extract is on Station loopback without live Binance (CI).
+//!
+//! Every `reqwest::Client::new()` here GETs `http://127.0.0.1:{port}/api/station/...`.
+//! `spawn_test_agent` uses `test_on_port`: `s1_desk_symbol` unset (no COM WS/klines
+//! at boot), `eapi_public_fetch` false, no Start — quote/ltp does not subscribe or
+//! dial a venue. Ring 2 lints `src/` only; these tests stay off EXEMPT.
 
 mod common;
 

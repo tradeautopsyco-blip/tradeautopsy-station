@@ -1,7 +1,10 @@
 use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
     broker_sync_control::BrokerSyncController,
-    data::{BrokerConnectionRuntime, DepthBook, HistoryBook, Registry, SourceManifest, TickBook},
+    data::{
+        BrokerConnectionRuntime, DepthBook, HistoryBook, MarketBind, Registry, SourceManifest,
+        TickBook,
+    },
     event_bus::EventBus,
     exchange_info::ExchangeInfoSymbolCache,
     instruments::InstrumentStore,
@@ -112,10 +115,14 @@ pub struct AppState {
     pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
     /// Prod dials eapi for chain/OI. Tests stay fixture-only.
     pub eapi_public_fetch: bool,
-    /// Instruments that already have a public `@trade` stream task.
+    /// Options quote keys `{book}\0{symbol}`. Spot trade is `com_trade`, not this set.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,
-    /// Instruments that already have a public `@depth` stream task.
-    pub depth_streams: Arc<Mutex<HashSet<String>>>,
+    /// One bound COM `@trade` id. Loops park on `None`.
+    pub com_trade: MarketBind,
+    /// One bound COM `@depth` id. Loops park on `None`.
+    pub com_depth: MarketBind,
+    /// One bound COM klines id (one-shot REST, not a WS loop).
+    pub com_klines: MarketBind,
     /// Instrument+interval keys already kicked for public klines → HistoryBook.
     pub klines_inflight: Arc<Mutex<HashSet<String>>>,
     /// Start-time env + connection_id for Kotak PrivateRead quotes (handles only).

@@ -4,7 +4,7 @@
 //! `run_fetch_fills` → component → host `broker_http_call`, so credentials stay in the
 //! Enforcer and the adapter binary has no ambient network authority (ADR 0001).
 
-use crate::broker::{BrokerAdapter, BrokerError, BrokerFill};
+use crate::broker::{slug_to_slot, BrokerAdapter, BrokerError, BrokerFill};
 use crate::ubi::components::component_path_for_slug;
 use crate::ubi::host::{run_fetch_fills, FillCursor, FillEvent, UbiHostConfig, UbiHostState};
 use crate::ubi::http::{BrokerHttpTransport, HostCredentialBlob};
@@ -99,20 +99,36 @@ impl BrokerAdapter for WasmBrokerAdapter {
 
         match result {
             Ok((fills, _state)) => Ok(fills.iter().map(fill_event_to_broker_fill).collect()),
-            Err(err) => Err(classify_adapter_error(&err.to_string())),
+            Err(err) => Err(classify_adapter_error_for(&err.to_string(), self.name)),
         }
     }
 }
 
 /// Components signal venue conditions through the error string the host classified for
 /// them (`rate_limited`, `session_expired`, …) — never through credential-derived detail.
-fn classify_adapter_error(message: &str) -> BrokerError {
+/// The engine owns the clock: `VenueStopped.until_ms` stays None here; RateLimited
+/// prefers `posture_for` remaining-window over a hardcoded 60s.
+fn classify_adapter_error_for(message: &str, adapter_name: &str) -> BrokerError {
+    if message.contains("venue_banned") || message.contains("venue_frozen") {
+        return BrokerError::VenueStopped { until_ms: None };
+    }
     if message.contains("rate_limited") {
-        return BrokerError::RateLimited {
-            retry_after_ms: Some(60_000),
-        };
+        let retry_after_ms = slug_to_slot(adapter_name)
+            .and_then(|slot| crate::egress::shared_engine().posture_for(slot))
+            .and_then(|p| p.until_ms)
+            .map(|until| {
+                let now = chrono::Utc::now().timestamp_millis();
+                (until - now).max(0)
+            })
+            .or(Some(60_000));
+        return BrokerError::RateLimited { retry_after_ms };
     }
     BrokerError::Http(message.to_string())
+}
+
+#[cfg(test)]
+fn classify_adapter_error(message: &str) -> BrokerError {
+    classify_adapter_error_for(message, message)
 }
 
 pub fn fill_event_to_broker_fill(fill: &FillEvent) -> BrokerFill {
@@ -292,13 +308,37 @@ mod tests {
     }
 
     #[test]
-    fn rate_limited_component_error_maps_to_backoff() {
+    fn classify_adapter_error_rate_limited_still_rate_limited() {
         assert!(matches!(
             classify_adapter_error("adapter: binance_com http 429: rate_limited"),
             BrokerError::RateLimited { .. }
         ));
         assert!(matches!(
             classify_adapter_error("adapter: kotak_neo session_expired"),
+            BrokerError::Http(_)
+        ));
+    }
+
+    #[test]
+    fn classify_adapter_error_venue_banned_is_venue_stopped() {
+        assert!(matches!(
+            classify_adapter_error("binance_com account http 0: venue_banned"),
+            BrokerError::VenueStopped { until_ms: None }
+        ));
+    }
+
+    #[test]
+    fn classify_adapter_error_venue_frozen_is_venue_stopped() {
+        assert!(matches!(
+            classify_adapter_error("kotak_neo account http 0: venue_frozen"),
+            BrokerError::VenueStopped { until_ms: None }
+        ));
+    }
+
+    #[test]
+    fn classify_adapter_error_ordinary_http_stays_http() {
+        assert!(matches!(
+            classify_adapter_error("binance_com account http 500: upstream"),
             BrokerError::Http(_)
         ));
     }

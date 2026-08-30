@@ -100,7 +100,9 @@ fn map_spot_error(err: BinanceComSpotError) -> BrokerError {
 }
 
 /// Derive likely USDT spot symbols from non-zero balances (read-only sync bootstrap).
-fn trade_symbols_from_balances(balances: &[crate::binance_com_spot_client::BinanceComBalance]) -> Vec<String> {
+fn trade_symbols_from_balances(
+    balances: &[crate::binance_com_spot_client::BinanceComBalance],
+) -> Vec<String> {
     balances
         .iter()
         .filter_map(|b| {

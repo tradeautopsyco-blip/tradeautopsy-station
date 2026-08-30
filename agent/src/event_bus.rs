@@ -21,6 +21,11 @@ pub enum AgentEvent {
     BrokerSyncState {
         payload: serde_json::Value,
     },
+    /// Per-venue egress posture. One event carries every slot's own posture so a
+    /// banned venue never blanks a live one.
+    VenueEgressState {
+        payload: serde_json::Value,
+    },
     /// Mirrors hosted intelligence `kill_switch_state` flat payload inside the SSE envelope.
     KillSwitchState {
         active: bool,
@@ -66,6 +71,7 @@ impl AgentEvent {
                 }),
             ),
             AgentEvent::BrokerSyncState { payload } => ("broker_sync_state", payload.clone()),
+            AgentEvent::VenueEgressState { payload } => ("venue_egress_state", payload.clone()),
             AgentEvent::KillSwitchState {
                 active,
                 level,

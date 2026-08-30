@@ -29,6 +29,7 @@ pub async fn handler(
                 ),
                 AgentEvent::ToolbarShow { .. }
                 | AgentEvent::BrokerSyncState { .. }
+                | AgentEvent::VenueEgressState { .. }
                 | AgentEvent::KillSwitchState { .. }
                 | AgentEvent::AuthState { .. }
                 | AgentEvent::SessionState { .. } => event.sse_type_and_payload_json(),

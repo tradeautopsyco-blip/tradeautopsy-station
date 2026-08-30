@@ -56,7 +56,14 @@ impl Default for BrokerFill {
 #[derive(Debug, Clone)]
 pub enum BrokerError {
     Http(String),
-    RateLimited { retry_after_ms: Option<i64> },
+    RateLimited {
+        retry_after_ms: Option<i64>,
+    },
+    /// Admit refused this venue (`venue_banned` / `venue_frozen`). Clock is on
+    /// the engine (`posture_for`); `until_ms` is None at classify time.
+    VenueStopped {
+        until_ms: Option<i64>,
+    },
 }
 
 impl BrokerError {
@@ -64,7 +71,20 @@ impl BrokerError {
         match self {
             Self::Http(_) => "http_error",
             Self::RateLimited { .. } => "rate_limited",
+            Self::VenueStopped { .. } => "venue_stopped",
         }
+    }
+}
+
+/// Adapter name / error text → egress slot. `binance_com` wins before `kotak`
+/// so a combined string cannot steal COM into the cash slot.
+pub(crate) fn slug_to_slot(name: &str) -> Option<&'static str> {
+    if name.contains("binance_com") {
+        Some("binance_com")
+    } else if name.contains("kotak_neo") || name.contains("kotak") {
+        Some("kotak_neo")
+    } else {
+        None
     }
 }
 
@@ -217,6 +237,7 @@ impl BrokerAdapter for SeqMockBrokerAdapter {
                 BrokerError::RateLimited { retry_after_ms } => {
                     BrokerError::RateLimited { retry_after_ms }
                 }
+                BrokerError::VenueStopped { until_ms } => BrokerError::VenueStopped { until_ms },
             })
     }
 }

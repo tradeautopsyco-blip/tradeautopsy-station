@@ -440,7 +440,11 @@ impl ReqwestBrokerHttpTransport {
             .build()
             .map_err(|e| format!("ubi http runtime: {e}"))?;
         Ok(Self {
-            client: reqwest::Client::new(),
+            // Not a new pool: a clone of the egress client, so this path and the
+            // async desk paths share one set of sockets. Admission happens in
+            // `ubi::host::broker_http_call`, which is where the book id and auth
+            // mode are in scope.
+            client: crate::egress::shared_client(),
             runtime,
         })
     }

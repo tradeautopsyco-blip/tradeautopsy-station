@@ -3,7 +3,9 @@
 //! CI parses fixture JSON only. Live `wss://` follows runtime subscriptions.
 
 use super::apply::apply_quote;
+use super::binance_options_public::is_dated_option_contract;
 use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
+use super::market_bind::{run_bound_com_ws_loop, MarketBind};
 use super::registry::Registry;
 use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::{QuoteTick, Transport};
@@ -12,7 +14,7 @@ use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use tokio::sync::watch;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -102,48 +104,43 @@ pub fn quote_tick_from_binance_json(raw: &str, received_at: DateTime<Utc>) -> Op
     })
 }
 
-/// Subscribe the instrument and keep a public trade stream applied as `Transport::Stream`.
+/// One outer loop. Parks on `None`; freeze-stop before `connect_async`.
 /// Does not fall back to REST on disconnect. No keys on the socket.
 pub fn spawn_binance_com_trade_loop(
     registry: Arc<Registry>,
     book: Arc<Mutex<TickBook>>,
-    symbol: String,
+    rx: watch::Receiver<Option<String>>,
 ) {
     tokio::spawn(async move {
-        let instrument = normalize_quote_instrument(&symbol);
-        {
-            let mut guard = book.lock().expect("tickbook mutex poisoned");
-            guard.subscribe(BINANCE_COM_SPOT_BOOK_ID, &instrument);
-        }
-        let url = binance_public_trade_stream_url(&instrument);
-        tracing::info!(instrument = %instrument, url = %url, "s1 desk: binance_com trade stream");
-        loop {
-            if let Err(err) = run_one_connection(registry.as_ref(), &book, &url).await {
-                tracing::warn!(instrument = %instrument, error = %err, "s1 desk: stream ended");
+        run_bound_com_ws_loop(rx, move |id| {
+            let registry = registry.clone();
+            let book = book.clone();
+            async move {
+                {
+                    let mut guard = book.lock().expect("tickbook mutex poisoned");
+                    guard.subscribe(BINANCE_COM_SPOT_BOOK_ID, &id);
+                }
+                let url = binance_public_trade_stream_url(&id);
+                tracing::info!(instrument = %id, url = %url, "s1 desk: binance_com trade stream");
+                run_one_connection(registry.as_ref(), &book, &url).await
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
+        })
+        .await;
     });
 }
 
-/// Starts a stream once per instrument. Subsequent calls are no-ops.
-pub fn ensure_binance_com_trade_stream(
-    registry: Arc<Registry>,
-    book: Arc<Mutex<TickBook>>,
-    spawned: &Arc<Mutex<std::collections::HashSet<String>>>,
-    symbol: &str,
-) {
-    let instrument = normalize_quote_instrument(symbol);
-    if instrument.is_empty() {
+/// REPLACE the bound trade id. Does not spawn. Dated ids unbind (never lowercase).
+pub fn ensure_binance_com_trade_stream(bind: &MarketBind, symbol: &str) {
+    if is_dated_option_contract(symbol) {
+        bind.bind(None);
         return;
     }
-    {
-        let mut guard = spawned.lock().expect("quote stream set poisoned");
-        if !guard.insert(instrument.clone()) {
-            return;
-        }
+    let instrument = normalize_quote_instrument(symbol);
+    if instrument.is_empty() {
+        bind.bind(None);
+        return;
     }
-    spawn_binance_com_trade_loop(registry, book, instrument);
+    bind.bind(Some(instrument));
 }
 
 async fn run_one_connection(

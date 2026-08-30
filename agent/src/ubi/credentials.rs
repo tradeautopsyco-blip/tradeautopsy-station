@@ -141,7 +141,10 @@ mod tests {
             keychain_service_for("kotak_neo"),
             KOTAK_SESSION_KEYCHAIN_SERVICE
         );
-        assert_eq!(keychain_service_for("kotak"), KOTAK_SESSION_KEYCHAIN_SERVICE);
+        assert_eq!(
+            keychain_service_for("kotak"),
+            KOTAK_SESSION_KEYCHAIN_SERVICE
+        );
         assert_eq!(
             keychain_service_for("binance_com"),
             BROKER_CREDENTIAL_KEYCHAIN_SERVICE

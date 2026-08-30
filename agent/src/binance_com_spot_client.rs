@@ -57,14 +57,32 @@ pub struct BinanceComSpotClient {
     base_url: String,
     api_key: String,
     api_secret: String,
-    client: reqwest::Client,
+    transport: SpotTransport,
+}
+
+/// How this client reaches Binance.
+enum SpotTransport {
+    /// Production. Admitted, weighted, and recorded by `VenueEgress` — this is
+    /// the private fill-sync traffic the reserve floor exists to protect.
+    Egress,
+    /// A caller-supplied base URL that is not the venue (wiremock in
+    /// `tests/binance_com_spot.rs`). Unmetered by design: there is no venue
+    /// budget to spend against a local server, and the R0 fence would refuse the
+    /// host. Shares the egress connection pool rather than opening a second one.
+    Direct(reqwest::Client),
 }
 
 impl BinanceComSpotClient {
     pub fn new(api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
-        Self::with_base_url(DEFAULT_BASE_URL, api_key, api_secret)
+        Self {
+            base_url: DEFAULT_BASE_URL.trim_end_matches('/').to_string(),
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
+            transport: SpotTransport::Egress,
+        }
     }
 
+    /// Point this client at a non-venue base URL. Test seam — see `SpotTransport::Direct`.
     pub fn with_base_url(
         base_url: impl Into<String>,
         api_key: impl Into<String>,
@@ -74,7 +92,7 @@ impl BinanceComSpotClient {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key: api_key.into(),
             api_secret: api_secret.into(),
-            client: reqwest::Client::new(),
+            transport: SpotTransport::Direct(crate::egress::shared_client()),
         }
     }
 
@@ -98,10 +116,7 @@ impl BinanceComSpotClient {
         if let Some(n) = limit {
             params.push(("limit", n.to_string()));
         }
-        let param_refs: Vec<(&str, &str)> = params
-            .iter()
-            .map(|(k, v)| (*k, v.as_str()))
-            .collect();
+        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let body = self.signed_get("/api/v3/myTrades", &param_refs).await?;
         parse_my_trades(&body)
     }
@@ -121,21 +136,41 @@ impl BinanceComSpotClient {
             .collect::<Vec<_>>()
             .join("&");
         let signature = sign_query(&self.api_secret, &query);
-        let url = format!("{}{path}?{query}&signature={signature}", self.base_url);
+        let signed_query = format!("{query}&signature={signature}");
+        let url = format!("{}{path}?{signed_query}", self.base_url);
 
-        let response = self
-            .client
-            .get(&url)
-            .header("X-MBX-APIKEY", &self.api_key)
-            .send()
-            .await
-            .map_err(|e| BinanceComSpotError::Network(e.to_string()))?;
+        let (status, body) = match &self.transport {
+            SpotTransport::Egress => {
+                let call = crate::egress::EgressCall::get(
+                    crate::data::BINANCE_COM_SPOT_BOOK_ID,
+                    "api.binance.com",
+                    path,
+                    crate::egress::Lane::PrivateRead,
+                )
+                .with_query(signed_query)
+                .with_header("X-MBX-APIKEY", &self.api_key);
+                let resp = crate::egress::shared()
+                    .send(&call)
+                    .await
+                    .map_err(|e| BinanceComSpotError::Network(e.to_string()))?;
+                (resp.status, resp.body)
+            }
+            SpotTransport::Direct(client) => {
+                let response = client
+                    .get(&url)
+                    .header("X-MBX-APIKEY", &self.api_key)
+                    .send()
+                    .await
+                    .map_err(|e| BinanceComSpotError::Network(e.to_string()))?;
+                let status = response.status().as_u16();
+                let body = response
+                    .text()
+                    .await
+                    .map_err(|e| BinanceComSpotError::Network(e.to_string()))?;
+                (status, body)
+            }
+        };
 
-        let status = response.status().as_u16();
-        let body = response
-            .text()
-            .await
-            .map_err(|e| BinanceComSpotError::Network(e.to_string()))?;
         if (200..300).contains(&status) {
             Ok(body)
         } else {
@@ -191,8 +226,7 @@ fn parse_my_trades(body: &str) -> Result<Vec<BinanceComMyTrade>, BinanceComSpotE
 
 pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::BrokerFill {
     let side = if trade.is_buyer { "BUY" } else { "SELL" }.to_string();
-    let filled_at = DateTime::<Utc>::from_timestamp_millis(trade.time_ms)
-        .unwrap_or_else(Utc::now);
+    let filled_at = DateTime::<Utc>::from_timestamp_millis(trade.time_ms).unwrap_or_else(Utc::now);
     crate::broker::BrokerFill {
         fill_id: trade.id.to_string(),
         trade_id: trade.id.to_string(),

@@ -28,7 +28,10 @@ impl BrokerConnectionIdentityFields {
                 "asset_class".into(),
                 Value::String(self.asset_class.clone()),
             );
-            map.insert("environment".into(), Value::String(self.environment.clone()));
+            map.insert(
+                "environment".into(),
+                Value::String(self.environment.clone()),
+            );
         }
         payload
     }
@@ -89,14 +92,12 @@ impl BrokerBehavioralRecorder {
         }
 
         let with_identity = identity.inject(body);
-        let Some(redacted) = RedactionBoundary::redact_for_upload(with_identity, &secret_refs) else {
+        let Some(redacted) = RedactionBoundary::redact_for_upload(with_identity, &secret_refs)
+        else {
             return false;
         };
 
-        self.recorded
-            .lock()
-            .expect("recorded")
-            .push(redacted);
+        self.recorded.lock().expect("recorded").push(redacted);
         true
     }
 

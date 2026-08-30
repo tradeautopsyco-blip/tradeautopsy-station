@@ -8,6 +8,80 @@ pub const BLOCK_MARKER: &str = "# tradeautopsy-killswitch";
 /// Substring for `sed /.../d` (no `#` — keeps sudoers rules parseable).
 const HOSTS_LINE_MATCH: &str = "tradeautopsy-killswitch";
 
+/// Marker for a venue IP-ban block (Ring 3 of VenueEgress).
+///
+/// The token order is deliberate and load-bearing. It must:
+///   - contain `HOSTS_LINE_MATCH`, so the existing
+///     `sudoers.d/99-tradeautopsy-dns` rule `sed /tradeautopsy-killswitch/d`
+///     still removes it with no sudoers change; and
+///   - **not** contain `BLOCK_MARKER`, so `is_block_active()` and every existing
+///     `content.contains(BLOCK_MARKER)` assertion keep meaning "the kill switch
+///     is armed" and are not made true by a venue ban.
+/// Putting `venue-ban-` in front of the token satisfies both; appending it would
+/// satisfy only the first.
+const VENUE_BAN_MARKER: &str = "# venue-ban-tradeautopsy-killswitch";
+
+/// Why a set of hosts is currently sinkholed. The hosts file has more than one
+/// owner, so no single owner may clear it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BlockReason {
+    /// The kill switch. Cleared only by the kill switch.
+    KillSwitch,
+    /// A venue told us we are IP-banned. Cleared when the ban expires.
+    VenueBan,
+}
+
+impl BlockReason {
+    pub fn marker(self) -> &'static str {
+        match self {
+            BlockReason::KillSwitch => BLOCK_MARKER,
+            BlockReason::VenueBan => VENUE_BAN_MARKER,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BlockReason::KillSwitch => "kill_switch",
+            BlockReason::VenueBan => "venue_ban",
+        }
+    }
+}
+
+/// Every (reason, broker) currently asking for a sinkhole. The hosts file is
+/// always rewritten to the **union** of this set — never appended to, never
+/// wholesale deleted — so one owner's release cannot lift another's block.
+static ACTIVE_BLOCKS: std::sync::Mutex<std::collections::BTreeSet<(BlockReason, String)>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+fn active_blocks() -> Vec<(BlockReason, String)> {
+    ACTIVE_BLOCKS
+        .lock()
+        .map(|g| g.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Lines the hosts file should currently carry, for the whole union.
+fn union_entries() -> String {
+    let mut out = String::new();
+    for (reason, broker) in active_blocks() {
+        for host in hosts_for_broker(&broker) {
+            out.push_str(&format!("127.0.0.1 {host} {}\n", reason.marker()));
+            out.push_str(&format!("::1 {host} {}\n", reason.marker()));
+        }
+    }
+    out
+}
+
+/// Is this specific reason armed, according to the file on disk?
+pub fn is_reason_active(reason: BlockReason) -> bool {
+    let Ok(content) = std::fs::read_to_string(hosts_file_path()) else {
+        return false;
+    };
+    content
+        .lines()
+        .any(|line| line.trim_end().ends_with(reason.marker()))
+}
+
 const KOTAK_HOSTS: &[&str] = &[
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
@@ -25,8 +99,9 @@ const KOTAK_HOSTS: &[&str] = &[
 ];
 
 /// R8 gap closed: COM was reachable during an L3 block because it had no host set here.
-/// Keep aligned with `ubi::ALLOWED_BROKER_HOSTS`.
-const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com", "eapi.binance.com"];
+/// HTTP hosts stay aligned with `ubi::ALLOWED_BROKER_HOSTS`. `stream.binance.com` is
+/// extra: Market Streams WS (9443), not `broker_http_call`. A COM ban must sinkhole it.
+const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com", "eapi.binance.com", "stream.binance.com"];
 
 const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
 
@@ -106,39 +181,56 @@ mod macos {
         Ok(())
     }
 
-    fn build_block_entries(broker: &str) -> String {
-        hosts_for_broker(broker)
-            .iter()
-            .flat_map(|h| {
-                [
-                    format!("127.0.0.1 {h} {BLOCK_MARKER}\n"),
-                    format!("::1 {h} {BLOCK_MARKER}\n"),
-                ]
-            })
-            .collect()
-    }
-
-    /// Append broker block lines to hosts file and flush caches (blocking thread).
-    pub fn apply_hosts_block(broker: &str) -> Result<(), String> {
-        if is_block_active() {
-            info!("KillSwitch DNS: already active, skipping hosts write");
+    /// Strip every line this process manages, whatever the reason.
+    fn strip_managed_lines(path: &Path) -> Result<(), String> {
+        if direct_write_enabled() {
+            let content =
+                std::fs::read_to_string(path).map_err(|e| format!("read hosts file: {e}"))?;
+            let filtered: String = content
+                .lines()
+                .filter(|line| !line.contains(HOSTS_LINE_MATCH))
+                .map(|line| format!("{line}\n"))
+                .collect();
+            std::fs::write(path, filtered).map_err(|e| format!("write hosts file: {e}"))?;
             return Ok(());
         }
-
-        let hosts = hosts_for_broker(broker);
-        if hosts.is_empty() {
+        // Same sudoers rule as before: the venue-ban marker was chosen to contain
+        // this token so no sudoers change is needed.
+        let pattern = format!("/{HOSTS_LINE_MATCH}/d");
+        let result = Command::new("sudo")
+            .args([
+                "/usr/bin/sed",
+                "-i",
+                "",
+                &pattern,
+                path.to_string_lossy().as_ref(),
+            ])
+            .output()
+            .map_err(|e| format!("sed failed: {e}"))?;
+        if !result.status.success() {
             return Err(format!(
-                "no Kill DNS hosts for broker={broker} — refusing empty L3 block (R8)"
+                "sed error: {}",
+                String::from_utf8_lossy(&result.stderr)
             ));
         }
-        let entries = build_block_entries(broker);
-        let path = hosts_file_path();
+        Ok(())
+    }
 
-        info!(
-            "KillSwitch DNS: blocking {} hosts for broker={}",
-            hosts.len(),
-            broker
-        );
+    /// Rewrite the managed region to the union of every active reason.
+    ///
+    /// Never "append" and never "delete all": those are what made a single owner
+    /// able to skip another owner's block on the way in, and tear it down on the
+    /// way out.
+    pub(super) fn rewrite_managed_region() -> Result<(), String> {
+        let path = hosts_file_path();
+        strip_managed_lines(&path)?;
+
+        let entries = union_entries();
+        if entries.is_empty() {
+            flush_dns_cache();
+            info!("Hosts block: no active reasons — managed region empty");
+            return Ok(());
+        }
 
         if direct_write_enabled() {
             append_entries(&path, &entries)?;
@@ -150,74 +242,91 @@ mod macos {
                 .stderr(std::process::Stdio::null())
                 .spawn()
                 .map_err(|e| format!("Failed to spawn tee: {e}"))?;
-
             let mut stdin = child.stdin.take().ok_or("Failed to get stdin")?;
             stdin
                 .write_all(entries.as_bytes())
                 .map_err(|e| format!("Failed to write entries: {e}"))?;
             drop(stdin);
-
             let status = child.wait().map_err(|e| format!("tee wait failed: {e}"))?;
-
             if !status.success() {
                 return Err("sudo tee /etc/hosts failed".to_string());
             }
         }
 
         flush_dns_cache();
-        flush_browser_dns();
-        info!("KillSwitch DNS: block ENABLED for {broker}");
         Ok(())
     }
 
-    pub fn disable_block() -> Result<(), String> {
-        if !is_block_active() {
-            info!("KillSwitch DNS: no active block, skipping");
-            return Ok(());
+    /// Arm one reason for one broker and rewrite the union.
+    pub(super) fn arm(reason: BlockReason, broker: &str) -> Result<(), String> {
+        let hosts = hosts_for_broker(broker);
+        if hosts.is_empty() {
+            // R8: an unknown slug must never be treated as a successful block.
+            return Err(format!(
+                "no Kill DNS hosts for broker={broker} — refusing empty L3 block (R8)"
+            ));
         }
+        if let Ok(mut active) = ACTIVE_BLOCKS.lock() {
+            active.insert((reason, broker.to_string()));
+        }
+        info!(
+            "Hosts block: arming {} hosts for broker={broker} reason={}",
+            hosts.len(),
+            reason.as_str()
+        );
+        let result = rewrite_managed_region();
+        if result.is_ok() && reason == BlockReason::KillSwitch {
+            flush_browser_dns();
+        }
+        result
+    }
 
-        let path = hosts_file_path();
-
-        if direct_write_enabled() {
-            let content =
-                std::fs::read_to_string(&path).map_err(|e| format!("read hosts file: {e}"))?;
-            let filtered: String = content
-                .lines()
-                .filter(|line| !line.contains(HOSTS_LINE_MATCH))
-                .map(|line| format!("{line}\n"))
-                .collect();
-            std::fs::write(&path, filtered).map_err(|e| format!("write hosts file: {e}"))?;
-        } else {
-            let pattern = format!("/{HOSTS_LINE_MATCH}/d");
-            let result = Command::new("sudo")
-                .args([
-                    "/usr/bin/sed",
-                    "-i",
-                    "",
-                    &pattern,
-                    path.to_string_lossy().as_ref(),
-                ])
-                .output()
-                .map_err(|e| format!("sed failed: {e}"))?;
-
-            if !result.status.success() {
-                return Err(format!(
-                    "sed error: {}",
-                    String::from_utf8_lossy(&result.stderr)
-                ));
+    /// Release one reason for one broker and rewrite the union. Other reasons,
+    /// and other brokers under the same reason, stay blocked.
+    pub(super) fn disarm(reason: BlockReason, broker: Option<&str>) -> Result<(), String> {
+        if let Ok(mut active) = ACTIVE_BLOCKS.lock() {
+            match broker {
+                Some(b) => {
+                    active.remove(&(reason, b.to_string()));
+                }
+                None => active.retain(|(r, _)| *r != reason),
             }
         }
-
-        flush_dns_cache();
-        info!("KillSwitch DNS: block DISABLED");
-        Ok(())
+        info!("Hosts block: released reason={}", reason.as_str());
+        rewrite_managed_region()
     }
 
+    /// Back-compat entry point for the kill switch.
+    pub fn apply_hosts_block(broker: &str) -> Result<(), String> {
+        arm(BlockReason::KillSwitch, broker)
+    }
+
+    /// Back-compat entry point for the kill switch. Releases **only** the kill
+    /// switch: an active venue ban survives, and vice versa.
+    pub fn disable_block() -> Result<(), String> {
+        disarm(BlockReason::KillSwitch, None)
+    }
+
+    /// True when the **kill switch** is armed. A venue ban does not make this
+    /// true — that is why the two markers are distinguishable.
     pub fn is_block_active() -> bool {
-        std::fs::read_to_string(hosts_file_path())
-            .map(|c| c.contains(BLOCK_MARKER))
-            .unwrap_or(false)
+        super::is_reason_active(BlockReason::KillSwitch)
     }
+}
+
+/// Does the file on disk still carry every line the union asks for?
+#[cfg(target_os = "macos")]
+fn managed_region_is_stale() -> bool {
+    let expected = union_entries();
+    if expected.is_empty() {
+        return false;
+    }
+    let Ok(content) = std::fs::read_to_string(hosts_file_path()) else {
+        return true;
+    };
+    expected
+        .lines()
+        .any(|line| !line.is_empty() && !content.contains(line))
 }
 
 #[cfg(target_os = "macos")]
@@ -247,16 +356,12 @@ fn start_hosts_watcher(broker: String) {
         move |res: Result<notify::Event, notify::Error>| {
             if let Ok(event) = res {
                 if matches!(event.kind, EventKind::Modify(_)) {
-                    if !macos::is_block_active() {
-                        let armed_broker = ARMED_BROKER
-                            .lock()
-                            .ok()
-                            .and_then(|g| g.clone())
-                            .unwrap_or(broker_clone.clone());
-                        warn!(
-                            "KillSwitch: /etc/hosts tampered — re-applying block for broker={armed_broker}"
-                        );
-                        let _ = macos::apply_hosts_block(&armed_broker);
+                    // Re-apply the **union**, not one broker: a venue ban armed
+                    // alongside the kill switch must survive tampering too.
+                    if managed_region_is_stale() {
+                        let _ = &broker_clone;
+                        warn!("Hosts block: /etc/hosts tampered — re-applying union");
+                        let _ = macos::rewrite_managed_region();
                     }
                 }
             }
@@ -306,6 +411,33 @@ pub fn disable_block_and_watcher() -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 pub use macos::{apply_hosts_block, disable_block, is_block_active};
+
+/// Ring 3 of VenueEgress: sinkhole a banned venue's hosts for the life of the
+/// ban, so nothing on this Mac — including a process that never learned about
+/// the engine — can keep knocking and extend it.
+///
+/// Best effort by design. This shells out to `sudo`; if that prompts, fails, or
+/// hangs, the in-process freeze has already refused the call and the ban is
+/// already being respected. Ring 3 is a backstop, never the mechanism.
+#[cfg(target_os = "macos")]
+pub fn arm_venue_ban(slot_id: &str) -> Result<(), String> {
+    macos::arm(BlockReason::VenueBan, slot_id)
+}
+
+#[cfg(target_os = "macos")]
+pub fn clear_venue_ban(slot_id: &str) -> Result<(), String> {
+    macos::disarm(BlockReason::VenueBan, Some(slot_id))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn arm_venue_ban(_slot_id: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn clear_venue_ban(_slot_id: &str) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "macos"))]
 pub fn enable_block_with_watcher(_broker: &str) -> Result<(), String> {
@@ -423,6 +555,7 @@ mod tests {
         let com = hosts_for_broker("binance_com");
         assert_eq!(com, BINANCE_COM_HOSTS);
         assert!(com.contains(&"eapi.binance.com"));
+        assert!(com.contains(&"stream.binance.com"));
         assert!(!com.contains(&"fapi.binance.com"));
         assert!(!com.contains(&"dapi.binance.com"));
 

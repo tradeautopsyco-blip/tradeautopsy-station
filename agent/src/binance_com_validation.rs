@@ -57,6 +57,9 @@ pub const DEFAULT_BASE_URL: &str = "https://api.binance.com";
 /// Live Binance Global validation via `/sapi/v1/account/apiRestrictions`.
 pub struct LiveBinanceComValidationAdapter {
     base_url: String,
+    /// Shares the egress connection pool. Admission happens per call via
+    /// `send_auth`: `/sapi/v1/account/apiRestrictions` is outside the R0 data
+    /// fence by design, but it reaches Binance's IP and must respect a ban.
     client: reqwest::Client,
 }
 
@@ -64,7 +67,7 @@ impl LiveBinanceComValidationAdapter {
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            client: reqwest::Client::new(),
+            client: crate::egress::shared_client(),
         }
     }
 
@@ -98,6 +101,31 @@ impl BrokerValidationAdapter for LiveBinanceComValidationAdapter {
             self.base_url
         );
 
+        // `/sapi/v1/account/apiRestrictions` has no published weight in the spot
+        // lock; forecast at the heaviest routine private read.
+        const VALIDATION_WEIGHT_HINT: u32 = 20;
+        let engine = crate::egress::shared_engine();
+        let permit = match crate::egress::split_url(&url)
+            .filter(|(host, _, _)| crate::egress::is_venue_host(host))
+        {
+            Some((host, _, _)) => match engine.admit_auth(
+                &host,
+                crate::egress::Lane::PrivateRead,
+                VALIDATION_WEIGHT_HINT,
+            ) {
+                crate::egress::Decision::Admit(permit) => Some(permit),
+                // A connect retry during a ban is how a short ban becomes a long
+                // one. Report it as transient rather than as a bad credential.
+                crate::egress::Decision::Refuse(reason) => {
+                    tracing::warn!(refusal = %reason, "binance_com validation refused by egress");
+                    return ValidationResult::TransientFailure(ValidationFailure::RateLimited);
+                }
+            },
+            // Not a venue URL (wiremock in tests): there is no venue budget to
+            // spend against a local server, so there is nothing to meter.
+            None => None,
+        };
+
         let response = match self
             .client
             .get(&url)
@@ -107,12 +135,37 @@ impl BrokerValidationAdapter for LiveBinanceComValidationAdapter {
         {
             Ok(resp) => resp,
             Err(_) => {
+                if let Some(permit) = permit {
+                    engine.record(permit, &crate::egress::Outcome::Transport);
+                }
                 return ValidationResult::TransientFailure(ValidationFailure::NetworkUnavailable);
             }
         };
 
         let status = response.status().as_u16();
+        let headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(n, v)| {
+                (
+                    n.as_str().to_string(),
+                    v.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
         let body = response.text().await.unwrap_or_default();
+        if let Some(permit) = permit {
+            // A 418 here freezes the whole binance_com slot, so a credential
+            // check cannot keep knocking while the desk is banned.
+            engine.record(
+                permit,
+                &crate::egress::Outcome::http(
+                    status,
+                    crate::ubi::redact_response_headers(&headers),
+                    &body,
+                ),
+            );
+        }
         Self::map_response(status, &body)
     }
 }
@@ -135,12 +188,16 @@ impl BrokerValidationAdapter for FakeBinanceComValidationAdapter {
 
     async fn validate_credentials(&self, api_key: &str, _api_secret: &str) -> ValidationResult {
         match api_key {
-            "TA_FAKE_COM_READ_ONLY" => ValidationResult::Success(PermissionPosture::ReadOnlyConfirmed),
+            "TA_FAKE_COM_READ_ONLY" => {
+                ValidationResult::Success(PermissionPosture::ReadOnlyConfirmed)
+            }
             "TA_FAKE_COM_TRADE" => ValidationResult::Success(PermissionPosture::TradeEnabled),
             "TA_FAKE_COM_UNVERIFIABLE" => {
                 ValidationResult::Success(PermissionPosture::Unverifiable)
             }
-            "TA_FAKE_COM_WITHDRAW" => ValidationResult::Success(PermissionPosture::WithdrawDetected),
+            "TA_FAKE_COM_WITHDRAW" => {
+                ValidationResult::Success(PermissionPosture::WithdrawDetected)
+            }
             "TA_FAKE_COM_INVALID" => {
                 ValidationResult::PermanentFailure(ValidationFailure::InvalidCredentials)
             }

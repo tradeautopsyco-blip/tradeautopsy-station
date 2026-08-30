@@ -1,5 +1,10 @@
 //! Binance options last (`binance-com-options`) on Station loopback (CI). No live eapi.
 //! Lock: `locks/binance-com-options.md` — Way 3 last-only.
+//!
+//! Every `reqwest::Client::new()` here GETs `http://127.0.0.1:{port}/api/station/...`.
+//! The spawned agent plants fixtures; `eapi_public_fetch` is off; dated-contract
+//! quote records a stream key and does not dial eapi/WS. Ring 2 lints `src/` only;
+//! these tests stay off EXEMPT.
 
 mod common;
 

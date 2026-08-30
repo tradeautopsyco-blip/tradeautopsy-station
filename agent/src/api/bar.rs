@@ -356,7 +356,10 @@ pub async fn post_trade_debrief_handler(
 }
 
 /// GET loss limits + bar activation gate — forward to Console `/api/bar/v1/profile/loss-limits`.
-pub async fn loss_limits_get_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
+pub async fn loss_limits_get_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
 
     match forward_daemon_json_with_optional_429_retry(

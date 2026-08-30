@@ -451,39 +451,34 @@ pub async fn fetch_quotes_json(
     let book_id = kotak_quote_book_id(instrument_id).ok_or(QuoteFetchError {
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
-    authorize_book_call(book_id, &host, "GET", &path, true).map_err(|_| QuoteFetchError {
-        class: QuoteFetchErrorClass::QuotesHttp,
-    })?;
     let prepared = prepare_kotak_catalog_get(&path, &creds).map_err(|_| QuoteFetchError {
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
+    // The engine re-runs `authorize_book_call` for this book and host before it
+    // admits, so the fence is not duplicated here. Quotes are polled, which is
+    // exactly the traffic Kotak's undocumented 429 budget is waiting for.
+    let resp = crate::egress::shared()
+        .send_prepared(
+            book_id,
+            crate::egress::Lane::PrivateRead,
+            &prepared,
+            Duration::from_secs(15),
+        )
+        .await
         .map_err(|_| QuoteFetchError {
             class: QuoteFetchErrorClass::QuotesHttp,
         })?;
-    let mut req = client.get(&prepared.url);
-    for (name, value) in &prepared.headers {
-        req = req.header(name.as_str(), value.as_str());
-    }
-    let resp = req.send().await.map_err(|_| QuoteFetchError {
-        class: QuoteFetchErrorClass::QuotesHttp,
-    })?;
-    let status = resp.status();
-    if matches!(status.as_u16(), 401 | 403) {
+    if matches!(resp.status, 401 | 403) {
         return Err(QuoteFetchError {
             class: QuoteFetchErrorClass::Session,
         });
     }
-    if !status.is_success() {
+    if !resp.is_success() {
         return Err(QuoteFetchError {
             class: QuoteFetchErrorClass::QuotesHttp,
         });
     }
-    resp.text().await.map_err(|_| QuoteFetchError {
-        class: QuoteFetchErrorClass::QuotesHttp,
-    })
+    Ok(resp.body)
 }
 
 #[cfg(test)]

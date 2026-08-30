@@ -427,17 +427,7 @@ pub async fn refresh_from_session(
     let sdk = prepare_kotak_file_paths_get(FILE_PATHS_PATH, &creds).map_err(|_| {
         InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
     })?;
-    let catalog_client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|_| {
-            InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
-        })?;
-    let csv_client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(90))
-        .build()
-        .map_err(|_| InstrumentMasterFetchError::new(InstrumentMasterErrorClass::CsvHttp, None))?;
-    let (body, catalog_status) = fetch_file_paths_body(&catalog_client, sdk, &creds).await?;
+    let (body, catalog_status) = fetch_file_paths_body(sdk, &creds).await?;
     let urls = fo_csv_urls(&body).map_err(|_| {
         tracing::warn!(
             keys = ?json_object_keys(&body),
@@ -465,36 +455,27 @@ pub async fn refresh_from_session(
     let mut last_csv_status: Option<u16> = None;
     for url in urls {
         match authorize_nfo_csv_get(&url) {
-            Ok(()) => match csv_client.get(&url).send().await {
+            Ok(()) => match fetch_nfo_csv(&url).await {
                 Ok(resp) => {
-                    let csv_status = resp.status();
-                    last_csv_status = Some(csv_status.as_u16());
-                    if !csv_status.is_success() {
+                    last_csv_status = Some(resp.status);
+                    if !resp.is_success() {
                         saw_http = true;
-                        tracing::warn!(status = %csv_status, "s1 desk: kotak nfo CSV HTTP error");
+                        tracing::warn!(status = resp.status, "s1 desk: kotak nfo CSV HTTP error");
                         continue;
                     }
-                    match resp.bytes().await {
-                        Ok(bytes) => match KotakNfoScripMaster::from_csv_bytes(&bytes) {
-                            Ok(part) => {
-                                if !part.is_empty() {
-                                    write_raw_cache(
-                                        &kotak_csv_cache_path(cache_dir, "nse_fo"),
-                                        &bytes,
-                                    );
-                                    master.merge(part);
-                                } else {
-                                    saw_parse = true;
-                                }
-                            }
-                            Err(err) => {
+                    let bytes = resp.body.into_bytes();
+                    match KotakNfoScripMaster::from_csv_bytes(&bytes) {
+                        Ok(part) => {
+                            if !part.is_empty() {
+                                write_raw_cache(&kotak_csv_cache_path(cache_dir, "nse_fo"), &bytes);
+                                master.merge(part);
+                            } else {
                                 saw_parse = true;
-                                tracing::warn!(error = %err, "s1 desk: kotak nfo CSV parse failed");
                             }
-                        },
+                        }
                         Err(err) => {
-                            saw_http = true;
-                            tracing::warn!(error = %err, "s1 desk: kotak nfo CSV read failed");
+                            saw_parse = true;
+                            tracing::warn!(error = %err, "s1 desk: kotak nfo CSV parse failed");
                         }
                     }
                 }
@@ -524,33 +505,57 @@ pub async fn refresh_from_session(
     Ok(master)
 }
 
+/// Signed by `prepare_kotak_file_paths_get`, still admitted by the engine. The
+/// NFO book shares Kotak's one meter with cash, because the lock does not say
+/// they have separate budgets.
 async fn send_prepared(
-    client: &reqwest::Client,
     prepared: &PreparedHttpRequest,
 ) -> Result<(reqwest::StatusCode, String), InstrumentMasterFetchError> {
-    let mut req = client.get(&prepared.url);
-    for (name, value) in &prepared.headers {
-        req = req.header(name.as_str(), value.as_str());
-    }
-    let resp = req.send().await.map_err(|_| {
-        InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
-    })?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(|_| {
-        InstrumentMasterFetchError::new(
-            InstrumentMasterErrorClass::FilePathsHttp,
-            Some(status.as_u16()),
+    let resp = crate::egress::shared()
+        .send_prepared(
+            KOTAK_NSE_NFO_BOOK_ID,
+            crate::egress::Lane::PrivateRead,
+            prepared,
+            Duration::from_secs(15),
         )
-    })?;
-    Ok((status, body))
+        .await
+        .map_err(|_| {
+            InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
+        })?;
+    let status = reqwest::StatusCode::from_u16(resp.status)
+        .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    Ok((status, resp.body))
+}
+
+/// Public F&O scrip CSV on `lapi`. Large, slow, never coalesced.
+async fn fetch_nfo_csv(
+    url: &str,
+) -> Result<crate::egress::EgressResponse, InstrumentMasterFetchError> {
+    let Some((host, path, query)) = crate::egress::split_url(url) else {
+        return Err(InstrumentMasterFetchError::new(
+            InstrumentMasterErrorClass::CsvHttp,
+            None,
+        ));
+    };
+    let call = crate::egress::EgressCall::get(
+        KOTAK_NSE_NFO_BOOK_ID,
+        &host,
+        &path,
+        crate::egress::Lane::MarketData,
+    )
+    .with_query(query)
+    .with_timeout(Duration::from_secs(90));
+    crate::egress::shared()
+        .send(&call)
+        .await
+        .map_err(|_| InstrumentMasterFetchError::new(InstrumentMasterErrorClass::CsvHttp, None))
 }
 
 async fn fetch_file_paths_body(
-    client: &reqwest::Client,
     sdk: PreparedHttpRequest,
     creds: &HostCredentialBlob,
 ) -> Result<(String, u16), InstrumentMasterFetchError> {
-    let (status, body) = send_prepared(client, &sdk).await?;
+    let (status, body) = send_prepared(&sdk).await?;
     if status.is_success() && !body.contains("Complete the 2fa process") {
         return Ok((body, status.as_u16()));
     }
@@ -561,7 +566,7 @@ async fn fetch_file_paths_body(
                 Some(status.as_u16()),
             )
         })?;
-        let (status2, body2) = send_prepared(client, &session).await?;
+        let (status2, body2) = send_prepared(&session).await?;
         if status2.is_success() {
             return Ok((body2, status2.as_u16()));
         }

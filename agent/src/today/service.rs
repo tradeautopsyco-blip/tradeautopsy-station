@@ -209,7 +209,11 @@ impl TodayService {
                 pnl_today_usd: pnl,
                 trades_today: trades_count,
                 win_rate,
-                wins_today: if eligible.is_empty() { None } else { Some(wins) },
+                wins_today: if eligible.is_empty() {
+                    None
+                } else {
+                    Some(wins)
+                },
                 losses_today: if eligible.is_empty() {
                     None
                 } else {
@@ -268,10 +272,8 @@ impl TodayService {
             return Some(TodayDegradedReason::ExchangeFiltersNotReady);
         }
 
-        let sync_state = snap.sync_state_literal(
-            self.broker_limits.fresh_secs,
-            self.broker_limits.stale_secs,
-        );
+        let sync_state =
+            snap.sync_state_literal(self.broker_limits.fresh_secs, self.broker_limits.stale_secs);
         match sync_state {
             "stale" | "disconnected" | "not_connected" => Some(TodayDegradedReason::SyncStale),
             _ => None,
@@ -484,7 +486,8 @@ mod tests {
 
     fn local_noon(date: NaiveDate) -> chrono::DateTime<Utc> {
         let local_dt = date.and_hms_opt(12, 0, 0).unwrap();
-        Local.from_local_datetime(&local_dt)
+        Local
+            .from_local_datetime(&local_dt)
             .single()
             .expect("local noon")
             .with_timezone(&Utc)
@@ -524,10 +527,7 @@ mod tests {
 
     #[test]
     fn ensure_past_day_snapshots_writes_yesterday_without_today_fill() {
-        let dir = std::env::temp_dir().join(format!(
-            "rta-day-boundary-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("rta-day-boundary-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let db = dir.join("today.db");
         let _ = std::fs::remove_file(&db);
@@ -535,7 +535,9 @@ mod tests {
         let today = local_today();
         let yesterday = today.pred_opt().expect("yesterday");
         let trip = btc_trip(local_noon(yesterday), 8.79);
-        let service = TodayServiceHarness { store: store.clone() };
+        let service = TodayServiceHarness {
+            store: store.clone(),
+        };
         service
             .ensure_past_day_snapshots(&[trip])
             .expect("finalize yesterday");
@@ -545,7 +547,10 @@ mod tests {
             .expect("snapshot row");
         assert_eq!(snap.round_trips_closed, 1);
         assert!((snap.net_pnl_usd - 8.79).abs() < 0.01);
-        assert!(store.fetch_daily_snapshot(today).expect("fetch today").is_none());
+        assert!(store
+            .fetch_daily_snapshot(today)
+            .expect("fetch today")
+            .is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -568,10 +573,7 @@ mod tests {
 
     #[test]
     fn ensure_past_day_snapshots_writes_two_prior_days() {
-        let dir = std::env::temp_dir().join(format!(
-            "rta-day-boundary-two-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("rta-day-boundary-two-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let db = dir.join("today.db");
         let _ = std::fs::remove_file(&db);
@@ -579,7 +581,9 @@ mod tests {
         let today = local_today();
         let yesterday = today.pred_opt().expect("yesterday");
         let day_before = yesterday.pred_opt().expect("day before");
-        let service = TodayServiceHarness { store: store.clone() };
+        let service = TodayServiceHarness {
+            store: store.clone(),
+        };
         service
             .ensure_past_day_snapshots(&[
                 btc_trip(local_noon(day_before), 1.0),

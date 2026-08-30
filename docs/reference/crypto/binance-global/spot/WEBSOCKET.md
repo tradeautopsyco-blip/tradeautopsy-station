@@ -28,6 +28,8 @@
 - Max 1024 streams per connection
 - 300 connection attempts per 5min per IP
 
+**Handshake REQUEST_WEIGHT:** NOT SPECIFIED for Market Streams (`wss://stream.binance.com`). The sentence “WS handshake = 5 weight” below is under **WebSocket API** (`ws-api.binance.com`), not this section. Do not charge 5 from that paragraph onto Market Streams.
+
 **Microsecond timestamps:** add `timeUnit=MICROSECOND` to URL param (default is milliseconds).
 
 ---
