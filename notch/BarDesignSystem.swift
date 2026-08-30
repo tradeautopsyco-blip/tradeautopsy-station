@@ -460,6 +460,8 @@ struct BarInputField: View {
     let placeholder: String
     @Binding var text: String
     var marginBottom: CGFloat = 7
+    /// Return or focus loss. Fires on both so a pasted id binds without a suggestion row.
+    var onCommit: (() -> Void)?
 
     @FocusState private var focused: Bool
 
@@ -484,6 +486,10 @@ struct BarInputField: View {
                 .stroke(focused ? BarDS.Border.inputFocused : BarDS.Border.input, lineWidth: BarDS.borderThin)
         )
         .focused($focused)
+        .onSubmit { onCommit?() }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { onCommit?() }
+        }
         .padding(.bottom, marginBottom)
     }
 }

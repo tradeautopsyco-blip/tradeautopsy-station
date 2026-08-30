@@ -485,6 +485,43 @@ struct BarDeskInstrumentsTests {
         #expect(!InstrumentTickBookId.isDatedOptionContract("BTC-200730-9000"))
     }
 
+    // MARK: - DeskDatedContractFields (the contract splits itself)
+
+    @Test func datedContractSplitsIntoTheDeclareFields() {
+        let call = DeskDatedContractFields.parse("BTC-200730-9000-C")
+        #expect(call?.underlying == "BTC")
+        #expect(call?.expiry == "200730")
+        #expect(call?.strike == "9000")
+        #expect(call?.right == "CE")
+
+        let put = DeskDatedContractFields.parse("ETH-241227-4000-P")
+        #expect(put?.underlying == "ETH")
+        #expect(put?.expiry == "241227")
+        #expect(put?.strike == "4000")
+        #expect(put?.right == "PE")
+
+        // Surrounding whitespace is trimmed; the segments keep their own casing.
+        #expect(DeskDatedContractFields.parse("  BTC-250926-90000-C  ")?.expiry == "250926")
+    }
+
+    @Test func splitRefusesEverythingTheShapePredicateRefuses() {
+        #expect(DeskDatedContractFields.parse("BTCUSDT") == nil)
+        #expect(DeskDatedContractFields.parse("nse_fo|12345") == nil)
+        #expect(DeskDatedContractFields.parse("M-M") == nil)
+        #expect(DeskDatedContractFields.parse("BTC-200730-9000") == nil)
+        #expect(DeskDatedContractFields.parse("") == nil)
+    }
+
+    @Test func anExpiryTheOiQueryCannotNameStaysEmpty() {
+        // `30AUG26` is not the eapi `YYMMDD` that `openInterest?expiration=` takes, so the
+        // date is left blank rather than invented — the rest of the contract still splits.
+        let deribitShaped = DeskDatedContractFields.parse("BTC-30AUG26-120000-C")
+        #expect(deribitShaped?.underlying == "BTC")
+        #expect(deribitShaped?.expiry == "")
+        #expect(deribitShaped?.strike == "120000")
+        #expect(deribitShaped?.right == "CE")
+    }
+
     @Test func cashIdentityIsNotNfoIdentity() {
         #expect(InstrumentTickBookId.isCashIdentity("nse_cm|2885"))
         #expect(InstrumentTickBookId.isCashIdentity("bse_cm|500325"))

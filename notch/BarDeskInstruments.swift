@@ -114,6 +114,37 @@ enum InstrumentTickBookId {
     }
 }
 
+/// A dated contract split into the fields the crypto declare surface renders. Shape only —
+/// segment positions mirror `agent/src/data/binance_options_chain.rs`
+/// (`underlying_asset_from_dated_contract`, `expiration_from_dated_contract`); the string is
+/// never lowercased (`docs/reference/crypto/binance-global/options/REST.md`).
+struct DeskDatedContractFields: Equatable {
+    /// First segment — the OI `underlyingAsset` (`BTC`).
+    var underlying: String
+    /// Second segment, only when it is the eapi `YYMMDD` the OI query takes. A contract
+    /// shaped otherwise leaves this empty rather than inventing a date.
+    var expiry: String
+    /// Third segment, verbatim.
+    var strike: String
+    /// Declare payload right for the trailing `C` / `P`.
+    var right: String
+
+    /// Nil for anything `isDatedOptionContract` refuses — a pair, a `segment|token`, `M-M`.
+    static func parse(_ raw: String) -> DeskDatedContractFields? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard InstrumentTickBookId.isDatedOptionContract(trimmed) else { return nil }
+        let parts = trimmed.split(separator: "-", omittingEmptySubsequences: false)
+        let expiry = String(parts[1])
+        let isYYMMDD = expiry.count == 6 && expiry.allSatisfy { $0.isASCII && $0.isNumber }
+        return DeskDatedContractFields(
+            underlying: String(parts[0]),
+            expiry: isYYMMDD ? expiry : "",
+            strike: String(parts[2]),
+            right: parts[parts.count - 1].uppercased() == "P" ? "PE" : "CE"
+        )
+    }
+}
+
 /// Quote vs account health from `GET /api/daemon/broker/sync-state` `capabilities`.
 enum DeskCapabilityChrome {
     /// Account proof is funds/fills — never copied from quote.

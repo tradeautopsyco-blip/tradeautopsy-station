@@ -655,4 +655,114 @@ struct BarOptionsDeclareTests {
         vm.declareAssetClass = .options
         #expect(vm.deskLastStatus == "unavailable")
     }
+
+    // MARK: - commitDeskSymbol (paste-bind)
+
+    @Test func pastedDatedContractArmsTheCryptoSurfaceOnCommit() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        // A pair left over from the last selection — the catalog is spot-only, so this is
+        // the only thing a Binance desk can have been bound to.
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId
+        ) == .standardForm)
+
+        vm.barDeclarationSymbol = "BTC-250926-90000-C"
+        vm.commitDeskSymbol()
+
+        #expect(vm.deskSelectedInstrumentId == "BTC-250926-90000-C")
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId
+        ) == .cryptoOptions)
+        // The contract splits into the fields that surface renders.
+        #expect(vm.barDeclarationSymbol == "BTC")
+        #expect(vm.declOptionExpiry == "250926")
+        #expect(vm.declOptionStrike == "90000")
+        #expect(vm.declOptionRight == "CE")
+        #expect(vm.barDeclarationLastError == nil)
+        // The glance now names the eapi book for the contract, not the leftover pair.
+        #expect(vm.deskChainExtractPath(symbol: "BTC").contains("book=binance-com-options"))
+        #expect(vm.deskChainExtractPath(symbol: "BTC").contains("instrument=BTC-250926-90000-C"))
+    }
+
+    @Test func leftoverPairCommitsNothingAndKeepsTheStandardForm() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-250926-90000-C"
+        vm.declOptionExpiry = "250926"
+        vm.declOptionStrike = "90000"
+
+        vm.barDeclarationSymbol = "BTCUSDT"
+        vm.commitDeskSymbol()
+
+        // A pair is not a contract, so nothing binds — the typed text stays exactly as
+        // typed and the previously bound contract is not rewritten by it.
+        #expect(vm.barDeclarationSymbol == "BTCUSDT")
+        #expect(vm.deskSelectedInstrumentId == "BTC-250926-90000-C")
+        #expect(vm.declOptionExpiry == "250926")
+        #expect(vm.declOptionStrike == "90000")
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
+        ) == .standardForm)
+    }
+
+    @Test func datedContractOnAKotakDeskIsRefusedNotBound() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+
+        vm.barDeclarationSymbol = "BTC-250926-90000-C"
+        vm.commitDeskSymbol()
+
+        #expect(vm.deskSelectedInstrumentId == "nse_fo|12345")
+        #expect(vm.barDeclarationLastError != nil)
+        #expect(vm.declOptionExpiry.isEmpty)
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId
+        ) == .nfoThreeZone)
+    }
+
+    @Test func recommittingTheSameContractDoesNotReinvalidate() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-250926-90000-C"
+        vm.barDeclarationSymbol = "BTC-250926-90000-C"
+        let generation = vm.deskExtractGeneration
+
+        // Blur fires on every focus toggle; a no-op commit must not wipe live extracts.
+        vm.commitDeskSymbol()
+        vm.commitDeskSymbol()
+
+        #expect(vm.deskExtractGeneration == generation)
+    }
+
+    @Test func pastingAContractOnTheSpotTabDoesNotArmOptions() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .spot
+
+        vm.barDeclarationSymbol = "BTC-250926-90000-C"
+        vm.commitDeskSymbol()
+
+        // The id binds, but the tab is the user's — picking a contract never silently
+        // arms the Options surface.
+        #expect(vm.deskSelectedInstrumentId == "BTC-250926-90000-C")
+        #expect(vm.declareAssetClass == .spot)
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId
+        ) == .standardForm)
+    }
 }

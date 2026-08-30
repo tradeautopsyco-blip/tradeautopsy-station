@@ -803,6 +803,7 @@ struct BarDeclarationFlowView: View {
                 text: $viewModel.barDeclarationSymbol,
                 marginBottom: (viewModel.showSymbolSuggestions
                     || !(viewModel.symbolSearchHint ?? "").isEmpty) ? 0 : 7,
+                onCommit: { viewModel.commitDeskSymbol() },
             )
             .onChange(of: viewModel.barDeclarationSymbol) { _, newValue in
                 viewModel.searchSymbols(newValue)

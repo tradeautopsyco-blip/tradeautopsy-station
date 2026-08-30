@@ -1197,6 +1197,56 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchHint = nil
     }
 
+    /// Symbol field commit — Return or focus loss. The Binance catalog is spot-only, so a
+    /// dated contract never comes back as a suggestion row: the typed string is the only
+    /// binding there is. A pair or free text commits nothing, so a leftover `BTCUSDT` keeps
+    /// whatever it was bound to and the standard form stays up.
+    func commitDeskSymbol() {
+        let trimmed = barDeclarationSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Blur fires on every focus toggle — rebinding the same id would re-invalidate
+        // extracts that are already correct.
+        guard !trimmed.isEmpty, trimmed != deskSelectedInstrumentId else { return }
+        guard InstrumentTickBookId.isDatedOptionContract(trimmed) else { return }
+
+        let bind = DeskInstrumentBind.resolve(
+            rawId: trimmed,
+            slug: resolvedDeskSlug,
+            currentClass: declareAssetClass
+        )
+        // A dated string on a desk that cannot serve it is a refusal, not a silent drop.
+        guard bind.shape == .binanceOption, let parts = DeskDatedContractFields.parse(trimmed) else {
+            refuseSelection(hint: deskInstrumentHint)
+            return
+        }
+
+        symbolSearchTask?.cancel()
+        ignoreSymbolSearchUntilEdit = true
+        showSymbolSuggestions = false
+        symbolSuggestions = []
+        symbolSearchHint = nil
+
+        // The contract is the source for these fields — an expiry it cannot name is cleared,
+        // never left standing from the contract before it.
+        barDeclarationSymbol = parts.underlying
+        declOptionExpiry = parts.expiry
+        declOptionStrike = parts.strike
+        declOptionRight = parts.right
+        barDeclarationLastError = nil
+        barLtpFetchError = nil
+
+        // The tab is not raised to `.options` here: picking a contract does not silently arm
+        // the Options surface, same as `selectSymbol`.
+        //
+        // Order matters: the id first, then invalidate (it reads the id to decide whether
+        // Last may survive), then fetch — which captures the generation it must match.
+        deskSelectedInstrumentId = bind.tickBookId
+        invalidateDeskMarketExtracts(reason: "commit-symbol")
+        // No `applyLTP` seed: there is no catalog row here, and a spot-shaped last never
+        // seeds a premium.
+        fetchStationQuote(instrument: bind.tickBookId)
+        refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
+    }
+
     /// Hint for an instrument the active desk cannot serve.
     private var deskInstrumentHint: String {
         DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
