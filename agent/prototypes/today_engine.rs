@@ -133,8 +133,7 @@ pub fn run_engine(fills: &[ProtoFill], session_day_local: chrono::NaiveDate) -> 
                     ledger.trip_opened_at = Some(fill.filled_at);
                 }
                 let new_qty = ledger.position_qty + fill.qty;
-                ledger.wac =
-                    (ledger.position_qty * ledger.wac + fill.qty * fill.price) / new_qty;
+                ledger.wac = (ledger.position_qty * ledger.wac + fill.qty * fill.price) / new_qty;
                 ledger.position_qty = new_qty;
                 ledger.trip_buy_qty += fill.qty;
                 ledger.trip_buy_notional += fill.qty * fill.price;
@@ -217,7 +216,10 @@ pub fn run_engine(fills: &[ProtoFill], session_day_local: chrono::NaiveDate) -> 
         Some(known.iter().map(|rt| rt.net_pnl_usd.unwrap()).sum())
     };
 
-    let wins = known.iter().filter(|rt| rt.net_pnl_usd.unwrap() > 0.0).count();
+    let wins = known
+        .iter()
+        .filter(|rt| rt.net_pnl_usd.unwrap() > 0.0)
+        .count();
     let win_rate = if known.is_empty() {
         None
     } else {
@@ -304,10 +306,7 @@ pub fn print_state(state: &TodayEngineState, session_day: chrono::NaiveDate) {
         println!();
         println!("OPEN (omitted from table)");
         for pos in &state.open_positions {
-            println!(
-                "  {} qty={:.6} wac={:.2}",
-                pos.symbol, pos.qty, pos.wac
-            );
+            println!("  {} qty={:.6} wac={:.2}", pos.symbol, pos.qty, pos.wac);
         }
     }
 
