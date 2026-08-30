@@ -39,7 +39,8 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     assert_eq!(obtain["book_id"], "binance-com-options");
     assert_eq!(obtain["operation"], "quotes");
 
-    // Last-only lock: optionchain is not implemented on this book.
+    // optionchain is implemented on this book now. With no planted master it is
+    // `unavailable` — never `unsupported`, and never an empty success.
     let chain: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optionchain"
@@ -51,8 +52,25 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
         .json()
         .await
         .expect("json");
-    assert_eq!(chain["status"], "unsupported");
+    assert_eq!(chain["status"], "unavailable");
+    assert_ne!(chain["status"], "unsupported");
+    assert_ne!(chain["status"], "success");
     assert!(chain["data"].is_null());
+
+    let oi: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=open_interest"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("open_interest")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(oi["status"], "unavailable");
+    assert_ne!(oi["status"], "unsupported");
+    assert!(oi["data"].is_null());
 
     let slug_only: serde_json::Value = client
         .get(format!(
@@ -119,11 +137,18 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
         .find(|m| m["book_id"] == "binance-com-options")
         .expect("options book");
     assert_eq!(options["manifest_id"], "binance_com.options.v1");
-    assert_eq!(options["implemented"], serde_json::json!(["quotes"]));
-    assert_ne!(
+    assert_eq!(
         options["implemented"],
-        serde_json::json!(["quotes", "optionchain"])
+        serde_json::json!(["quotes", "optionchain", "open_interest"])
     );
+    // OI is its own noun on its own binding, not a second chain arm.
+    let bound_ops: Vec<&str> = options["bindings"]
+        .as_array()
+        .expect("options bindings")
+        .iter()
+        .filter_map(|b| b["operation"].as_str())
+        .collect();
+    assert_eq!(bound_ops, vec!["quotes", "optionchain", "open_interest"]);
 
     handle.abort();
 }
@@ -262,14 +287,16 @@ async fn planted_options_last_does_not_light_chain_oi_or_spot() {
         .json()
         .await
         .expect("json");
-    assert_eq!(obtain_chain["status"], "unsupported");
+    // A last-only book with no chain master stays dark. Never an empty success.
+    assert_eq!(obtain_chain["status"], "unavailable");
+    assert_ne!(obtain_chain["status"], "success");
     assert!(obtain_chain["data"].is_null());
 
     handle.abort();
 }
 
 #[tokio::test]
-async fn planted_options_master_lights_chain_and_oi_not_obtain_optionchain() {
+async fn planted_options_master_lights_chain_and_oi_on_glance_and_obtain() {
     const PORT: u16 = 19_521;
     let handle = spawn_test_agent_with_options(
         PORT,
@@ -332,6 +359,21 @@ async fn planted_options_master_lights_chain_and_oi_not_obtain_optionchain() {
     assert_eq!(oi["status"], "success");
     assert_eq!(oi["data"]["sumOpenInterest"], "12.5");
 
+    // Obtain is instrument-scoped off the selected id. Bind the dated contract
+    // the way the desk does — a leftover BTC / BTCUSDT must not smash a chain in.
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind dated contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+
     let obtain_chain: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optionchain"
@@ -343,7 +385,88 @@ async fn planted_options_master_lights_chain_and_oi_not_obtain_optionchain() {
         .json()
         .await
         .expect("json");
-    assert_eq!(obtain_chain["status"], "unsupported");
+    assert_eq!(obtain_chain["status"], "success");
+    assert_ne!(obtain_chain["status"], "unsupported");
+    // Same rows through either door.
+    assert_eq!(
+        obtain_chain["data"]["row_count"],
+        chain["data"]["row_count"]
+    );
+    assert_eq!(obtain_chain["data"]["row_count"], 3);
+    assert_eq!(
+        obtain_chain["data"]["rows"][0]["instrument_id"],
+        "BTC-200730-9000-C"
+    );
+    assert_eq!(obtain_chain["provenance_adapter_id"], "binance_com");
+    // Success must name the path Binance actually has.
+    assert_eq!(obtain_chain["provenance_path"], "/eapi/v1/exchangeInfo");
+
+    // Nothing on the obtain wire may name a path the official MarketDataApi
+    // does not list. `/eapi/v1/optionChain` stays NOT SPECIFIED.
+    let chain_wire = obtain_chain.to_string();
+    assert!(!chain_wire.contains("optionChain"));
+    assert!(!chain_wire.contains("/eapi/v1/optionChain"));
+
+    let obtain_oi: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=open_interest"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain open_interest")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain_oi["status"], "success");
+    assert_eq!(obtain_oi["data"]["sumOpenInterest"], "12.5");
+    assert_ne!(obtain_oi["data"]["sumOpenInterest"], "0");
+    assert_eq!(obtain_oi["provenance_path"], "/eapi/v1/openInterest");
+    assert!(!obtain_oi.to_string().contains("optionChain"));
+
+    handle.abort();
+}
+
+/// B1 standing fact 3: a leftover spot id on the options book yields no rows.
+/// Obtain stays dark rather than smashing a spot chain in.
+#[tokio::test]
+async fn options_obtain_optionchain_refuses_a_spot_instrument() {
+    const PORT: u16 = 19_523;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            plant_binance_options_chain: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    // Select a spot id. The options master has no `BTCUSDT` symbol.
+    client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTCUSDT"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind spot id");
+
+    let obtain_chain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optionchain"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain optionchain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain_chain["status"], "unavailable");
+    assert_ne!(obtain_chain["status"], "success");
+    assert!(obtain_chain["data"].is_null());
 
     handle.abort();
 }

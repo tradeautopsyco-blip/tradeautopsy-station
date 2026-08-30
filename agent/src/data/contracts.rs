@@ -120,6 +120,8 @@ fn lit_nfo_envelope(identity: Identity, rows: &[ContractRow]) -> ContractsEnvelo
             model: "raw".to_string(),
             input_at: None,
             adapter_id: KOTAK_NEO_ADAPTER_ID.to_string(),
+            // Kotak contracts come off the scrip master; no eapi path here.
+            path: String::new(),
         },
         ineligible: Vec::new(),
         canonical: false,

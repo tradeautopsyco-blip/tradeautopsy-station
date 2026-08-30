@@ -131,6 +131,14 @@ pub const OPENALGO_OPERATIONS: &[Operation] = &[
         Physics::BoundedSnapshot,
         AuthMode::Public
     ),
+    // Open interest is its own LatestState noun. It never rides `optionchain`.
+    read_op!(
+        "open_interest",
+        Family::Market,
+        "open_interest",
+        Physics::LatestState,
+        AuthMode::Public
+    ),
     read_op!(
         "optiongreeks",
         Family::Derived,

@@ -3,10 +3,12 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    depth_obtain_data, describe, extract_chain_from, extract_depth, extract_licensed_history,
-    extract_quote_for_book, history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus,
-    GlanceStatus, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
-    DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    chain_rows_for_contract, depth_obtain_data, describe, extract_chain_from, extract_depth,
+    extract_licensed_history, extract_open_interest_from, extract_quote_for_book,
+    history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus, GlanceStatus,
+    ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
+    BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -87,6 +89,7 @@ fn unsupported_obtain(adapter_id: &str, book_id: &str, operation: &str) -> Obtai
         status: ObtainStatus::Unsupported,
         data: None,
         provenance_adapter_id: None,
+        provenance_path: None,
     }
 }
 
@@ -131,9 +134,47 @@ pub async fn obtain_handler(
     };
     let mut envelope = obtain(manifest, operation);
     if envelope.status == ObtainStatus::Unavailable {
+        // Enrichers are sync, but the options snapshots are async fetches that
+        // only glance used to run. Kick them here, or obtain stays unavailable
+        // forever unless a glance happened to land first.
+        kick_options_snapshot(&state, &envelope).await;
         envelope = enrich_obtain(&state, envelope);
     }
     Json(envelope)
+}
+
+/// The dated contract obtain is scoped to. A leftover `BTC` / `BTCUSDT` is not
+/// a contract: it matches no `optionSymbols` row, so obtain stays dark rather
+/// than smashing a spot chain in.
+fn selected_options_contract(state: &AppState) -> String {
+    state
+        .selected_quote_instrument
+        .lock()
+        .expect("selected quote instrument poisoned")
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// Options are the only book whose obtain snapshot is fetched rather than
+/// resident. Kept out of `enrich_obtain` so every other enricher stays sync.
+async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != BINANCE_COM_OPTIONS_BOOK_ID {
+        return;
+    }
+    match envelope.operation.as_str() {
+        "optionchain" => super::glance::ensure_options_master(state).await,
+        "open_interest" => {
+            // OI is instrument-scoped — fetch only once the contract is known.
+            let instrument = selected_options_contract(state);
+            if instrument.is_empty() {
+                return;
+            }
+            super::glance::ensure_options_oi(state, &instrument).await;
+        }
+        _ => {}
+    }
 }
 
 fn enrich_obtain(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
@@ -162,6 +203,8 @@ fn enricher(
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
+        ("binance-com-options", "optionchain") => Some(enrich_optionchain),
+        ("binance-com-options", "open_interest") => Some(enrich_open_interest),
         _ => None,
     }
 }
@@ -426,6 +469,34 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
                 Some(&tickbook),
             )
         }
+        BINANCE_COM_OPTIONS_BOOK_ID => {
+            // Must be the dated contract. An empty selection, an empty master,
+            // or no matching (underlying, expiry) all stay Unavailable — never
+            // a Success with an empty rows array.
+            let instrument = selected.trim().to_string();
+            if instrument.is_empty() {
+                return envelope;
+            }
+            let master = state
+                .options_option_symbols
+                .lock()
+                .expect("options option symbols mutex poisoned");
+            if master.is_empty() {
+                return envelope;
+            }
+            let rows = chain_rows_for_contract(&instrument, &master);
+            drop(master);
+            if rows.is_empty() {
+                return envelope;
+            }
+            let tickbook = state.tickbook.lock().expect("tickbook mutex poisoned");
+            extract_chain_from(
+                Some(BINANCE_COM_OPTIONS_BOOK_ID),
+                &instrument,
+                Some(rows.as_slice()),
+                Some(&tickbook),
+            )
+        }
         _ => return envelope,
     };
     if chain.status == GlanceStatus::Success {
@@ -433,6 +504,46 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
         envelope.data = chain.data;
         if !chain.provenance.adapter_id.is_empty() {
             envelope.provenance_adapter_id = Some(chain.provenance.adapter_id);
+        }
+        if !chain.provenance.path.is_empty() {
+            envelope.provenance_path = Some(chain.provenance.path);
+        }
+    }
+    envelope
+}
+
+/// Open interest is its own arm — never folded into the chain enricher. No rows
+/// for the selected contract means no `sumOpenInterest`, and that stays
+/// Unavailable rather than reporting 0.
+fn enrich_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    if envelope.book_id != BINANCE_COM_OPTIONS_BOOK_ID {
+        return envelope;
+    }
+    let instrument = selected_options_contract(state);
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let rows = state
+        .options_oi_rows
+        .lock()
+        .expect("options oi mutex poisoned")
+        .clone();
+    if !rows.iter().any(|row| row.symbol == instrument) {
+        return envelope;
+    }
+    let oi = extract_open_interest_from(
+        Some(BINANCE_COM_OPTIONS_BOOK_ID),
+        &instrument,
+        Some(rows.as_slice()),
+    );
+    if oi.status == GlanceStatus::Success {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = oi.data;
+        if !oi.provenance.adapter_id.is_empty() {
+            envelope.provenance_adapter_id = Some(oi.provenance.adapter_id);
+        }
+        if !oi.provenance.path.is_empty() {
+            envelope.provenance_path = Some(oi.provenance.path);
         }
     }
     envelope
@@ -692,7 +803,11 @@ mod tests {
         assert!(enricher("binance-com-spot", "optionchain").is_none());
         assert!(enricher("binance-com-usdm", "quotes").is_none());
         assert!(enricher("binance-com-options", "quotes").is_some());
-        assert!(enricher("binance-com-options", "optionchain").is_none());
+        assert!(enricher("binance-com-options", "optionchain").is_some());
+        assert!(enricher("binance-com-options", "open_interest").is_some());
+        // The chain door never opens on spot or cash.
+        assert!(enricher("binance-com-spot", "open_interest").is_none());
+        assert!(enricher("kotak-nse-bse-cash", "optionchain").is_none());
         assert!(enricher("kotak-nse-nfo", "quotes").is_some());
         assert!(enricher("kotak-nse-nfo", "instruments").is_some());
         assert!(enricher("kotak-nse-nfo", "optionchain").is_some());
@@ -710,7 +825,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             crate::data::obtain(options_m, "optionchain").status,
-            ObtainStatus::Unsupported
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            crate::data::obtain(options_m, "open_interest").status,
+            ObtainStatus::Unavailable
         );
         assert_eq!(
             crate::data::obtain(options_m, "quotes").status,
