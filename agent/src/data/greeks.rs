@@ -18,7 +18,9 @@ use super::provenance::ProvenanceLine;
 use serde::Serialize;
 
 pub const PRICING_MODEL_UNSPECIFIED: &str = "pricing_model_unspecified";
-pub const MARK_NOT_THIS_SLICE: &str = "mark_not_this_slice";
+/// No `/eapi/v1/mark` snapshot in hand. The path is allowlisted (Slice 3); this
+/// says the fetch has not produced a row, not that the capability is fenced.
+pub const MARK_SNAPSHOT_UNAVAILABLE: &str = "mark_snapshot_unavailable";
 pub const CASH_IS_NOT_GREEKS: &str = "cash_is_not_greeks";
 pub const SPOT_IS_NOT_GREEKS: &str = "spot_is_not_greeks";
 pub const BOOK_REQUIRED: &str = "greeks_book_required";
@@ -61,10 +63,50 @@ fn source_class_allowed(book: &str, source: &GreeksSource) -> bool {
     )
 }
 
+/// Extract status on the greeks wire. Not [`HonestyStatus`] — Success is live
+/// data, and `HonestyStatus` deliberately has no Success variant.
+///
+/// Mirrors [`GlanceStatus`](super::glance::GlanceStatus), which solved the same
+/// problem for the chain wire, plus `InheritedDark`: the NFO book inherits
+/// darkness from its named chain and contracts inputs, which a glance never does.
+///
+/// Writing a venue-published greek as `Empty` — "live, legitimately zero" — would
+/// be exactly the kind of mislabelled state this envelope exists to prevent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GreeksStatus {
+    Success,
+    Unavailable,
+    Empty,
+    Unusable,
+    InheritedDark,
+}
+
+impl GreeksStatus {
+    /// Inherited-dark extracts must not carry a payload — same invariant as
+    /// [`HonestyStatus::requires_data_none`].
+    pub fn requires_data_none(self) -> bool {
+        matches!(self, Self::InheritedDark)
+    }
+}
+
+impl From<HonestyStatus> for GreeksStatus {
+    /// Every dark state maps across unchanged. There is no inverse: `Success` has
+    /// no `HonestyStatus` to become.
+    fn from(status: HonestyStatus) -> Self {
+        match status {
+            HonestyStatus::Empty => Self::Empty,
+            HonestyStatus::Unavailable => Self::Unavailable,
+            HonestyStatus::Unusable => Self::Unusable,
+            HonestyStatus::InheritedDark => Self::InheritedDark,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GreeksEnvelope {
     pub identity: Identity,
-    pub status: HonestyStatus,
+    pub status: GreeksStatus,
     pub data: Option<serde_json::Value>,
     pub provenance: ProvenanceLine,
     /// `None` on every hole. Present only when a number is actually carried, and
@@ -88,7 +130,7 @@ pub(crate) fn dark_fence(ineligible: &str) -> GreeksEnvelope {
     let identity = greeks_identity();
     GreeksEnvelope {
         identity: identity.clone(),
-        status: HonestyStatus::Unavailable,
+        status: GreeksStatus::Unavailable,
         data: None,
         provenance: ProvenanceLine::raw_hole(identity),
         source: None,
@@ -189,7 +231,7 @@ mod tests {
         let identity = greeks_identity();
         GreeksEnvelope {
             identity: identity.clone(),
-            status: HonestyStatus::Unavailable,
+            status: GreeksStatus::Success,
             data: Some(serde_json::json!({ "delta": "0.5231" })),
             provenance: ProvenanceLine {
                 identity,
@@ -206,6 +248,57 @@ mod tests {
             canonical: false,
             persist_canonical: false,
         }
+    }
+
+    #[test]
+    fn success_is_on_the_greeks_wire_but_never_on_honesty_status() {
+        // glance.rs made the same split: Success is live data, so it cannot be a
+        // HonestyStatus variant, but the wire still has to be able to say it.
+        let wire: Vec<String> = [
+            GreeksStatus::Success,
+            GreeksStatus::Unavailable,
+            GreeksStatus::Empty,
+            GreeksStatus::Unusable,
+            GreeksStatus::InheritedDark,
+        ]
+        .iter()
+        .map(|s| {
+            serde_json::to_value(s)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+        assert_eq!(
+            wire,
+            vec![
+                "success",
+                "unavailable",
+                "empty",
+                "unusable",
+                "inherited_dark"
+            ]
+        );
+
+        // HonestyStatus still has exactly four, none of them success.
+        assert_eq!(HonestyStatus::ALL.len(), 4);
+        for status in HonestyStatus::ALL {
+            assert_ne!(GreeksStatus::from(status), GreeksStatus::Success);
+        }
+
+        // Only InheritedDark forbids a payload, same as HonestyStatus.
+        assert!(GreeksStatus::InheritedDark.requires_data_none());
+        assert!(!GreeksStatus::Success.requires_data_none());
+    }
+
+    #[test]
+    fn a_lit_greek_is_success_not_empty() {
+        // "Empty" means live-and-legitimately-zero. A published delta is neither.
+        let envelope = lit_venue_envelope();
+        assert_eq!(envelope.status, GreeksStatus::Success);
+        assert_ne!(envelope.status, GreeksStatus::Empty);
+        assert!(greeks_may_render_number(&envelope));
     }
 
     #[test]
@@ -254,7 +347,7 @@ mod tests {
     fn inherited_dark_refuses_the_number() {
         // Carried over from provenance.rs: a stamped input is not enough on its own.
         let mut envelope = lit_venue_envelope();
-        envelope.status = HonestyStatus::InheritedDark;
+        envelope.status = GreeksStatus::InheritedDark;
         envelope.data = None;
         envelope.source = None;
         envelope.provenance.model = "raw".to_string();
@@ -326,7 +419,7 @@ mod tests {
     #[test]
     fn missing_book_is_unavailable_fence() {
         let envelope = extract_greeks(None, InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope.ineligible.iter().any(|s| s == BOOK_REQUIRED));
         assert_no_fixture_greeks(&envelope);
     }
@@ -334,7 +427,7 @@ mod tests {
     #[test]
     fn cash_book_is_not_greeks() {
         let envelope = extract_greeks(Some(KOTAK_NSE_BSE_CASH_BOOK_ID), InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope.ineligible.iter().any(|s| s == CASH_IS_NOT_GREEKS));
         assert_no_fixture_greeks(&envelope);
         assert_dual_no_blend(&envelope);
@@ -343,7 +436,7 @@ mod tests {
     #[test]
     fn spot_book_is_not_greeks() {
         let envelope = extract_greeks(Some(BINANCE_COM_SPOT_BOOK_ID), InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope.ineligible.iter().any(|s| s == SPOT_IS_NOT_GREEKS));
         assert_no_fixture_greeks(&envelope);
         assert_dual_no_blend(&envelope);
@@ -352,8 +445,11 @@ mod tests {
     #[test]
     fn binance_options_never_fills_nfo_delta() {
         let envelope = extract_greeks(Some(BINANCE_COM_OPTIONS_BOOK_ID), InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
-        assert!(envelope.ineligible.iter().any(|s| s == MARK_NOT_THIS_SLICE));
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
+        assert!(envelope
+            .ineligible
+            .iter()
+            .any(|s| s == MARK_SNAPSHOT_UNAVAILABLE));
         assert!(!envelope
             .ineligible
             .iter()
@@ -383,13 +479,16 @@ mod tests {
     /// Slice 1 research (2026-08-31) closed exercise/settlement, not trader greeks.
     /// Fail-closed: neither book shows a number.
     #[test]
-    fn slice1_fail_closed_neither_book_shows_a_number() {
+    fn no_book_shows_a_number_without_its_own_input() {
         let nfo = extract_greeks(Some(KOTAK_NSE_NFO_BOOK_ID), InputHonesty::Lit);
         assert!(nfo.data.is_none());
         assert!(!greeks_may_render_number(&nfo));
         let eapi = extract_greeks(Some(BINANCE_COM_OPTIONS_BOOK_ID), InputHonesty::Lit);
-        assert_eq!(eapi.status, HonestyStatus::Unavailable);
-        assert!(eapi.ineligible.iter().any(|s| s == MARK_NOT_THIS_SLICE));
+        assert_eq!(eapi.status, GreeksStatus::Unavailable);
+        assert!(eapi
+            .ineligible
+            .iter()
+            .any(|s| s == MARK_SNAPSHOT_UNAVAILABLE));
         assert!(eapi.data.is_none());
         assert_dual_no_blend(&eapi);
         assert_dual_no_blend(&nfo);

@@ -94,7 +94,18 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("ohlcv", "GET", AuthMode::Public) if path == "/api/v3/klines" => true,
-        ("order_book", "GET", AuthMode::Public) if path == "/api/v3/depth" => true,
+        ("order_book", "GET", AuthMode::Public)
+            if path == "/api/v3/depth" || normalize_request_path(path) == "/eapi/v1/depth" =>
+        {
+            true
+        }
+        // Venue-published greeks. `greeks` is already on the matrix as
+        // Derived/BoundedSnapshot, so no new capability id is minted here. Station
+        // copies what /eapi/v1/mark published; it never prices this book.
+        // Lock: binance-com-options.md Slice 3.
+        ("greeks", "GET", AuthMode::Public) if normalize_request_path(path) == "/eapi/v1/mark" => {
+            true
+        }
         ("instrument_master", "GET", AuthMode::Public)
             if path == "/api/v3/exchangeInfo"
                 || normalize_request_path(path) == "/eapi/v1/exchangeInfo"
@@ -142,6 +153,12 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         }
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/openInterest" => {
             Ok(("open_interest", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/mark" => {
+            Ok(("greeks", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/depth" => {
+            Ok(("order_book", AuthMode::Public))
         }
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
@@ -983,22 +1000,17 @@ mod tests {
     }
 
     /// `/eapi/v1/optionChain` is NOT SPECIFIED on the official MarketDataApi.
-    /// Station's `optionchain` noun is a catalog noun served from
-    /// `exchangeInfo` — it must never open that path, and `/eapi/v1/depth`
-    /// stays shut until its own lock slice. `GET /eapi/v1/mark` stays dark
-    /// until OPTIONS-PRICING.md is a real lock (S5 same ship window).
+    /// Station's `optionchain` noun is a catalog noun served from `exchangeInfo`
+    /// — it must never open that path, and blessing the noun does not bless it.
+    ///
+    /// `/eapi/v1/mark` and `/eapi/v1/depth` are open as of Slice 3
+    /// (binance-com-options.md, 2026-08-31): both are public on the official
+    /// Market Data page. `mark` infers as `greeks` because Station copies what
+    /// the venue published — it is not a licence to price this book.
     #[test]
-    fn options_book_refuses_option_chain_and_depth_paths() {
+    fn options_book_refuses_invented_option_chain_path() {
         assert_eq!(
             infer_capability("GET", "/eapi/v1/optionChain").unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
-        assert_eq!(
-            infer_capability("GET", "/eapi/v1/depth").unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
-        assert_eq!(
-            infer_capability("GET", "/eapi/v1/mark").unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -1012,28 +1024,39 @@ mod tests {
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
+
+        // Slice 3: both now infer, and both stay public.
         assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/depth",
-                false,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
+            infer_capability("GET", "/eapi/v1/mark").unwrap(),
+            ("greeks", AuthMode::Public)
         );
         assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/mark",
-                false,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
+            infer_capability("GET", "/eapi/v1/mark?symbol=BTC-260925-100000-C").unwrap(),
+            ("greeks", AuthMode::Public)
         );
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/depth").unwrap(),
+            ("order_book", AuthMode::Public)
+        );
+        for path in ["/eapi/v1/mark", "/eapi/v1/depth"] {
+            assert!(
+                authorize_book_call(
+                    "binance-com-options",
+                    "eapi.binance.com",
+                    "GET",
+                    path,
+                    false,
+                )
+                .is_ok(),
+                "{path} is public and locked in Slice 3"
+            );
+            // Public reads never receive private credentials (ADR 0002 / R0).
+            assert_eq!(
+                authorize_book_call("binance-com-options", "eapi.binance.com", "GET", path, true,)
+                    .unwrap_err(),
+                HostRefuse::PrivateCredentialOnPublicCall
+            );
+        }
         // The two paths the chain and OI nouns actually ride stay open.
         assert_eq!(
             authorize_book_call(
@@ -1341,32 +1364,30 @@ mod tests {
             true,
         )
         .expect_err("public openInterest must not attach private credentials");
+        // Slice 3: depth is public on this book, query string and all.
         assert_eq!(
-            infer_capability("GET", "/eapi/v1/depth").unwrap_err(),
-            HostRefuse::PathNotAllowlisted
+            infer_capability("GET", "/eapi/v1/depth").unwrap(),
+            ("order_book", AuthMode::Public)
         );
-        assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/depth",
-                false,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
-        assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/depth?symbol=BTC-200730-9000-C",
-                false,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
+        for path in [
+            "/eapi/v1/depth",
+            "/eapi/v1/depth?symbol=BTC-200730-9000-C",
+            "/eapi/v1/depth?symbol=BTC-200730-9000-C&limit=100",
+        ] {
+            assert!(
+                authorize_book_call(
+                    "binance-com-options",
+                    "eapi.binance.com",
+                    "GET",
+                    path,
+                    false,
+                )
+                .is_ok(),
+                "{path}"
+            );
+            authorize_book_call("binance-com-options", "eapi.binance.com", "GET", path, true)
+                .expect_err("public depth must not attach private credentials");
+        }
 
         for path in [
             "/eapi/v1/exchangeInfo",

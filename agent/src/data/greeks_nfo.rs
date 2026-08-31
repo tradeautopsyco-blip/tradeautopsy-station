@@ -34,7 +34,7 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
     if let Some(status) = inherit(&[chain, contracts]) {
         return GreeksEnvelope {
             identity,
-            status,
+            status: status.into(),
             data: None,
             provenance,
             source: None,
@@ -50,7 +50,7 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::greeks::{extract_greeks, greeks_may_render_number};
+    use crate::data::greeks::{extract_greeks, greeks_may_render_number, GreeksStatus};
     use crate::data::identity::{Family, Physics};
     use crate::data::KOTAK_NSE_NFO_BOOK_ID;
 
@@ -70,7 +70,7 @@ mod tests {
             Some(KOTAK_NSE_NFO_BOOK_ID),
             InputHonesty::Dark(HonestyStatus::Unavailable),
         );
-        assert_eq!(envelope.status, HonestyStatus::InheritedDark);
+        assert_eq!(envelope.status, GreeksStatus::InheritedDark);
         assert_no_fixture_greeks(&envelope);
     }
 
@@ -78,8 +78,8 @@ mod tests {
     fn lit_chain_dark_contracts_is_inherited_dark_not_unavailable() {
         // Production extract_contracts(nfo) with no store/rows is Unavailable.
         let envelope = extract_greeks(Some(KOTAK_NSE_NFO_BOOK_ID), InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::InheritedDark);
-        assert_ne!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::InheritedDark);
+        assert_ne!(envelope.status, GreeksStatus::Unavailable);
         assert_no_fixture_greeks(&envelope);
     }
 
@@ -101,7 +101,7 @@ mod tests {
         assert!(contracts.data.is_some(), "lit = data.is_some()");
 
         let envelope = extract_greeks_from(InputHonesty::Lit, contracts_input_honesty(contracts));
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope
             .ineligible
             .iter()
@@ -147,7 +147,7 @@ mod tests {
             chain_input_honesty(&chain),
             contracts_input_honesty(contracts),
         );
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope
             .ineligible
             .iter()
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn named_inputs_lit_missing_model_is_this_extract_unavailable() {
         let envelope = extract_greeks_from(InputHonesty::Lit, InputHonesty::Lit);
-        assert_eq!(envelope.status, HonestyStatus::Unavailable);
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
         assert!(envelope
             .ineligible
             .iter()

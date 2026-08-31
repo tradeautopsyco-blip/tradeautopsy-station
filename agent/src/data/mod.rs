@@ -4,6 +4,7 @@ mod apply;
 mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
+mod binance_options_mark;
 mod binance_options_oi;
 mod binance_options_public;
 mod binance_public;
@@ -65,6 +66,9 @@ pub use binance_options_chain::{
     chain_rows_for_contract, expiration_from_dated_contract,
     option_symbols_from_exchange_info_json, underlying_asset_from_dated_contract, OptionsSymbolRow,
 };
+pub use binance_options_mark::{
+    mark_row_for_symbol, mark_rows_from_json, options_mark_query, OptionsMarkRow, OPTIONS_MARK_PATH,
+};
 pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
 pub use binance_options_public::{
     ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
@@ -95,7 +99,7 @@ pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
     extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
 };
-pub use greeks::{extract_greeks, GreeksEnvelope, GreeksSource};
+pub use greeks::{extract_greeks, GreeksEnvelope, GreeksSource, GreeksStatus};
 pub use history::{
     apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
     HistoryEnvelope, HistoryStatus,

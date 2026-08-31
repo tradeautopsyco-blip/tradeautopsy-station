@@ -28,7 +28,7 @@ mod tests {
             Some(crate::data::KOTAK_NSE_NFO_BOOK_ID),
             InputHonesty::Dark(HonestyStatus::Unavailable),
         );
-        assert_eq!(envelope.status, HonestyStatus::InheritedDark);
+        assert_eq!(envelope.status, crate::data::GreeksStatus::InheritedDark);
         assert!(envelope.data.is_none());
         assert!(envelope.status.requires_data_none());
     }
