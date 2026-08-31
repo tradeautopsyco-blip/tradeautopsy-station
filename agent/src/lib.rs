@@ -876,6 +876,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
 
     let broker_status = Arc::new(std::sync::Mutex::new(BrokerRuntimeState::default()));
+    let account_book = Arc::new(Mutex::new(crate::data::AccountBook::new()));
 
     let initial_since = recent_trades
         .newest_filled_at()
@@ -903,6 +904,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         config.test_start_key_log.clone(),
         today_service_slot.clone(),
         credential_vault,
+        account_book.clone(),
     ));
 
     let today_service = Arc::new(TodayService::new(
@@ -1049,6 +1051,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         recent_trades,
         instruments,
         broker_status: broker_status.clone(),
+        account_book: account_book.clone(),
         broker_sync_control: broker_sync_control.clone(),
         broker_limits: config.broker_sync.clone(),
         fog_active: fog_active.clone(),

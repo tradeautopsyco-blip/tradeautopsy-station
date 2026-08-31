@@ -39,3 +39,4 @@ TradeAutopsy Station.app/
 
 # Local agent tooling state — audit logs, capability cache, generated reports
 .gstack/
+.basecamp/

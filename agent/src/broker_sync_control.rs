@@ -2,8 +2,9 @@
 //! Phase 2: Start is identity-first; credentials load from host vault (R6).
 
 use crate::bar_fill_ingress::BarBrokerFillIngressConfig;
-use crate::broker::{BrokerAdapter, CountingPollAdapter};
+use crate::broker::{BrokerAdapter, CountingPollAdapter, slug_to_slot};
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
+use crate::data::AccountBook;
 use crate::event_bus::EventBus;
 use crate::recent_trades::RecentTradesStore;
 use crate::ubi::{
@@ -76,6 +77,7 @@ pub struct BrokerSyncController {
     bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
     user_paused: Arc<AtomicBool>,
     active: Arc<Mutex<Option<ActiveSync>>>,
+    account_book: Arc<Mutex<AccountBook>>,
     /// Integration-test hook: fixed adapter for all runtime starts.
     pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
     /// Integration-test hook: records api keys resolved on each start (host-side only).
@@ -97,6 +99,7 @@ impl BrokerSyncController {
         test_start_key_log: Option<Arc<Mutex<Vec<String>>>>,
         today_service: Arc<Mutex<Option<Arc<crate::today::TodayService>>>>,
         credential_vault: Arc<dyn BrokerCredentialVault>,
+        account_book: Arc<Mutex<AccountBook>>,
     ) -> Self {
         Self {
             status_arc,
@@ -108,6 +111,7 @@ impl BrokerSyncController {
             bar_fill_ingress,
             user_paused: Arc::new(AtomicBool::new(false)),
             active: Arc::new(Mutex::new(None)),
+            account_book,
             test_runtime_adapter,
             test_start_key_log,
             today_service,
@@ -162,6 +166,13 @@ impl BrokerSyncController {
     ) -> anyhow::Result<()> {
         self.stop_active_sync()?;
         self.user_paused.store(false, Ordering::Relaxed);
+        let adapter_name = broker_slug
+            .map(str::to_string)
+            .unwrap_or_else(|| slug_to_slot(adapter.name()).unwrap_or(adapter.name()).to_string());
+        self.account_book
+            .lock()
+            .expect("account_book mutex poisoned")
+            .clear_books(AccountBook::books_for_adapter_name(&adapter_name));
         {
             let mut st = self.status_arc.lock().expect("broker status");
             st.broker_connected = false;
@@ -170,7 +181,6 @@ impl BrokerSyncController {
             st.last_error = None;
             st.last_success_at_ms = None;
             st.last_poll_at_ms = None;
-            st.last_fills_count = None;
             st.last_balances = None;
             st.last_sync_sse_class.clear();
             st.data_classes = crate::broker_data_class::BrokerDataClassCompleteness::default();
@@ -199,6 +209,7 @@ impl BrokerSyncController {
                 .lock()
                 .expect("today service slot")
                 .clone(),
+            self.account_book.clone(),
         );
 
         *self.active.lock().expect("active sync") = Some(ActiveSync {
@@ -254,13 +265,24 @@ impl BrokerSyncController {
     /// Kill DNS / audit / SSE stay on their own stack. Never synonym for Kill.
     pub fn stop(&self) -> anyhow::Result<()> {
         self.user_paused.store(true, Ordering::Relaxed);
+        let adapter_name = self
+            .status_arc
+            .lock()
+            .expect("broker status")
+            .active_broker_slug
+            .clone();
         self.stop_active_sync()?;
+        if let Some(slug) = adapter_name.as_deref() {
+            self.account_book
+                .lock()
+                .expect("account_book mutex poisoned")
+                .clear_books(AccountBook::books_for_adapter_name(slug));
+        }
         {
             let mut st = self.status_arc.lock().expect("broker status");
             st.broker_connected = false;
             st.active_broker_slug = None;
             st.last_sync_sse_class.clear();
-            st.last_fills_count = None;
             st.last_balances = None;
             self.bus
                 .publish(crate::event_bus::AgentEvent::BrokerSyncState {
@@ -411,6 +433,7 @@ mod b2_keychain_only_tests {
             None,
             Arc::new(Mutex::new(None)),
             vault,
+            Arc::new(Mutex::new(AccountBook::new())),
         )
     }
 
@@ -484,6 +507,7 @@ mod b2_keychain_only_tests {
             Some(keys.clone()),
             Arc::new(Mutex::new(None)),
             vault,
+            Arc::new(Mutex::new(AccountBook::new())),
         );
         ctrl.start(&identity_request()).expect("start");
         assert_eq!(

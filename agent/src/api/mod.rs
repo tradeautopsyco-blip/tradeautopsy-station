@@ -2,8 +2,8 @@ use crate::{
     broker_sync::{BrokerRuntimeState, BrokerSyncConfig},
     broker_sync_control::BrokerSyncController,
     data::{
-        BrokerConnectionRuntime, DepthBook, HistoryBook, MarketBind, Registry, SourceManifest,
-        TickBook,
+        AccountBook, BrokerConnectionRuntime, DepthBook, HistoryBook, MarketBind, Registry,
+        SourceManifest, TickBook,
     },
     event_bus::EventBus,
     exchange_info::ExchangeInfoSymbolCache,
@@ -68,6 +68,7 @@ pub struct AppState {
     pub recent_trades: RecentTradesStore,
     pub instruments: Arc<InstrumentStore>,
     pub broker_status: Arc<std::sync::Mutex<BrokerRuntimeState>>,
+    pub account_book: Arc<Mutex<AccountBook>>,
     pub broker_sync_control: Arc<BrokerSyncController>,
     pub broker_limits: BrokerSyncConfig,
     /// L1 fog-of-war armed (#190). L1 apply must not set this (T5 / Q8).

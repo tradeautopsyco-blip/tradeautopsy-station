@@ -1,5 +1,7 @@
 //! Canonical Station Data runtime (this agent). Console `crates/agent` is a CI mirror only.
 
+mod account_book;
+mod account_split;
 mod apply;
 mod binance_depth;
 mod binance_klines;
@@ -46,6 +48,10 @@ mod source_manifest;
 mod tick;
 mod tickbook;
 
+pub use account_book::{AccountBook, BookAccount, Slot};
+pub use account_split::{
+    fills_provenance_path, merge_poll_book_id, split_fills_by_book,
+};
 pub use apply::{apply_quote, ApplyError};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_depth::{

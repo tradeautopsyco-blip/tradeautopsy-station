@@ -12,10 +12,11 @@ use crate::data::{
 };
 use axum::extract::{Query, State};
 use axum::Json;
+use chrono::SecondsFormat;
 use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[derive(Debug, Deserialize)]
 pub struct ManifestQuery {
@@ -358,26 +359,54 @@ fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
     envelope
 }
 
-fn enrich_tradebook(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let snap = state
-        .broker_status
-        .lock()
-        .expect("broker_status mutex poisoned");
-    if snap.active_broker_slug.as_deref() != Some(envelope.adapter_id.as_str())
-        && snap.last_fills_count.is_none()
-    {
-        return envelope;
+fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
+    json!({
+        "id": fill.fill_id,
+        "symbol": fill.symbol,
+        "side": fill.side,
+        "qty": fill.qty,
+        "price": fill.price,
+        "currency": fill.currency,
+        "product": fill.product,
+        "segment": fill.exchange_segment,
+        "time": fill.filled_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+        "fees": fill.fee_amount.map(|amount| json!({
+            "amount": amount,
+            "asset": fill.fee_asset,
+        })),
+    })
+}
+
+/// One obtain helper for all account nouns. `None` slot → Unavailable; empty vec → Success + `rows: []`.
+fn account_slot(state: &AppState, mut envelope: ObtainEnvelope, capability: &str) -> ObtainEnvelope {
+    match capability {
+        "fills" => {
+            let book = state
+                .account_book
+                .lock()
+                .expect("account_book mutex poisoned");
+            let Some(slot) = book.fills_slot(&envelope.book_id) else {
+                return envelope;
+            };
+            let rows: Vec<Value> = slot.value.iter().map(broker_fill_to_row).collect();
+            envelope.status = ObtainStatus::Success;
+            envelope.data = Some(json!({
+                "identity": account_identity("fills"),
+                "rows": rows,
+                "fill_count": rows.len(),
+                "as_of_ms": slot.as_of_ms,
+            }));
+            if !slot.provenance_path.is_empty() {
+                envelope.provenance_path = Some(slot.provenance_path.clone());
+            }
+            envelope
+        }
+        _ => envelope,
     }
-    let Some(count) = snap.last_fills_count else {
-        return envelope;
-    };
-    envelope.status = ObtainStatus::Success;
-    envelope.data = Some(json!({
-        "identity": account_identity("fills"),
-        "fill_count": count,
-        "as_of_ms": snap.data_classes.fills_trade_history.last_success_at_ms,
-    }));
-    envelope
+}
+
+fn enrich_tradebook(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    account_slot(state, envelope, "fills")
 }
 
 fn enrich_binance_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {

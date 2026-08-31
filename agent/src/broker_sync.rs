@@ -5,6 +5,7 @@ use crate::bar_fill_ingress::{
 };
 use crate::broker::{slug_to_slot, BrokerAdapter, BrokerError, BrokerFill};
 use crate::broker_data_class::BrokerDataClass;
+use crate::data::{fills_provenance_path, merge_poll_book_id, split_fills_by_book, AccountBook};
 use crate::event_bus::{AgentEvent, EventBus};
 use crate::recent_trades::RecentTradesStore;
 use crate::UpstreamClient;
@@ -73,9 +74,6 @@ pub struct BrokerRuntimeState {
     /// Last successful balances poll. Obtain(funds) only — never TickBook.
     #[serde(skip)]
     pub last_balances: Option<BrokerBalancesSnapshot>,
-    /// Count from the last successful fills poll. Obtain(tradebook) only.
-    #[serde(skip)]
-    pub last_fills_count: Option<usize>,
 }
 
 impl Default for BrokerRuntimeState {
@@ -92,7 +90,6 @@ impl Default for BrokerRuntimeState {
             data_classes: BrokerDataClassCompleteness::default(),
             last_sync_sse_class: String::new(),
             last_balances: None,
-            last_fills_count: None,
         }
     }
 }
@@ -321,6 +318,7 @@ pub fn spawn_broker_poll_loop(
     bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
     cancel: Option<Arc<AtomicBool>>,
     today_service: Option<Arc<crate::today::TodayService>>,
+    account_book: Arc<std::sync::Mutex<AccountBook>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let broker_label = adapter.name().to_owned();
@@ -400,7 +398,43 @@ pub fn spawn_broker_poll_loop(
             let slot = slug_to_slot(adapter.name());
 
             if let Ok(fills) = &fills_result {
-                new_fills = match store.merge_poll(fills) {
+                let adapter_name = slug_to_slot(adapter.name()).unwrap_or(adapter.name());
+                let split = split_fills_by_book(adapter_name, fills.clone());
+                let path = fills_provenance_path(adapter_name);
+                {
+                    let mut book = account_book.lock().expect("account_book mutex poisoned");
+                    match adapter_name {
+                        "binance_com" => {
+                            let rows = split
+                                .get(crate::data::BINANCE_COM_SPOT_BOOK_ID)
+                                .cloned()
+                                .unwrap_or_default();
+                            book.replace_fills(
+                                crate::data::BINANCE_COM_SPOT_BOOK_ID,
+                                rows,
+                                path,
+                                ok_ms,
+                            );
+                        }
+                        "kotak_neo" => {
+                            for book_id in [
+                                crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID,
+                                crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                            ] {
+                                let rows = split.get(book_id).cloned().unwrap_or_default();
+                                book.replace_fills(book_id, rows, path, ok_ms);
+                            }
+                        }
+                        _ => {
+                            for (book_id, book_fills) in &split {
+                                book.replace_fills(book_id, book_fills.clone(), path, ok_ms);
+                            }
+                        }
+                    }
+                }
+                let merge_book = merge_poll_book_id(adapter_name);
+                let merge_fills = split.get(merge_book).cloned().unwrap_or_default();
+                new_fills = match store.merge_poll(&merge_fills) {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error = ?e, "merge_poll failed");
@@ -428,7 +462,6 @@ pub fn spawn_broker_poll_loop(
                         ok_ms,
                     );
                     class_failures.insert(BrokerDataClass::FillsTradeHistory, 0);
-                    st.last_fills_count = fills_result.as_ref().ok().map(|fills| fills.len());
                 } else if let Err(e) = &fills_result {
                     if !is_venue_stop(e) {
                         any_class_error = true;
@@ -562,6 +595,7 @@ pub fn spawn_broker_stack(
     status_arc: Arc<std::sync::Mutex<BrokerRuntimeState>>,
     upstream: Option<Arc<UpstreamClient>>,
     bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
+    account_book: Arc<std::sync::Mutex<AccountBook>>,
 ) -> tokio::task::JoinHandle<()> {
     let (tx, rx) = mpsc::channel(64);
     let _coalesce = spawn_toolbar_coalesce_task(bus.clone(), rx, cfg.coalesce_window);
@@ -577,6 +611,7 @@ pub fn spawn_broker_stack(
         bar_fill_ingress,
         None,
         None,
+        account_book,
     );
     poll
 }
@@ -707,6 +742,7 @@ mod tests {
         let bus = EventBus::new(64);
         let mut rx = bus.subscribe();
         let status_arc = Arc::new(Mutex::new(BrokerRuntimeState::default()));
+        let account_book = Arc::new(Mutex::new(AccountBook::new()));
         let (tx, mut coalesce_rx) = mpsc::channel(8);
         let cancel = Arc::new(AtomicBool::new(false));
         let handle = spawn_broker_poll_loop(
@@ -721,6 +757,7 @@ mod tests {
             None,
             Some(cancel.clone()),
             None,
+            account_book,
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
         cancel.store(true, Ordering::Relaxed);

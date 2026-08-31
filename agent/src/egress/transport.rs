@@ -49,6 +49,22 @@ impl EgressCall {
         self
     }
 
+    /// Build the query from key/value pairs, percent-encoding every **value**.
+    ///
+    /// Prefer this to `with_query` + `format!`. `&` and `=` are structural: a value
+    /// that carries one — a malformed symbol, a leftover id — would silently become
+    /// an extra parameter on a venue call. Encoding the value keeps the call the
+    /// question we meant to ask. Unreserved bytes pass through, so a real dated
+    /// contract (`BTC-260925-100000-C`) is unchanged.
+    pub fn with_query_pairs(mut self, pairs: &[(&str, &str)]) -> Self {
+        self.query = pairs
+            .iter()
+            .map(|(key, value)| format!("{key}={}", encode_query_value(value)))
+            .collect::<Vec<_>>()
+            .join("&");
+        self
+    }
+
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_string(), value.to_string()));
         self
@@ -86,6 +102,23 @@ impl EgressCall {
             pairs.join("&")
         )
     }
+}
+
+/// Percent-encode one query value against the RFC 3986 unreserved set.
+///
+/// Deliberately strict: anything that is not `A-Z a-z 0-9 - _ . ~` is escaped,
+/// so no value can carry query structure into a URL.
+fn encode_query_value(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -509,6 +542,37 @@ mod tests {
     fn split_url_normalises_case_and_strips_port() {
         let (h, _, _) = split_url("https://API.Binance.COM:443/api/v3/time").unwrap();
         assert_eq!(h, "api.binance.com");
+    }
+
+    #[test]
+    fn a_query_value_may_never_inject_a_second_parameter() {
+        // `&` and `=` are structural. A symbol carrying them would silently become
+        // extra parameters on a venue call, so they are escaped, not trusted.
+        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/mark", Lane::MarketData)
+            .with_query_pairs(&[("symbol", "BTC-260925-100000&evil=1-C")]);
+        let url = call.url();
+        assert!(
+            url.ends_with("?symbol=BTC-260925-100000%26evil%3D1-C"),
+            "separators must be escaped: {url}"
+        );
+        assert_eq!(url.matches('&').count(), 0, "no injected parameter: {url}");
+        assert_eq!(url.matches("evil=").count(), 0, "no injected parameter: {url}");
+    }
+
+    #[test]
+    fn a_real_dated_contract_survives_encoding_byte_for_byte() {
+        // Dashes are unreserved, so the live symbol shape is unchanged — encoding
+        // must not mangle the mixed-case contract the venue matches on.
+        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/mark", Lane::MarketData)
+            .with_query_pairs(&[("symbol", "BTC-260925-100000-C")]);
+        assert!(call.url().ends_with("?symbol=BTC-260925-100000-C"), "{}", call.url());
+    }
+
+    #[test]
+    fn multiple_pairs_keep_the_ampersand_as_a_separator_only() {
+        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/openInterest", Lane::MarketData)
+            .with_query_pairs(&[("underlyingAsset", "BTC"), ("expiration", "260925")]);
+        assert!(call.url().ends_with("?underlyingAsset=BTC&expiration=260925"), "{}", call.url());
     }
 
     #[test]
