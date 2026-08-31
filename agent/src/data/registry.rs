@@ -229,8 +229,8 @@ mod tests {
     use crate::data::descriptor::{
         fixture_account_descriptor, fixture_quote_descriptor, DelayClass, Descriptor, Limits,
     };
-    use crate::data::rights::Rights;
     use crate::data::identity::{CapabilityId, Family, Physics};
+    use crate::data::rights::Rights;
 
     fn load_ok(descriptors: &[Descriptor]) -> Registry {
         Registry::load(descriptors)

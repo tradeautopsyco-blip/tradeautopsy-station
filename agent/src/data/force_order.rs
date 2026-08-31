@@ -129,10 +129,7 @@ mod tests {
         assert_ne!(envelope.status, LossyStatus::Unavailable);
         assert!(!envelope.canonical);
         assert!(!envelope.persist_canonical);
-        assert_eq!(
-            envelope.identity.physics,
-            Physics::LossyEventObservation
-        );
+        assert_eq!(envelope.identity.physics, Physics::LossyEventObservation);
         assert!(envelope.data.is_some());
     }
 
@@ -149,10 +146,7 @@ mod tests {
             "ineligible={:?}",
             envelope.ineligible
         );
-        assert_eq!(
-            envelope.identity.physics,
-            Physics::CompleteEventSequence
-        );
+        assert_eq!(envelope.identity.physics, Physics::CompleteEventSequence);
     }
 
     #[test]
