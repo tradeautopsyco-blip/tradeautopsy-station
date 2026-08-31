@@ -1042,14 +1042,21 @@ mod fo_quotes_field_probe {
                     println!("  identity {key} = {value:?}");
                 }
             }
-            // Do the named last / OI strings parse as numbers? Names and
-            // parseability go in the lock; the prices themselves do not.
+            // Do the named last / OI strings parse, and are they positive? A
+            // quoted price is public market data, not a secret, and `"0"` vs a
+            // real number is the difference between "unusable" and "a reading".
             for key in ["ltp", "open_int", "oi_las", "oi_high", "oi_low"] {
                 if let Some(Value::String(value)) = map.get(key) {
+                    // The numeric value is public market data, not a secret, and
+                    // whether it can be `0` decides whether last is usable.
                     println!(
-                        "  {key}: string, parses_as_f64={}, empty={}",
+                        "  {key}: string {value:?} parses_as_f64={} positive={}",
                         value.trim().parse::<f64>().is_ok(),
-                        value.trim().is_empty()
+                        value
+                            .trim()
+                            .parse::<f64>()
+                            .map(|n| n > 0.0)
+                            .unwrap_or(false)
                     );
                 }
             }
