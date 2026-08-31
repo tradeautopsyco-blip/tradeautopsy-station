@@ -22,6 +22,44 @@ pub const MARK_NOT_THIS_SLICE: &str = "mark_not_this_slice";
 pub const CASH_IS_NOT_GREEKS: &str = "cash_is_not_greeks";
 pub const SPOT_IS_NOT_GREEKS: &str = "spot_is_not_greeks";
 pub const BOOK_REQUIRED: &str = "greeks_book_required";
+/// A book produced a source class it is structurally not allowed to produce.
+/// Fail closed: a greek whose origin is misfiled is not a greek we may show.
+pub const SOURCE_CLASS_MISMATCH: &str = "greeks_source_class_mismatch";
+
+/// Where a greek number came from. There are exactly two honest origins, and each
+/// book may produce only one of them.
+///
+/// - `VenuePublished` — the **venue** computed it and Station copied the fields.
+///   Binance options only: `GET /eapi/v1/mark` names delta/theta/gamma/vega and the
+///   IVs. Kotak Quotes `quote_type` has no greeks field, so NFO can never be this.
+/// - `ModelComputed` — **Station** computed it from a named model under a named
+///   lock. NFO only. Station does not run a pricer over USDT options, so Binance
+///   options can never be this.
+///
+/// This is the two-module law (`greeks_nfo` vs `greeks_binance_options`) written as
+/// a type instead of a comment. `extract_greeks` is the single chokepoint that sees
+/// both books, so it is where the pairing is enforced — see [`source_class_allowed`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GreeksSource {
+    /// Copied from the venue. `path` is the upstream path the fields came from.
+    VenuePublished { path: String, adapter: String },
+    /// Computed by Station. `model` names the pricer; `lock` names the doc that
+    /// authorises it. Neither may be empty — an unnamed model is not a model.
+    ModelComputed { model: String, lock: String },
+}
+
+/// The source class each book is allowed to produce. Anything else is a
+/// programming error that this chokepoint refuses rather than renders.
+fn source_class_allowed(book: &str, source: &GreeksSource) -> bool {
+    matches!(
+        (book, source),
+        (
+            BINANCE_COM_OPTIONS_BOOK_ID,
+            GreeksSource::VenuePublished { .. }
+        ) | (KOTAK_NSE_NFO_BOOK_ID, GreeksSource::ModelComputed { .. })
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GreeksEnvelope {
@@ -29,6 +67,10 @@ pub struct GreeksEnvelope {
     pub status: HonestyStatus,
     pub data: Option<serde_json::Value>,
     pub provenance: ProvenanceLine,
+    /// `None` on every hole. Present only when a number is actually carried, and
+    /// then it names which of the two origins produced it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<GreeksSource>,
     pub ineligible: Vec<String>,
     pub canonical: bool,
     pub persist_canonical: bool,
@@ -49,6 +91,7 @@ pub(crate) fn dark_fence(ineligible: &str) -> GreeksEnvelope {
         status: HonestyStatus::Unavailable,
         data: None,
         provenance: ProvenanceLine::raw_hole(identity),
+        source: None,
         ineligible: vec![ineligible.to_string()],
         canonical: false,
         persist_canonical: false,
@@ -61,12 +104,19 @@ pub fn extract_greeks(book_id: Option<&str>, chain: InputHonesty) -> GreeksEnvel
         return dark_fence(BOOK_REQUIRED);
     };
 
-    match book {
+    let envelope = match book {
         id if id == KOTAK_NSE_BSE_CASH_BOOK_ID => dark_fence(CASH_IS_NOT_GREEKS),
         id if id == BINANCE_COM_SPOT_BOOK_ID => dark_fence(SPOT_IS_NOT_GREEKS),
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => extract_binance_options_greeks(),
         id if id == KOTAK_NSE_NFO_BOOK_ID => extract_nfo_greeks(chain),
-        _ => dark_fence(BOOK_REQUIRED),
+        _ => return dark_fence(BOOK_REQUIRED),
+    };
+
+    // A book that hands back the other book's source class has mixed the two
+    // pricers. Refuse the envelope rather than let a mislabelled origin render.
+    match &envelope.source {
+        Some(source) if !source_class_allowed(book, source) => dark_fence(SOURCE_CLASS_MISMATCH),
+        _ => envelope,
     }
 }
 
@@ -103,6 +153,55 @@ mod tests {
             !dumped.contains("exchange_rate"),
             "DualNoBlend: greeks envelope must not blend USD+INR"
         );
+    }
+
+    #[test]
+    fn each_book_may_produce_only_its_own_source_class() {
+        let venue = GreeksSource::VenuePublished {
+            path: "/eapi/v1/mark".into(),
+            adapter: "binance_com".into(),
+        };
+        let model = GreeksSource::ModelComputed {
+            model: "black_76".into(),
+            lock: "OPTIONS-PRICING.md".into(),
+        };
+
+        // The two legal pairings.
+        assert!(source_class_allowed(BINANCE_COM_OPTIONS_BOOK_ID, &venue));
+        assert!(source_class_allowed(KOTAK_NSE_NFO_BOOK_ID, &model));
+
+        // Kotak has no greeks field, so NFO can never be venue-published.
+        assert!(!source_class_allowed(KOTAK_NSE_NFO_BOOK_ID, &venue));
+        // Station does not price USDT options, so eapi can never be model-computed.
+        assert!(!source_class_allowed(BINANCE_COM_OPTIONS_BOOK_ID, &model));
+
+        // And no other book may carry either class.
+        for book in [KOTAK_NSE_BSE_CASH_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, ""] {
+            assert!(!source_class_allowed(book, &venue), "{book} venue");
+            assert!(!source_class_allowed(book, &model), "{book} model");
+        }
+    }
+
+    #[test]
+    fn holes_carry_no_source_and_omit_the_key() {
+        for book in [
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            Some(KOTAK_NSE_BSE_CASH_BOOK_ID),
+            Some(BINANCE_COM_SPOT_BOOK_ID),
+            None,
+        ] {
+            let envelope = extract_greeks(book, InputHonesty::Lit);
+            assert!(
+                envelope.source.is_none(),
+                "{book:?} is dark and must name no source"
+            );
+            let json = serde_json::to_value(&envelope).unwrap();
+            assert!(
+                json.get("source").is_none(),
+                "an absent source must not serialize as null: {json}"
+            );
+        }
     }
 
     #[test]

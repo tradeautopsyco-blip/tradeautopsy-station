@@ -95,7 +95,7 @@ pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
     extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
 };
-pub use greeks::extract_greeks;
+pub use greeks::{extract_greeks, GreeksEnvelope, GreeksSource};
 pub use history::{
     apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
     HistoryEnvelope, HistoryStatus,

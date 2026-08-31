@@ -37,6 +37,7 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
             status,
             data: None,
             provenance,
+            source: None,
             ineligible: Vec::new(),
             canonical: false,
             persist_canonical: false,
