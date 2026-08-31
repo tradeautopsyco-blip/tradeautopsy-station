@@ -4,11 +4,11 @@ use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
     chain_rows_for_contract, depth_obtain_data, describe, extract_chain_from, extract_depth,
-    extract_licensed_history, extract_open_interest_from, extract_quote_for_book,
-    history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus, GlanceStatus,
-    ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
-    BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID,
+    extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
+    extract_quote_for_book, history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus,
+    GlanceStatus, GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
+    SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -173,6 +173,14 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
             }
             super::glance::ensure_options_oi(state, &instrument).await;
         }
+        "optiongreeks" => {
+            // Mark is per contract — fetch only once the contract is known.
+            let instrument = selected_options_contract(state);
+            if instrument.is_empty() {
+                return;
+            }
+            super::glance::ensure_options_mark(state, &instrument).await;
+        }
         _ => {}
     }
 }
@@ -205,6 +213,7 @@ fn enricher(
         ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-options", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "open_interest") => Some(enrich_open_interest),
+        ("binance-com-options", "optiongreeks") => Some(enrich_greeks),
         _ => None,
     }
 }
@@ -549,6 +558,44 @@ fn enrich_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
     envelope
 }
 
+/// Venue-published greeks are their own arm. The stored mark row is keyed by its
+/// own symbol, so a row for a different contract leaves this envelope Unavailable
+/// rather than repainting one contract's delta onto another.
+fn enrich_greeks(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    if envelope.book_id != BINANCE_COM_OPTIONS_BOOK_ID {
+        return envelope;
+    }
+    let instrument = selected_options_contract(state);
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let cached = state
+        .options_mark
+        .lock()
+        .expect("options mark mutex poisoned")
+        .clone();
+    let Some(cached) = cached.filter(|hit| hit.symbol == instrument) else {
+        return envelope;
+    };
+    let greeks = extract_greeks_from_mark(
+        Some(BINANCE_COM_OPTIONS_BOOK_ID),
+        Some(&cached.row),
+        Some(cached.as_of.as_str()),
+        InputHonesty::Lit,
+    );
+    if greeks.status == GreeksStatus::Success {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = greeks.data;
+        if !greeks.provenance.adapter_id.is_empty() {
+            envelope.provenance_adapter_id = Some(greeks.provenance.adapter_id);
+        }
+        if !greeks.provenance.path.is_empty() {
+            envelope.provenance_path = Some(greeks.provenance.path);
+        }
+    }
+    envelope
+}
+
 fn enrich_binance_history(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
     let instrument = {
         let selected = state
@@ -805,6 +852,11 @@ mod tests {
         assert!(enricher("binance-com-options", "quotes").is_some());
         assert!(enricher("binance-com-options", "optionchain").is_some());
         assert!(enricher("binance-com-options", "open_interest").is_some());
+        assert!(enricher("binance-com-options", "optiongreeks").is_some());
+        // The greeks door never opens on spot, cash or NFO.
+        assert!(enricher("binance-com-spot", "optiongreeks").is_none());
+        assert!(enricher("kotak-nse-bse-cash", "optiongreeks").is_none());
+        assert!(enricher("kotak-nse-nfo", "optiongreeks").is_none());
         // The chain door never opens on spot or cash.
         assert!(enricher("binance-com-spot", "open_interest").is_none());
         assert!(enricher("kotak-nse-bse-cash", "optionchain").is_none());
@@ -829,6 +881,10 @@ mod tests {
         );
         assert_eq!(
             crate::data::obtain(options_m, "open_interest").status,
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            crate::data::obtain(options_m, "optiongreeks").status,
             ObtainStatus::Unavailable
         );
         assert_eq!(

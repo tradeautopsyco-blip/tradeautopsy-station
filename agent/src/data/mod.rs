@@ -67,7 +67,8 @@ pub use binance_options_chain::{
     option_symbols_from_exchange_info_json, underlying_asset_from_dated_contract, OptionsSymbolRow,
 };
 pub use binance_options_mark::{
-    mark_row_for_symbol, mark_rows_from_json, options_mark_query, OptionsMarkRow, OPTIONS_MARK_PATH,
+    mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OptionsMarkRow,
+    OPTIONS_MARK_PATH,
 };
 pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
 pub use binance_options_public::{
@@ -99,7 +100,9 @@ pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
     extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
 };
-pub use greeks::{extract_greeks, GreeksEnvelope, GreeksSource, GreeksStatus};
+pub use greeks::{
+    extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksSource, GreeksStatus,
+};
 pub use history::{
     apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
     HistoryEnvelope, HistoryStatus,

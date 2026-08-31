@@ -113,6 +113,9 @@ pub struct AppState {
     pub options_option_symbols: Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
     /// Planted OI rows for CI. Live fetch fills this path when `eapi_public_fetch`.
     pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
+    /// One cached `/eapi/v1/mark` row, keyed by its own mixed-case symbol. Not a vec:
+    /// mark is per contract, and a different contract is a miss, never a repaint.
+    pub options_mark: Arc<Mutex<Option<crate::data::CachedMark>>>,
     /// Prod dials eapi for chain/OI. Tests stay fixture-only.
     pub eapi_public_fetch: bool,
     /// Options quote keys `{book}\0{symbol}`. Spot trade is `com_trade`, not this set.
@@ -276,6 +279,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/station/history", get(history::handler))
         .route("/api/station/chain", get(glance::chain_handler))
         .route("/api/station/oi", get(glance::oi_handler))
+        .route("/api/station/greeks", get(glance::greeks_handler))
         .route("/api/station/manifest", get(manifest::manifest_handler))
         .route("/api/station/obtain", get(manifest::obtain_handler))
         .merge(protected)

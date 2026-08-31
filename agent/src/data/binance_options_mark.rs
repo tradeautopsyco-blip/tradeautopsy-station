@@ -33,6 +33,22 @@ pub struct OptionsMarkRow {
     pub risk_free_interest: Option<String>,
 }
 
+/// One cached `/eapi/v1/mark` row plus the stamp of the fetch that produced it.
+///
+/// Keyed by its **own** mixed-case symbol, not by whatever was asked for: mark is
+/// per contract, so a request for a different contract is a miss, never a repaint
+/// of the previous contract's delta.
+///
+/// `as_of` is Station's RFC3339 fetch stamp. The official mark table publishes no
+/// timestamp field, so there is no venue time to copy — inventing one would be a
+/// lie about freshness, and `greeks_may_render_number` reads this via `input_at`.
+#[derive(Debug, Clone)]
+pub struct CachedMark {
+    pub symbol: String,
+    pub row: OptionsMarkRow,
+    pub as_of: String,
+}
+
 /// `?symbol=` is required by the lock even though the docs mark it optional: one
 /// unfiltered call returned 1736 rows at weight 5.
 pub fn options_mark_query(symbol: &str) -> String {
@@ -174,6 +190,21 @@ mod tests {
             options_mark_query("BTC-260925-100000-C"),
             "/eapi/v1/mark?symbol=BTC-260925-100000-C"
         );
+    }
+
+    #[test]
+    fn a_cached_mark_is_keyed_by_its_own_symbol() {
+        // Mark is per contract. The store keys on the row's own mixed-case symbol
+        // so a different contract reads as a miss, never as the previous delta.
+        let row = mark_row_for_symbol(OFFICIAL_EXAMPLE, "BTC-200730-9000-C").expect("row");
+        let cached = CachedMark {
+            symbol: row.symbol.clone(),
+            row,
+            as_of: "2026-08-31T09:00:00Z".to_string(),
+        };
+        assert_eq!(cached.symbol, "BTC-200730-9000-C");
+        assert_eq!(cached.row.delta, "0.55937056");
+        assert_ne!(cached.symbol, "btc-200730-9000-c");
     }
 
     #[test]

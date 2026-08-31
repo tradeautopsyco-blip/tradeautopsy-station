@@ -335,6 +335,11 @@ pub struct AgentConfig {
     pub plant_binance_options_quote: bool,
     /// Options chain/OI CI: plant committed exchangeInfo + OI JSON. No live eapi.
     pub plant_binance_options_chain: bool,
+    /// Venue-published greeks CI: plant the committed `/eapi/v1/mark` JSON. No live eapi.
+    pub plant_binance_options_mark: bool,
+    /// Same, but the observed no-bid row (`"bidIV":"-1.0"`). Its own flag because a
+    /// `CachedMark` holds exactly one contract — the two rows cannot share a plant.
+    pub plant_binance_options_mark_no_bid: bool,
     /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
     pub eapi_public_fetch: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
@@ -453,6 +458,8 @@ impl AgentConfig {
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
+            plant_binance_options_mark: false,
+            plant_binance_options_mark_no_bid: false,
             eapi_public_fetch: true,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
@@ -512,6 +519,8 @@ impl AgentConfig {
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
+            plant_binance_options_mark: false,
+            plant_binance_options_mark_no_bid: false,
             eapi_public_fetch: false,
             instrument_master_cache_dir,
         }
@@ -530,6 +539,29 @@ fn instrument_master_cache_dir_from_env() -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push("tradeautopsy-instrument-master");
     p
+}
+
+#[cfg(test)]
+mod options_mark_plant_tests {
+    use super::*;
+
+    /// The committed `/eapi/v1/mark` fixture must survive the plant verbatim —
+    /// same mixed-case symbol, same published delta string, no reparse.
+    #[test]
+    fn planting_the_mark_fixture_round_trips_the_published_delta() {
+        let store: Arc<Mutex<Option<crate::data::CachedMark>>> = Arc::new(Mutex::new(None));
+        plant_binance_options_mark(&store);
+        let cached = store
+            .lock()
+            .expect("options mark mutex poisoned")
+            .clone()
+            .expect("the fixture must plant one row");
+        assert_eq!(cached.symbol, "BTC-200730-9000-C");
+        assert_eq!(cached.row.delta, "0.55937056");
+        assert_eq!(cached.row.vega, "978.58874732");
+        // Station stamps its own fetch time; the venue publishes none.
+        assert!(!cached.as_of.trim().is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -754,6 +786,33 @@ fn plant_binance_options_chain(
     *oi.lock().expect("options oi mutex poisoned") = crate::data::oi_rows_from_json(oi_json);
 }
 
+/// Headless venue-published greeks: the committed `/eapi/v1/mark` fixture into the
+/// one-row store. No live eapi. Keyed by the row's own symbol, same as a real fetch.
+fn plant_binance_options_mark(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>) {
+    plant_options_mark_json(mark, include_str!("../fixtures/binance/options_mark.json"));
+}
+
+/// The observed no-bid row (`"bidIV":"-1.0"`). Separate fixture, separate flag: a
+/// `CachedMark` holds one contract, so this row cannot ride the official example.
+fn plant_binance_options_mark_no_bid(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>) {
+    plant_options_mark_json(
+        mark,
+        include_str!("../fixtures/binance/options_mark_no_bid.json"),
+    );
+}
+
+fn plant_options_mark_json(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>, json: &str) {
+    let Some(row) = crate::data::mark_rows_from_json(json).into_iter().next() else {
+        tracing::warn!("options fixture: mark plant refused, no complete row");
+        return;
+    };
+    *mark.lock().expect("options mark mutex poisoned") = Some(crate::data::CachedMark {
+        symbol: row.symbol.clone(),
+        row,
+        as_of: Utc::now().to_rfc3339(),
+    });
+}
+
 fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
@@ -932,6 +991,13 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_options_chain {
         plant_binance_options_chain(&options_option_symbols, &options_oi_rows);
     }
+    let options_mark = Arc::new(std::sync::Mutex::new(None));
+    if config.plant_binance_options_mark {
+        plant_binance_options_mark(&options_mark);
+    }
+    if config.plant_binance_options_mark_no_bid {
+        plant_binance_options_mark_no_bid(&options_mark);
+    }
 
     let injected_station_tokens = config.station_token_store.is_some();
     let station_token_store = config
@@ -1009,6 +1075,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         kotak_nfo_scrip_master,
         options_option_symbols,
         options_oi_rows,
+        options_mark,
         eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,
         com_trade,

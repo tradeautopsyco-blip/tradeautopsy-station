@@ -3,11 +3,13 @@
 
 use crate::api::AppState;
 use crate::data::{
-    chain_rows_for_contract, expiration_from_dated_contract, extract_chain_from,
-    extract_open_interest, extract_open_interest_from, oi_rows_from_json,
+    chain_input_honesty, chain_rows_for_contract, expiration_from_dated_contract,
+    extract_chain_from, extract_greeks_from_mark, extract_open_interest,
+    extract_open_interest_from, is_dated_option_contract, mark_row_for_symbol, oi_rows_from_json,
     option_symbols_from_exchange_info_json, parse_nfo_instrument_id,
-    underlying_asset_from_dated_contract, ChainRow, GlanceEnvelope, OptionsOiRow,
-    BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    underlying_asset_from_dated_contract, CachedMark, ChainRow, GlanceEnvelope, GreeksEnvelope,
+    InputHonesty, OptionsOiRow, BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_MARK_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -20,6 +22,8 @@ use crate::egress::{EgressCall, Lane};
 const EXCHANGE_INFO_MAX_AGE_MS: i64 = 300_000;
 /// Open interest is a slow series; one call serves every panel asking at once.
 const OPEN_INTEREST_MAX_AGE_MS: i64 = 5_000;
+/// Same window as OI: one mark call serves every panel asking for this contract.
+const OPTIONS_MARK_MAX_AGE_MS: i64 = 5_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -150,6 +154,104 @@ pub(crate) async fn fetch_options_oi(state: &AppState, instrument: &str) -> Vec<
     oi_rows_from_json(&resp.body)
 }
 
+/// The stored mark, but only for the contract actually asked for.
+///
+/// Mark is per contract. A stored symbol that differs from `instrument` is a MISS:
+/// returning it would repaint the previous contract's delta onto this one, which is
+/// exactly the mislabelled number the greeks envelope exists to prevent. Match is
+/// exact and case-sensitive — Binance option symbols are mixed-case dated contracts.
+fn cached_mark_hit(cached: &Option<CachedMark>, instrument: &str) -> Option<CachedMark> {
+    let instrument = instrument.trim();
+    cached
+        .as_ref()
+        .filter(|hit| hit.symbol == instrument)
+        .cloned()
+}
+
+/// The symbol to dial `/eapi/v1/mark` with, or `None` for "do not dial".
+///
+/// Two refusals, both silent by design: tests stay fixture-only
+/// (`eapi_public_fetch` false), and a leftover `BTC` / `BTCUSDT` is not a dated
+/// contract, so it must never reach the venue.
+///
+/// The shape test is [`is_dated_option_contract`], not
+/// [`underlying_asset_from_dated_contract`]: the latter splits on the first `-`
+/// and answers `Some("BTC")` for a bare `BTC`, which would have dialled mark with
+/// a spot id. Only `UNDERLYING-YYMMDD-STRIKE-{C,P}` reaches the venue, and never
+/// lowercased — Binance option symbols are mixed-case.
+fn mark_dial_symbol(eapi_public_fetch: bool, instrument: &str) -> Option<String> {
+    if !eapi_public_fetch {
+        return None;
+    }
+    let instrument = instrument.trim();
+    if !is_dated_option_contract(instrument) {
+        return None;
+    }
+    underlying_asset_from_dated_contract(instrument)?;
+    Some(instrument.to_string())
+}
+
+/// One `/eapi/v1/mark` row for exactly this contract, or `None`.
+///
+/// Never fabricates: a non-success HTTP, a body without this symbol, or a partial
+/// greek row all return `None` rather than a half-lit delta.
+pub(crate) async fn fetch_options_mark(state: &AppState, instrument: &str) -> Option<CachedMark> {
+    let dial = {
+        let cached = state
+            .options_mark
+            .lock()
+            .expect("options mark mutex poisoned");
+        if let Some(hit) = cached_mark_hit(&cached, instrument) {
+            return Some(hit);
+        }
+        mark_dial_symbol(state.eapi_public_fetch, instrument)?
+    };
+    let call = EgressCall::get(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        "eapi.binance.com",
+        OPTIONS_MARK_PATH,
+        Lane::MarketData,
+    )
+    .with_query(format!("symbol={dial}"))
+    .with_max_age_ms(OPTIONS_MARK_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return None;
+    };
+    if !resp.is_success() {
+        return None;
+    }
+    let row = mark_row_for_symbol(&resp.body, &dial)?;
+    Some(CachedMark {
+        symbol: row.symbol.clone(),
+        row,
+        // Station's own fetch stamp. The official mark table has no timestamp
+        // field, so there is no venue time to copy and none may be invented.
+        as_of: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+/// Obtain enriches synchronously, but the mark snapshot is an async fetch. Land
+/// the row in the shared store so the enricher only ever reads state.
+pub(crate) async fn ensure_options_mark(state: &AppState, instrument: &str) {
+    {
+        let cached = state
+            .options_mark
+            .lock()
+            .expect("options mark mutex poisoned");
+        if cached_mark_hit(&cached, instrument).is_some() {
+            return;
+        }
+    }
+    let Some(fetched) = fetch_options_mark(state, instrument).await else {
+        return;
+    };
+    *state
+        .options_mark
+        .lock()
+        .expect("options mark mutex poisoned") = Some(fetched);
+}
+
 /// Obtain enriches synchronously, but the OI snapshot is an async fetch. Land
 /// the rows in the shared store so the enricher only ever reads state.
 pub(crate) async fn ensure_options_oi(state: &AppState, instrument: &str) {
@@ -235,5 +337,97 @@ pub async fn oi_handler(
             ))
         }
         other => Json(extract_open_interest(other, &instrument)),
+    }
+}
+
+/// Venue-published option greeks. `book` is required — this route never falls back
+/// to `s1_desk_symbol`, because a spot id is not a contract and spot is not greeks.
+pub async fn greeks_handler(
+    State(state): State<AppState>,
+    Query(query): Query<GlanceQuery>,
+) -> Json<GreeksEnvelope> {
+    let book = query_book(&query);
+    let instrument = query_instrument(&query);
+    match book.as_deref() {
+        Some(id) if id == BINANCE_COM_OPTIONS_BOOK_ID => {
+            let cached = fetch_options_mark(&state, &instrument).await;
+            Json(extract_greeks_from_mark(
+                Some(BINANCE_COM_OPTIONS_BOOK_ID),
+                cached.as_ref().map(|hit| &hit.row),
+                cached.as_ref().map(|hit| hit.as_of.as_str()),
+                InputHonesty::Lit,
+            ))
+        }
+        Some(id) if id == KOTAK_NSE_NFO_BOOK_ID => {
+            // NFO stays on its own dark path and never reads a mark row. The chain
+            // input is the real one, so the darkness is inherited honestly rather
+            // than asserted.
+            let rows = nfo_chain_rows(&state, &instrument);
+            let chain = {
+                let tickbook = state.tickbook.lock().expect("tickbook mutex poisoned");
+                extract_chain_from(
+                    Some(KOTAK_NSE_NFO_BOOK_ID),
+                    &instrument,
+                    Some(rows.as_slice()),
+                    Some(&tickbook),
+                )
+            };
+            Json(extract_greeks_from_mark(
+                Some(KOTAK_NSE_NFO_BOOK_ID),
+                None,
+                None,
+                chain_input_honesty(&chain),
+            ))
+        }
+        other => Json(extract_greeks_from_mark(
+            other,
+            None,
+            None,
+            InputHonesty::Dark(crate::data::HonestyStatus::Unavailable),
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::{mark_row_for_symbol, CachedMark};
+
+    const OFFICIAL_EXAMPLE: &str = r#"[ { "symbol": "BTC-200730-9000-C", "markPrice": "1343.2883", "bidIV": "1.40000077", "askIV": "1.50000153", "markIV": "1.45000000", "delta": "0.55937056", "theta": "3739.82509871", "gamma": "0.00010969", "vega": "978.58874732", "highPriceLimit": "1618.241", "lowPriceLimit": "1068.3356", "riskFreeInterest": "0.1" } ]"#;
+
+    fn cached(symbol: &str) -> Option<CachedMark> {
+        let row = mark_row_for_symbol(OFFICIAL_EXAMPLE, "BTC-200730-9000-C").expect("row");
+        Some(CachedMark {
+            symbol: symbol.to_string(),
+            row,
+            as_of: "2026-08-31T09:00:00Z".to_string(),
+        })
+    }
+
+    #[test]
+    fn a_stored_mark_serves_only_its_own_contract() {
+        let store = cached("BTC-200730-9000-C");
+        let hit = cached_mark_hit(&store, "BTC-200730-9000-C").expect("exact match is a hit");
+        assert_eq!(hit.row.delta, "0.55937056");
+        // A different contract is a miss, never the previous contract's delta.
+        assert!(cached_mark_hit(&store, "BTC-200730-9500-C").is_none());
+        assert!(cached_mark_hit(&store, "btc-200730-9000-c").is_none());
+        assert!(cached_mark_hit(&store, "BTCUSDT").is_none());
+        assert!(cached_mark_hit(&None, "BTC-200730-9000-C").is_none());
+    }
+
+    #[test]
+    fn mark_is_not_dialled_without_public_fetch_or_a_dated_contract() {
+        // Tests stay fixture-only.
+        assert!(mark_dial_symbol(false, "BTC-200730-9000-C").is_none());
+        // A leftover spot id is not a contract and must never dial mark.
+        assert!(mark_dial_symbol(true, "BTC").is_none());
+        assert!(mark_dial_symbol(true, "BTCUSDT").is_none());
+        assert!(mark_dial_symbol(true, "").is_none());
+        // Only a dated contract dials, and never lowercased.
+        assert_eq!(
+            mark_dial_symbol(true, "BTC-200730-9000-C").as_deref(),
+            Some("BTC-200730-9000-C")
+        );
     }
 }

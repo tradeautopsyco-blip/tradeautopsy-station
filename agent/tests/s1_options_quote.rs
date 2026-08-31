@@ -139,7 +139,7 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     assert_eq!(options["manifest_id"], "binance_com.options.v1");
     assert_eq!(
         options["implemented"],
-        serde_json::json!(["quotes", "optionchain", "open_interest"])
+        serde_json::json!(["quotes", "optionchain", "open_interest", "optiongreeks"])
     );
     // OI is its own noun on its own binding, not a second chain arm.
     let bound_ops: Vec<&str> = options["bindings"]
@@ -148,7 +148,10 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
         .iter()
         .filter_map(|b| b["operation"].as_str())
         .collect();
-    assert_eq!(bound_ops, vec!["quotes", "optionchain", "open_interest"]);
+    assert_eq!(
+        bound_ops,
+        vec!["quotes", "optionchain", "open_interest", "optiongreeks"]
+    );
 
     handle.abort();
 }
@@ -657,6 +660,313 @@ async fn quote_route_options_book_unplanted_is_unavailable_and_opens_no_spot_str
         .expect("json");
     assert_eq!(spot["status"], "unavailable");
     assert!(spot["data"].is_null());
+
+    handle.abort();
+}
+
+/// Venue-published greeks with no `/eapi/v1/mark` snapshot in hand. The capability
+/// is implemented and allowlisted, so this is `unavailable` — never `unsupported`,
+/// and never an empty success with a fabricated delta.
+#[tokio::test]
+async fn greeks_route_without_a_mark_snapshot_is_unavailable_not_unsupported() {
+    const PORT: u16 = 19_531;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/greeks?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("greeks route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert_ne!(body["status"], "unsupported");
+    assert_ne!(body["status"], "success");
+    assert!(body["data"].is_null());
+    let ineligible: Vec<&str> = body["ineligible"]
+        .as_array()
+        .expect("ineligible")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(ineligible.contains(&"mark_snapshot_unavailable"));
+    assert!(!body.to_string().contains("delta"));
+
+    handle.abort();
+}
+
+/// Planted `/eapi/v1/mark` lights the route. Station copied the venue's strings —
+/// it did not price this book, so the origin is `venue_published` and the number
+/// carries the one display grant Station ships.
+#[tokio::test]
+async fn planted_mark_lights_venue_published_greeks_and_nothing_else() {
+    const PORT: u16 = 19_532;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_mark: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let body: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/greeks?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("greeks route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "success");
+    assert_eq!(body["data"]["delta"], "0.55937056");
+    assert_eq!(body["data"]["gamma"], "0.00010969");
+    assert_eq!(body["data"]["theta"], "3739.82509871");
+    assert_eq!(body["data"]["vega"], "978.58874732");
+    assert_eq!(body["rights"]["display"], true);
+    assert_eq!(body["rights"]["redistribute"], false);
+    assert_eq!(body["source"]["path"], "/eapi/v1/mark");
+    assert_eq!(body["source"]["kind"], "venue_published");
+    assert_eq!(body["provenance"]["model"], "venue_published");
+    assert_ne!(body["provenance"]["model"], "black_76");
+    assert!(
+        body["provenance"]["input_at"].as_str().is_some(),
+        "an unstamped number has no freshness and must not render"
+    );
+
+    // Four greeks, not five. One currency, not two.
+    let wire = body.to_string();
+    assert!(!wire.contains("rho"));
+    assert!(!wire.contains("INR"));
+    assert!(!wire.contains("exchange_rate"));
+
+    // A leftover spot id is not a dated contract: still a hole, never a repaint of
+    // the stored contract's delta.
+    for instrument in ["BTC", "BTCUSDT"] {
+        let spot_id: serde_json::Value = client
+            .get(format!(
+                "http://127.0.0.1:{PORT}/api/station/greeks?book=binance-com-options&instrument={instrument}"
+            ))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .expect("greeks route")
+            .json()
+            .await
+            .expect("json");
+        assert_eq!(spot_id["status"], "unavailable", "{instrument}");
+        assert!(spot_id["data"].is_null(), "{instrument}");
+        assert!(
+            !spot_id.to_string().contains("0.55937056"),
+            "{instrument} must not pick up the stored contract's delta"
+        );
+    }
+
+    // Wrong book, or no book at all, is a fence — never the options row.
+    for (url_book, reason) in [
+        ("book=binance-com-spot&", "spot_is_not_greeks"),
+        ("book=kotak-nse-bse-cash&", "cash_is_not_greeks"),
+        ("", "greeks_book_required"),
+    ] {
+        let fenced: serde_json::Value = client
+            .get(format!(
+                "http://127.0.0.1:{PORT}/api/station/greeks?{url_book}instrument=BTC-200730-9000-C"
+            ))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .expect("greeks route")
+            .json()
+            .await
+            .expect("json");
+        assert_eq!(fenced["status"], "unavailable", "{reason}");
+        assert!(fenced["data"].is_null(), "{reason}");
+        assert_eq!(fenced["rights"]["display"], false, "{reason}");
+        let ineligible: Vec<&str> = fenced["ineligible"]
+            .as_array()
+            .expect("ineligible")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(ineligible.contains(&reason), "{reason}: {ineligible:?}");
+        assert!(!fenced.to_string().contains("0.55937056"), "{reason}");
+    }
+
+    handle.abort();
+}
+
+/// The NFO book has no venue-published greeks and no named pricing model. A planted
+/// USDT-options mark row must not leak onto it.
+#[tokio::test]
+async fn nfo_greeks_stay_dark_even_with_a_planted_mark_row() {
+    const PORT: u16 = 19_533;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_mark: true,
+            plant_kotak_nfo_contracts: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/greeks?book=kotak-nse-nfo&instrument=BANKNIFTY"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo greeks")
+        .json()
+        .await
+        .expect("json");
+    assert_ne!(body["status"], "success");
+    assert!(body["data"].is_null());
+    assert_eq!(body["rights"]["display"], false);
+    let wire = body.to_string();
+    assert!(!wire.contains("delta"), "no delta anywhere: {wire}");
+    assert!(!wire.contains("0.55937056"));
+    assert!(!wire.contains("exchange_rate"));
+
+    handle.abort();
+}
+
+/// Obtain is the second door onto the same number. It is instrument-scoped off the
+/// selected contract, so it stays Unavailable until that contract is bound.
+#[tokio::test]
+async fn obtain_optiongreeks_is_unavailable_until_planted_and_selected() {
+    const PORT: u16 = 19_534;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+
+    let dark: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optiongreeks"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain optiongreeks")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(dark["status"], "unavailable");
+    assert_ne!(dark["status"], "unsupported");
+    assert_ne!(dark["status"], "success");
+    assert!(dark["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn obtain_optiongreeks_succeeds_on_the_selected_contract() {
+    const PORT: u16 = 19_535;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            plant_binance_options_mark: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    // Bind the dated contract the way the desk does.
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind dated contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+
+    let obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=optiongreeks"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain optiongreeks")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "success");
+    assert_eq!(obtain["data"]["delta"], "0.55937056");
+    assert_eq!(obtain["provenance_adapter_id"], "binance_com");
+    assert_eq!(obtain["provenance_path"], "/eapi/v1/mark");
+    let wire = obtain.to_string();
+    assert!(!wire.contains("rho"));
+    assert!(!wire.contains("INR"));
+    assert!(!wire.contains("exchange_rate"));
+
+    handle.abort();
+}
+
+/// Observed live 2026-08-31: `"bidIV":"-1.0"` alongside a real `askIV`. A negative
+/// implied volatility is not a volatility — it is a no-bid sentinel. It must vanish
+/// from the wire entirely, without taking the four real greeks with it.
+#[tokio::test]
+async fn a_no_bid_sentinel_vanishes_without_voiding_the_greeks() {
+    const PORT: u16 = 19_536;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_mark_no_bid: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/greeks?book=binance-com-options&instrument=BTC-260925-145000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("greeks route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "success");
+    // Absent, not null: a refused IV must not serialize as a key at all.
+    assert!(
+        body["data"].get("bid_iv").is_none(),
+        "-1.0 must vanish, not serialize as null"
+    );
+    assert_eq!(body["data"]["ask_iv"], "0.74930251");
+    assert_eq!(body["data"]["mark_iv"], "0.709");
+    // One dead IV does not void the greeks.
+    assert_eq!(body["data"]["delta"], "0.00065535");
+    assert_eq!(body["data"]["gamma"], "0.00000012");
+    assert_eq!(body["data"]["theta"], "-0.84070424");
+    assert_eq!(body["data"]["vega"], "0.46744754");
+
+    let wire = body.to_string();
+    assert!(
+        !wire.contains("-1.0"),
+        "the sentinel must not reach the wire"
+    );
+    assert!(!wire.contains("rho"));
+    assert!(!wire.contains("INR"));
+    assert!(!wire.contains("exchange_rate"));
 
     handle.abort();
 }

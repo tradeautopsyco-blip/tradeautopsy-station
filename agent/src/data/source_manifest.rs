@@ -276,6 +276,35 @@ fn open_interest_binding(
     }
 }
 
+/// Venue-published option greeks — `derived/greeks` BoundedSnapshot off
+/// `GET /eapi/v1/mark`. Clones [`open_interest_binding`]'s shape but is its own
+/// binding: greeks never ride the OI binding.
+///
+/// **This binding is the display grant, and it is the ONLY one that gets it.**
+/// Every other binding Station ships is `research_fetch_only`. The reason it may
+/// display is narrow: the venue computed these numbers and published them, so
+/// Station is copying a licensed figure rather than pricing the book itself. Do
+/// not copy `Rights::desk_display()` onto another binding to make a chip light up.
+fn optiongreeks_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+) -> ManifestBinding {
+    ManifestBinding {
+        operation: "optiongreeks".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Derived,
+        capability_id: "greeks".into(),
+        physics: Physics::BoundedSnapshot,
+        auth_mode,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::desk_display(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Realtime,
+    }
+}
+
 fn instruments_binding(
     adapter_id: &str,
     coverage: Coverage,
@@ -479,11 +508,13 @@ pub fn binance_com_options_manifest() -> SourceManifest {
             "quotes".into(),
             "optionchain".into(),
             "open_interest".into(),
+            "optiongreeks".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
             optionchain_binding("binance_com", coverage.clone(), AuthMode::Public),
-            open_interest_binding("binance_com", coverage, AuthMode::Public),
+            open_interest_binding("binance_com", coverage.clone(), AuthMode::Public),
+            optiongreeks_binding("binance_com", coverage, AuthMode::Public),
         ],
     }
 }
@@ -818,6 +849,66 @@ mod tests {
         );
     }
 
+    /// The optiongreeks binding is the ONLY display grant Station ships. Every
+    /// other binding stays research-fetch-only, and this test is the tripwire.
+    #[test]
+    fn optiongreeks_is_the_only_binding_that_may_display() {
+        let options = binance_com_options_manifest();
+        let greeks = options
+            .bindings
+            .iter()
+            .find(|b| b.operation == "optiongreeks")
+            .expect("options book binds optiongreeks");
+        assert_eq!(greeks.capability_id, "greeks");
+        assert_eq!(greeks.family, Family::Derived);
+        assert_eq!(greeks.physics, Physics::BoundedSnapshot);
+        assert_eq!(greeks.auth_mode, AuthMode::Public);
+        assert_eq!(greeks.transports, vec![TransportKind::Rest]);
+        assert_eq!(greeks.rights, Rights::desk_display());
+        assert!(greeks.rights.display);
+
+        // Nothing else, on any shipping manifest, carries a display grant.
+        for manifest in first_party_s0_manifests() {
+            for binding in &manifest.bindings {
+                if binding.operation == "optiongreeks" {
+                    continue;
+                }
+                assert!(
+                    !binding.rights.display,
+                    "{} / {} must stay research_fetch_only",
+                    manifest.book_id, binding.operation
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn optiongreeks_ships_only_on_the_binance_options_book() {
+        // Implemented with no planted snapshot is Unavailable, never Unsupported.
+        assert_eq!(
+            obtain(&binance_com_options_manifest(), "optiongreeks").status,
+            ObtainStatus::Unavailable
+        );
+        // No other book gained a greeks noun.
+        for manifest in [
+            kotak_neo_nfo_manifest(),
+            binance_com_s1_manifest(),
+            kotak_neo_s1k_manifest(),
+        ] {
+            assert_eq!(
+                obtain(&manifest, "optiongreeks").status,
+                ObtainStatus::Unsupported,
+                "{}",
+                manifest.book_id
+            );
+        }
+        // The multi-leg noun is still nobody's.
+        assert_eq!(
+            obtain(&binance_com_options_manifest(), "multioptiongreeks").status,
+            ObtainStatus::Unsupported
+        );
+    }
+
     #[test]
     fn first_party_manifests_load_fail_closed() {
         let loaded = load_first_party_manifests().expect("S0 first-party manifests must validate");
@@ -830,10 +921,11 @@ mod tests {
         assert_eq!(options.book_id, "binance-com-options");
         assert_eq!(
             options.implemented,
-            vec!["quotes", "optionchain", "open_interest"]
+            vec!["quotes", "optionchain", "open_interest", "optiongreeks"]
         );
         assert!(options.implemented.iter().any(|op| op == "optionchain"));
         assert!(options.implemented.iter().any(|op| op == "open_interest"));
+        assert!(options.implemented.iter().any(|op| op == "optiongreeks"));
         // Implemented with no planted snapshot is Unavailable, never Unsupported.
         assert_eq!(
             obtain(&options, "optionchain").status,
@@ -841,6 +933,10 @@ mod tests {
         );
         assert_eq!(
             obtain(&options, "open_interest").status,
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            obtain(&options, "optiongreeks").status,
             ObtainStatus::Unavailable
         );
         let chain_bind = options

@@ -61,6 +61,10 @@ pub struct TestAgentOptions {
     pub plant_binance_options_quote: bool,
     /// Options chain/OI — plant committed exchangeInfo + OI JSON (no live eapi).
     pub plant_binance_options_chain: bool,
+    /// Venue-published greeks — plant the committed `/eapi/v1/mark` JSON (no live eapi).
+    pub plant_binance_options_mark: bool,
+    /// Same, but the observed no-bid row (`"bidIV":"-1.0"`).
+    pub plant_binance_options_mark_no_bid: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -96,6 +100,8 @@ impl Default for TestAgentOptions {
             plant_binance_s2_history: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
+            plant_binance_options_mark: false,
+            plant_binance_options_mark_no_bid: false,
         }
     }
 }
@@ -141,6 +147,8 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
     cfg.plant_binance_options_quote = opts.plant_binance_options_quote;
     cfg.plant_binance_options_chain = opts.plant_binance_options_chain;
+    cfg.plant_binance_options_mark = opts.plant_binance_options_mark;
+    cfg.plant_binance_options_mark_no_bid = opts.plant_binance_options_mark_no_bid;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

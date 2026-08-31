@@ -37,6 +37,8 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
             status: status.into(),
             data: None,
             provenance,
+            // Inherited dark. NFO has no model and therefore no display grant.
+            rights: super::rights::Rights::research_fetch_only(),
             source: None,
             ineligible: Vec::new(),
             canonical: false,

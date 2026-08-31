@@ -1,20 +1,37 @@
 //! Derived greeks dispatcher. Two book modules (or zero), never one
-//! `calculate()` with `if CRYPTO`. Both stay dark this slice.
+//! `calculate()` with `if CRYPTO`. The two books light by different rules, and
+//! neither may borrow the other's.
 //!
-//! NFO: [`greeks_nfo`] — `pricing_model_unspecified` until OPTIONS-PRICING.md
-//! is a real lock. Binance options: [`greeks_binance_options`] —
-//! `mark_not_this_slice`; do not allowlist `GET /eapi/v1/mark`.
+//! Binance options: [`greeks_binance_options`] — **lit**. `GET /eapi/v1/mark` is
+//! allowlisted (Slice 3) and publishes delta/theta/gamma/vega plus the IVs.
+//! Station copies those strings verbatim, attributes them
+//! [`GreeksSource::VenuePublished`], and this is the one path that carries
+//! `Rights::desk_display()`. With no snapshot in hand the extract is its own
+//! `mark_snapshot_unavailable` hole — not inherited-dark, because mark is a
+//! pass-through rather than a chain+contracts compute.
+//!
+//! NFO: [`greeks_nfo`] — **still dark**. Kotak Quotes has no greeks field, so
+//! there is nothing to copy, and `pricing_model_unspecified` stands until
+//! OPTIONS-PRICING.md is a real lock. Do not give this book a lit path.
 //! Source: `docs/reference/india/nfo/OPTIONS-PRICING.md` BLOCKER.
+//!
+//! Two entries, one chokepoint: [`extract_greeks`] (no snapshot) and
+//! [`extract_greeks_from_mark`] (row in hand) both end on
+//! [`refuse_misfiled_source`].
 
+use super::binance_options_mark::OptionsMarkRow;
 use super::descriptor::{
     BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID,
 };
-use super::greeks_binance_options::extract_binance_options_greeks;
+use super::greeks_binance_options::{
+    extract_binance_options_greeks, extract_binance_options_greeks_from,
+};
 use super::greeks_nfo::extract_nfo_greeks;
 use super::honesty::{HonestyStatus, InputHonesty};
 use super::identity::{CapabilityId, Family, Identity, Physics};
 use super::provenance::ProvenanceLine;
+use super::rights::Rights;
 use serde::Serialize;
 
 pub const PRICING_MODEL_UNSPECIFIED: &str = "pricing_model_unspecified";
@@ -109,6 +126,10 @@ pub struct GreeksEnvelope {
     pub status: GreeksStatus,
     pub data: Option<serde_json::Value>,
     pub provenance: ProvenanceLine,
+    /// License grant on this number. Holes are `research_fetch_only`; only the
+    /// venue-published lit path carries `desk_display`, which is what
+    /// [`greeks_may_render_number`] reads.
+    pub rights: Rights,
     /// `None` on every hole. Present only when a number is actually carried, and
     /// then it names which of the two origins produced it.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,6 +154,7 @@ pub(crate) fn dark_fence(ineligible: &str) -> GreeksEnvelope {
         status: GreeksStatus::Unavailable,
         data: None,
         provenance: ProvenanceLine::raw_hole(identity),
+        rights: Rights::research_fetch_only(),
         source: None,
         ineligible: vec![ineligible.to_string()],
         canonical: false,
@@ -154,12 +176,47 @@ pub fn extract_greeks(book_id: Option<&str>, chain: InputHonesty) -> GreeksEnvel
         _ => return dark_fence(BOOK_REQUIRED),
     };
 
-    // A book that hands back the other book's source class has mixed the two
-    // pricers. Refuse the envelope rather than let a mislabelled origin render.
+    refuse_misfiled_source(book, envelope)
+}
+
+/// The single source-class chokepoint, shared by both entries.
+///
+/// A book that hands back the other book's source class has mixed the two pricers.
+/// Refuse the envelope rather than let a mislabelled origin render.
+fn refuse_misfiled_source(book: &str, envelope: GreeksEnvelope) -> GreeksEnvelope {
     match &envelope.source {
         Some(source) if !source_class_allowed(book, source) => dark_fence(SOURCE_CLASS_MISMATCH),
         _ => envelope,
     }
+}
+
+/// Book-routed greeks extract with a `/eapi/v1/mark` row in hand.
+///
+/// Only `binance-com-options` reads the row: those greeks are venue-published, and
+/// a USDT-options delta is not an NFO greek. NFO ignores the row and stays on its
+/// own dark path — this entry must not give it a lit one. `chain` is that book's
+/// named chain input; the Binance arm has no use for it.
+///
+/// Ends on the same [`refuse_misfiled_source`] chokepoint as [`extract_greeks`].
+pub fn extract_greeks_from_mark(
+    book_id: Option<&str>,
+    row: Option<&OptionsMarkRow>,
+    as_of: Option<&str>,
+    chain: InputHonesty,
+) -> GreeksEnvelope {
+    let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return dark_fence(BOOK_REQUIRED);
+    };
+
+    let envelope = match book {
+        id if id == KOTAK_NSE_BSE_CASH_BOOK_ID => dark_fence(CASH_IS_NOT_GREEKS),
+        id if id == BINANCE_COM_SPOT_BOOK_ID => dark_fence(SPOT_IS_NOT_GREEKS),
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => extract_binance_options_greeks_from(row, as_of),
+        id if id == KOTAK_NSE_NFO_BOOK_ID => extract_nfo_greeks(chain),
+        _ => return dark_fence(BOOK_REQUIRED),
+    };
+
+    refuse_misfiled_source(book, envelope)
 }
 
 /// May this envelope's number be shown to a trader?
@@ -169,6 +226,10 @@ pub fn extract_greeks(book_id: Option<&str>, chain: InputHonesty) -> GreeksEnvel
 /// model is not the `"raw"` hole marker, and the origin is named. A figure
 /// missing any of those is either a hole or an unattributed number, and neither
 /// may render.
+///
+/// It also reads the license grant and the status: a number Station may fetch but
+/// is not licensed to display is not renderable, and a status that is not
+/// `Success` is not a live number at all.
 ///
 /// It deliberately does **not** consult [`HonestyStatus`]. All four of its
 /// variants are dark states — Success is `InputHonesty::Lit`, not a fifth variant
@@ -189,6 +250,12 @@ pub fn greeks_may_render_number(envelope: &GreeksEnvelope) -> bool {
     }
     let model = envelope.provenance.model.trim();
     if model.is_empty() || model == "raw" {
+        return false;
+    }
+    if !envelope.rights.display {
+        return false;
+    }
+    if envelope.status != GreeksStatus::Success {
         return false;
     }
     envelope.source.is_some()
@@ -240,6 +307,7 @@ mod tests {
                 adapter_id: "binance_com".to_string(),
                 path: "/eapi/v1/mark".to_string(),
             },
+            rights: Rights::desk_display(),
             source: Some(GreeksSource::VenuePublished {
                 path: "/eapi/v1/mark".into(),
                 adapter: "binance_com".into(),
@@ -248,6 +316,122 @@ mod tests {
             canonical: false,
             persist_canonical: false,
         }
+    }
+
+    const OFFICIAL_EXAMPLE: &str = r#"[ { "symbol": "BTC-200730-9000-C", "markPrice": "1343.2883", "bidIV": "1.40000077", "askIV": "1.50000153", "markIV": "1.45000000", "delta": "0.55937056", "theta": "3739.82509871", "gamma": "0.00010969", "vega": "978.58874732", "highPriceLimit": "1618.241", "lowPriceLimit": "1068.3356", "riskFreeInterest": "0.1" } ]"#;
+
+    fn official_row() -> crate::data::OptionsMarkRow {
+        crate::data::mark_row_for_symbol(OFFICIAL_EXAMPLE, "BTC-200730-9000-C").expect("row")
+    }
+
+    #[test]
+    fn a_mark_row_lights_only_the_binance_options_book() {
+        let row = official_row();
+        let lit = extract_greeks_from_mark(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            Some(&row),
+            Some("2026-08-31T09:00:00Z"),
+            InputHonesty::Lit,
+        );
+        assert_eq!(lit.status, GreeksStatus::Success);
+        assert_eq!(lit.data.as_ref().expect("data")["delta"], "0.55937056");
+        assert!(lit.rights.display);
+        assert!(greeks_may_render_number(&lit));
+    }
+
+    #[test]
+    fn the_same_row_never_lights_any_other_book() {
+        let row = official_row();
+        // NFO ignores the row entirely — a USDT-options delta is not an NFO greek.
+        let nfo = extract_greeks_from_mark(
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            Some(&row),
+            Some("2026-08-31T09:00:00Z"),
+            InputHonesty::Dark(HonestyStatus::Unavailable),
+        );
+        assert_ne!(nfo.status, GreeksStatus::Success);
+        assert!(!greeks_may_render_number(&nfo));
+        assert_no_fixture_greeks(&nfo);
+        assert!(!serde_json::to_string(&nfo).unwrap().contains("0.55937056"));
+
+        for (book, reason) in [
+            (Some(KOTAK_NSE_BSE_CASH_BOOK_ID), CASH_IS_NOT_GREEKS),
+            (Some(BINANCE_COM_SPOT_BOOK_ID), SPOT_IS_NOT_GREEKS),
+            (None, BOOK_REQUIRED),
+            (Some("binance-com-usdm"), BOOK_REQUIRED),
+        ] {
+            let envelope = extract_greeks_from_mark(
+                book,
+                Some(&row),
+                Some("2026-08-31T09:00:00Z"),
+                InputHonesty::Lit,
+            );
+            assert!(envelope.ineligible.iter().any(|s| s == reason), "{book:?}");
+            assert_no_fixture_greeks(&envelope);
+            assert!(!serde_json::to_string(&envelope)
+                .unwrap()
+                .contains("0.55937056"));
+        }
+    }
+
+    #[test]
+    fn no_row_on_the_options_book_is_still_the_mark_snapshot_hole() {
+        let envelope = extract_greeks_from_mark(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            None,
+            Some("2026-08-31T09:00:00Z"),
+            InputHonesty::Lit,
+        );
+        assert_eq!(envelope.status, GreeksStatus::Unavailable);
+        assert!(envelope
+            .ineligible
+            .iter()
+            .any(|s| s == MARK_SNAPSHOT_UNAVAILABLE));
+        assert!(!envelope.rights.display);
+        assert_no_fixture_greeks(&envelope);
+    }
+
+    #[test]
+    fn a_misfiled_source_class_is_refused_by_both_entries() {
+        // Same chokepoint, one implementation. A Binance envelope that somehow came
+        // back ModelComputed is refused rather than rendered.
+        let mut smuggled = lit_venue_envelope();
+        smuggled.source = Some(GreeksSource::ModelComputed {
+            model: "black_76".into(),
+            lock: "OPTIONS-PRICING.md".into(),
+        });
+        let refused = refuse_misfiled_source(BINANCE_COM_OPTIONS_BOOK_ID, smuggled);
+        assert_eq!(refused.ineligible, vec![SOURCE_CLASS_MISMATCH]);
+        assert!(!greeks_may_render_number(&refused));
+        assert_no_fixture_greeks(&refused);
+    }
+
+    #[test]
+    fn a_dark_fence_carries_no_display_right() {
+        // Every hole is research-fetch-only: nothing about a fence may render.
+        for reason in [BOOK_REQUIRED, CASH_IS_NOT_GREEKS, SPOT_IS_NOT_GREEKS] {
+            let envelope = dark_fence(reason);
+            assert_eq!(envelope.rights, Rights::research_fetch_only());
+            assert!(!envelope.rights.display, "{reason}");
+        }
+    }
+
+    #[test]
+    fn the_gate_also_reads_the_display_right_and_the_status() {
+        // A number with no display grant is licensed data Station may fetch but not
+        // show, and a non-Success status is not a live number at all.
+        let mut undisplayable = lit_venue_envelope();
+        undisplayable.rights = Rights::research_fetch_only();
+        assert!(
+            !greeks_may_render_number(&undisplayable),
+            "no display right"
+        );
+
+        let mut not_success = lit_venue_envelope();
+        not_success.status = GreeksStatus::Empty;
+        assert!(!greeks_may_render_number(&not_success), "not success");
+
+        assert!(greeks_may_render_number(&lit_venue_envelope()));
     }
 
     #[test]
@@ -458,8 +642,12 @@ mod tests {
         assert_dual_no_blend(&envelope);
     }
 
+    /// Only the Binance options book ships `optiongreeks`, and even there an
+    /// unplanted snapshot is Unavailable — never Unsupported, never an empty
+    /// success. NFO stays Unsupported: it has no venue-published greeks to copy
+    /// and no named pricing model to compute one.
     #[test]
-    fn optiongreeks_not_implemented_on_shipping_manifests() {
+    fn optiongreeks_ships_on_the_options_book_only_and_never_lit_by_default() {
         use crate::data::source_manifest::binance_com_options_manifest;
         use crate::data::{kotak_neo_nfo_manifest, ObtainStatus};
         assert_eq!(
@@ -468,8 +656,22 @@ mod tests {
         );
         assert_eq!(
             obtain(&binance_com_options_manifest(), "optiongreeks").status,
+            ObtainStatus::Unavailable
+        );
+        assert_ne!(
+            obtain(&binance_com_options_manifest(), "optiongreeks").status,
             ObtainStatus::Unsupported
         );
+        // Spot is not a greeks book either.
+        assert_eq!(
+            obtain(
+                &crate::data::source_manifest::binance_com_s1_manifest(),
+                "optiongreeks"
+            )
+            .status,
+            ObtainStatus::Unsupported
+        );
+        // The multi-leg noun is still nobody's.
         assert_eq!(
             obtain(&binance_com_options_manifest(), "multioptiongreeks").status,
             ObtainStatus::Unsupported

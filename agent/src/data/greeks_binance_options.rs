@@ -19,6 +19,7 @@ use super::greeks::{
     MARK_SNAPSHOT_UNAVAILABLE,
 };
 use super::provenance::ProvenanceLine;
+use super::rights::Rights;
 
 /// Provenance `model` for a copied number. Deliberately not a formula name — the
 /// venue did not publish one, and inventing "black_76" here would be a lie about
@@ -76,6 +77,9 @@ pub fn extract_binance_options_greeks_from(
             adapter_id: BINANCE_COM_ADAPTER_ID.to_string(),
             path: OPTIONS_MARK_PATH.to_string(),
         },
+        // The one display grant in this module: Station is licensed to show what
+        // the venue published. It is still not licensed to store or redistribute it.
+        rights: Rights::desk_display(),
         source: Some(GreeksSource::VenuePublished {
             path: OPTIONS_MARK_PATH.to_string(),
             adapter: BINANCE_COM_ADAPTER_ID.to_string(),
