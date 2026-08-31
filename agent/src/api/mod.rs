@@ -52,6 +52,7 @@ mod quote;
 mod recent_trades;
 mod sse;
 mod station_auth;
+mod sync_hint;
 mod today;
 
 #[derive(Clone)]
@@ -283,6 +284,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/station/greeks", get(glance::greeks_handler))
         .route("/api/station/manifest", get(manifest::manifest_handler))
         .route("/api/station/obtain", get(manifest::obtain_handler))
+        .route("/api/station/sync-hint", get(sync_hint::handler))
         .merge(protected)
         .with_state(state)
 }

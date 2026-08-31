@@ -89,10 +89,20 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
     if root.get("stCode").and_then(|v| v.as_i64()) == Some(1003) {
         return Err("kotak_neo session_expired".to_string());
     }
-    let rows = root
-        .get("data")
-        .and_then(|v| v.as_array())
-        .ok_or("trade book missing data[]")?;
+    // Trade_report.md: `stat` is "ok" on success. HTTP 200 + Not_Ok is still a venue error
+    // (400/403 table). Do not treat a missing `data` array as a quiet day.
+    if let Some(stat) = string_field(&root, "stat") {
+        if !stat.eq_ignore_ascii_case("ok") {
+            return Err(format!("kotak_neo trade_book_not_ok ({stat})"));
+        }
+    }
+    // Official sample is `data: [...]`. Live quiet day omits the key (SESSION-AND-TRADES:
+    // empty filtered day book is success). Null / [] are the same snapshot.
+    let rows = match root.get("data") {
+        None | Some(serde_json::Value::Null) => &[][..],
+        Some(serde_json::Value::Array(rows)) => rows.as_slice(),
+        _ => return Err("trade book missing data[]".to_string()),
+    };
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {

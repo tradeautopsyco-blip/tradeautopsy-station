@@ -152,6 +152,57 @@ fn cursor_since_filters_the_day_book() {
     assert_eq!(fills[0].symbol, "RELIANCE");
 }
 
+/// Live quiet-day body (founder dogfood 2026-08-31): HTTP 200, no `data` key.
+/// SESSION-AND-TRADES.md: empty filtered day book is success — not `missing data[]`.
+#[test]
+fn empty_day_book_without_data_array_is_zero_fills() {
+    let wasm = component_wasm("kotak_neo");
+    let state = fixture_state(200, r#"{"stat":"Ok","stCode":200}"#.to_string());
+
+    let (fills, _state) = run_fetch_fills(&wasm, state, empty_cursor())
+        .expect("empty day book is success, not missing data[]");
+    assert!(fills.is_empty());
+}
+
+#[test]
+fn empty_day_book_null_or_empty_data_is_zero_fills() {
+    let wasm = component_wasm("kotak_neo");
+    for body in [
+        // Official Trade_report.md sample uses lowercase `ok`.
+        r#"{"stat":"ok","stCode":200}"#,
+        r#"{"stat":"Ok","stCode":200,"data":null}"#,
+        r#"{"stat":"Ok","stCode":200,"data":[]}"#,
+    ] {
+        let (fills, _state) = run_fetch_fills(&wasm, fixture_state(200, body.to_string()), empty_cursor())
+            .expect("empty data is success");
+        assert!(fills.is_empty(), "body={body}");
+    }
+}
+
+/// HTTP 200 + `stat: Not_Ok` is a venue error (Trade_report.md 400/403 table via body).
+/// Must not look like a quiet day just because `data` is absent.
+#[test]
+fn not_ok_without_data_is_not_an_empty_day_book() {
+    let wasm = component_wasm("kotak_neo");
+    let err = run_fetch_fills(
+        &wasm,
+        fixture_state(
+            200,
+            r#"{"stat":"Not_Ok","stCode":400,"errMsg":"Invalid or missing input parameters"}"#
+                .to_string(),
+        ),
+        empty_cursor(),
+    )
+    .map(|_| ())
+    .expect_err("Not_Ok is not empty success");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not_ok") || msg.contains("Not_Ok"),
+        "unexpected error: {msg}"
+    );
+    assert!(!msg.contains("missing data[]"));
+}
+
 #[test]
 fn dead_session_surfaces_as_session_expired() {
     let wasm = component_wasm("kotak_neo");
