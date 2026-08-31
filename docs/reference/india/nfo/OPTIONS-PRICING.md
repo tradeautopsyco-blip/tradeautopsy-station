@@ -26,7 +26,24 @@
 > - Terminal-payoff **numeric bound** for a short call (the word “Unlimited” is not a number).
 > - NSE SPAN is **not** trader greeks.
 >
-> Do **not** implement Black-76 or Black–Scholes from memory or from a 503'd circular. Do **not** fill fixture Δ, Γ, Θ. Do **not** register `derived/iv_smile`, `derived/drawdown_ladder`, or max pain. G0 continues: `extract_greeks` stays `pricing_model_unspecified` / `mark_not_this_slice`. Binance `GET /eapi/v1/mark` stays dark until this lock is real.
+> Do **not** implement Black-76 or Black–Scholes from memory or from a 503'd circular. Do **not** fill fixture Δ, Γ, Θ. Do **not** register `derived/iv_smile`, `derived/drawdown_ladder`, or max pain. G0 continues for **NFO**: `extract_greeks` stays `pricing_model_unspecified` on `kotak-nse-nfo`.
+
+> **Scope narrowed 2026-08-31 — this BLOCKER fences `ModelComputed` only.**
+> It blocks **Station computing** a greek: no Black-76 or Black-Scholes from memory, no
+> fixture ΔΓΘ, no `derived/iv_smile` / `derived/drawdown_ladder` / max pain.
+>
+> It does **not** fence a venue that publishes its own greeks. Binance
+> `GET /eapi/v1/mark` names `delta`/`theta`/`gamma`/`vega` and the IVs on the payload;
+> copying those strings is `GreeksSource::VenuePublished`, a different provenance class
+> that makes no claim about a model Station runs. It is governed by
+> [`../../crypto/binance-global/options/REST.md`](../../crypto/binance-global/options/REST.md)
+> **Slice 3**, not by this file. The earlier sentence — "Binance `GET /eapi/v1/mark` stays
+> dark until this lock is real" — conflated the two classes and is superseded.
+>
+> Nothing crosses: Binance's `riskFreeInterest`, its unit conventions, and its IVs describe a
+> USDT-settled book and must never be carried onto NFO. `greeks_binance_options` cannot
+> construct `ModelComputed` and `greeks_nfo` cannot construct `VenuePublished`;
+> `extract_greeks` refuses a mismatch.
 
 ---
 
@@ -493,7 +510,7 @@ Facts that still need confirming against the live source or a test environment b
 | Replace “Unlimited” with a haircut (`* 0.29`) | No hedge formula in inventory | Word stays; haircut forbidden |
 | Copy Binance European/USDT/theta notes onto NFO | MECHANICS.md is `eapi.binance.com` | Contrast only; NCL now names European/cash for **NFO** separately |
 | Infer cash vs physical settlement from memory | NCL 2026-08-31: **cash settled** for index **and** individual securities | Cited; still not a greek |
-| Light Binance `GET /eapi/v1/mark` because NFO research moved | Plan: same ship window, not earlier. Lock still dark. | `mark_not_this_slice`; path not allowlisted |
+| Light Binance `GET /eapi/v1/mark` because NFO research moved | Superseded 2026-08-31: mark is `VenuePublished`, not `ModelComputed`. Lit under the Binance Slice 3 lock; this file never gated it. | NFO stays `pricing_model_unspecified` |
 | One `calculate()` with `if CRYPTO` | Book law: two modules or zero | Dispatcher by `book_id` only |
 
 No memory fills for pricing formulas, day-count, option greeks rate, IV inversion, or rupee scaling. Gaps stay `NOT SPECIFIED IN SOURCE`. G0 continues.
