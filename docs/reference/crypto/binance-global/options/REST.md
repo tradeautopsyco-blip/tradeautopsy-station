@@ -247,4 +247,11 @@ RISK_LEVEL_CHANGE     Account risk level change (from 2023-08-29)
 
 Slice 2: public last + `optionSymbols` chain snapshot + `openInterest` `sumOpenInterest` on `binance-com-options`. Spot BTCUSDT last stays on `binance-com-spot`. No `/eapi/v1/optionChain`, no userTrades, no eapi orders.
 
+Slice 3: **venue-published greeks** on `binance-com-options` — `GET /eapi/v1/mark?symbol=`
+(public, weight 5 IP) → `delta` / `gamma` / `theta` / `vega` copied as the venue's own
+strings, served on `GET /api/station/greeks` and `obtain operation=optiongreeks`. The
+`optiongreeks` binding is the **only** binding carrying `display: true`; every other one
+stays `research_fetch_only`. Four greeks, no rho. No IV `<= 0`. `/eapi/v1/depth` is
+allowlisted by the same lock but its parser is **not** this slice.
+
 Options positions as behavioral risk remain a later slice (see MECHANICS.md).
