@@ -985,7 +985,8 @@ mod tests {
     /// `/eapi/v1/optionChain` is NOT SPECIFIED on the official MarketDataApi.
     /// Station's `optionchain` noun is a catalog noun served from
     /// `exchangeInfo` — it must never open that path, and `/eapi/v1/depth`
-    /// stays shut until its own lock slice.
+    /// stays shut until its own lock slice. `GET /eapi/v1/mark` stays dark
+    /// until OPTIONS-PRICING.md is a real lock (S5 same ship window).
     #[test]
     fn options_book_refuses_option_chain_and_depth_paths() {
         assert_eq!(
@@ -994,6 +995,10 @@ mod tests {
         );
         assert_eq!(
             infer_capability("GET", "/eapi/v1/depth").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/mark").unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -1013,6 +1018,17 @@ mod tests {
                 "eapi.binance.com",
                 "GET",
                 "/eapi/v1/depth",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/mark",
                 false,
             )
             .unwrap_err(),

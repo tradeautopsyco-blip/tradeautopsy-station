@@ -369,8 +369,9 @@ Do not implement Black-76 (or any pricing formula) from memory. Do not fill fixt
 
 > **OUR INTERPRETATION**
 >
-> - Lit NFO contract rows do **not** light greeks. `extract_greeks` with lit chain + lit contracts is still `Unavailable` + `pricing_model_unspecified`, `data: None`.
+> - Lit NFO contract rows do **not** light greeks. `extract_greeks(Some("kotak-nse-nfo"), …)` with lit chain + lit contracts is still `Unavailable` + `pricing_model_unspecified`, `data: None`. Binance options book is a **different** module (`mark_not_this_slice`).
 > - Provenance `model` on contracts stays `"raw"` (CSV), not Black-76.
+> - S5 Slice 1 (2026-08-31): NCL names European + cash; that does **not** delete this hole. Strike scale and expiry conversion remain unspecified.
 
 ---
 

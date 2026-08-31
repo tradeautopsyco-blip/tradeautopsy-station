@@ -50,7 +50,8 @@ Order types, fill mechanics, settlement cycles, and market hours as defined by e
   SEC investor education, exchange trading hour notices.
 - What belongs here: order type definitions, partial fill semantics, T+1/T+2 settlement,
   trading session boundaries, circuit-breaker rules.
-- [`india/nfo/OPTIONS-PRICING.md`](./india/nfo/OPTIONS-PRICING.md) — NFO options pricing / greeks (named model unspecified; no fixture ΔΓΘ).
+- [`india/nfo/OPTIONS-PRICING.md`](./india/nfo/OPTIONS-PRICING.md) — NFO options pricing / greeks (named trader model unspecified; no fixture ΔΓΘ; S5 G0).
+- [`crypto/binance-global/spot/OHLCV-RESAMPLE.md`](./crypto/binance-global/spot/OHLCV-RESAMPLE.md) — derived OHLCV resample (aggregation unspecified; venue kline interval wins).
 - India F&O instrument master (Kotak Neo, **v1 refused**): [`india/kotak-neo/NFO-SCRIP-MASTER.md`](./india/kotak-neo/NFO-SCRIP-MASTER.md).
 
 ### `accounting-standards/`

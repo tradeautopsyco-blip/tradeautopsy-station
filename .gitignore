@@ -36,3 +36,6 @@ TradeAutopsy Station.app/
 **/xcuserdata/
 **/.swiftpm/
 .DS_Store
+
+# Local agent tooling state — audit logs, capability cache, generated reports
+.gstack/

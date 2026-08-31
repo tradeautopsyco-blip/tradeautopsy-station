@@ -24,7 +24,10 @@ mod tests {
 
     #[test]
     fn chain_unavailable_greeks_are_inherited_dark_with_data_none() {
-        let envelope = extract_greeks(InputHonesty::Dark(HonestyStatus::Unavailable));
+        let envelope = extract_greeks(
+            Some(crate::data::KOTAK_NSE_NFO_BOOK_ID),
+            InputHonesty::Dark(HonestyStatus::Unavailable),
+        );
         assert_eq!(envelope.status, HonestyStatus::InheritedDark);
         assert!(envelope.data.is_none());
         assert!(envelope.status.requires_data_none());
