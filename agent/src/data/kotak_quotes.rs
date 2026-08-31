@@ -237,14 +237,34 @@ fn instrument_id_from_quote_object_for_book(value: &Value, book_id: &str) -> Opt
     }
 }
 
-fn tick_from_object_for_book(
-    value: &Value,
-    received_at: DateTime<Utc>,
-    book_id: &str,
-) -> Option<QuoteTick> {
-    let instrument_id = instrument_id_from_quote_object_for_book(value, book_id)?;
-    let session_ohlc = session_ohlc_from_object(value);
-    let last = json_string(
+/// NFO last is **`ltp` and nothing else**.
+///
+/// Founder probe 2026-08-31 IST, `GET …/quotes/neosymbol/nse_fo%7C56526/{all,ltp}`
+/// HTTP 200: the live FO row names `ltp` (JSON string) and does **not** carry
+/// `last_traded_price`, `last`, `lastPrice`, or `LTP`. Those four were a guess,
+/// and this is the fetch that retired them — see `locks/kotak-nse-nfo.md` LTP
+/// field table and REST.md's FO observation.
+///
+/// **No `ohlc.close` fallback on this book**, deliberately:
+/// - The lock names last as `ltp`, not session close.
+/// - `quote_type=ltp` returns four keys and no `ohlc` at all, so a close
+///   fallback could only ever invent a price on that slice.
+/// - `quote_type=all` carries `ltp` *and* `ohlc` together, so a row missing
+///   `ltp` is unusable — it is not a licence to publish the close.
+/// - Close is a different quantity. Painting it as last is the same class of
+///   lie as the or-chain this function replaced.
+///
+/// `last_traded_quantity` / `last_volume` are also present on the live body and
+/// are **quantity and volume, not price** — they are not consulted here.
+fn nfo_last_from_object(value: &Value) -> Option<String> {
+    json_string(value.get("ltp")?)
+}
+
+/// Cash keeps the or-chain and the session-close fallback: a different book, a
+/// different observation (`nse_cm|11536`, 2026-08-27). Nothing in the FO probe
+/// licenses narrowing this one.
+fn cash_last_from_object(value: &Value, session_ohlc: Option<&SessionOhlc>) -> Option<String> {
+    json_string(
         value
             .get("last_traded_price")
             .or_else(|| value.get("ltp"))
@@ -252,7 +272,72 @@ fn tick_from_object_for_book(
             .or_else(|| value.get("lastPrice"))
             .or_else(|| value.get("LTP"))?,
     )
-    .or_else(|| session_ohlc.as_ref().map(|bar| bar.close.clone()))?;
+    .or_else(|| session_ohlc.map(|bar| bar.close.clone()))
+}
+
+/// One NFO open-interest reading, off the **same `quote_type=all` body** that
+/// feeds TickBook last. Kept beside the tick, never inside it: OI is not a price
+/// and must never reach `QuoteTick::last`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NfoOpenInterest {
+    /// `nse_fo|{token}` — the same identity as last.
+    pub instrument_id: String,
+    /// The venue's own `open_int` string. Station copies; it does not rescale.
+    pub open_interest: String,
+}
+
+/// NFO open interest is **`open_int` on `quote_type=all`**, and nothing else.
+///
+/// Founder probe 2026-08-31 IST: `…/nse_fo%7C56526/all` HTTP 200 names
+/// `open_int` (JSON string, parses as f64). The separate `quote_type=oi` slice
+/// names `oi_las` / `oi_high` / `oi_low` and carries **no** `open_int` — a second
+/// slice with a different spelling is not a second observation of the same
+/// number until a page says so, so those three stay recorded-but-unbound
+/// (`oi_las` is verbatim and truncated; it is **not** `oi_last`).
+///
+/// This reads the body Station already fetches for last. It does **not** dial a
+/// second GET, and it never reads FO master `dOpenInterest ` (a daily CSV cell,
+/// not a quotes snapshot).
+pub fn nfo_open_interest_from_kotak_json(raw: &str) -> Vec<NfoOpenInterest> {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return Vec::new();
+    };
+    quote_objects(&value)
+        .into_iter()
+        .filter_map(nfo_open_interest_from_object)
+        .collect()
+}
+
+fn nfo_open_interest_from_object(value: &Value) -> Option<NfoOpenInterest> {
+    let (segment, token) = quote_segment_and_token(value)?;
+    let instrument_id = kotak_nfo_instrument_id(&segment, &token)?;
+    // `open_int` only. Not `oi_las`, not `oi_high`, not `oi_low`, not `openInterest`.
+    let open_interest = json_string(value.get("open_int")?)?;
+    // A non-numeric or non-positive cell is unusable, not a zero to publish.
+    let parsed: f64 = open_interest.parse().ok()?;
+    if !parsed.is_finite() || parsed < 0.0 {
+        return None;
+    }
+    Some(NfoOpenInterest {
+        instrument_id,
+        open_interest,
+    })
+}
+
+fn tick_from_object_for_book(
+    value: &Value,
+    received_at: DateTime<Utc>,
+    book_id: &str,
+) -> Option<QuoteTick> {
+    let instrument_id = instrument_id_from_quote_object_for_book(value, book_id)?;
+    // The session bar still rides the envelope on both books. On NFO it may not
+    // become `last` — see below.
+    let session_ohlc = session_ohlc_from_object(value);
+    let last = if book_id == KOTAK_NSE_NFO_BOOK_ID {
+        nfo_last_from_object(value)?
+    } else {
+        cash_last_from_object(value, session_ohlc.as_ref())?
+    };
     let last_n: f64 = last.parse().ok()?;
     if last_n <= 0.0 {
         return None;
@@ -431,6 +516,199 @@ mod tests {
         assert_eq!(tick.book_id, "kotak-nse-bse-cash");
     }
 
+    /// The C11 regression. Founder probe 2026-08-31 named `ltp` on the live FO
+    /// body and proved the other four names absent; each of these must go red if
+    /// anyone restores the or-chain or the close fallback on this book.
+    /// O1: OI is `open_int` on `quote_type=all`, and only that. The `oi` slice's
+    /// `oi_las` / `oi_high` / `oi_low` stay recorded-but-unbound — a second slice
+    /// with a different spelling is not a second observation of the same number.
+    #[test]
+    fn nfo_open_interest_is_open_int_from_all_only() {
+        let all =
+            r#"[{"exchange":"nse_fo","exchange_token":"56526","ltp":"10.00","open_int":"480750"}]"#;
+        let rows = nfo_open_interest_from_kotak_json(all);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].instrument_id, "nse_fo|56526");
+        // The venue's own string, copied — not reparsed and reformatted.
+        assert_eq!(rows[0].open_interest, "480750");
+
+        // The `oi` slice, verbatim as observed: no `open_int`, so no reading.
+        let oi_slice = r#"[{"exchange":"nse_fo","exchange_token":"56526","oi_las":"480750","oi_high":"500000","oi_low":"400000"}]"#;
+        assert!(
+            nfo_open_interest_from_kotak_json(oi_slice).is_empty(),
+            "oi_las/oi_high/oi_low are unbound — only open_int on `all` may light OI"
+        );
+        // Not even under the tidied-up spelling nobody observed.
+        for unobserved in [
+            "oi_last",
+            "openInterest",
+            "open_interest",
+            "oi",
+            "dOpenInterest",
+        ] {
+            let body = format!(
+                r#"[{{"exchange":"nse_fo","exchange_token":"56526","{unobserved}":"480750"}}]"#
+            );
+            assert!(
+                nfo_open_interest_from_kotak_json(&body).is_empty(),
+                "{unobserved} is not the observed field name"
+            );
+        }
+    }
+
+    /// OI is not last, and last is not OI. The two never cross.
+    #[test]
+    fn open_interest_never_becomes_last_and_last_never_becomes_oi() {
+        // `open_int` alone, no `ltp`: an OI reading, but no tick.
+        let oi_only = r#"[{"exchange":"nse_fo","exchange_token":"56526","open_int":"480750"}]"#;
+        assert_eq!(nfo_open_interest_from_kotak_json(oi_only).len(), 1);
+        assert!(
+            quote_tick_from_kotak_json_for_book(oi_only, received(), KOTAK_NSE_NFO_BOOK_ID)
+                .is_none(),
+            "open interest must never be published as last"
+        );
+
+        // `ltp` alone, no `open_int`: a tick, but no OI reading.
+        let last_only = r#"[{"exchange":"nse_fo","exchange_token":"56526","ltp":"10.00"}]"#;
+        let tick =
+            quote_tick_from_kotak_json_for_book(last_only, received(), KOTAK_NSE_NFO_BOOK_ID)
+                .expect("nfo tick");
+        assert_eq!(tick.last, "10.00");
+        assert!(nfo_open_interest_from_kotak_json(last_only).is_empty());
+    }
+
+    /// Cash rows never produce an NFO OI reading, even carrying `open_int`.
+    #[test]
+    fn cash_rows_never_produce_an_nfo_open_interest_reading() {
+        let cash =
+            r#"[{"exchange":"nse_cm","exchange_token":"11536","ltp":"3224.00","open_int":"1"}]"#;
+        assert!(nfo_open_interest_from_kotak_json(cash).is_empty());
+        for other in ["bse_fo", "cde_fo", "mcx_fo", "bse_cm"] {
+            let body = format!(r#"[{{"exchange":"{other}","exchange_token":"1","open_int":"1"}}]"#);
+            assert!(
+                nfo_open_interest_from_kotak_json(&body).is_empty(),
+                "{other}"
+            );
+        }
+    }
+
+    /// An unusable cell is no reading — never a zero to publish.
+    #[test]
+    fn unusable_open_int_cells_yield_no_reading() {
+        for bad in ["", "   ", "abc", "-1", "null"] {
+            let body =
+                format!(r#"[{{"exchange":"nse_fo","exchange_token":"56526","open_int":"{bad}"}}]"#);
+            assert!(
+                nfo_open_interest_from_kotak_json(&body).is_empty(),
+                "open_int {bad:?} must not light OI"
+            );
+        }
+        // Zero is a real, publishable reading — an illiquid strike genuinely has none.
+        let zero = r#"[{"exchange":"nse_fo","exchange_token":"56526","open_int":"0"}]"#;
+        assert_eq!(nfo_open_interest_from_kotak_json(zero).len(), 1);
+    }
+
+    #[test]
+    fn nfo_last_is_ltp_only_and_the_dead_aliases_stay_dark() {
+        // Observed live shape: root array, `ltp`, `exchange` + `exchange_token`.
+        let observed = r#"[{"display_symbol":"NIFTY2692221000PE","exchange":"nse_fo","exchange_token":"56526","ltp":"10.00","open_int":"480750"}]"#;
+        let tick = quote_tick_from_kotak_json_for_book(observed, received(), KOTAK_NSE_NFO_BOOK_ID)
+            .expect("ltp lights NFO last");
+        assert_eq!(tick.last, "10.00");
+        assert_eq!(tick.book_id, KOTAK_NSE_NFO_BOOK_ID);
+        // Key is `nse_fo|{token}` — `display_symbol` never enters the identity.
+        assert_eq!(tick.instrument_id, "nse_fo|56526");
+        assert!(!tick.instrument_id.contains("NIFTY"));
+
+        // Each dead alias, alone, on the NFO book: no tick.
+        for dead in [
+            "last_traded_price",
+            "last",
+            "lastPrice",
+            "LTP",
+            // Present on the live body, but quantity/volume — never a price.
+            "last_traded_quantity",
+            "last_volume",
+        ] {
+            let body =
+                format!(r#"[{{"exchange":"nse_fo","exchange_token":"56526","{dead}":"10.00"}}]"#);
+            assert!(
+                quote_tick_from_kotak_json_for_book(&body, received(), KOTAK_NSE_NFO_BOOK_ID)
+                    .is_none(),
+                "{dead} must not light NFO last — it is absent from the live FO body"
+            );
+        }
+    }
+
+    /// `quote_type=all` carries `ltp` *and* `ohlc`. A row missing `ltp` is
+    /// unusable; it is not a licence to publish the session close as last. And
+    /// `quote_type=ltp` has no `ohlc` at all, so a fallback could only invent one.
+    #[test]
+    fn nfo_never_falls_back_to_session_close_as_last() {
+        let no_ltp = r#"[{"exchange":"nse_fo","exchange_token":"56526","ohlc":{"open":"9.55","high":"11.20","low":"9.10","close":"9.80"}}]"#;
+        assert!(
+            quote_tick_from_kotak_json_for_book(no_ltp, received(), KOTAK_NSE_NFO_BOOK_ID)
+                .is_none(),
+            "close is a different quantity — it must never be painted as NFO last"
+        );
+        // Cash is a different book and a different observation, and its behaviour
+        // is unchanged by this narrow. Note what the cash fallback actually is:
+        // the `?` sits inside the or-chain, so a row with *no* last key at all is
+        // None on cash too — the close only covers a last key that is present but
+        // not stringable (here, `null`).
+        let cash_no_key = r#"{"instrument_token":"2885","exchange_segment":"nse_cm","ohlc":{"open":"1","high":"2","low":"0.5","close":"1.5"}}"#;
+        assert!(quote_tick_from_kotak_json_for_book(
+            cash_no_key,
+            received(),
+            KOTAK_NSE_BSE_CASH_BOOK_ID
+        )
+        .is_none());
+        let cash_null_last = r#"{"instrument_token":"2885","exchange_segment":"nse_cm","last_traded_price":null,"ohlc":{"open":"1","high":"2","low":"0.5","close":"1.5"}}"#;
+        let cash = quote_tick_from_kotak_json_for_book(
+            cash_null_last,
+            received(),
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+        )
+        .expect("cash keeps its session-close fallback");
+        assert_eq!(cash.last, "1.5");
+
+        // The same null-last row on NFO stays dark: no fallback on this book.
+        let nfo_null_last = r#"[{"exchange":"nse_fo","exchange_token":"56526","ltp":null,"ohlc":{"open":"1","high":"2","low":"0.5","close":"1.5"}}]"#;
+        assert!(quote_tick_from_kotak_json_for_book(
+            nfo_null_last,
+            received(),
+            KOTAK_NSE_NFO_BOOK_ID
+        )
+        .is_none());
+
+        // A lit NFO row still carries the session bar — it just is not last.
+        let both = r#"[{"exchange":"nse_fo","exchange_token":"56526","ltp":"10.00","ohlc":{"open":"9.55","high":"11.20","low":"9.10","close":"9.80"}}]"#;
+        let tick = quote_tick_from_kotak_json_for_book(both, received(), KOTAK_NSE_NFO_BOOK_ID)
+            .expect("nfo tick");
+        assert_eq!(tick.last, "10.00");
+        assert_ne!(tick.last, "9.80");
+        assert_eq!(
+            tick.session_ohlc.as_ref().map(|bar| bar.close.as_str()),
+            Some("9.80")
+        );
+    }
+
+    /// Cash was not narrowed: both the v1 name and `ltp` still light it.
+    #[test]
+    fn cash_last_still_accepts_v1_and_ltp() {
+        let v1 = r#"{"instrument_token":"2885","exchange_segment":"nse_cm","last_traded_price":"1400.50"}"#;
+        assert_eq!(
+            quote_tick_from_kotak_json(v1, received())
+                .expect("cash v1")
+                .last,
+            "1400.50"
+        );
+        let live = r#"[{"exchange":"nse_cm","exchange_token":"11536","ltp":"3224.00"}]"#;
+        let tick = quote_tick_from_kotak_json(live, received()).expect("cash ltp");
+        assert_eq!(tick.last, "3224.00");
+        assert_eq!(tick.instrument_id, "nse_cm|11536");
+    }
+
     #[test]
     fn fo_json_on_nfo_book_stores_nfo_last_not_cash_reliance() {
         let fo_v1 = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
@@ -445,7 +723,13 @@ mod tests {
         .is_empty());
         assert!(quote_ticks_from_kotak_json_for_book(fo_v1, received(), "unknown-book").is_empty());
 
-        let tick = quote_tick_from_kotak_json_for_book(fo_v1, received(), KOTAK_NSE_NFO_BOOK_ID)
+        // Narrowed 2026-08-31: the v1 `last_traded_price` shape no longer lights
+        // NFO last. The observed `ltp` shape does.
+        assert!(
+            quote_tick_from_kotak_json_for_book(fo_v1, received(), KOTAK_NSE_NFO_BOOK_ID).is_none(),
+            "last_traded_price is absent from the live FO body — it must not light NFO last"
+        );
+        let tick = quote_tick_from_kotak_json_for_book(fo_v2, received(), KOTAK_NSE_NFO_BOOK_ID)
             .expect("nfo tick");
         assert_eq!(tick.instrument_id, "nse_fo|12345");
         assert_eq!(tick.book_id, KOTAK_NSE_NFO_BOOK_ID);
@@ -471,14 +755,12 @@ mod tests {
             .is_some());
         assert!(book.get(KOTAK_NSE_NFO_BOOK_ID, "nse_fo|12345").is_some());
 
-        let bse_fo =
-            r#"{"instrument_token":"1","exchange_segment":"bse_fo","last_traded_price":"10.00"}"#;
+        let bse_fo = r#"{"exchange_token":"1","exchange":"bse_fo","ltp":"10.00"}"#;
         assert!(
             quote_tick_from_kotak_json_for_book(bse_fo, received(), KOTAK_NSE_NFO_BOOK_ID)
                 .is_none()
         );
-        let cde_fo =
-            r#"{"instrument_token":"1","exchange_segment":"cde_fo","last_traded_price":"10.00"}"#;
+        let cde_fo = r#"{"exchange_token":"1","exchange":"cde_fo","ltp":"10.00"}"#;
         assert!(
             quote_tick_from_kotak_json_for_book(cde_fo, received(), KOTAK_NSE_NFO_BOOK_ID)
                 .is_none()

@@ -827,3 +827,122 @@ async fn nfo_plant_does_not_steal_cash_adapter_obtain() {
 
     handle.abort();
 }
+
+/// O1 on the wire: `obtain?book=kotak-nse-nfo&operation=open_interest` Successes
+/// from `open_int` on the same `quote_type=all` body that feeds last. The `oi`
+/// slice spellings must not appear, and NFO depth stays unsupported.
+#[tokio::test]
+async fn planted_nfo_open_interest_lights_from_open_int_only() {
+    const PORT: u16 = 19_494;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_nfo_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    // Select the contract the way the desk does.
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C12345"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind nfo")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "nse_fo|12345");
+
+    let oi: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=open_interest"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo oi obtain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(oi["status"], "success");
+    assert_eq!(oi["book_id"], "kotak-nse-nfo");
+    assert_eq!(oi["data"]["identity"]["capability_id"], "open_interest");
+    assert_eq!(oi["data"]["identity"]["physics"], "latest_state");
+    assert_ne!(oi["data"]["identity"]["physics"], "bounded_snapshot");
+    assert_eq!(oi["data"]["field"], "open_int");
+    assert_eq!(oi["data"]["instrument_id"], "nse_fo|12345");
+    let value = oi["data"]["open_interest"].as_str().expect("open interest");
+    assert!(value.parse::<f64>().unwrap() >= 0.0);
+    assert_eq!(oi["provenance_adapter_id"], "kotak_neo");
+    let wire = oi.to_string();
+    // Unbound `oi` slice spellings, and the master CSV cell, never reach the wire.
+    for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
+        assert!(!wire.contains(unbound), "{unbound} must stay unbound");
+    }
+    // OI is not a price: it must not be published as last.
+    assert!(oi["data"].get("last").is_none());
+
+    // The glance route lights the same reading.
+    let glance: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/oi?book=kotak-nse-nfo&instrument=nse_fo%7C12345"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo oi glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(glance["status"], "success");
+    assert_eq!(glance["data"]["field"], "open_int");
+
+    // NFO depth is a separate, still-unobserved body — it stays unsupported.
+    let depth: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=depth"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo depth obtain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(depth["status"], "unsupported");
+
+    handle.abort();
+}
+
+/// Without the plant there is no reading, so OI is Unavailable — never
+/// `unsupported` (it is implemented) and never an `open_interest: 0` Success.
+#[tokio::test]
+async fn nfo_open_interest_without_a_reading_is_unavailable_not_zero() {
+    const PORT: u16 = 19_495;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+
+    let oi: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=open_interest"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo oi obtain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(oi["status"], "unavailable");
+    assert_ne!(oi["status"], "unsupported");
+    assert_ne!(oi["status"], "success");
+    assert!(oi["data"].is_null());
+    assert!(!oi.to_string().contains("\"open_interest\":\"0\""));
+
+    handle.abort();
+}

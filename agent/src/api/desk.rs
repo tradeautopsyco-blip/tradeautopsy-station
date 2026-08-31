@@ -352,6 +352,7 @@ impl AppState {
             self.kotak_session_locator.clone(),
             &self.kotak_quote_inflight,
             self.quote_fetch_error.clone(),
+            Some(self.nfo_open_interest.clone()),
             &id,
         );
         crate::kotak_rest_quotes::ensure_kotak_rest_depth(
@@ -385,6 +386,7 @@ impl AppState {
             self.kotak_session_locator.clone(),
             self.kotak_quote_inflight.clone(),
             self.quote_fetch_error.clone(),
+            Some(self.nfo_open_interest.clone()),
             &id,
         )
         .await;

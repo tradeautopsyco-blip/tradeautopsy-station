@@ -479,11 +479,20 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
         manifest_id: "kotak_neo.nfo.v1".into(),
         adapter_id: "kotak_neo".into(),
         book_id: "kotak-nse-nfo".into(),
-        implemented: vec!["quotes".into(), "instruments".into(), "optionchain".into()],
+        implemented: vec![
+            "quotes".into(),
+            "instruments".into(),
+            "optionchain".into(),
+            "open_interest".into(),
+        ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
-            optionchain_binding("kotak_neo", coverage, AuthMode::PrivateRead),
+            optionchain_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            // LatestState from `open_int` on the `quote_type=all` body Station
+            // already fetches for last. Observed 2026-08-31 — see the lock's OI
+            // row. Not the `oi` slice, not master `dOpenInterest `.
+            open_interest_binding("kotak_neo", coverage, AuthMode::PrivateRead),
         ],
     }
 }
@@ -1049,10 +1058,34 @@ mod tests {
         assert_eq!(nfo.adapter_id, "kotak_neo");
         assert_eq!(
             nfo.implemented,
-            vec!["quotes", "instruments", "optionchain"]
+            vec!["quotes", "instruments", "optionchain", "open_interest"]
         );
         assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
         assert!(nfo.implemented.iter().any(|op| op == "instruments"));
+        // OI on NFO is LatestState from `open_int` (observed 2026-08-31), on the
+        // quotes GET Station already makes. Empty slot → Unavailable, never
+        // Unsupported and never `{open_interest: 0}` Success.
+        assert_eq!(
+            obtain(&nfo, "open_interest").status,
+            ObtainStatus::Unavailable
+        );
+        assert_ne!(
+            obtain(&nfo, "open_interest").status,
+            ObtainStatus::Unsupported
+        );
+        assert!(obtain(&nfo, "open_interest").data.is_none());
+        let nfo_oi = nfo
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "open_interest")
+            .expect("nfo open_interest binding");
+        assert_eq!(nfo_oi.capability_id, "open_interest");
+        assert_eq!(nfo_oi.physics, Physics::LatestState);
+        assert_ne!(nfo_oi.physics, Physics::BoundedSnapshot);
+        // Kotak quotes are session-attached, never public.
+        assert_eq!(nfo_oi.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(nfo_oi.rights, Rights::research_fetch_only());
+        assert_ne!(nfo_oi.rights, Rights::desk_display());
         // NFO depth stays unclaimed — that is a separate, still-unobserved body.
         assert!(!nfo.implemented.iter().any(|op| op == "depth"));
         assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);

@@ -73,6 +73,7 @@ fn clear_quote_fetch_class(map: &QuoteFetchErrorMap, instrument: &str) {
 
 /// Fetch once per instrument when TickBook has no Kotak last. No book.subscribe
 /// (that would close REST). Rate window is unspecified — do not poll.
+#[allow(clippy::too_many_arguments)]
 pub fn ensure_kotak_rest_quote(
     registry: Arc<Registry>,
     book: Arc<Mutex<TickBook>>,
@@ -80,6 +81,8 @@ pub fn ensure_kotak_rest_quote(
     locator: SessionLocator,
     inflight: &Arc<Mutex<HashSet<String>>>,
     quote_fetch_error: QuoteFetchErrorMap,
+    // NFO open interest rides the same body. `None` = do not collect.
+    nfo_oi: Option<NfoOpenInterestSlot>,
     instrument_id: &str,
 ) {
     let instrument = instrument_id.trim().to_ascii_lowercase();
@@ -105,6 +108,7 @@ pub fn ensure_kotak_rest_quote(
             locator,
             inflight,
             quote_fetch_error,
+            nfo_oi,
             &instrument,
         )
         .await;
@@ -114,6 +118,7 @@ pub fn ensure_kotak_rest_quote(
 /// Same REST GET as `ensure_kotak_rest_quote`, but the caller waits until TickBook
 /// or `quote_fetch_error` is set. `GET /api/station/quote` uses this so Last is not
 /// painted from an empty book while the fetch is still in flight. Does not poll Kotak.
+#[allow(clippy::too_many_arguments)]
 pub async fn await_kotak_rest_quote(
     registry: Arc<Registry>,
     book: Arc<Mutex<TickBook>>,
@@ -121,6 +126,8 @@ pub async fn await_kotak_rest_quote(
     locator: SessionLocator,
     inflight: Arc<Mutex<HashSet<String>>>,
     quote_fetch_error: QuoteFetchErrorMap,
+    // NFO open interest rides the same body. `None` = do not collect.
+    nfo_oi: Option<NfoOpenInterestSlot>,
     instrument_id: &str,
 ) {
     let instrument = instrument_id.trim().to_ascii_lowercase();
@@ -167,6 +174,7 @@ pub async fn await_kotak_rest_quote(
         vault.as_ref(),
         &environment,
         &connection_id,
+        nfo_oi.as_ref(),
         &instrument,
     )
     .await;
@@ -242,6 +250,26 @@ pub fn apply_kotak_quote_body(
         received_at,
         KOTAK_NSE_BSE_CASH_BOOK_ID,
     )
+}
+
+/// Per-instrument NFO open interest, read off the `quote_type=all` body that
+/// already feeds TickBook last. A slot beside the tick — OI is not a price and
+/// never enters `QuoteTick::last`.
+pub type NfoOpenInterestSlot = Arc<Mutex<HashMap<String, crate::data::NfoOpenInterest>>>;
+
+/// Land every `open_int` in this body into the slot. Same body, no extra GET.
+pub fn apply_nfo_open_interest_body(slot: &NfoOpenInterestSlot, body: &str) -> usize {
+    let rows = crate::data::nfo_open_interest_from_kotak_json(body);
+    if rows.is_empty() {
+        return 0;
+    }
+    let mut guard = slot.lock().expect("nfo open interest mutex poisoned");
+    let mut applied = 0;
+    for row in rows {
+        guard.insert(row.instrument_id.clone(), row);
+        applied += 1;
+    }
+    applied
 }
 
 pub fn apply_kotak_quote_body_for_book(
@@ -386,12 +414,15 @@ fn persist_unusable_quotes(map: &QuoteFetchErrorMap, instrument: &str, body: &st
     persist_quote_fetch_class(map, instrument, class);
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn fetch_and_apply(
     registry: &Registry,
     book: &Arc<Mutex<TickBook>>,
     vault: &dyn BrokerCredentialVault,
     environment: &str,
     connection_id: &str,
+    // NFO open interest off the same body. `None` = do not collect.
+    nfo_oi: Option<&NfoOpenInterestSlot>,
     instrument_id: &str,
 ) -> Result<(usize, String), QuoteFetchError> {
     let body = fetch_quotes_json(
@@ -406,9 +437,17 @@ async fn fetch_and_apply(
     let book_id = kotak_quote_book_id(instrument_id).ok_or(QuoteFetchError {
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
-    let mut guard = book.lock().expect("tickbook mutex poisoned");
-    let applied =
-        apply_kotak_quote_body_for_book(registry, &mut guard, &body, received_at, book_id);
+    let applied = {
+        let mut guard = book.lock().expect("tickbook mutex poisoned");
+        apply_kotak_quote_body_for_book(registry, &mut guard, &body, received_at, book_id)
+    };
+    // Open interest off the SAME body — one GET serves last and OI. Only the NFO
+    // book names `open_int`; cash rows simply produce no reading.
+    if let Some(slot) = nfo_oi {
+        if book_id == crate::data::KOTAK_NSE_NFO_BOOK_ID {
+            apply_nfo_open_interest_body(slot, &body);
+        }
+    }
     Ok((applied, body))
 }
 
@@ -622,6 +661,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             "nse_cm|2885",
         )
         .await;
@@ -645,6 +685,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             "nse_cm|2885",
         )
         .await;
@@ -662,7 +703,9 @@ mod tests {
     fn fo_body_applies_to_nfo_book_not_cash() {
         let registry = Registry::load(&[kotak_neo_quote_descriptor()]).unwrap();
         let mut book = TickBook::new();
-        let json = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        // Observed FO shape (probe 2026-08-31): `ltp` + `exchange`/`exchange_token`.
+        let json =
+            r#"[{"exchange":"nse_fo","exchange_token":"12345","ltp":"10.00","open_int":"480750"}]"#;
         assert_eq!(
             apply_kotak_quote_body(&registry, &mut book, json, Utc::now()),
             0
@@ -742,7 +785,9 @@ mod tests {
         use crate::data::KOTAK_NSE_NFO_BOOK_ID;
         let registry = Arc::new(Registry::load(&[kotak_neo_quote_descriptor()]).unwrap());
         let mut book = TickBook::new();
-        let json = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        // Observed FO shape (probe 2026-08-31): `ltp` + `exchange`/`exchange_token`.
+        let json =
+            r#"[{"exchange":"nse_fo","exchange_token":"12345","ltp":"10.00","open_int":"480750"}]"#;
         apply_kotak_quote_body_for_book(
             registry.as_ref(),
             &mut book,
@@ -759,6 +804,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             "nse_fo|12345",
         )
         .await;
@@ -782,6 +828,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             "nse_fo|12345",
         )
         .await;
@@ -793,5 +840,239 @@ mod tests {
                 .map(String::as_str),
             Some("session")
         );
+    }
+}
+
+/// Bucket 2 research probe — **not** a CI test. Answers exactly two questions
+/// against a live logged-in session: what JSON key is *last* on `nse_fo|{token}`,
+/// and what key (if any) is *open interest* on the same path.
+///
+/// `#[ignore]` plus a required env var: this makes a real authenticated
+/// `PrivateRead` GET to Kotak with the founder's session, so it must never run
+/// from a bare `cargo test`. Run it deliberately:
+///
+/// ```text
+/// KOTAK_FO_PROBE=1 KOTAK_FO_PROBE_TOKEN=56526 \
+///   cargo test --lib fo_quotes_field_probe -- --ignored --nocapture
+/// ```
+///
+/// It prints **key names and JSON types only** — never a value, never a header
+/// value, never the body. The redacted example object is `{"key": "<type>"}`, so
+/// the output is safe to paste into the lock.
+#[cfg(test)]
+mod fo_quotes_field_probe {
+    use super::*;
+    use crate::ubi::BrokerCredentialVault as _;
+    use crate::ubi::{prepare_kotak_catalog_get, HostCredentialBlob, KeyringBrokerCredentialVault};
+    use serde_json::Value;
+
+    /// Type name only. A value never reaches the transcript.
+    fn type_of(value: &Value) -> &'static str {
+        match value {
+            Value::Null => "null",
+            Value::Bool(_) => "bool",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        }
+    }
+
+    /// `root_keys=["<array>"]` / `["message"]` / sorted object keys — the same
+    /// shape line the cash row records in REST.md.
+    fn root_shape(value: &Value) -> String {
+        match value {
+            Value::Array(rows) => format!("root_keys=[\"<array>\"] len={}", rows.len()),
+            Value::Object(map) => {
+                let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+                keys.sort_unstable();
+                format!("root_keys={keys:?}")
+            }
+            other => format!("root is {}", type_of(other)),
+        }
+    }
+
+    /// First row of whatever envelope came back: bare array, `{message:[…]}`, or
+    /// the object itself.
+    fn first_row(value: &Value) -> Option<&Value> {
+        match value {
+            Value::Array(rows) => rows.first(),
+            Value::Object(map) => map
+                .get("message")
+                .or_else(|| map.get("data"))
+                .and_then(|inner| match inner {
+                    Value::Array(rows) => rows.first(),
+                    object @ Value::Object(_) => Some(object),
+                    _ => None,
+                })
+                .or(Some(value)),
+            _ => None,
+        }
+    }
+
+    /// Every key whose *name* could plausibly carry a last price or an OI, so the
+    /// report names what is actually present instead of asserting a guess. This
+    /// list decides nothing — the lock cites whatever the body turns out to name.
+    fn candidates(row: &Value, needles: &[&str]) -> Vec<String> {
+        let Value::Object(map) = row else {
+            return Vec::new();
+        };
+        map.iter()
+            .filter(|(key, _)| {
+                let lower = key.to_ascii_lowercase();
+                needles.iter().any(|needle| lower.contains(needle))
+            })
+            .map(|(key, value)| format!("{key} ({})", type_of(value)))
+            .collect()
+    }
+
+    async fn probe(quote_type: &str, instrument_id: &str) {
+        let vault = KeyringBrokerCredentialVault::new();
+        let connection_id = std::env::var("KOTAK_FO_PROBE_CONNECTION")
+            .unwrap_or_else(|_| "00000000-0000-4000-8000-000000000003".to_string());
+        let blob = match vault.load("prod", KOTAK_NEO, &connection_id) {
+            Ok(Some(blob)) => blob,
+            other => {
+                println!("[{quote_type}] SESSION: no stored Kotak session ({other:?}) — this is a session problem, not a schema answer. Lock stays NOT SPECIFIED.");
+                return;
+            }
+        };
+        let creds = HostCredentialBlob::from(&blob);
+        let HostCredentialBlob::KotakSession { ref base_url, .. } = creds else {
+            println!("[{quote_type}] SESSION: stored blob is not a Kotak session.");
+            return;
+        };
+        let host = match kotak_base_host(base_url) {
+            Some(host) => host,
+            None => {
+                println!("[{quote_type}] SESSION: baseUrl has no host.");
+                return;
+            }
+        };
+        let path = quotes_neosymbol_path(instrument_id, quote_type);
+        let book_id = match kotak_quote_book_id(instrument_id) {
+            Some(id) => id,
+            None => {
+                println!("[{quote_type}] {instrument_id} is not a Kotak quote id.");
+                return;
+            }
+        };
+        let prepared = match prepare_kotak_catalog_get(&path, &creds) {
+            Ok(prepared) => prepared,
+            Err(err) => {
+                println!("[{quote_type}] PREPARE failed: {err}");
+                return;
+            }
+        };
+        // Header NAMES only — values are session secrets.
+        let header_names: Vec<&str> = prepared
+            .headers
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        println!("\n───── quote_type={quote_type} · instrument={instrument_id} · book={book_id}");
+        println!("host: {host}");
+        println!("path: {path}");
+        println!("session headers attached (names only): {header_names:?}");
+
+        let resp = match crate::egress::shared()
+            .send_prepared(
+                book_id,
+                crate::egress::Lane::PrivateRead,
+                &prepared,
+                Duration::from_secs(20),
+            )
+            .await
+        {
+            Ok(resp) => resp,
+            Err(err) => {
+                println!("EGRESS refused/failed: {err:?} — session or fence, not a schema answer.");
+                return;
+            }
+        };
+        println!("HTTP status: {}", resp.status);
+        if resp.status == 401 || resp.status == 403 {
+            println!("=> Session, not schema. Do not parse. Lock stays NOT SPECIFIED.");
+            return;
+        }
+        if !resp.is_success() {
+            println!("=> Non-2xx. Lock stays NOT SPECIFIED.");
+            return;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(&resp.body) else {
+            println!("body did not parse as JSON (len={})", resp.body.len());
+            return;
+        };
+        println!("{}", root_shape(&value));
+        let Some(row) = first_row(&value) else {
+            println!("no first row to read keys from");
+            return;
+        };
+        if let Value::Object(map) = row {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            println!("first-row keys (sorted): {keys:?}");
+            // Redacted example object: names + types, no values.
+            let redacted: Vec<String> = keys
+                .iter()
+                .map(|key| format!("\"{key}\": \"<{}>\"", type_of(&map[*key])))
+                .collect();
+            println!("redacted example row: {{{}}}", redacted.join(", "));
+        } else {
+            println!("first row is {} not an object", type_of(row));
+        }
+        println!(
+            "LAST candidates: {:?}",
+            candidates(row, &["ltp", "last", "close", "price"])
+        );
+        println!(
+            "OI candidates: {:?}",
+            candidates(row, &["oi", "openinterest", "open_interest", "interest"])
+        );
+        println!(
+            "IDENTITY candidates: {:?}",
+            candidates(row, &["exchange", "token", "segment", "symbol"])
+        );
+        // Instrument identity values only — public market metadata, never a secret.
+        // Needed because TickBook builds `{exchange}|{exchange_token}`: the lock has
+        // to say whether an FO row reports `nse_fo` there, or something else.
+        if let Value::Object(map) = row {
+            for key in ["exchange", "exchange_token", "display_symbol"] {
+                if let Some(Value::String(value)) = map.get(key) {
+                    println!("  identity {key} = {value:?}");
+                }
+            }
+            // Do the named last / OI strings parse as numbers? Names and
+            // parseability go in the lock; the prices themselves do not.
+            for key in ["ltp", "open_int", "oi_las", "oi_high", "oi_low"] {
+                if let Some(Value::String(value)) = map.get(key) {
+                    println!(
+                        "  {key}: string, parses_as_f64={}, empty={}",
+                        value.trim().parse::<f64>().is_ok(),
+                        value.trim().is_empty()
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "live authenticated Kotak GET; run deliberately with KOTAK_FO_PROBE=1"]
+    async fn fo_quotes_field_probe() {
+        if std::env::var("KOTAK_FO_PROBE").is_err() {
+            println!("set KOTAK_FO_PROBE=1 to run the live probe");
+            return;
+        }
+        let token = std::env::var("KOTAK_FO_PROBE_TOKEN").unwrap_or_else(|_| "56526".to_string());
+        let instrument_id = format!("nse_fo|{token}");
+        println!(
+            "Bucket 2 probe · {} · instrument={instrument_id}",
+            chrono::Local::now().to_rfc3339()
+        );
+        // Order matters: `all` is what Station already dials, `ltp` confirms the
+        // same key on a thinner slice, `oi` is the only thing that answers O1.
+        for quote_type in ["all", "ltp", "oi"] {
+            probe(quote_type, &instrument_id).await;
+        }
     }
 }

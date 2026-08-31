@@ -1,11 +1,15 @@
-{
-  "message": [
-    {
-      "last_traded_time": "26/08/2026 15:29:59",
-      "last_traded_price": "10.00",
-      "instrument_token": "12345",
-      "exchange_segment": "nse_fo",
-      "trading_symbol": "BANKNIFTY25SEP57500CE"
+[
+  {
+    "display_symbol": "BANKNIFTY25SEP57500CE",
+    "exchange": "nse_fo",
+    "exchange_token": "12345",
+    "ltp": "10.00",
+    "open_int": "480750",
+    "ohlc": {
+      "open": "9.55",
+      "high": "11.20",
+      "low": "9.10",
+      "close": "9.80"
     }
-  ]
-}
+  }
+]

@@ -110,7 +110,8 @@ pub use force_order::{
 };
 pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
-    extract_open_interest_from, ChainRow, GlanceEnvelope, GlanceStatus,
+    extract_open_interest_for_book, extract_open_interest_from, ChainRow, GlanceEnvelope,
+    GlanceStatus,
 };
 pub use greeks::{
     extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksSource, GreeksStatus,
@@ -145,9 +146,10 @@ pub use kotak_depth::{
     extract_depth, extract_depth_on_book, DepthEnvelope, DepthStatus,
 };
 pub use kotak_quotes::{
-    is_cash_segment, is_nfo_segment, kotak_quote_book_id, parse_nfo_instrument_id,
-    quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
-    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
+    is_cash_segment, is_nfo_segment, kotak_quote_book_id, nfo_open_interest_from_kotak_json,
+    parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
+    quote_ticks_from_kotak_json, quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,
+    NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
 };
 pub use margin_estimate::extract_margin_estimate;
 pub use market_bind::MarketBind;

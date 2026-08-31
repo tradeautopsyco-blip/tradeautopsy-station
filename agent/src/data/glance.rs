@@ -19,6 +19,7 @@ use super::descriptor::{
 };
 use super::honesty::HonestyStatus;
 use super::identity::{CapabilityId, Family, Identity, Physics};
+use super::kotak_quotes::NfoOpenInterest;
 use super::provenance::ProvenanceLine;
 use super::tickbook::TickBook;
 use serde::Serialize;
@@ -137,10 +138,12 @@ fn chain_path_for_book(book_id: &str) -> &'static str {
     }
 }
 
-/// Upstream path a lit OI came from. NFO OI is still a hole, so it names nothing.
+/// Upstream path a lit OI came from. NFO OI rides the `quote_type=all` quotes
+/// GET that already feeds last — there is no second fetch and no `oi` slice.
 fn oi_path_for_book(book_id: &str) -> &'static str {
     match book_id {
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/openInterest",
+        id if id == KOTAK_NSE_NFO_BOOK_ID => "/script-details/1.0/quotes/neosymbol/{id}/all",
         _ => "",
     }
 }
@@ -264,10 +267,21 @@ pub fn extract_open_interest(book_id: Option<&str>, instrument_id: &str) -> Glan
     extract_open_interest_from(book_id, instrument_id, None)
 }
 
+/// Binance-options arm (eapi rows). NFO callers use
+/// [`extract_open_interest_for_book`] and pass the `open_int` reading.
 pub fn extract_open_interest_from(
     book_id: Option<&str>,
     instrument_id: &str,
     rows: Option<&[OptionsOiRow]>,
+) -> GlanceEnvelope {
+    extract_open_interest_for_book(book_id, instrument_id, rows, None)
+}
+
+pub fn extract_open_interest_for_book(
+    book_id: Option<&str>,
+    instrument_id: &str,
+    rows: Option<&[OptionsOiRow]>,
+    nfo: Option<&NfoOpenInterest>,
 ) -> GlanceEnvelope {
     let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
         return dark_oi(book_id, instrument_id, BOOK_REQUIRED);
@@ -280,14 +294,44 @@ pub fn extract_open_interest_from(
         id if id == BINANCE_COM_SPOT_BOOK_ID => {
             dark_oi(Some(book), instrument_id, SPOT_IS_NOT_CHAIN)
         }
-        id if id == KOTAK_NSE_NFO_BOOK_ID => {
-            dark_oi(Some(book), instrument_id, OI_FIELD_UNSPECIFIED)
-        }
+        id if id == KOTAK_NSE_NFO_BOOK_ID => match nfo {
+            Some(row) => lit_nfo_oi(book, instrument_id, row),
+            // Empty / missing `open_int` is Unavailable — never `{oi: 0}` Success.
+            None => dark_oi(Some(book), instrument_id, OI_FIELD_UNSPECIFIED),
+        },
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => match rows {
             Some(rows) if !rows.is_empty() => lit_oi(book, instrument_id, rows),
             _ => dark_oi(Some(book), instrument_id, OPTIONS_OI_UNSPECIFIED),
         },
         _ => dark_oi(Some(book), instrument_id, BOOK_REQUIRED),
+    }
+}
+
+/// LatestState from the one named field. `open_interest` is the venue's own
+/// `open_int` string, copied — Station does not rescale it, and it never carries
+/// `oi_las` / `oi_high` / `oi_low` (different slice, different spelling, unbound).
+fn lit_nfo_oi(book_id: &str, instrument_id: &str, row: &NfoOpenInterest) -> GlanceEnvelope {
+    let identity = oi_identity();
+    GlanceEnvelope {
+        identity: identity.clone(),
+        instrument_id: display_instrument(Some(book_id), instrument_id),
+        status: GlanceStatus::Success,
+        data: Some(serde_json::json!({
+            "identity": identity,
+            "instrument_id": row.instrument_id,
+            "open_interest": row.open_interest,
+            "field": "open_int",
+        })),
+        provenance: ProvenanceLine {
+            identity,
+            model: "raw".to_string(),
+            input_at: None,
+            adapter_id: adapter_for_book(book_id).to_string(),
+            path: oi_path_for_book(book_id).to_string(),
+        },
+        ineligible: Vec::new(),
+        canonical: false,
+        persist_canonical: false,
     }
 }
 
@@ -338,6 +382,54 @@ pub fn chain_input_honesty(envelope: &GlanceEnvelope) -> super::honesty::InputHo
 
 #[cfg(test)]
 mod tests {
+    /// NFO OI: Success from the one named field, Unavailable without it. Never
+    /// `{open_interest: 0}` as a stand-in for "not fetched".
+    #[test]
+    fn nfo_open_interest_lights_from_open_int_and_stays_dark_without_it() {
+        use crate::data::kotak_quotes::NfoOpenInterest;
+
+        let reading = NfoOpenInterest {
+            instrument_id: "nse_fo|56526".to_string(),
+            open_interest: "480750".to_string(),
+        };
+        let lit = extract_open_interest_for_book(
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            "nse_fo|56526",
+            None,
+            Some(&reading),
+        );
+        assert_eq!(lit.status, GlanceStatus::Success);
+        assert_eq!(lit.identity.physics, Physics::LatestState);
+        assert_ne!(lit.identity.physics, Physics::BoundedSnapshot);
+        assert!(lit.ineligible.is_empty());
+        let data = lit.data.as_ref().expect("oi data");
+        assert_eq!(data["open_interest"], "480750");
+        assert_eq!(data["field"], "open_int");
+        assert_eq!(data["instrument_id"], "nse_fo|56526");
+        assert_eq!(lit.provenance.adapter_id, KOTAK_NEO_ADAPTER_ID);
+        // Provenance names the quotes GET, not the `oi` slice and not eapi.
+        assert!(lit.provenance.path.ends_with("/all"));
+        assert!(!lit.provenance.path.contains("/oi"));
+        assert!(!lit.provenance.path.contains("eapi"));
+        // The unbound `oi` slice spellings must not appear anywhere on the wire.
+        let wire = serde_json::to_string(&lit).expect("serialize");
+        for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
+            assert!(!wire.contains(unbound), "{unbound} must not reach the wire");
+        }
+
+        // No reading → Unavailable, and it says why.
+        let dark =
+            extract_open_interest_for_book(Some(KOTAK_NSE_NFO_BOOK_ID), "nse_fo|56526", None, None);
+        assert_eq!(dark.status, GlanceStatus::Unavailable);
+        assert!(dark.data.is_none());
+        assert_eq!(dark.ineligible, vec![OI_FIELD_UNSPECIFIED.to_string()]);
+        // Cash and spot still refuse the noun outright.
+        assert_eq!(
+            extract_open_interest(Some(KOTAK_NSE_BSE_CASH_BOOK_ID), "nse_cm|2885").ineligible,
+            vec![CASH_IS_NOT_CHAIN.to_string()]
+        );
+    }
+
     use super::*;
     use crate::data::identity::Physics;
     use crate::data::tick::{QuoteTick, Transport};
