@@ -313,14 +313,19 @@ fn enrich_tickbook_quotes_with(
 /// options book is a mixed-case dated contract and must never be lowercased or
 /// resolved from a leftover spot id — `BTC` / `BTCUSDT` is not a contract, so
 /// obtain stays dark rather than smashing a spot ladder in.
+/// The options-depth scoping rule, pure so it can be tested without an AppState.
+///
+/// Only a dated contract scopes options depth. Anything else — a leftover spot
+/// pair, a cash id, an empty selection — yields `None`, and the caller must then
+/// leave obtain dark rather than falling back to a resident ladder.
+fn options_depth_instrument(selected: &str) -> Option<String> {
+    let contract = crate::data::normalize_options_instrument(selected);
+    is_dated_option_contract(&contract).then_some(contract)
+}
+
 fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
     if book_id == BINANCE_COM_OPTIONS_BOOK_ID {
-        let contract = crate::data::normalize_options_instrument(&selected_options_contract(state));
-        return if is_dated_option_contract(&contract) {
-            contract
-        } else {
-            String::new()
-        };
+        return options_depth_instrument(&selected_options_contract(state)).unwrap_or_default();
     }
     let instrument = state
         .resolve_candidates()
@@ -338,10 +343,20 @@ fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelop
     let book_id = envelope.book_id.clone();
     let book = state.depthbook.lock().expect("depthbook mutex poisoned");
     let mut instrument = depth_instrument_for_book(state, &book_id);
-    // Fall back within **this book** only. There is no adapter-wide fallback:
-    // spot and the named options book share adapter `binance_com`, so one would
-    // paint a spot `btcusdt` ladder onto an options envelope.
-    if instrument.is_empty() || book.get(&book_id, &instrument).is_none() {
+    // The options book is instrument-scoped, with **no** resident fallback: a
+    // selection that is not a dated contract leaves obtain dark rather than
+    // serving whichever ladder happens to still be in the slot. Found by
+    // dogfooding — selecting `BTCUSDT` used to answer with the previously
+    // fetched contract, which is not the contract anyone asked for.
+    if book_id == BINANCE_COM_OPTIONS_BOOK_ID {
+        if instrument.is_empty() {
+            return envelope;
+        }
+    } else if instrument.is_empty() || book.get(&book_id, &instrument).is_none() {
+        // Spot/cash keep their in-book fallback. Still **this book** only: there
+        // is no adapter-wide fallback, because spot and the named options book
+        // share adapter `binance_com` and one would paint a spot `btcusdt`
+        // ladder onto an options envelope.
         if let Some((_, row)) = book
             .iter()
             .find(|(_, row)| row.book_id == book_id && row.completeness)
@@ -724,6 +739,40 @@ fn tickbook_quote_obtain_data(quote: &crate::data::QuoteEnvelope) -> Option<serd
 
 #[cfg(test)]
 mod tests {
+    /// Dogfooding find (2026-09-01): options depth must be scoped to the selected
+    /// dated contract with **no** resident fallback. A live run with `BTCUSDT`
+    /// selected answered with the previously fetched contract's ladder — a
+    /// contract nobody had asked for.
+    #[test]
+    fn only_a_dated_contract_scopes_options_depth() {
+        use super::options_depth_instrument;
+        assert_eq!(
+            options_depth_instrument("BTC-260901-73000-C").as_deref(),
+            Some("BTC-260901-73000-C")
+        );
+        // Trimmed, never lowercased.
+        assert_eq!(
+            options_depth_instrument("  BTC-260901-73000-C  ").as_deref(),
+            Some("BTC-260901-73000-C")
+        );
+        // Everything that is not a dated contract scopes nothing, so obtain goes
+        // dark instead of serving whatever ladder is still resident.
+        for leftover in [
+            "BTCUSDT",
+            "btcusdt",
+            "BTC",
+            "",
+            "   ",
+            "nse_cm|2885",
+            "nse_fo|56526",
+        ] {
+            assert!(
+                options_depth_instrument(leftover).is_none(),
+                "{leftover:?} must not scope options depth"
+            );
+        }
+    }
+
     use super::*;
     use crate::data::KOTAK_NEO_ADAPTER_ID;
     use crate::kotak_scrip_master::KotakScripMaster;

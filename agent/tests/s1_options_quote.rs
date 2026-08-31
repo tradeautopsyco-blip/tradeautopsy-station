@@ -1198,11 +1198,14 @@ async fn a_leftover_spot_id_leaves_options_depth_unavailable() {
         .json()
         .await
         .expect("json");
-    // The planted contract is in the book, but `BTCUSDT` is not it. Obtain may
-    // fall back within this book, so what is forbidden is claiming the ladder
-    // belongs to the spot id.
-    assert_ne!(obtain["data"]["instrument_id"], "BTCUSDT");
-    assert_ne!(obtain["data"]["instrument_id"], "btcusdt");
+    // The planted contract is still in the book, but `BTCUSDT` is not a dated
+    // contract, so options depth is instrument-scoped to nothing and stays dark.
+    // Regression for a dogfooding find: this used to Success with whichever
+    // ladder happened to be resident, which is not the contract anyone selected.
+    assert_eq!(obtain["status"], "unavailable");
+    assert_ne!(obtain["status"], "success");
+    assert!(obtain["data"].is_null());
+    assert!(!obtain.to_string().contains("BTC-200730-9000-C"));
 
     handle.abort();
 }
