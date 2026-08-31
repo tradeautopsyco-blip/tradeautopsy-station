@@ -2,8 +2,10 @@ import SwiftUI
 
 /// Three-zone Options Pre-trade for the Binance crypto desk (dated European contracts,
 /// `BTC-260925-90000-C`). Money is USDT; there is no lot size, no NRML, no product code.
-/// Chain and OI glance the named options book. Greeks / σ / payoff stay dark
-/// (`OPTIONS-PRICING.md` BLOCKER). Last is the live strip. Rung 1 runs on typed numbers.
+/// Chain and OI glance the named options book. Greeks are the venue's own published mark
+/// table passed through per contract — lit only when the desk says `success` and the rights
+/// say `display`, dark as a chip otherwise; Station never computes them. σ / payoff still
+/// stay dark (`OPTIONS-PRICING.md` BLOCKER). Last is the live strip. Rung 1 runs on typed numbers.
 struct BarCryptoOptionsDeclareView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
@@ -176,7 +178,7 @@ struct BarCryptoOptionsDeclareView: View {
     private var consequenceZone: some View {
         optionsZone(
             title: "Consequence",
-            note: "derived/greeks · inherits chain + Binance options catalog",
+            note: "derived/greeks · venue_published mark pass-through, per contract",
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 panelHead("Position", trailing: netPremiumLine)
@@ -262,14 +264,40 @@ struct BarCryptoOptionsDeclareView: View {
         right == "PE" ? "Put" : "Call"
     }
 
+    /// Mark is per contract, exactly like OI — legs are a local plan and do not gate it.
+    /// No unit suffixes: the Binance mark table names none, so Station must not name any.
+    private var greeksCells: [(label: String, value: String?)] {
+        [
+            ("Delta", viewModel.deskGreeksDelta),
+            ("Gamma", viewModel.deskGreeksGamma),
+            ("Theta", viewModel.deskGreeksTheta),
+            ("Vega", viewModel.deskGreeksVega),
+        ]
+    }
+
+    /// Dark chip in the shared dialect. Lit is not a fifth honesty state, so a lit row
+    /// never reaches this — an unrecognised wire word is still `unavailable`.
+    private var greeksChipStatus: HonestyStatus {
+        HonestyStatus.fromWire(viewModel.deskGreeksStatus) ?? .unavailable
+    }
+
     private var greeksGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 1) {
-            ForEach(["Delta", "Gamma", "Theta / day", "Vega / 1 vol"], id: \.self) { label in
+            ForEach(greeksCells, id: \.label) { cell in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(label.uppercased())
+                    Text(cell.label.uppercased())
                         .font(BarDS.monoFont(9.5, weight: .regular))
                         .foregroundColor(BarDS.Text.muted)
-                    HonestyChip(status: hasLegs ? .inheritedDark : .empty)
+                    if let value = cell.value {
+                        // The venue's own string, digit for digit — never reformatted.
+                        Text(value)
+                            .font(BarDS.monoFont(12, weight: .medium))
+                            .foregroundColor(BarDS.Text.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    } else {
+                        HonestyChip(status: greeksChipStatus)
+                    }
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -280,11 +308,17 @@ struct BarCryptoOptionsDeclareView: View {
         .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
     }
 
+    /// Three states, three sentences. Lit names the origin the envelope carried. A desk
+    /// that asked and got a hole is *not* waiting — say what came back instead of
+    /// claiming a pending request. Only a desk with no dated contract is waiting.
     private var greeksProv: String {
-        if hasLegs {
-            return "derived/greeks · inherited dark — OPTIONS-PRICING.md BLOCKER. A chain snapshot is not a pricer."
+        if !viewModel.deskGreeksProv.isEmpty {
+            return viewModel.deskGreeksProv
         }
-        return "derived/greeks — waiting on a declared leg."
+        if viewModel.deskGreeksAsked {
+            return "derived/greeks · \(viewModel.deskGreeksStatus) — Station copies the venue's mark table; it does not price this book."
+        }
+        return "derived/greeks — waiting on a declared contract."
     }
 
     private var payoffHole: some View {

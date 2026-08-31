@@ -782,4 +782,245 @@ struct BarOptionsDeclareTests {
             instrumentId: vm.deskSelectedInstrumentId
         ) == .standardForm)
     }
+
+    // MARK: - Greeks (venue_published mark pass-through, Binance options desk)
+
+    /// The one that matters. `rights.display == false` means Station may not print the
+    /// venue's number, even though `data.delta` is right there in the envelope.
+    @Test func greeksRightsDisplayFalseNeverPaintsANumber() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "delta": "0.55937056",
+                "gamma": "0.00010969",
+                "theta": "3739.82509871",
+                "vega": "978.58874732",
+            ],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["research_fetch": true, "display": false, "derived": true],
+            "ineligible": [],
+        ])
+        #expect(vm.deskGreeksDisplay == false)
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksGamma == nil)
+        #expect(vm.deskGreeksTheta == nil)
+        #expect(vm.deskGreeksVega == nil)
+        #expect(vm.deskGreeksProv.isEmpty)
+    }
+
+    @Test func greeksLitEnvelopePaintsTheVenueStringsVerbatim() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "mark_price": "1195.5",
+                "delta": "0.55937056",
+                "gamma": "0.00010969",
+                "theta": "3739.82509871",
+                "vega": "978.58874732",
+                "mark_iv": "78.86",
+                "ask_iv": "80.10",
+            ],
+            "provenance": [
+                "model": "venue_published",
+                "input_at": "2026-08-31T09:00:00Z",
+                "adapter_id": "binance_com",
+                "path": "/eapi/v1/mark",
+            ],
+            "source": ["kind": "venue_published", "path": "/eapi/v1/mark", "adapter": "binance_com"],
+            "rights": ["research_fetch": true, "store": false, "display": true, "derived": true],
+            "ineligible": [],
+        ])
+        #expect(vm.deskGreeksStatus == "success")
+        #expect(vm.deskGreeksDisplay)
+        // The venue's own text, digit for digit — no Double round-trip invents precision.
+        #expect(vm.deskGreeksDelta == "0.55937056")
+        #expect(vm.deskGreeksGamma == "0.00010969")
+        #expect(vm.deskGreeksTheta == "3739.82509871")
+        #expect(vm.deskGreeksVega == "978.58874732")
+        #expect(vm.deskGreeksProv == "venue_published · /eapi/v1/mark")
+        // Lit is not an honesty state — there is no fifth chip.
+        #expect(HonestyStatus.fromWire(vm.deskGreeksStatus) == nil)
+    }
+
+    @Test func greeksDarkEnvelopeLeavesEveryNumberNil() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "unavailable",
+            "data": NSNull(),
+            "rights": ["research_fetch": true, "display": true, "derived": true],
+            "ineligible": ["mark_snapshot_unavailable"],
+        ])
+        #expect(vm.deskGreeksStatus == "unavailable")
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksVega == nil)
+        #expect(vm.deskGreeksProv.isEmpty)
+        // A dark greeks row is a chip in the shared dialect, never a fifth state.
+        #expect(HonestyStatus.fromWire(vm.deskGreeksStatus) == .unavailable)
+    }
+
+    @Test func greeksPartialEnvelopeIsNotHalfLit() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        // Venue sent three of four; the grid must not print three numbers and one chip.
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": ["delta": "0.55937056", "gamma": "0.00010969", "theta": "3739.82509871", "vega": ""],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["display": true],
+        ])
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksGamma == nil)
+        #expect(vm.deskGreeksTheta == nil)
+        #expect(vm.deskGreeksVega == nil)
+    }
+
+    /// Never `as? Double`. A venue string that Swift could parse as a number must still
+    /// arrive as text, and a numeric JSON value is not the contract — it does not paint.
+    @Test func greeksNumericJsonValueIsNotTheStringContract() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": ["delta": 0.55937056, "gamma": 0.00010969, "theta": 3739.82509871, "vega": 978.58874732],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["display": true],
+        ])
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksVega == nil)
+    }
+
+    @Test func greeksExtractPathNamesTheOptionsBookAndTheDatedContract() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        let path = vm.deskGreeksExtractPath(symbol: "BTC-200730-9000-C")
+        #expect(path.contains("/api/station/greeks?"))
+        #expect(path.contains("book=binance-com-options"))
+        #expect(path.contains("instrument=BTC-200730-9000-C"))
+        #expect(!path.contains("kotak-nse-nfo"))
+    }
+
+    /// Mirrors the OI leftover-ticker test: a stale typed `BTC` must not replace the
+    /// selected dated contract on the greeks path either.
+    @Test func greeksPathKeepsTheSelectedContractOverALeftoverTypedTicker() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.barDeclarationSymbol = "BTC"
+        #expect(vm.deskGreeksExtractPath(symbol: "BTC").contains("instrument=BTC-200730-9000-C"))
+        #expect(!vm.deskGreeksExtractPath(symbol: "BTC").contains("instrument=BTC&"))
+        #expect(vm.deskGreeksExtractPath(symbol: "BTC").hasSuffix("BTC-200730-9000-C"))
+    }
+
+    /// A bookless options desk issues no glance at all — so it issues no greeks request.
+    @Test func booklessOptionsDeskIssuesNoGreeksRequest() {
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).fetchesGlance)
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options, instrumentId: "BTCUSDT").fetchesGlance)
+        #expect(!DeskExtractPlan.resolve(slug: nil, assetClass: .options).fetchesGlance)
+        #expect(DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options, instrumentId: "BTC-200730-9000-C").fetchesGlance)
+    }
+
+    /// NFO greeks are an OPTIONS-PRICING blocker and stay dark. No number, ever.
+    @Test func nfoGreeksStayDarkWithNoNumber() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        #expect(vm.deskGreeksStatus == "unavailable")
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksDisplay == false)
+        // The NFO surface only ever renders a chip, and the dialect has no lit case.
+        #expect(HonestyStatus.fromWire("success") == nil)
+        #expect(!HonestyStatus.allCases.contains { $0.rawValue == "success" })
+        #expect(HonestyStatus.fromWire("inherited_dark") == .inheritedDark)
+    }
+
+    @Test func invalidateWipesEveryGreeksFieldUnderTheSameGeneration() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": ["delta": "0.55937056", "gamma": "0.00010969", "theta": "3739.82509871", "vega": "978.58874732"],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["display": true],
+        ])
+        #expect(vm.deskGreeksDelta != nil)
+        let before = vm.deskExtractGeneration
+
+        let after = vm.invalidateDeskMarketExtracts(reason: "select-symbol")
+
+        #expect(after != before)
+        #expect(vm.deskGreeksStatus == "unavailable")
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksGamma == nil)
+        #expect(vm.deskGreeksTheta == nil)
+        #expect(vm.deskGreeksVega == nil)
+        #expect(vm.deskGreeksDisplay == false)
+        #expect(vm.deskGreeksProv.isEmpty)
+        // Same generation bump as chain/OI — one rebind, one wipe.
+        #expect(vm.deskChainStatus == "unavailable")
+        #expect(vm.deskOiStatus == "unavailable")
+    }
+
+    @Test func contractSwitchWipesGreeksSynchronously() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": ["delta": "0.55937056", "gamma": "0.00010969", "theta": "3739.82509871", "vega": "978.58874732"],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["display": true],
+        ])
+        #expect(vm.deskGreeksVega == "978.58874732")
+
+        // An in-flight reply for the OLD contract must never paint the new one.
+        vm.declareAssetClass = .spot
+
+        #expect(vm.deskGreeksStatus == "unavailable")
+        #expect(vm.deskGreeksVega == nil)
+        #expect(vm.deskExtractInvalidationReason == "asset-class")
+    }
+}
+
+// MARK: - Greeks provenance has three states, not two
+
+@MainActor
+@Test func greeksNotAskedIsWaitingButADarkReplyIsNot() {
+    let vm = NotchViewModel()
+
+    // Nothing asked yet: "waiting" is true.
+    #expect(vm.deskGreeksAsked == false)
+
+    // Asked and got a hole back. The desk is not waiting — it has its answer.
+    vm.applyGreeksEnvelope(["status": "unavailable", "data": NSNull()])
+    #expect(vm.deskGreeksAsked)
+    #expect(vm.deskGreeksStatus == "unavailable")
+    #expect(vm.deskGreeksDelta == nil)
+
+    // A rebind puts it back to genuinely-waiting.
+    _ = vm.invalidateDeskMarketExtracts(reason: "select-symbol")
+    #expect(vm.deskGreeksAsked == false)
 }

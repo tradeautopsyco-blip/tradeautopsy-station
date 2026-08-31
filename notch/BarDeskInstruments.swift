@@ -534,6 +534,12 @@ enum DeskChainExtractQuery {
         glancePath(operation: "oi", bookId: bookId, underlying: underlying)
     }
 
+    /// `GET /api/station/greeks` — the venue's own mark table for one dated contract.
+    /// Same book + instrument as chain and OI; nothing about this path is a pricer.
+    static func greeksPath(bookId: String?, underlying: String) -> String {
+        glancePath(operation: "greeks", bookId: bookId, underlying: underlying)
+    }
+
     private static func glancePath(operation: String, bookId: String?, underlying: String) -> String {
         let instrument = InstrumentTickBookId.queryEncode(
             underlying.trimmingCharacters(in: .whitespacesAndNewlines)

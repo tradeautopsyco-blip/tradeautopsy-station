@@ -468,6 +468,23 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskYahooHistoryIneligible: [String] = []
     @Published var deskChainStatus: String = "unavailable"
     @Published var deskOiStatus: String = "unavailable"
+    /// `GET /api/station/greeks` — the venue's own mark table, passed through. Never a pricer.
+    @Published var deskGreeksStatus: String = "unavailable"
+    /// The venue's published text for each greek. String, never Double: reparsing a
+    /// venue number invents precision the venue did not publish.
+    @Published var deskGreeksDelta: String? = nil
+    @Published var deskGreeksGamma: String? = nil
+    @Published var deskGreeksTheta: String? = nil
+    @Published var deskGreeksVega: String? = nil
+    /// `rights.display` from the greeks envelope. False (or missing) means Station may
+    /// not print the number even when the envelope carries one.
+    @Published var deskGreeksDisplay: Bool = false
+    /// `model · path` for the lit greeks row — empty while dark.
+    @Published var deskGreeksProv: String = ""
+    /// Did the desk actually ask for greeks on this generation? Distinguishes "no dated
+    /// contract yet, so nothing was requested" from "asked the venue and got a hole" —
+    /// two different sentences, and only one of them is "waiting".
+    @Published private(set) var deskGreeksAsked: Bool = false
     /// Desk-level `capabilities.quote` from sync-state — independent of funds/fills.
     @Published var deskQuoteCapability: String = "unavailable"
     /// Desk-level `capabilities.funds` from sync-state — independent of quote.
@@ -1628,6 +1645,7 @@ public final class NotchViewModel: ObservableObject {
         deskExtractInvalidationReason = reason
         deskChainStatus = "unavailable"
         deskOiStatus = "unavailable"
+        clearDeskGreeks()
         if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
@@ -1665,6 +1683,15 @@ public final class NotchViewModel: ObservableObject {
         )
     }
 
+    /// Same `book=` + instrument as chain and OI. Greeks are per contract, so a leftover
+    /// typed `BTC` must never replace the selected dated contract here either.
+    func deskGreeksExtractPath(symbol: String) -> String {
+        DeskChainExtractQuery.greeksPath(
+            bookId: glanceBookId(symbol: symbol),
+            underlying: glanceInstrument(symbol: symbol)
+        )
+    }
+
     /// NFO glance is keyed on `pSymbolName`. Eapi chain/OI need the mixed-case contract
     /// so `optionSymbols` can match and `openInterest` can take YYMMDD.
     private func glanceInstrument(symbol: String) -> String {
@@ -1697,6 +1724,70 @@ public final class NotchViewModel: ObservableObject {
         return nil
     }
 
+    /// Apply one `/api/station/greeks` envelope. Pure state, no HTTP — the parse is the
+    /// seam under test.
+    ///
+    /// The four numbers are painted only when the desk said `success`, the rights said
+    /// `display`, and the venue published all four. Anything else leaves them nil and the
+    /// grid shows a chip: three numbers and a hole would read as a partial pricer.
+    ///
+    /// Every greek is read as `String` — the venue's own text. `as? Double` would reparse
+    /// and reprint a number the venue never published.
+    func applyGreeksEnvelope(_ json: [String: Any]) {
+        let status = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let rights = json["rights"] as? [String: Any]
+        let display = rights?["display"] as? Bool ?? false
+        let data = json["data"] as? [String: Any]
+
+        func published(_ key: String) -> String? {
+            guard let raw = data?[key] as? String else { return nil }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        clearDeskGreeks()
+        // The request went out and this is its reply — even an empty one. Set after the
+        // clear, which is what resets it.
+        deskGreeksAsked = true
+        deskGreeksStatus = status.isEmpty ? "unavailable" : status
+        deskGreeksDisplay = display
+
+        guard status == "success", display,
+              let delta = published("delta"),
+              let gamma = published("gamma"),
+              let theta = published("theta"),
+              let vega = published("vega")
+        else { return }
+
+        deskGreeksDelta = delta
+        deskGreeksGamma = gamma
+        deskGreeksTheta = theta
+        deskGreeksVega = vega
+
+        let provenance = json["provenance"] as? [String: Any]
+        let source = json["source"] as? [String: Any]
+        let model = (provenance?["model"] as? String) ?? (source?["kind"] as? String) ?? ""
+        let path = (provenance?["path"] as? String) ?? (source?["path"] as? String) ?? ""
+        deskGreeksProv = [model, path]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    /// Back to dark: status `unavailable`, no numbers, no display right, no provenance.
+    private func clearDeskGreeks() {
+        deskGreeksStatus = "unavailable"
+        deskGreeksDelta = nil
+        deskGreeksGamma = nil
+        deskGreeksTheta = nil
+        deskGreeksVega = nil
+        deskGreeksDisplay = false
+        deskGreeksProv = ""
+        deskGreeksAsked = false
+    }
+
     func refreshDeskExtracts(symbol: String, instrumentId: String? = nil) {
         let selected = deskSelectedInstrumentId
         let raw: String
@@ -1717,6 +1808,7 @@ public final class NotchViewModel: ObservableObject {
         // `barDeclarationSymbol` these paths would encode never reaches the wire.
         let chainPath = plan.fetchesGlance ? deskChainExtractPath(symbol: symbol) : nil
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
+        let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
         let historyPath = plan.usesKotakHistoryObtain
             ? "/api/station/obtain?adapter=kotak_neo&operation=history"
             : "/api/station/history?instrument=\(encoded)"
@@ -1725,9 +1817,11 @@ public final class NotchViewModel: ObservableObject {
             guard let self else { return }
             async let chain = self.getExtractJSON(optional: chainPath)
             async let oi = self.getExtractJSON(optional: oiPath)
+            async let greeks = self.getExtractJSON(optional: greeksPath)
             let licensedJSON = await self.getExtractJSON(historyPath)
             let chainJSON = await chain
             let oiJSON = await oi
+            let greeksJSON = await greeks
             await MainActor.run {
                 // The desk rebound while this was in flight — these rows are for an
                 // instrument/book that is no longer selected. Leave the holes dark.
@@ -1737,6 +1831,7 @@ public final class NotchViewModel: ObservableObject {
                 guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
+                self.applyGreeksEnvelope(greeksJSON ?? [:])
             }
         }
     }
