@@ -50,9 +50,8 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::greeks::extract_greeks;
+    use crate::data::greeks::{extract_greeks, greeks_may_render_number};
     use crate::data::identity::{Family, Physics};
-    use crate::data::provenance::greeks_may_render_number;
     use crate::data::KOTAK_NSE_NFO_BOOK_ID;
 
     fn assert_no_fixture_greeks(envelope: &GreeksEnvelope) {
@@ -62,10 +61,7 @@ mod tests {
         assert!(json.get("delta").is_none());
         assert!(json.get("gamma").is_none());
         assert!(json.get("theta").is_none());
-        assert!(!greeks_may_render_number(
-            envelope.status,
-            &envelope.provenance
-        ));
+        assert!(!greeks_may_render_number(envelope));
     }
 
     #[test]

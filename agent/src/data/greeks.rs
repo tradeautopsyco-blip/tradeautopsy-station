@@ -120,11 +120,42 @@ pub fn extract_greeks(book_id: Option<&str>, chain: InputHonesty) -> GreeksEnvel
     }
 }
 
+/// May this envelope's number be shown to a trader?
+///
+/// Reads the envelope, not just a status code. Four things must all hold:
+/// the identity is greeks, data is actually carried, the input is stamped, the
+/// model is not the `"raw"` hole marker, and the origin is named. A figure
+/// missing any of those is either a hole or an unattributed number, and neither
+/// may render.
+///
+/// It deliberately does **not** consult [`HonestyStatus`]. All four of its
+/// variants are dark states — Success is `InputHonesty::Lit`, not a fifth variant
+/// — so a match on it could only ever return false. That is precisely what made
+/// the previous version of this gate dead code: every arm returned false, so no
+/// caller could have rendered a number even once the data was real. The "no fifth
+/// state" tripwire lives in `honesty.rs::four_snake_case_states_and_no_fifth`,
+/// which is a stronger check than an exhaustive match here.
+pub fn greeks_may_render_number(envelope: &GreeksEnvelope) -> bool {
+    if envelope.identity.capability_id.as_str() != "greeks" {
+        return false;
+    }
+    if envelope.data.is_none() {
+        return false;
+    }
+    if envelope.provenance.input_at.is_none() {
+        return false;
+    }
+    let model = envelope.provenance.model.trim();
+    if model.is_empty() || model == "raw" {
+        return false;
+    }
+    envelope.source.is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::data::identity::Physics;
-    use crate::data::provenance::greeks_may_render_number;
     use crate::data::{
         obtain, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
         KOTAK_NSE_NFO_BOOK_ID,
@@ -138,10 +169,7 @@ mod tests {
         assert!(json.get("gamma").is_none());
         assert!(json.get("theta").is_none());
         assert!(json.get("exchange_rate").is_none());
-        assert!(!greeks_may_render_number(
-            envelope.status,
-            &envelope.provenance
-        ));
+        assert!(!greeks_may_render_number(envelope));
     }
 
     fn assert_dual_no_blend(envelope: &GreeksEnvelope) {
@@ -153,6 +181,84 @@ mod tests {
             !dumped.contains("exchange_rate"),
             "DualNoBlend: greeks envelope must not blend USD+INR"
         );
+    }
+
+    /// A fully-formed venue-published envelope: data, stamp, named model, named
+    /// origin. Built by hand because no book produces one yet.
+    fn lit_venue_envelope() -> GreeksEnvelope {
+        let identity = greeks_identity();
+        GreeksEnvelope {
+            identity: identity.clone(),
+            status: HonestyStatus::Unavailable,
+            data: Some(serde_json::json!({ "delta": "0.5231" })),
+            provenance: ProvenanceLine {
+                identity,
+                model: "venue_published".to_string(),
+                input_at: Some("2026-08-31T09:00:00Z".to_string()),
+                adapter_id: "binance_com".to_string(),
+                path: "/eapi/v1/mark".to_string(),
+            },
+            source: Some(GreeksSource::VenuePublished {
+                path: "/eapi/v1/mark".into(),
+                adapter: "binance_com".into(),
+            }),
+            ineligible: Vec::new(),
+            canonical: false,
+            persist_canonical: false,
+        }
+    }
+
+    #[test]
+    fn the_gate_is_not_dead_code() {
+        // The previous gate matched HonestyStatus with every arm false, so it could
+        // never return true no matter how real the data was. This is the proof it
+        // now can.
+        assert!(greeks_may_render_number(&lit_venue_envelope()));
+    }
+
+    #[test]
+    fn every_missing_piece_refuses_the_number() {
+        let mut no_data = lit_venue_envelope();
+        no_data.data = None;
+        assert!(!greeks_may_render_number(&no_data), "no data");
+
+        let mut unstamped = lit_venue_envelope();
+        unstamped.provenance.input_at = None;
+        assert!(!greeks_may_render_number(&unstamped), "no input_at");
+
+        let mut raw_model = lit_venue_envelope();
+        raw_model.provenance.model = "raw".to_string();
+        assert!(
+            !greeks_may_render_number(&raw_model),
+            "raw is the hole marker"
+        );
+
+        let mut blank_model = lit_venue_envelope();
+        blank_model.provenance.model = "   ".to_string();
+        assert!(!greeks_may_render_number(&blank_model), "blank model");
+
+        let mut unsourced = lit_venue_envelope();
+        unsourced.source = None;
+        assert!(!greeks_may_render_number(&unsourced), "unattributed number");
+
+        let mut wrong_identity = lit_venue_envelope();
+        wrong_identity.identity = Identity::new(
+            Family::Derived,
+            CapabilityId::new("synthetic_future").expect("id"),
+            Physics::BoundedSnapshot,
+        );
+        assert!(!greeks_may_render_number(&wrong_identity), "not greeks");
+    }
+
+    #[test]
+    fn inherited_dark_refuses_the_number() {
+        // Carried over from provenance.rs: a stamped input is not enough on its own.
+        let mut envelope = lit_venue_envelope();
+        envelope.status = HonestyStatus::InheritedDark;
+        envelope.data = None;
+        envelope.source = None;
+        envelope.provenance.model = "raw".to_string();
+        assert!(!greeks_may_render_number(&envelope));
     }
 
     #[test]
@@ -280,7 +386,7 @@ mod tests {
     fn slice1_fail_closed_neither_book_shows_a_number() {
         let nfo = extract_greeks(Some(KOTAK_NSE_NFO_BOOK_ID), InputHonesty::Lit);
         assert!(nfo.data.is_none());
-        assert!(!greeks_may_render_number(nfo.status, &nfo.provenance));
+        assert!(!greeks_may_render_number(&nfo));
         let eapi = extract_greeks(Some(BINANCE_COM_OPTIONS_BOOK_ID), InputHonesty::Lit);
         assert_eq!(eapi.status, HonestyStatus::Unavailable);
         assert!(eapi.ineligible.iter().any(|s| s == MARK_NOT_THIS_SLICE));

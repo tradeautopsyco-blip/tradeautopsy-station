@@ -16,9 +16,8 @@ pub fn extract_binance_options_greeks() -> GreeksEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::greeks::extract_greeks;
+    use crate::data::greeks::{extract_greeks, greeks_may_render_number};
     use crate::data::honesty::{HonestyStatus, InputHonesty};
-    use crate::data::provenance::greeks_may_render_number;
     use crate::data::BINANCE_COM_OPTIONS_BOOK_ID;
 
     fn assert_no_fixture_greeks(envelope: &GreeksEnvelope) {
@@ -29,10 +28,7 @@ mod tests {
         assert!(json.get("gamma").is_none());
         assert!(json.get("theta").is_none());
         assert!(json.get("vega").is_none());
-        assert!(!greeks_may_render_number(
-            envelope.status,
-            &envelope.provenance
-        ));
+        assert!(!greeks_may_render_number(envelope));
     }
 
     #[test]

@@ -34,23 +34,6 @@ impl ProvenanceLine {
     }
 }
 
-/// True only if this is not a dark extract, the chain stamp is named, and identity is greeks.
-/// `HonestyStatus` has no Lit variant, so current callers never render a number.
-pub fn greeks_may_render_number(honesty: HonestyStatus, provenance: &ProvenanceLine) -> bool {
-    if provenance.input_at.is_none() {
-        return false;
-    }
-    if provenance.identity.capability_id.as_str() != "greeks" {
-        return false;
-    }
-    match honesty {
-        HonestyStatus::Empty
-        | HonestyStatus::Unavailable
-        | HonestyStatus::Unusable
-        | HonestyStatus::InheritedDark => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,36 +45,6 @@ mod tests {
             CapabilityId::new("greeks").expect("canonical greeks id"),
             Physics::BoundedSnapshot,
         )
-    }
-
-    #[test]
-    fn missing_input_at_refuses_greeks_number() {
-        let provenance = ProvenanceLine {
-            identity: greeks_identity(),
-            model: "raw".to_string(),
-            input_at: None,
-            adapter_id: String::new(),
-            path: String::new(),
-        };
-        assert!(!greeks_may_render_number(
-            HonestyStatus::Unavailable,
-            &provenance
-        ));
-    }
-
-    #[test]
-    fn inherited_dark_refuses_greeks_number() {
-        let provenance = ProvenanceLine {
-            identity: greeks_identity(),
-            model: "raw".to_string(),
-            input_at: Some("2026-08-27T18:00:00Z".to_string()),
-            adapter_id: String::new(),
-            path: String::new(),
-        };
-        assert!(!greeks_may_render_number(
-            HonestyStatus::InheritedDark,
-            &provenance
-        ));
     }
 
     #[test]
