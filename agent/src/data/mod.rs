@@ -6,6 +6,7 @@ mod apply;
 mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
+mod binance_options_depth;
 mod binance_options_mark;
 mod binance_options_oi;
 mod binance_options_public;
@@ -72,6 +73,11 @@ pub use binance_options_chain::{
     chain_rows_for_contract, expiration_from_dated_contract,
     option_symbols_from_exchange_info_json, underlying_asset_from_dated_contract, OptionsSymbolRow,
 };
+#[allow(unused_imports)] // host-facing page walk; the live dial is owned by glance
+pub use binance_options_depth::{
+    depth_snapshot_from_eapi_json, options_depth_query, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_LIMIT,
+    OPTIONS_DEPTH_PATH,
+};
 pub use binance_options_mark::{
     mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OptionsMarkRow,
     OPTIONS_MARK_PATH,
@@ -136,7 +142,7 @@ pub use klines_pager::{
 };
 pub use kotak_depth::{
     depth_obtain_data, depth_snapshot_from_kotak_json, depth_snapshots_from_kotak_json,
-    extract_depth, DepthEnvelope, DepthStatus,
+    extract_depth, extract_depth_on_book, DepthEnvelope, DepthStatus,
 };
 pub use kotak_quotes::{
     is_cash_segment, is_nfo_segment, kotak_quote_book_id, parse_nfo_instrument_id,

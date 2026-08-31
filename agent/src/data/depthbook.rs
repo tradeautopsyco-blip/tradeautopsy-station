@@ -7,8 +7,8 @@
 
 use super::binance_public::normalize_quote_instrument;
 use super::descriptor::{
-    BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
-    KOTAK_NSE_BSE_CASH_BOOK_ID,
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 use super::kotak_depth::DepthSnapshot;
 use super::tick::Transport;
@@ -31,11 +31,19 @@ fn normalize_depth_instrument(book_id: &str, instrument_id: &str) -> String {
     }
 }
 
-/// Provenance slug for a placeholder row keyed by `book_id`. Spot/usdm share
-/// `binance_com`; cash maps to `kotak_neo`; fixtures keep the passed string.
+/// Provenance slug for a placeholder row keyed by `book_id`. Spot/options/usdm all
+/// share the login slug `binance_com`; cash maps to `kotak_neo`; fixtures keep the
+/// passed string.
+///
+/// The options arm matters even though eapi depth has no gap machine: without it a
+/// future `invalidate(_, "binance-com-options")` would stamp
+/// `adapter_id = "binance-com-options"` — a book id sitting in the login-slug
+/// field, which is not a slug anyone can log in with.
 fn placeholder_adapter_id(book_id: &str) -> String {
     match book_id.trim() {
-        BINANCE_COM_SPOT_BOOK_ID | "binance-com-usdm" => BINANCE_COM_ADAPTER_ID.to_string(),
+        BINANCE_COM_SPOT_BOOK_ID | BINANCE_COM_OPTIONS_BOOK_ID | "binance-com-usdm" => {
+            BINANCE_COM_ADAPTER_ID.to_string()
+        }
         KOTAK_NSE_BSE_CASH_BOOK_ID => KOTAK_NEO_ADAPTER_ID.to_string(),
         other => other.to_string(),
     }
@@ -262,6 +270,45 @@ mod tests {
         assert_eq!(other.sequence, Some(2));
         assert_eq!(other.adapter_id, "other");
         assert_eq!(other.book_id, "other");
+    }
+
+    /// Options keys are trim-only. `normalize_depth_instrument` lowercases for the
+    /// spot book alone, so a dated contract keeps its case and can never collide
+    /// with a spot pair's slot.
+    #[test]
+    fn an_options_contract_key_is_case_preserving_and_not_a_spot_key() {
+        assert_ne!(
+            depth_key(BINANCE_COM_OPTIONS_BOOK_ID, "BTC-200730-9000-C"),
+            depth_key(BINANCE_COM_OPTIONS_BOOK_ID, "btc-200730-9000-c")
+        );
+        assert_ne!(
+            depth_key(BINANCE_COM_OPTIONS_BOOK_ID, "BTC-200730-9000-C"),
+            depth_key(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
+        );
+        // Spot still lowercases its own pairs — that behaviour is unchanged.
+        assert_eq!(
+            depth_key(BINANCE_COM_SPOT_BOOK_ID, "BTCUSDT"),
+            depth_key(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
+        );
+        // The options book does not: same instrument text, two different books.
+        assert_ne!(
+            depth_key(BINANCE_COM_OPTIONS_BOOK_ID, "BTCUSDT"),
+            depth_key(BINANCE_COM_SPOT_BOOK_ID, "BTCUSDT")
+        );
+    }
+
+    /// A placeholder on the options slot carries the login slug, not the book id.
+    #[test]
+    fn an_options_placeholder_carries_the_login_slug() {
+        let mut book = DepthBook::new();
+        book.invalidate("BTC-200730-9000-C", BINANCE_COM_OPTIONS_BOOK_ID);
+        let row = book
+            .get(BINANCE_COM_OPTIONS_BOOK_ID, "BTC-200730-9000-C")
+            .expect("placeholder row");
+        assert_eq!(row.adapter_id, BINANCE_COM_ADAPTER_ID);
+        assert_ne!(row.adapter_id, BINANCE_COM_OPTIONS_BOOK_ID);
+        assert_eq!(row.book_id, BINANCE_COM_OPTIONS_BOOK_ID);
+        assert!(!row.completeness);
     }
 
     #[test]

@@ -3,13 +3,14 @@
 
 use crate::api::AppState;
 use crate::data::{
-    chain_input_honesty, chain_rows_for_contract, expiration_from_dated_contract,
-    extract_chain_from, extract_greeks_from_mark, extract_open_interest,
-    extract_open_interest_from, is_dated_option_contract, mark_row_for_symbol, oi_rows_from_json,
-    option_symbols_from_exchange_info_json, parse_nfo_instrument_id,
+    chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
+    expiration_from_dated_contract, extract_chain_from, extract_greeks_from_mark,
+    extract_open_interest, extract_open_interest_from, is_dated_option_contract,
+    mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
+    option_symbols_from_exchange_info_json, options_depth_query, parse_nfo_instrument_id,
     underlying_asset_from_dated_contract, CachedMark, ChainRow, GlanceEnvelope, GreeksEnvelope,
     InputHonesty, OptionsOiRow, BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_MARK_PATH,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_MARK_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -24,6 +25,9 @@ const EXCHANGE_INFO_MAX_AGE_MS: i64 = 300_000;
 const OPEN_INTEREST_MAX_AGE_MS: i64 = 5_000;
 /// Same window as OI: one mark call serves every panel asking for this contract.
 const OPTIONS_MARK_MAX_AGE_MS: i64 = 5_000;
+/// A book moves fast, so the coalesce window is short — it exists so two obtain
+/// calls in the same tick are one GET, not so a stale ladder is served.
+const OPTIONS_DEPTH_MAX_AGE_MS: i64 = 1_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -252,6 +256,69 @@ pub(crate) async fn ensure_options_mark(state: &AppState, instrument: &str) {
         .expect("options mark mutex poisoned") = Some(fetched);
 }
 
+/// The symbol to dial `/eapi/v1/depth` with, or `None` for "do not dial".
+///
+/// Same two refusals as mark, for the same reasons: tests stay fixture-only
+/// (`eapi_public_fetch` false), and a leftover `BTC` / `BTCUSDT` is not a dated
+/// contract. `symbol` is **mandatory** on this endpoint, so "no contract" means
+/// "no call" — never an unfiltered book. Never lowercased.
+fn depth_dial_symbol(eapi_public_fetch: bool, instrument: &str) -> Option<String> {
+    if !eapi_public_fetch {
+        return None;
+    }
+    let instrument = normalize_options_instrument(instrument);
+    if !is_dated_option_contract(&instrument) {
+        return None;
+    }
+    Some(instrument)
+}
+
+/// One `GET /eapi/v1/depth` bounded snapshot into the DepthBook's **options** slot.
+///
+/// Never fabricates: a non-success HTTP or a body the parser refuses leaves the
+/// book untouched, so obtain stays Unavailable rather than serving an empty
+/// ladder as a Success. There is no gap machine on this book — no `stamp_gap_unusable`,
+/// no `invalidate` — because a REST snapshot has nothing to fall out of sync with.
+pub(crate) async fn ensure_options_depth(state: &AppState, instrument: &str) {
+    let Some(dial) = depth_dial_symbol(state.eapi_public_fetch, instrument) else {
+        return;
+    };
+    {
+        let book = state.depthbook.lock().expect("depthbook mutex poisoned");
+        if let Some(row) = book.get(BINANCE_COM_OPTIONS_BOOK_ID, &dial) {
+            if row.completeness {
+                return;
+            }
+        }
+    }
+    // The engine runs `authorize_book_call` itself; no HMAC is attached here —
+    // a private credential on this public path is a refusal, not an upgrade.
+    let call = EgressCall::get(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        OPTIONS_DEPTH_HOST,
+        OPTIONS_DEPTH_PATH,
+        Lane::MarketData,
+    )
+    .with_query(options_depth_query(&dial))
+    .with_max_age_ms(OPTIONS_DEPTH_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return;
+    };
+    if !resp.is_success() {
+        return;
+    }
+    let Some(snapshot) = depth_snapshot_from_eapi_json(&resp.body, &dial, chrono::Utc::now())
+    else {
+        return;
+    };
+    state
+        .depthbook
+        .lock()
+        .expect("depthbook mutex poisoned")
+        .upsert(snapshot);
+}
+
 /// Obtain enriches synchronously, but the OI snapshot is an async fetch. Land
 /// the rows in the shared store so the enricher only ever reads state.
 pub(crate) async fn ensure_options_oi(state: &AppState, instrument: &str) {
@@ -414,6 +481,20 @@ mod tests {
         assert!(cached_mark_hit(&store, "btc-200730-9000-c").is_none());
         assert!(cached_mark_hit(&store, "BTCUSDT").is_none());
         assert!(cached_mark_hit(&None, "BTC-200730-9000-C").is_none());
+    }
+
+    /// Same gate as mark: no fixture-time dial, no spot id, no lowercase.
+    #[test]
+    fn depth_is_not_dialled_without_public_fetch_or_a_dated_contract() {
+        assert!(depth_dial_symbol(false, "BTC-200730-9000-C").is_none());
+        assert!(depth_dial_symbol(true, "BTC").is_none());
+        assert!(depth_dial_symbol(true, "BTCUSDT").is_none());
+        assert!(depth_dial_symbol(true, "").is_none());
+        assert!(depth_dial_symbol(true, "nse_cm|2885").is_none());
+        assert_eq!(
+            depth_dial_symbol(true, "  BTC-200730-9000-C  ").as_deref(),
+            Some("BTC-200730-9000-C")
+        );
     }
 
     #[test]

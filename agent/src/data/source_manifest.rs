@@ -509,12 +509,22 @@ pub fn binance_com_options_manifest() -> SourceManifest {
             "optionchain".into(),
             "open_interest".into(),
             "optiongreeks".into(),
+            "depth".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
             optionchain_binding("binance_com", coverage.clone(), AuthMode::Public),
             open_interest_binding("binance_com", coverage.clone(), AuthMode::Public),
-            optiongreeks_binding("binance_com", coverage, AuthMode::Public),
+            optiongreeks_binding("binance_com", coverage.clone(), AuthMode::Public),
+            // REST bounded snapshot of `GET /eapi/v1/depth` — `Rest` only. Spot's
+            // `@depth` reconstruction loop is another book on another host, and
+            // this binding must never claim `Stream`.
+            depth_binding(
+                "binance_com",
+                coverage,
+                AuthMode::Public,
+                vec![TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -921,7 +931,13 @@ mod tests {
         assert_eq!(options.book_id, "binance-com-options");
         assert_eq!(
             options.implemented,
-            vec!["quotes", "optionchain", "open_interest", "optiongreeks"]
+            vec![
+                "quotes",
+                "optionchain",
+                "open_interest",
+                "optiongreeks",
+                "depth"
+            ]
         );
         assert!(options.implemented.iter().any(|op| op == "optionchain"));
         assert!(options.implemented.iter().any(|op| op == "open_interest"));
@@ -939,6 +955,32 @@ mod tests {
             obtain(&options, "optiongreeks").status,
             ObtainStatus::Unavailable
         );
+        // Depth with an empty DepthBook is Unavailable — never Unsupported, and
+        // never an empty `{bids:[],asks:[]}` Success.
+        assert_eq!(obtain(&options, "depth").status, ObtainStatus::Unavailable);
+        assert_ne!(obtain(&options, "depth").status, ObtainStatus::Unsupported);
+        assert!(obtain(&options, "depth").data.is_none());
+        // NFO depth is NOT SPECIFIED IN SOURCE and stays unclaimed.
+        let nfo = manifest_for_book_id("kotak-nse-nfo").expect("nfo book");
+        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
+        let depth_bind = options
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "depth")
+            .expect("options depth binding");
+        assert_eq!(depth_bind.capability_id, "order_book");
+        assert_eq!(depth_bind.family, Family::Market);
+        assert_eq!(depth_bind.physics, Physics::BoundedSnapshot);
+        assert_ne!(depth_bind.physics, Physics::OrderedState);
+        assert_eq!(depth_bind.auth_mode, AuthMode::Public);
+        // REST snapshot only. A `Stream` transport here would claim spot's
+        // reconstruction loop on a host that never serves it.
+        assert_eq!(depth_bind.transports, vec![TransportKind::Rest]);
+        assert!(!depth_bind.transports.contains(&TransportKind::Stream));
+        // `optiongreeks` is the only binding on this book with a display grant.
+        assert_eq!(depth_bind.rights, Rights::research_fetch_only());
+        assert_ne!(depth_bind.rights, Rights::desk_display());
+        assert_eq!(depth_bind.coverage.asset_classes, vec!["crypto_options"]);
         let chain_bind = options
             .bindings
             .iter()
@@ -1011,6 +1053,9 @@ mod tests {
         );
         assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
         assert!(nfo.implemented.iter().any(|op| op == "instruments"));
+        // NFO depth stays unclaimed — that is a separate, still-unobserved body.
+        assert!(!nfo.implemented.iter().any(|op| op == "depth"));
+        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
         assert_eq!(
             obtain(&nfo, "optionchain").status,
             ObtainStatus::Unavailable
