@@ -376,11 +376,11 @@ fn kotak_quotes_segment(path: &str) -> Option<String> {
 }
 
 fn is_cash_quotes_segment(segment: &str) -> bool {
-    matches!(segment, "nse_cm" | "bse_cm")
+    super::kotak_quotes::is_cash_segment(segment)
 }
 
 fn is_nfo_quotes_segment(segment: &str) -> bool {
-    segment == "nse_fo"
+    super::kotak_quotes::is_nfo_segment(segment)
 }
 
 fn is_kotak_cash_csv_filename(filename: &str) -> bool {

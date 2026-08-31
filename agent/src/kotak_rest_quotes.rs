@@ -6,7 +6,7 @@
 //! HSM websocket skipped (WEBSOCKET.md: `mlhsm` not HTTP-allowlisted; `hsServerId` unspecified).
 
 use crate::data::{
-    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json,
+    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json, is_cash_segment,
     json_array_first_object_keys, json_field_object_keys, json_first_nested_object_keys,
     json_object_keys, kotak_quote_book_id, quote_ticks_from_kotak_json_for_book,
     quotes_neosymbol_path, DepthBook, Registry, TickBook, KOTAK_NSE_BSE_CASH_BOOK_ID,
@@ -287,7 +287,7 @@ pub fn ensure_kotak_rest_depth(
         return;
     }
     let segment = instrument.split('|').next().unwrap_or_default();
-    if segment != "nse_cm" && segment != "bse_cm" {
+    if !is_cash_segment(segment) {
         return;
     }
     {

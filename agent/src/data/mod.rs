@@ -126,8 +126,8 @@ pub use kotak_depth::{
     extract_depth, DepthEnvelope, DepthStatus,
 };
 pub use kotak_quotes::{
-    kotak_quote_book_id, parse_nfo_instrument_id, quote_tick_from_kotak_json,
-    quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
+    is_cash_segment, is_nfo_segment, kotak_quote_book_id, parse_nfo_instrument_id,
+    quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
 };
 pub use margin_estimate::extract_margin_estimate;
