@@ -453,7 +453,7 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
             let rows: Vec<_> =
                 if parse_nfo_instrument_id(&instrument).is_some() || !instrument.is_empty() {
                     master
-                        .rows_for_underlying(&instrument)
+                        .option_rows_for_underlying(&instrument)
                         .into_iter()
                         .map(|row| row.to_chain_row())
                         .collect()

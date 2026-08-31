@@ -36,6 +36,34 @@ pub const LOCK_HEADER: &str = "pSymbol,pGroup,pExchSeg,pInstType,pSymbolName,pTr
 
 const NFO_SEGMENT: &str = "nse_fo";
 
+/// Option `pInstType` values on the FO master. Mirrors the option half of the cash
+/// parser's `REFUSED_FO_INST_TYPES` (`kotak_scrip_master.rs`), which is the only
+/// place the venue's instrument-type vocabulary is already written down.
+///
+/// A futures row shares `pSymbolName` **and** `lExpiryDate` with the options on the
+/// same underlying, so name+expiry alone does not separate them. An option chain
+/// that contains a FUTIDX row is claiming a future is an option.
+const OPTION_INST_TYPES: &[&str] = &["OPTIDX", "OPTSTK", "OPTCUR", "OPTCOM"];
+
+/// True for the option instrument types this book serves. Case-insensitive; the
+/// master is uppercase but the lock does not promise that.
+pub fn is_option_inst_type(inst_type: &str) -> bool {
+    let inst_type = inst_type.trim();
+    OPTION_INST_TYPES
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(inst_type))
+}
+
+/// Sort key for a raw `dStrikePrice;` cell. Ordering only — this parse never reaches
+/// the wire and makes no claim about the strike's scale (still NOT SPECIFIED; see
+/// `OPTIONS-PRICING.md`). Unparseable cells sort last, never interleaved.
+fn strike_sort_key(strike_raw: &str) -> (u8, f64) {
+    match strike_raw.trim().parse::<f64>() {
+        Ok(value) if value.is_finite() => (0, value),
+        _ => (1, 0.0),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct KotakNfoContract {
     pub instrument_token: i64,   // pSymbol
@@ -51,6 +79,11 @@ pub struct KotakNfoContract {
 }
 
 impl KotakNfoContract {
+    /// Option row (not FUTIDX/FUTSTK/SPREAD). Chain callers must filter on this.
+    pub fn is_option(&self) -> bool {
+        is_option_inst_type(&self.instrument_type)
+    }
+
     pub fn instrument_id(&self) -> String {
         format!("nse_fo|{}", self.instrument_token)
     }
@@ -152,6 +185,36 @@ impl KotakNfoScripMaster {
             .values()
             .filter(|row| row.name.to_ascii_uppercase() == name)
             .collect()
+    }
+
+    /// Option rows only, in a stable order — the shape an option chain may claim.
+    ///
+    /// Two reasons this is not `rows_for_underlying`:
+    /// futures share name + expiry with options and must not enter a chain, and
+    /// `by_token` is a `HashMap`, so the unsorted order differs between calls.
+    /// A ladder that reshuffles per request is not a snapshot.
+    ///
+    /// `rows_for_underlying` stays unfiltered: the forward leg needs the FUTIDX row.
+    pub fn option_rows_for_underlying(&self, underlying_or_id: &str) -> Vec<&KotakNfoContract> {
+        let mut rows: Vec<&KotakNfoContract> = self
+            .rows_for_underlying(underlying_or_id)
+            .into_iter()
+            .filter(|row| row.is_option())
+            .collect();
+        rows.sort_by(|a, b| {
+            a.expiry_raw
+                .cmp(&b.expiry_raw)
+                .then_with(|| {
+                    let (a_rank, a_strike) = strike_sort_key(&a.strike_raw);
+                    let (b_rank, b_strike) = strike_sort_key(&b.strike_raw);
+                    a_rank
+                        .cmp(&b_rank)
+                        .then_with(|| a_strike.total_cmp(&b_strike))
+                })
+                .then_with(|| a.option_type.cmp(&b.option_type))
+                .then_with(|| a.instrument_token.cmp(&b.instrument_token))
+        });
+        rows
     }
 
     /// Prefix search on trading_symbol / name. NFO rows only (cash is never stored).
@@ -692,6 +755,136 @@ mod tests {
         assert_eq!(by_id.len(), 1);
         assert!(master.rows_for_underlying("BANKNIFTY").is_empty());
         assert!(master.rows_for_underlying("nse_cm|2885").is_empty());
+    }
+
+    /// Build a CSV body from the locked header plus caller-supplied rows derived
+    /// from the fixture row. Column indices follow `LOCK_HEADER`.
+    fn csv_with_rows(rows: &[&[(usize, &str)]]) -> String {
+        let header = fixture_header_line();
+        let base: Vec<&str> = FIXTURE_CSV
+            .lines()
+            .nth(1)
+            .expect("fixture data row")
+            .split(',')
+            .collect();
+        let mut body = String::from(header);
+        for overrides in rows {
+            let mut cells = base.clone();
+            for (index, value) in *overrides {
+                cells[*index] = value;
+            }
+            body.push('\n');
+            body.push_str(&cells.join(","));
+        }
+        body
+    }
+
+    // LOCK_HEADER column indices used below.
+    const COL_SYMBOL: usize = 0;
+    const COL_INST_TYPE: usize = 3;
+    const COL_TRD_SYMBOL: usize = 5;
+    const COL_OPTION_TYPE: usize = 6;
+    const COL_STRIKE: usize = 20;
+
+    #[test]
+    fn futures_row_sharing_name_and_expiry_is_not_a_chain_row() {
+        // Same pSymbolName (NIFTY) and same lExpiryDate as the option — the pair
+        // name+expiry cannot separate them, only pInstType can.
+        let csv = csv_with_rows(&[
+            &[],
+            &[
+                (COL_SYMBOL, "56527"),
+                (COL_INST_TYPE, "FUTIDX"),
+                (COL_TRD_SYMBOL, "NIFTY26SEPFUT"),
+                (COL_OPTION_TYPE, "XX"),
+                (COL_STRIKE, "0"),
+            ],
+        ]);
+        let master = KotakNfoScripMaster::from_csv_bytes(csv.as_bytes()).unwrap();
+        assert_eq!(master.len(), 2, "both rows parse into the master");
+
+        // The unfiltered accessor still sees the future — the forward leg needs it.
+        let all = master.rows_for_underlying("NIFTY");
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|row| row.instrument_type == "FUTIDX"));
+
+        // The chain accessor must not.
+        let options = master.option_rows_for_underlying("NIFTY");
+        assert_eq!(options.len(), 1, "FUTIDX must not reach an option chain");
+        assert_eq!(options[0].instrument_id(), "nse_fo|56526");
+        assert!(options.iter().all(|row| row.is_option()));
+
+        // Anchoring by the option's own id resolves name+expiry, and still refuses
+        // the future that shares both.
+        let by_id = master.option_rows_for_underlying("nse_fo|56526");
+        assert_eq!(by_id.len(), 1);
+        assert_eq!(by_id[0].instrument_type, "OPTIDX");
+
+        // And it is absent from the rendered chain, not merely untagged.
+        let rows: Vec<_> = options.into_iter().map(|row| row.to_chain_row()).collect();
+        let envelope = crate::data::extract_chain_from(
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            "NIFTY",
+            Some(&rows),
+            None,
+        );
+        let wire = serde_json::to_string(&envelope).unwrap();
+        assert!(
+            !wire.contains("FUTIDX"),
+            "chain wire named a future: {wire}"
+        );
+        assert!(!wire.contains("NIFTY26SEPFUT"));
+        assert_eq!(envelope.data.as_ref().unwrap()["row_count"], 1);
+    }
+
+    #[test]
+    fn option_rows_are_ordered_not_hash_ordered() {
+        let csv = csv_with_rows(&[
+            &[],
+            &[
+                (COL_SYMBOL, "56528"),
+                (COL_TRD_SYMBOL, "NIFTY2692220000CE"),
+                (COL_OPTION_TYPE, "CE"),
+                (COL_STRIKE, "2e+06"),
+            ],
+            &[
+                (COL_SYMBOL, "56529"),
+                (COL_TRD_SYMBOL, "NIFTY2692222000CE"),
+                (COL_OPTION_TYPE, "CE"),
+                (COL_STRIKE, "2.2e+06"),
+            ],
+        ]);
+        let master = KotakNfoScripMaster::from_csv_bytes(csv.as_bytes()).unwrap();
+        let ids: Vec<String> = master
+            .option_rows_for_underlying("NIFTY")
+            .into_iter()
+            .map(|row| row.instrument_id())
+            .collect();
+        // Strike ascending: 2e+06 < 2.1e+06 < 2.2e+06. Scientific notation means a
+        // lexical sort of the raw cell would order these wrong.
+        assert_eq!(ids, vec!["nse_fo|56528", "nse_fo|56526", "nse_fo|56529"]);
+
+        // Stable across calls — `by_token` is a HashMap.
+        for _ in 0..8 {
+            let again: Vec<String> = master
+                .option_rows_for_underlying("NIFTY")
+                .into_iter()
+                .map(|row| row.instrument_id())
+                .collect();
+            assert_eq!(again, ids);
+        }
+    }
+
+    #[test]
+    fn only_option_inst_types_are_options() {
+        for inst in ["OPTIDX", "OPTSTK", "OPTCUR", "OPTCOM", "optidx"] {
+            assert!(is_option_inst_type(inst), "{inst} is an option type");
+        }
+        for inst in [
+            "FUTIDX", "FUTSTK", "FUTCUR", "FUTCOM", "FUTIVX", "SPREAD", "",
+        ] {
+            assert!(!is_option_inst_type(inst), "{inst} must not be an option");
+        }
     }
 
     #[test]

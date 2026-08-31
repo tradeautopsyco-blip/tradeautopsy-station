@@ -52,7 +52,7 @@ fn nfo_chain_rows(state: &AppState, instrument: &str) -> Vec<ChainRow> {
         .lock()
         .expect("kotak nfo scrip master mutex poisoned");
     master
-        .rows_for_underlying(instrument)
+        .option_rows_for_underlying(instrument)
         .into_iter()
         .map(|row| row.to_chain_row())
         .collect()
