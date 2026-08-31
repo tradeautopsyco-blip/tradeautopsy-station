@@ -269,6 +269,9 @@ Do **not** treat `/quick/quotes` as specified. It does not appear in `PROD_URL` 
 > - Not `AuthMode::Public` (Binance unsigned). Consumer key and/or session is **session attach**. Slice A should keep PrivateRead for Kotak quotes even though the SDK omits Sid/Auth on this GET.
 > - Quotes/subscribe are for a **later s1k** slice. v1 poll remains trade book only.
 > - Slice D: `quote_type=depth` is stored as `market/order_book/bounded_snapshot` (not `ordered_state`; HSM `isDepth` is out of scope).
+> - **`nse_fo` depth body is NOT SPECIFIED IN SOURCE (2026-08-31).** `exchange_segment` officially admits `nse_fo` (README table above) and the R0 fence already permits `quote_type=depth` on the `kotak-nse-nfo` book, so nothing on the wire blocks it. What is missing is an **observed FO body**: the only founder observation on this path is cash (`nse_cm|11536`, 2026-08-27), and `Quotes.md` still types the return as bare `object`. The in-repo fixtures `quotes_neosymbol_depth.json` (cash) and `quotes_neosymbol_nfo.json` (FO, no `depth` field) are hand-authored v1 shapes, **not** observations. Station therefore does not attempt FO depth and does not assume the cash ladder shape carries over. `ensure_kotak_rest_depth` logs the refusal rather than dropping silently.
+>
+>   **To unblock:** one live `GET {baseUrl}/quotes/neosymbol/nse_fo|{token}/depth` on a logged-in session; record root keys, the `depth` field name, and the level key names (`price`/`quantity`/`orders` vs other) as a dated row here, exactly as the cash row above was recorded. Then `kotak_instrument_id` may accept `nse_fo`.
 
 ---
 

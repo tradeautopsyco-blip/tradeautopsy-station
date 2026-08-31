@@ -288,6 +288,19 @@ pub fn ensure_kotak_rest_depth(
     }
     let segment = instrument.split('|').next().unwrap_or_default();
     if !is_cash_segment(segment) {
+        // The R0 fence already permits `quote_type=depth` on the NFO book
+        // (`host_policy::authorize_book_call`), and REST.md:271 already assigns it
+        // `market/order_book/bounded_snapshot`. What is missing is an observed
+        // `nse_fo` depth body: REST.md records the schema as NOT SPECIFIED and the
+        // one founder observation is cash. Do not guess the ladder shape.
+        //
+        // Say so rather than dropping in silence — a caller cannot otherwise tell
+        // depth was never attempted from depth being empty.
+        tracing::debug!(
+            instrument = %instrument,
+            segment = segment,
+            "kotak REST depth not attempted: nse_fo body shape NOT SPECIFIED (REST.md)"
+        );
         return;
     }
     {
