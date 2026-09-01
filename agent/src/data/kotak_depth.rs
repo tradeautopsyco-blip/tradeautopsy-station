@@ -191,21 +191,51 @@ fn depth_slot(id: &str) -> String {
     shipping_book_id_for_slug(id).unwrap_or_else(|| id.to_string())
 }
 
+/// Adapter-keyed lookup: the Start **slug** picks its shipping book.
+///
+/// This resolves `binance_com` to `binance-com-spot`, so it cannot address a
+/// second book on the same slug. Obtain must use [`extract_depth_on_book`]
+/// instead — see the note there.
 pub fn extract_depth(
     book: &super::depthbook::DepthBook,
     instrument_id: &str,
     adapter_id: Option<&str>,
 ) -> DepthEnvelope {
-    let identity = order_book_bounded_snapshot();
     let wanted = adapter_id.unwrap_or(KOTAK_NEO_ADAPTER_ID);
     let slot = depth_slot(wanted);
-    let Some(row) = book.get(&slot, instrument_id).or_else(|| {
-        if slot != wanted {
-            book.get(wanted, instrument_id)
-        } else {
-            None
-        }
-    }) else {
+    let fallback = (slot != wanted).then_some(wanted);
+    extract_depth_from_slot(book, instrument_id, &slot, fallback, wanted)
+}
+
+/// Book-keyed lookup — the only one obtain may use.
+///
+/// `binance_com` is the login slug for **two** books: spot and the named options
+/// book. `shipping_book_id_for_slug("binance_com")` answers `binance-com-spot`,
+/// so an adapter-keyed read on the options envelope would serve the spot ladder
+/// for `btcusdt` as if it were the contract's own book. Here the slot is exactly
+/// the caller's `book_id`, with no slug mapping and no adapter fallback: an empty
+/// options slot reads Unavailable, never a cross-book paint.
+pub fn extract_depth_on_book(
+    book: &super::depthbook::DepthBook,
+    instrument_id: &str,
+    book_id: &str,
+) -> DepthEnvelope {
+    extract_depth_from_slot(book, instrument_id, book_id, None, book_id)
+}
+
+fn extract_depth_from_slot(
+    book: &super::depthbook::DepthBook,
+    instrument_id: &str,
+    slot: &str,
+    fallback_slot: Option<&str>,
+    provenance_id: &str,
+) -> DepthEnvelope {
+    let identity = order_book_bounded_snapshot();
+    let wanted = provenance_id;
+    let Some(row) = book
+        .get(slot, instrument_id)
+        .or_else(|| fallback_slot.and_then(|alt| book.get(alt, instrument_id)))
+    else {
         return DepthEnvelope {
             identity,
             instrument_id: instrument_id.to_string(),
@@ -357,6 +387,95 @@ mod tests {
         assert_eq!(snap.instrument_id, "nse_cm|11536");
         assert_eq!(snap.adapter_id, KOTAK_NEO_ADAPTER_ID);
         assert!(!snap.bids.is_empty());
+    }
+
+    /// The load-bearing regression. `binance_com` is one slug over two books;
+    /// obtain must read the slot it was asked for, not the slug's shipping book.
+    #[test]
+    fn a_book_keyed_read_never_serves_the_other_book_on_the_same_slug() {
+        use crate::data::binance_options_depth::depth_snapshot_from_eapi_json;
+        use crate::data::descriptor::{BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID};
+
+        const EAPI: &str = include_str!("../../fixtures/binance/options_depth.json");
+        let mut book = DepthBook::new();
+        book.upsert(
+            depth_snapshot_from_eapi_json(EAPI, "BTC-200730-9000-C", received()).expect("options"),
+        );
+
+        let options =
+            extract_depth_on_book(&book, "BTC-200730-9000-C", BINANCE_COM_OPTIONS_BOOK_ID);
+        assert_eq!(options.status, DepthStatus::Success);
+        assert_eq!(options.provenance.adapter_id, "binance_com");
+        let data = depth_obtain_data(&options).expect("bounded snapshot");
+        assert_eq!(data["identity"]["physics"], "bounded_snapshot");
+        assert_ne!(data["identity"]["physics"], "ordered_state");
+        assert_eq!(data["source"], "rest_snapshot");
+        assert!(data.get("synced").is_none());
+        // Positional levels carry no order count.
+        assert!(data["bids"][0].get("orders").is_none());
+
+        // The same ladder must not be reachable as spot depth, by book or by id.
+        assert_eq!(
+            extract_depth_on_book(&book, "BTC-200730-9000-C", BINANCE_COM_SPOT_BOOK_ID).status,
+            DepthStatus::Unavailable
+        );
+        assert_eq!(
+            extract_depth_on_book(&book, "btcusdt", BINANCE_COM_SPOT_BOOK_ID).status,
+            DepthStatus::Unavailable
+        );
+        // A lowercased contract is a different id on this book — no case smash.
+        assert_eq!(
+            extract_depth_on_book(&book, "btc-200730-9000-c", BINANCE_COM_OPTIONS_BOOK_ID).status,
+            DepthStatus::Unavailable
+        );
+        // And the adapter-keyed helper still resolves the slug to spot, which is
+        // exactly why obtain may not use it for this book.
+        assert_eq!(
+            extract_depth(&book, "BTC-200730-9000-C", Some("binance_com")).status,
+            DepthStatus::Unavailable
+        );
+    }
+
+    /// A spot ladder in the book must not paint an empty options slot.
+    #[test]
+    fn a_resident_spot_ladder_leaves_the_options_slot_unavailable() {
+        use crate::data::descriptor::{
+            BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+        };
+        let mut book = DepthBook::new();
+        book.upsert(DepthSnapshot {
+            instrument_id: "btcusdt".into(),
+            adapter_id: BINANCE_COM_ADAPTER_ID.into(),
+            book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
+            bids: vec![DepthLevel {
+                price: "60000.00".into(),
+                quantity: "1".into(),
+                orders: None,
+            }],
+            asks: vec![DepthLevel {
+                price: "60001.00".into(),
+                quantity: "1".into(),
+                orders: None,
+            }],
+            completeness: true,
+            bound_levels: 1,
+            as_of: received(),
+            transport: Transport::Stream,
+            sequence: Some(9),
+        });
+        assert_eq!(
+            extract_depth_on_book(&book, "btcusdt", BINANCE_COM_SPOT_BOOK_ID).status,
+            DepthStatus::Success
+        );
+        // Same adapter, other book: no fallback, no repaint.
+        assert_eq!(
+            extract_depth_on_book(&book, "BTC-200730-9000-C", BINANCE_COM_OPTIONS_BOOK_ID).status,
+            DepthStatus::Unavailable
+        );
+        assert_eq!(
+            extract_depth_on_book(&book, "btcusdt", BINANCE_COM_OPTIONS_BOOK_ID).status,
+            DepthStatus::Unavailable
+        );
     }
 
     #[test]

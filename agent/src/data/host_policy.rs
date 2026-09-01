@@ -1080,6 +1080,30 @@ mod tests {
             .expect("OI path stays allowlisted"),
             ("open_interest", AuthMode::Public)
         );
+        // The fence is per book, both ways: the spot book may not reach eapi
+        // depth, and the options book may not reach the spot depth path.
+        assert!(matches!(
+            authorize_book_call(
+                "binance-com-spot",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/depth",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed { .. }
+        ));
+        assert!(matches!(
+            authorize_book_call(
+                "binance-com-options",
+                "api.binance.com",
+                "GET",
+                "/api/v3/depth",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed { .. }
+        ));
         // Spot still cannot dial eapi at all, by either path.
         assert_eq!(
             authorize_book_call(

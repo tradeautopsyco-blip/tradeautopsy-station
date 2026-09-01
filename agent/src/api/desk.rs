@@ -278,13 +278,34 @@ impl AppState {
     /// Dated → options record + unbind spot. Kotak `|` → REST kick. Else spot binds.
     pub fn bind_spot_market(&self, id: &str) {
         match bind_spot_market_ids(id, &self.com_trade, &self.com_depth, &self.quote_streams) {
-            BindSpotKind::Options => self.replace_klines_bind(None),
+            BindSpotKind::Options => {
+                self.replace_klines_bind(None);
+                self.kick_options_rest_depth(id);
+            }
             BindSpotKind::Kotak => self.kick_kotak_rest_quote(id),
             BindSpotKind::Spot => {
                 let spot = normalize_quote_instrument(id);
                 self.replace_klines_bind(Some(spot.as_str()).filter(|s| !s.is_empty()));
             }
         }
+    }
+
+    /// Warm the options order book at bind time, the way a Kotak bind kicks its
+    /// REST depth. One GET, gated on `eapi_public_fetch` and on the id actually
+    /// being a dated contract; obtain kicks again if the slot is still empty, and
+    /// `ensure_options_depth` is a no-op once a complete ladder is resident.
+    ///
+    /// This does **not** open a COM `@depth` stream — the WS depth slot was just
+    /// unbound for this id, and it stays that way.
+    fn kick_options_rest_depth(&self, id: &str) {
+        if !self.eapi_public_fetch || !is_dated_option_contract(id) {
+            return;
+        }
+        let state = self.clone();
+        let instrument = crate::data::normalize_options_instrument(id);
+        tokio::spawn(async move {
+            super::glance::ensure_options_depth(&state, &instrument).await;
+        });
     }
 
     fn replace_klines_bind(&self, next: Option<&str>) {
@@ -866,6 +887,10 @@ mod tests {
         assert_eq!(instrument_master_target("zerodha"), None);
     }
 
+    /// Options depth is a REST bounded snapshot on `eapi.binance.com` (Slice 3).
+    /// Lighting it must not open spot's managed COM `@depth` WS for a dated
+    /// contract: that stream carries `u`/`pu` reconstruction this book has no
+    /// parser for, and `stream.binance.com` does not list these contracts.
     #[test]
     fn subscribe_instrument_dated_does_not_insert_into_depth_bind() {
         let trade = MarketBind::new();
@@ -874,6 +899,10 @@ mod tests {
         let kind = bind_spot_market_ids("BTC-260925-145000-C", &trade, &depth, &streams);
         assert_eq!(kind, BindSpotKind::Options);
         assert!(trade.current().is_none());
+        assert!(depth.current().is_none());
+        // Belt-and-braces: even called directly, the COM depth binder unbinds a
+        // dated id rather than lowercasing it into the spot slot.
+        crate::data::ensure_binance_com_depth_stream(&depth, "BTC-260925-145000-C");
         assert!(depth.current().is_none());
         assert_ne!(depth.current().as_deref(), Some("btc-260925-145000-c"));
         assert_ne!(depth.current().as_deref(), Some("BTC-260925-145000-C"));

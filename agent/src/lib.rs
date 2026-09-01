@@ -340,6 +340,9 @@ pub struct AgentConfig {
     /// Same, but the observed no-bid row (`"bidIV":"-1.0"`). Its own flag because a
     /// `CachedMark` holds exactly one contract — the two rows cannot share a plant.
     pub plant_binance_options_mark_no_bid: bool,
+    /// Options order book CI: plant the committed `/eapi/v1/depth` JSON into the
+    /// DepthBook's `binance-com-options` slot. No live eapi.
+    pub plant_binance_options_depth: bool,
     /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
     pub eapi_public_fetch: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
@@ -460,6 +463,7 @@ impl AgentConfig {
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
+            plant_binance_options_depth: false,
             eapi_public_fetch: true,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
@@ -521,6 +525,7 @@ impl AgentConfig {
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
+            plant_binance_options_depth: false,
             eapi_public_fetch: false,
             instrument_master_cache_dir,
         }
@@ -539,6 +544,32 @@ fn instrument_master_cache_dir_from_env() -> PathBuf {
     let mut p = std::env::temp_dir();
     p.push("tradeautopsy-instrument-master");
     p
+}
+
+#[cfg(test)]
+mod options_depth_plant_tests {
+    use super::*;
+
+    /// The committed `/eapi/v1/depth` fixture must land in the **options** slot,
+    /// mixed-case, with its `lastUpdateId` and no invented order count.
+    #[test]
+    fn planting_the_depth_fixture_lands_in_the_options_slot_only() {
+        let book: Arc<Mutex<crate::data::DepthBook>> =
+            Arc::new(Mutex::new(crate::data::DepthBook::new()));
+        plant_binance_options_depth(&book);
+        let guard = book.lock().expect("depthbook mutex poisoned");
+        let row = guard
+            .get("binance-com-options", "BTC-200730-9000-C")
+            .expect("the fixture must plant one options ladder");
+        assert_eq!(row.book_id, "binance-com-options");
+        assert_eq!(row.adapter_id, "binance_com");
+        assert_eq!(row.sequence, Some(361));
+        assert_eq!(row.bids[0].price, "1000.000");
+        assert!(row.bids.iter().all(|level| level.orders.is_none()));
+        // Not reachable as spot depth, by either id.
+        assert!(guard.get("binance-com-spot", "BTC-200730-9000-C").is_none());
+        assert!(guard.get("binance-com-spot", "btcusdt").is_none());
+    }
 }
 
 #[cfg(test)]
@@ -801,6 +832,23 @@ fn plant_binance_options_mark_no_bid(mark: &Arc<Mutex<Option<crate::data::Cached
     );
 }
 
+/// Headless options order book: the committed `/eapi/v1/depth` fixture into the
+/// **options** slot of the DepthBook. No live eapi. The symbol is supplied by
+/// Station (the body carries none), and stays mixed-case.
+fn plant_binance_options_depth(depthbook: &Arc<Mutex<crate::data::DepthBook>>) {
+    let json = include_str!("../fixtures/binance/options_depth.json");
+    let Some(snapshot) =
+        crate::data::depth_snapshot_from_eapi_json(json, "BTC-200730-9000-C", Utc::now())
+    else {
+        tracing::warn!("options fixture: depth plant refused, no usable ladder");
+        return;
+    };
+    depthbook
+        .lock()
+        .expect("depthbook mutex poisoned")
+        .upsert(snapshot);
+}
+
 fn plant_options_mark_json(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>, json: &str) {
     let Some(row) = crate::data::mark_rows_from_json(json).into_iter().next() else {
         tracing::warn!("options fixture: mark plant refused, no complete row");
@@ -999,6 +1047,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
     if config.plant_binance_options_mark_no_bid {
         plant_binance_options_mark_no_bid(&options_mark);
+    }
+    if config.plant_binance_options_depth {
+        plant_binance_options_depth(&depthbook);
     }
 
     let injected_station_tokens = config.station_token_store.is_some();

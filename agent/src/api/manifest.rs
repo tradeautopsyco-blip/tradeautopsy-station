@@ -3,10 +3,11 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    chain_rows_for_contract, depth_obtain_data, describe, extract_chain_from, extract_depth,
-    extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
-    extract_quote_for_book, history_obtain_data, obtain, parse_nfo_instrument_id, DepthStatus,
-    GlanceStatus, GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
+    chain_rows_for_contract, depth_obtain_data, describe, extract_chain_from,
+    extract_depth_on_book, extract_greeks_from_mark, extract_licensed_history,
+    extract_open_interest_from, extract_quote_for_book, history_obtain_data,
+    is_dated_option_contract, obtain, parse_nfo_instrument_id, DepthStatus, GlanceStatus,
+    GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
     SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
     KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
@@ -182,6 +183,15 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
             }
             super::glance::ensure_options_mark(state, &instrument).await;
         }
+        "depth" => {
+            // `symbol` is mandatory on `/eapi/v1/depth`, and a leftover spot id
+            // is not a contract: it must never reach the venue.
+            let instrument = selected_options_contract(state);
+            if !is_dated_option_contract(&instrument) {
+                return;
+            }
+            super::glance::ensure_options_depth(state, &instrument).await;
+        }
         _ => {}
     }
 }
@@ -215,6 +225,9 @@ fn enricher(
         ("binance-com-options", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "open_interest") => Some(enrich_open_interest),
         ("binance-com-options", "optiongreeks") => Some(enrich_greeks),
+        // Same enricher as spot/cash — safe only because the lookup is keyed by
+        // `book_id`, not by the slug the two Binance books share.
+        ("binance-com-options", "depth") => Some(enrich_depth),
         _ => None,
     }
 }
@@ -294,27 +307,59 @@ fn enrich_tickbook_quotes_with(
     envelope
 }
 
-fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let adapter = envelope.adapter_id.clone();
-    let book_id = envelope.book_id.clone();
-    let book = state.depthbook.lock().expect("depthbook mutex poisoned");
-    let mut instrument = state
+/// The instrument this book's depth obtain is scoped to.
+///
+/// Identity is per book, not per slug. Spot lowercases its pairs; the named
+/// options book is a mixed-case dated contract and must never be lowercased or
+/// resolved from a leftover spot id — `BTC` / `BTCUSDT` is not a contract, so
+/// obtain stays dark rather than smashing a spot ladder in.
+/// The options-depth scoping rule, pure so it can be tested without an AppState.
+///
+/// Only a dated contract scopes options depth. Anything else — a leftover spot
+/// pair, a cash id, an empty selection — yields `None`, and the caller must then
+/// leave obtain dark rather than falling back to a resident ladder.
+fn options_depth_instrument(selected: &str) -> Option<String> {
+    let contract = crate::data::normalize_options_instrument(selected);
+    is_dated_option_contract(&contract).then_some(contract)
+}
+
+fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
+    if book_id == BINANCE_COM_OPTIONS_BOOK_ID {
+        return options_depth_instrument(&selected_options_contract(state)).unwrap_or_default();
+    }
+    let instrument = state
         .resolve_candidates()
         .first()
         .cloned()
         .unwrap_or_else(|| state.s1_desk_symbol.clone().unwrap_or_default());
-    if envelope.book_id == "binance-com-spot" {
-        instrument = crate::data::normalize_quote_instrument(&instrument);
+    if book_id == "binance-com-spot" {
+        crate::data::normalize_quote_instrument(&instrument)
+    } else {
+        instrument
     }
-    if instrument.is_empty() || book.get(&book_id, &instrument).is_none() {
+}
+
+fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let book_id = envelope.book_id.clone();
+    let book = state.depthbook.lock().expect("depthbook mutex poisoned");
+    let mut instrument = depth_instrument_for_book(state, &book_id);
+    // The options book is instrument-scoped, with **no** resident fallback: a
+    // selection that is not a dated contract leaves obtain dark rather than
+    // serving whichever ladder happens to still be in the slot. Found by
+    // dogfooding — selecting `BTCUSDT` used to answer with the previously
+    // fetched contract, which is not the contract anyone asked for.
+    if book_id == BINANCE_COM_OPTIONS_BOOK_ID {
+        if instrument.is_empty() {
+            return envelope;
+        }
+    } else if instrument.is_empty() || book.get(&book_id, &instrument).is_none() {
+        // Spot/cash keep their in-book fallback. Still **this book** only: there
+        // is no adapter-wide fallback, because spot and the named options book
+        // share adapter `binance_com` and one would paint a spot `btcusdt`
+        // ladder onto an options envelope.
         if let Some((_, row)) = book
             .iter()
             .find(|(_, row)| row.book_id == book_id && row.completeness)
-        {
-            instrument = row.instrument_id.clone();
-        } else if let Some((_, row)) = book
-            .iter()
-            .find(|(_, row)| row.adapter_id == adapter && row.completeness)
         {
             instrument = row.instrument_id.clone();
         }
@@ -322,7 +367,9 @@ fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelop
     if instrument.is_empty() {
         return envelope;
     }
-    let depth = extract_depth(&book, &instrument, Some(adapter.as_str()));
+    // Book-keyed, never slug-keyed: `shipping_book_id_for_slug("binance_com")`
+    // is spot, which would read the wrong slot for every options request.
+    let depth = extract_depth_on_book(&book, &instrument, &book_id);
     if depth.status == DepthStatus::Success {
         if let Some(data) = depth_obtain_data(&depth) {
             envelope.status = ObtainStatus::Success;
@@ -692,6 +739,40 @@ fn tickbook_quote_obtain_data(quote: &crate::data::QuoteEnvelope) -> Option<serd
 
 #[cfg(test)]
 mod tests {
+    /// Dogfooding find (2026-09-01): options depth must be scoped to the selected
+    /// dated contract with **no** resident fallback. A live run with `BTCUSDT`
+    /// selected answered with the previously fetched contract's ladder — a
+    /// contract nobody had asked for.
+    #[test]
+    fn only_a_dated_contract_scopes_options_depth() {
+        use super::options_depth_instrument;
+        assert_eq!(
+            options_depth_instrument("BTC-260901-73000-C").as_deref(),
+            Some("BTC-260901-73000-C")
+        );
+        // Trimmed, never lowercased.
+        assert_eq!(
+            options_depth_instrument("  BTC-260901-73000-C  ").as_deref(),
+            Some("BTC-260901-73000-C")
+        );
+        // Everything that is not a dated contract scopes nothing, so obtain goes
+        // dark instead of serving whatever ladder is still resident.
+        for leftover in [
+            "BTCUSDT",
+            "btcusdt",
+            "BTC",
+            "",
+            "   ",
+            "nse_cm|2885",
+            "nse_fo|56526",
+        ] {
+            assert!(
+                options_depth_instrument(leftover).is_none(),
+                "{leftover:?} must not scope options depth"
+            );
+        }
+    }
+
     use super::*;
     use crate::data::KOTAK_NEO_ADAPTER_ID;
     use crate::kotak_scrip_master::KotakScripMaster;
@@ -882,6 +963,9 @@ mod tests {
         assert!(enricher("binance-com-options", "optionchain").is_some());
         assert!(enricher("binance-com-options", "open_interest").is_some());
         assert!(enricher("binance-com-options", "optiongreeks").is_some());
+        assert!(enricher("binance-com-options", "depth").is_some());
+        // NFO depth is NOT SPECIFIED IN SOURCE — no enricher claims it.
+        assert!(enricher("kotak-nse-nfo", "depth").is_none());
         // The greeks door never opens on spot, cash or NFO.
         assert!(enricher("binance-com-spot", "optiongreeks").is_none());
         assert!(enricher("kotak-nse-bse-cash", "optiongreeks").is_none());
@@ -979,7 +1063,8 @@ mod tests {
         ])
         .expect("kotak + spot quote");
         let mut book = TickBook::new();
-        let fo = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","last_traded_price":"10.00"}"#;
+        // Observed FO shape (probe 2026-08-31): `ltp`, not v1 `last_traded_price`.
+        let fo = r#"{"exchange":"nse_fo","exchange_token":"12345","ltp":"10.00"}"#;
         let nfo_tick =
             quote_tick_from_kotak_json_for_book(fo, chrono::Utc::now(), KOTAK_NSE_NFO_BOOK_ID)
                 .expect("nfo tick");
