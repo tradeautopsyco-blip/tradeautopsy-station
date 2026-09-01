@@ -219,6 +219,7 @@ fn enricher(
         ("kotak-nse-bse-cash", "instruments") => Some(enrich_kotak_instruments),
         ("kotak-nse-bse-cash", "tradebook") => Some(enrich_tradebook),
         ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
+        ("kotak-nse-nfo", "tradebook") => Some(enrich_tradebook),
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         ("kotak-nse-nfo", "open_interest") => Some(enrich_open_interest),
@@ -408,7 +409,7 @@ fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
 }
 
 fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
-    json!({
+    let mut row = json!({
         "id": fill.fill_id,
         "symbol": fill.symbol,
         "side": fill.side,
@@ -422,7 +423,14 @@ fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
             "amount": amount,
             "asset": fill.fee_asset,
         })),
-    })
+    });
+    if let Some(lot) = fill.lot {
+        row["lot"] = json!(lot);
+    }
+    if let Some(ref it) = fill.instrument_type {
+        row["instrument_type"] = json!(it);
+    }
+    row
 }
 
 /// One obtain helper for all account nouns. `None` slot → Unavailable; empty vec → Success + `rows: []`.
@@ -1035,6 +1043,7 @@ mod tests {
         assert!(enricher("kotak-nse-bse-cash", "optionchain").is_none());
         assert!(enricher("kotak-nse-nfo", "quotes").is_some());
         assert!(enricher("kotak-nse-nfo", "instruments").is_some());
+        assert!(enricher("kotak-nse-nfo", "tradebook").is_some());
         assert!(enricher("kotak-nse-nfo", "optionchain").is_some());
         let spot = manifests
             .iter()

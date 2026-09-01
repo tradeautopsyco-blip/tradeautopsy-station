@@ -943,6 +943,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         .broker_credential_vault
         .clone()
         .unwrap_or_else(default_credential_vault);
+    let kotak_nfo_scrip_master = Arc::new(std::sync::Mutex::new(
+        crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+    ));
     let broker_sync_control = Arc::new(BrokerSyncController::new(
         broker_status.clone(),
         recent_trades.clone(),
@@ -956,6 +959,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         today_service_slot.clone(),
         credential_vault,
         account_book.clone(),
+        kotak_nfo_scrip_master.clone(),
     ));
 
     let today_service = Arc::new(TodayService::new(
@@ -1002,9 +1006,6 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let instrument_master = Arc::new(std::sync::Mutex::new(ExchangeInfoSymbolCache::empty()));
     let kotak_scrip_master = Arc::new(std::sync::Mutex::new(
         crate::kotak_scrip_master::KotakScripMaster::empty(),
-    ));
-    let kotak_nfo_scrip_master = Arc::new(std::sync::Mutex::new(
-        crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
     ));
     let kotak_session_locator = Arc::new(std::sync::Mutex::new(None));
     let kotak_quote_inflight = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));

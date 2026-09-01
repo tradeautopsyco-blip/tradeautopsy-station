@@ -51,7 +51,7 @@ mod tickbook;
 
 pub use account_book::{AccountBook, BookAccount, Slot};
 pub use account_split::{
-    fills_provenance_path, merge_poll_book_id, split_fills_by_book,
+    fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };
 pub use apply::{apply_quote, ApplyError};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere

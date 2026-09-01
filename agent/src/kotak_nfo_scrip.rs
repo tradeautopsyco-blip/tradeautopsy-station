@@ -149,6 +149,24 @@ impl KotakNfoScripMaster {
         self.by_token.get(&token)
     }
 
+    /// Exact trading-symbol lookup (`pTrdSymbol`). Trim + ASCII uppercase on both sides.
+    /// Duplicate symbols in the master → `None` (miss). Does not prefix-search.
+    pub fn get_by_trading_symbol(&self, sym: &str) -> Option<&KotakNfoContract> {
+        let needle = sym.trim().to_ascii_uppercase();
+        if needle.is_empty() {
+            return None;
+        }
+        let mut hits: Vec<&KotakNfoContract> = self
+            .by_token
+            .values()
+            .filter(|row| row.trading_symbol.trim().to_ascii_uppercase() == needle)
+            .collect();
+        if hits.len() != 1 {
+            return None;
+        }
+        hits.pop()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &KotakNfoContract> + '_ {
         self.by_token.values()
     }
@@ -706,6 +724,28 @@ mod tests {
     }
 
     #[test]
+    fn get_by_trading_symbol_exact_match_case_insensitive() {
+        let master = KotakNfoScripMaster::from_csv_bytes(FIXTURE_CSV.as_bytes()).unwrap();
+        assert_eq!(
+            master
+                .get_by_trading_symbol("nifty2692221000pe")
+                .map(|r| r.lot),
+            Some(65)
+        );
+        assert!(master.get_by_trading_symbol("NIFTY25JUL24000CE").is_none());
+    }
+
+    #[test]
+    fn get_by_trading_symbol_duplicate_returns_miss() {
+        let csv = csv_with_rows(&[
+            &[],
+            &[(COL_SYMBOL, "56528"), (COL_TRD_SYMBOL, "NIFTY2692221000PE")],
+        ]);
+        let master = KotakNfoScripMaster::from_csv_bytes(csv.as_bytes()).unwrap();
+        assert!(master.get_by_trading_symbol("NIFTY2692221000PE").is_none());
+    }
+
+    #[test]
     fn fixture_header_equals_lock_verbatim() {
         assert_eq!(fixture_header_line(), LOCK_HEADER);
         let mut reader = csv::ReaderBuilder::new()
@@ -723,7 +763,7 @@ mod tests {
     #[test]
     fn parse_fixture_one_nfo_row_lot_65() {
         let master = KotakNfoScripMaster::from_csv_bytes(FIXTURE_CSV.as_bytes()).unwrap();
-        assert_eq!(master.len(), 1);
+        assert_eq!(master.len(), 2, "fixture includes OPTIDX + OPTSTK rows");
         let row = master.get(56526).expect("token 56526");
         assert_eq!(row.instrument_token, 56526);
         assert_eq!(row.segment, "nse_fo");
@@ -940,7 +980,7 @@ mod tests {
             FIXTURE_CSV.trim_end()
         );
         let master = KotakNfoScripMaster::from_csv_bytes(mixed.as_bytes()).unwrap();
-        assert_eq!(master.len(), 1);
+        assert_eq!(master.len(), 2);
         assert!(master.contains_id("nse_fo|56526"));
     }
 
@@ -992,7 +1032,7 @@ mod tests {
         let part = KotakNfoScripMaster::from_csv_bytes(FIXTURE_CSV.as_bytes()).unwrap();
         let mut master = KotakNfoScripMaster::empty();
         master.merge(part);
-        assert_eq!(master.iter().count(), 1);
-        assert_eq!(master.len(), 1);
+        assert_eq!(master.iter().count(), 2);
+        assert_eq!(master.len(), 2);
     }
 }

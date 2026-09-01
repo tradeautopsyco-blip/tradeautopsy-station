@@ -482,12 +482,20 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
+            "tradebook".into(),
             "optionchain".into(),
             "open_interest".into(),
         ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            account_binding(
+                "kotak_neo",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
             optionchain_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             // LatestState from `open_int` on the `quote_type=all` body Station
             // already fetches for last. Observed 2026-08-31 — see the lock's OI
@@ -697,7 +705,11 @@ mod tests {
 
     #[test]
     fn spot_and_cash_tradebook_fills_are_bounded_snapshot() {
-        for manifest in [binance_com_s1_manifest(), kotak_neo_s1k_manifest()] {
+        for manifest in [
+            binance_com_s1_manifest(),
+            kotak_neo_s1k_manifest(),
+            kotak_neo_nfo_manifest(),
+        ] {
             let tradebook = manifest
                 .bindings
                 .iter()
@@ -1058,7 +1070,13 @@ mod tests {
         assert_eq!(nfo.adapter_id, "kotak_neo");
         assert_eq!(
             nfo.implemented,
-            vec!["quotes", "instruments", "optionchain", "open_interest"]
+            vec![
+                "quotes",
+                "instruments",
+                "tradebook",
+                "optionchain",
+                "open_interest"
+            ]
         );
         assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
         assert!(nfo.implemented.iter().any(|op| op == "instruments"));
@@ -1097,6 +1115,16 @@ mod tests {
             obtain(&nfo, "instruments").status,
             ObtainStatus::Unavailable
         );
+        // Claimed tradebook with empty store → Unavailable, never Unsupported.
+        assert_eq!(
+            obtain(&nfo, "tradebook").status,
+            ObtainStatus::Unavailable
+        );
+        assert_ne!(
+            obtain(&nfo, "tradebook").status,
+            ObtainStatus::Unsupported
+        );
+        assert!(obtain(&nfo, "tradebook").data.is_none());
         let spot = manifest_for_book_id("binance-com-spot").unwrap();
         let cash = manifest_for_book_id("kotak-nse-bse-cash").unwrap();
         assert_eq!(shared_budget(&spot), 6000);

@@ -98,22 +98,26 @@ fn kotak_cash_fill() -> BrokerFill {
     }
 }
 
-fn kotak_nfo_fill() -> BrokerFill {
+fn kotak_nfo_fill_sym(symbol: &str, product: &str, qty: f64, exchange_segment: &str) -> BrokerFill {
     BrokerFill {
-        fill_id: "F-NFO".into(),
-        trade_id: "T-NFO".into(),
-        symbol: "nse_fo|12345".into(),
+        fill_id: format!("F-NFO-{symbol}-{product}"),
+        trade_id: format!("T-NFO-{symbol}"),
+        symbol: symbol.into(),
         side: "BUY".into(),
-        qty: 50.0,
+        qty,
         price: 10.0,
         filled_at: Utc.with_ymd_and_hms(2026, 8, 1, 10, 0, 0).unwrap(),
         broker: "kotak_neo".into(),
         currency: Some("INR".into()),
-        product: Some("NRML".into()),
-        exchange_segment: Some("nse_fo".into()),
-        lot: Some(50),
+        product: Some(product.into()),
+        exchange_segment: Some(exchange_segment.into()),
         ..BrokerFill::default()
     }
+}
+
+/// Lock golden `NIFTY2692221000PE` — lot 65 comes from master stamp when planted.
+fn kotak_nfo_fill() -> BrokerFill {
+    kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 50.0, "nse_fo")
 }
 
 async fn post_broker_sync_start(port: u16, body: Value) -> reqwest::Response {
@@ -151,13 +155,32 @@ async fn obtain_tradebook(port: u16, book: &str) -> Value {
 }
 
 fn start_opts(adapter: Arc<dyn BrokerAdapter>, slug: &str) -> TestAgentOptions {
+    kotak_start_opts(adapter, slug, false)
+}
+
+fn kotak_start_opts(
+    adapter: Arc<dyn BrokerAdapter>,
+    slug: &str,
+    plant_kotak_nfo_contracts: bool,
+) -> TestAgentOptions {
     let vault = seeded_hmac_vault(slug, "TA_TEST_SYNC");
     TestAgentOptions {
         runtime_poll_adapter: Some(adapter),
         broker_base_poll_ms: 80,
         credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+        plant_kotak_nfo_contracts,
         ..TestAgentOptions::default()
     }
+}
+
+async fn start_kotak_sync(port: u16) {
+    assert_eq!(
+        post_broker_sync_start(port, identity_start_body("kotak_neo"))
+            .await
+            .status(),
+        200
+    );
+    tokio::time::sleep(Duration::from_millis(350)).await;
 }
 
 #[tokio::test]
@@ -231,17 +254,11 @@ async fn kotak_split_writes_cash_and_nfo_books_separately() {
     let named = NamedFillAdapter::kotak(vec![kotak_cash_fill(), kotak_nfo_fill()]);
     let handle = spawn_test_agent_with_options(
         PORT,
-        start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo"),
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
     );
     tokio::time::sleep(Duration::from_millis(150)).await;
 
-    assert_eq!(
-        post_broker_sync_start(PORT, identity_start_body("kotak_neo"))
-            .await
-            .status(),
-        200
-    );
-    tokio::time::sleep(Duration::from_millis(350)).await;
+    start_kotak_sync(PORT).await;
 
     let cash = obtain_tradebook(PORT, "kotak-nse-bse-cash").await;
     assert_eq!(cash["status"], "success");
@@ -256,8 +273,212 @@ async fn kotak_split_writes_cash_and_nfo_books_separately() {
         "cash obtain must not contain nse_fo rows"
     );
 
-    // NFO book slot is written but tradebook manifest lights in F1.2 — obtain may stay unavailable
-    // until manifest adds tradebook on kotak-nse-nfo. Cash separation is the Step 0 invariant.
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+    assert_eq!(nfo["data"]["rows"][0]["symbol"], "NIFTY2692221000PE");
+    assert_eq!(nfo["data"]["rows"][0]["product"], "NRML");
+    assert_eq!(nfo["provenance_path"], "/quick/user/trades");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn nfo_tradebook_unavailable_before_sync() {
+    const PORT: u16 = 19_610;
+    let named = NamedFillAdapter::kotak(vec![kotak_nfo_fill()]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "unavailable");
+    assert!(nfo["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn kotak_empty_nfo_poll_success_empty_rows() {
+    const PORT: u16 = 19_611;
+    let named = NamedFillAdapter::kotak(vec![]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 0);
+    assert!(nfo["data"]["rows"].as_array().unwrap().is_empty());
+    assert_eq!(nfo["provenance_path"], "/quick/user/trades");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn optstk_mis_dropped_from_nfo_obtain() {
+    const PORT: u16 = 19_613;
+    let fill = kotak_nfo_fill_sym("RELIANCE26SEP2400CE", "MIS", 1.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 0);
+    assert!(nfo["data"]["rows"].as_array().unwrap().is_empty());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn optidx_mis_kept_in_nfo_obtain() {
+    const PORT: u16 = 19_614;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "MIS", 2.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+    assert_eq!(nfo["data"]["rows"][0]["symbol"], "NIFTY2692221000PE");
+    assert_eq!(nfo["data"]["rows"][0]["product"], "MIS");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn cnc_on_nfo_dropped() {
+    const PORT: u16 = 19_615;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "CNC", 1.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 0);
+
+    let cash = obtain_tradebook(PORT, "kotak-nse-bse-cash").await;
+    assert_eq!(cash["status"], "success");
+    assert_eq!(cash["data"]["fill_count"], 0);
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn nfo_lot_65_exact_symbol() {
+    const PORT: u16 = 19_616;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 2.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+    let row = &nfo["data"]["rows"][0];
+    assert_eq!(row["symbol"], "NIFTY2692221000PE");
+    assert_eq!(row["qty"], 2.0);
+    assert_eq!(row["lot"], 65);
+    assert_eq!(row["instrument_type"], "PE");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn nfo_lot_omitted_on_symbol_miss() {
+    const PORT: u16 = 19_617;
+    let fill = kotak_nfo_fill_sym("NIFTY25JUL24000CE", "NRML", 1.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+    let row = &nfo["data"]["rows"][0];
+    assert_eq!(row["symbol"], "NIFTY25JUL24000CE");
+    assert!(row.get("lot").is_none(), "unknown symbol must omit lot key");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn nfo_exseg_nse_fo_normalized() {
+    const PORT: u16 = 19_618;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 1.0, "NSE_FO");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+    assert_eq!(nfo["data"]["rows"][0]["segment"], "NSE_FO");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn obtain_does_not_start_sync() {
+    const PORT: u16 = 19_619;
+    let named = NamedFillAdapter::kotak(vec![kotak_nfo_fill()]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "unavailable");
+    assert!(nfo["data"].is_null());
 
     handle.abort();
 }

@@ -78,6 +78,7 @@ pub struct BrokerSyncController {
     user_paused: Arc<AtomicBool>,
     active: Arc<Mutex<Option<ActiveSync>>>,
     account_book: Arc<Mutex<AccountBook>>,
+    nfo_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
     /// Integration-test hook: fixed adapter for all runtime starts.
     pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
     /// Integration-test hook: records api keys resolved on each start (host-side only).
@@ -100,6 +101,7 @@ impl BrokerSyncController {
         today_service: Arc<Mutex<Option<Arc<crate::today::TodayService>>>>,
         credential_vault: Arc<dyn BrokerCredentialVault>,
         account_book: Arc<Mutex<AccountBook>>,
+        nfo_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
     ) -> Self {
         Self {
             status_arc,
@@ -112,6 +114,7 @@ impl BrokerSyncController {
             user_paused: Arc::new(AtomicBool::new(false)),
             active: Arc::new(Mutex::new(None)),
             account_book,
+            nfo_master,
             test_runtime_adapter,
             test_start_key_log,
             today_service,
@@ -210,6 +213,7 @@ impl BrokerSyncController {
                 .expect("today service slot")
                 .clone(),
             self.account_book.clone(),
+            self.nfo_master.clone(),
         );
 
         *self.active.lock().expect("active sync") = Some(ActiveSync {
@@ -434,6 +438,7 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(None)),
             vault,
             Arc::new(Mutex::new(AccountBook::new())),
+            Arc::new(Mutex::new(crate::kotak_nfo_scrip::KotakNfoScripMaster::empty())),
         )
     }
 
@@ -508,6 +513,7 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(None)),
             vault,
             Arc::new(Mutex::new(AccountBook::new())),
+            Arc::new(Mutex::new(crate::kotak_nfo_scrip::KotakNfoScripMaster::empty())),
         );
         ctrl.start(&identity_request()).expect("start");
         assert_eq!(

@@ -5,14 +5,17 @@ use crate::bar_fill_ingress::{
 };
 use crate::broker::{slug_to_slot, BrokerAdapter, BrokerError, BrokerFill};
 use crate::broker_data_class::BrokerDataClass;
-use crate::data::{fills_provenance_path, merge_poll_book_id, split_fills_by_book, AccountBook};
+use crate::data::{
+    fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills, AccountBook,
+};
+use crate::kotak_nfo_scrip::KotakNfoScripMaster;
 use crate::event_bus::{AgentEvent, EventBus};
 use crate::recent_trades::RecentTradesStore;
 use crate::UpstreamClient;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tracing::warn;
@@ -319,6 +322,7 @@ pub fn spawn_broker_poll_loop(
     cancel: Option<Arc<AtomicBool>>,
     today_service: Option<Arc<crate::today::TodayService>>,
     account_book: Arc<std::sync::Mutex<AccountBook>>,
+    nfo_master: Arc<Mutex<KotakNfoScripMaster>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let broker_label = adapter.name().to_owned();
@@ -399,8 +403,20 @@ pub fn spawn_broker_poll_loop(
 
             if let Ok(fills) = &fills_result {
                 let adapter_name = slug_to_slot(adapter.name()).unwrap_or(adapter.name());
-                let split = split_fills_by_book(adapter_name, fills.clone());
                 let path = fills_provenance_path(adapter_name);
+                let split = if adapter_name == "kotak_neo" {
+                    let master = nfo_master
+                        .lock()
+                        .expect("kotak nfo scrip master mutex poisoned");
+                    let mut split =
+                        split_fills_by_book(adapter_name, fills.clone(), Some(&*master));
+                    if let Some(nfo_rows) = split.get_mut(crate::data::KOTAK_NSE_NFO_BOOK_ID) {
+                        stamp_nfo_fills(nfo_rows, &*master);
+                    }
+                    split
+                } else {
+                    split_fills_by_book(adapter_name, fills.clone(), None)
+                };
                 {
                     let mut book = account_book.lock().expect("account_book mutex poisoned");
                     match adapter_name {
@@ -596,6 +612,7 @@ pub fn spawn_broker_stack(
     upstream: Option<Arc<UpstreamClient>>,
     bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
     account_book: Arc<std::sync::Mutex<AccountBook>>,
+    nfo_master: Arc<Mutex<KotakNfoScripMaster>>,
 ) -> tokio::task::JoinHandle<()> {
     let (tx, rx) = mpsc::channel(64);
     let _coalesce = spawn_toolbar_coalesce_task(bus.clone(), rx, cfg.coalesce_window);
@@ -612,6 +629,7 @@ pub fn spawn_broker_stack(
         None,
         None,
         account_book,
+        nfo_master,
     );
     poll
 }
@@ -758,6 +776,7 @@ mod tests {
             Some(cancel.clone()),
             None,
             account_book,
+            Arc::new(Mutex::new(KotakNfoScripMaster::empty())),
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
         cancel.store(true, Ordering::Relaxed);
