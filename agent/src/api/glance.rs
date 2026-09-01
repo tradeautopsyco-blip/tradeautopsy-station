@@ -5,8 +5,8 @@ use crate::api::AppState;
 use crate::data::{
     chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
     expiration_from_dated_contract, extract_chain_from, extract_greeks_from_mark,
-    extract_open_interest, extract_open_interest_from, is_dated_option_contract,
-    mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
+    extract_open_interest, extract_open_interest_for_book, extract_open_interest_from,
+    is_dated_option_contract, mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
     option_symbols_from_exchange_info_json, options_depth_query, parse_nfo_instrument_id,
     underlying_asset_from_dated_contract, CachedMark, ChainRow, GlanceEnvelope, GreeksEnvelope,
     InputHonesty, OptionsOiRow, BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
@@ -401,6 +401,22 @@ pub async fn oi_handler(
                 } else {
                     Some(rows.as_slice())
                 },
+            ))
+        }
+        Some(id) if id == KOTAK_NSE_NFO_BOOK_ID => {
+            // Reads the slot the `quote_type=all` quote fetch already filled —
+            // this route never dials a second GET and never the `oi` slice.
+            let reading = state
+                .nfo_open_interest
+                .lock()
+                .expect("nfo open interest mutex poisoned")
+                .get(instrument.trim().to_ascii_lowercase().as_str())
+                .cloned();
+            Json(extract_open_interest_for_book(
+                Some(KOTAK_NSE_NFO_BOOK_ID),
+                &instrument,
+                None,
+                reading.as_ref(),
             ))
         }
         other => Json(extract_open_interest(other, &instrument)),

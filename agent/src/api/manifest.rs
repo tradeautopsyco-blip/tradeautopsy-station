@@ -221,6 +221,7 @@ fn enricher(
         ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
+        ("kotak-nse-nfo", "open_interest") => Some(enrich_open_interest),
         ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-options", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "open_interest") => Some(enrich_open_interest),
@@ -600,7 +601,30 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
 /// Open interest is its own arm — never folded into the chain enricher. No rows
 /// for the selected contract means no `sumOpenInterest`, and that stays
 /// Unavailable rather than reporting 0.
+/// The NFO instrument OI is scoped to: the selected `nse_fo|{token}`.
+///
+/// A leftover cash or spot id is not an FO contract, so obtain stays dark rather
+/// than reading some other book's slot.
+fn selected_nfo_instrument(state: &AppState) -> String {
+    let selected = state
+        .selected_quote_instrument
+        .lock()
+        .expect("selected quote instrument poisoned")
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    if crate::data::parse_nfo_instrument_id(&selected).is_some() {
+        selected
+    } else {
+        String::new()
+    }
+}
+
 fn enrich_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    if envelope.book_id == KOTAK_NSE_NFO_BOOK_ID {
+        return enrich_nfo_open_interest(state, envelope);
+    }
     if envelope.book_id != BINANCE_COM_OPTIONS_BOOK_ID {
         return envelope;
     }
@@ -620,6 +644,42 @@ fn enrich_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
         Some(BINANCE_COM_OPTIONS_BOOK_ID),
         &instrument,
         Some(rows.as_slice()),
+    );
+    if oi.status == GlanceStatus::Success {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = oi.data;
+        if !oi.provenance.adapter_id.is_empty() {
+            envelope.provenance_adapter_id = Some(oi.provenance.adapter_id);
+        }
+        if !oi.provenance.path.is_empty() {
+            envelope.provenance_path = Some(oi.provenance.path);
+        }
+    }
+    envelope
+}
+
+/// NFO OI reads the slot the `quote_type=all` quote fetch already filled. There
+/// is no second GET here and no `kick_*` fetch: if last was never fetched for
+/// this contract, OI is simply Unavailable — never `{open_interest: 0}` Success.
+fn enrich_nfo_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let instrument = selected_nfo_instrument(state);
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let reading = state
+        .nfo_open_interest
+        .lock()
+        .expect("nfo open interest mutex poisoned")
+        .get(&instrument)
+        .cloned();
+    let Some(reading) = reading else {
+        return envelope;
+    };
+    let oi = crate::data::extract_open_interest_for_book(
+        Some(KOTAK_NSE_NFO_BOOK_ID),
+        &instrument,
+        None,
+        Some(&reading),
     );
     if oi.status == GlanceStatus::Success {
         envelope.status = ObtainStatus::Success;

@@ -753,6 +753,7 @@ fn plant_kotak_s1k_fixtures(
 fn plant_kotak_nfo_quote(
     registry: &crate::data::Registry,
     tickbook: &Arc<Mutex<crate::data::TickBook>>,
+    nfo_open_interest: &crate::kotak_rest_quotes::NfoOpenInterestSlot,
     broker_status: &Arc<Mutex<crate::broker_sync::BrokerRuntimeState>>,
 ) {
     let json = include_str!("../fixtures/kotak/quotes_neosymbol_nfo.json");
@@ -766,6 +767,8 @@ fn plant_kotak_nfo_quote(
             tracing::warn!(error = %err, "nfo fixture: quote plant refused");
         }
     }
+    // OI rides the same fixture body, exactly as it rides the same live body.
+    crate::kotak_rest_quotes::apply_nfo_open_interest_body(nfo_open_interest, json);
     broker_status
         .lock()
         .expect("broker_status mutex poisoned")
@@ -1014,6 +1017,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let instrument_master_cache_dir = config.instrument_master_cache_dir.clone();
     let tickbook = Arc::new(std::sync::Mutex::new(crate::data::TickBook::new()));
     let depthbook = Arc::new(std::sync::Mutex::new(crate::data::DepthBook::new()));
+    let nfo_open_interest: crate::kotak_rest_quotes::NfoOpenInterestSlot =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     if config.plant_kotak_s1k_fixtures {
         plant_kotak_s1k_fixtures(
             quote_registry.as_ref(),
@@ -1025,7 +1030,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         );
     }
     if config.plant_kotak_nfo_quote {
-        plant_kotak_nfo_quote(quote_registry.as_ref(), &tickbook, &broker_status);
+        plant_kotak_nfo_quote(
+            quote_registry.as_ref(),
+            &tickbook,
+            &nfo_open_interest,
+            &broker_status,
+        );
     }
     if config.plant_kotak_nfo_contracts {
         plant_kotak_nfo_contracts(&kotak_nfo_scrip_master, &broker_status);
@@ -1129,6 +1139,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         kotak_nfo_scrip_master,
         options_option_symbols,
         options_oi_rows,
+        nfo_open_interest,
         options_mark,
         eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,
