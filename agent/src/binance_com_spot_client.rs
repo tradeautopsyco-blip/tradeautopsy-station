@@ -1,7 +1,7 @@
 //! Binance Global spot read-only client — `api.binance.com`.
 //!
 //! Ref: `docs/reference/crypto/binance-global/spot/REST.md`
-//! Scope: `GET /api/v3/account`, `GET /api/v3/myTrades` only.
+//! Scope: `GET /api/v3/account`, `GET /api/v3/myTrades`, `GET /api/v3/openOrders`.
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -51,6 +51,15 @@ pub struct BinanceComMyTrade {
     pub commission_asset: String,
     pub time_ms: i64,
     pub is_buyer: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceComOpenOrder {
+    pub order_id: i64,
+    pub symbol: String,
+    pub side: String,
+    pub price: String,
+    pub orig_qty: String,
 }
 
 pub struct BinanceComSpotClient {
@@ -119,6 +128,20 @@ impl BinanceComSpotClient {
         let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let body = self.signed_get("/api/v3/myTrades", &param_refs).await?;
         parse_my_trades(&body)
+    }
+
+    /// `GET /api/v3/openOrders` — USER_DATA, weight 40 (REST.md).
+    pub async fn fetch_open_orders(
+        &self,
+        symbol: Option<&str>,
+    ) -> Result<Vec<BinanceComOpenOrder>, BinanceComSpotError> {
+        let mut params: Vec<(&str, String)> = Vec::new();
+        if let Some(sym) = symbol {
+            params.push(("symbol", sym.to_ascii_uppercase()));
+        }
+        let param_refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let body = self.signed_get("/api/v3/openOrders", &param_refs).await?;
+        parse_open_orders(&body)
     }
 
     async fn signed_get(
@@ -224,6 +247,37 @@ fn parse_my_trades(body: &str) -> Result<Vec<BinanceComMyTrade>, BinanceComSpotE
         .collect())
 }
 
+fn parse_open_orders(body: &str) -> Result<Vec<BinanceComOpenOrder>, BinanceComSpotError> {
+    let parsed: Vec<OpenOrderResponse> =
+        serde_json::from_str(body).map_err(|e| BinanceComSpotError::Parse(e.to_string()))?;
+    Ok(parsed
+        .into_iter()
+        .map(|o| BinanceComOpenOrder {
+            order_id: o.order_id,
+            symbol: o.symbol,
+            side: o.side,
+            price: o.price,
+            orig_qty: o.orig_qty,
+        })
+        .collect())
+}
+
+pub fn open_order_to_broker_open_order(
+    order: &BinanceComOpenOrder,
+) -> crate::broker_data_class::BrokerOpenOrder {
+    crate::broker_data_class::BrokerOpenOrder {
+        order_id: order.order_id.to_string(),
+        symbol: order.symbol.clone(),
+        side: order.side.clone(),
+        qty: order.orig_qty.parse().unwrap_or(0.0),
+        price: order.price.parse().ok(),
+        product: None,
+        exchange_segment: None,
+        status: None,
+        unfilled_qty: None,
+    }
+}
+
 pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::BrokerFill {
     let side = if trade.is_buyer { "BUY" } else { "SELL" }.to_string();
     let filled_at = DateTime::<Utc>::from_timestamp_millis(trade.time_ms).unwrap_or_else(Utc::now);
@@ -280,6 +334,17 @@ struct MyTradeResponse {
     is_buyer: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct OpenOrderResponse {
+    #[serde(rename = "orderId")]
+    order_id: i64,
+    symbol: String,
+    side: String,
+    price: String,
+    #[serde(rename = "origQty")]
+    orig_qty: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +393,21 @@ mod tests {
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].symbol, "BTCUSDT");
         assert!(trades[0].is_buyer);
+    }
+
+    #[test]
+    fn parses_open_orders_json() {
+        let json = r#"[{
+            "symbol": "LTCBTC",
+            "orderId": 1,
+            "side": "BUY",
+            "price": "0.1",
+            "origQty": "1.0"
+        }]"#;
+        let orders = parse_open_orders(json).expect("parse");
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].order_id, 1);
+        assert_eq!(orders[0].symbol, "LTCBTC");
+        assert_eq!(orders[0].side, "BUY");
     }
 }

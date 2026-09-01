@@ -127,6 +127,40 @@ pub struct BrokerOpenOrder {
     pub side: String,
     pub qty: f64,
     pub price: Option<f64>,
+    pub product: Option<String>,
+    pub exchange_segment: Option<String>,
+    pub status: Option<String>,
+    pub unfilled_qty: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrokerPortfolioHolding {
+    pub symbol: String,
+    pub exchange_segment: String,
+    pub quantity: f64,
+    pub sellable_quantity: f64,
+    pub average_price: f64,
+    pub market_value: f64,
+    pub instrument_type: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BrokerHoldingsSnapshot {
+    pub holdings: Vec<BrokerPortfolioHolding>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BrokerPositionRow {
+    pub symbol: String,
+    pub exchange_segment: String,
+    pub product: String,
+    pub net_qty: f64,
+    pub trading_symbol: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BrokerPositionsSnapshot {
+    pub positions: Vec<BrokerPositionRow>,
 }
 
 impl BrokerOpenOrdersSnapshot {

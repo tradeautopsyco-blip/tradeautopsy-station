@@ -3,10 +3,12 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    chain_rows_for_contract, depth_obtain_data, describe, extract_chain_from,
+    chain_rows_for_contract, depth_obtain_data, describe, ensure_options_user_trades,
+    ensure_spot_account, ensure_spot_open_orders, extract_chain_from,
     extract_depth_on_book, extract_greeks_from_mark, extract_licensed_history,
     extract_open_interest_from, extract_quote_for_book, history_obtain_data,
-    is_dated_option_contract, obtain, parse_nfo_instrument_id, DepthStatus, GlanceStatus,
+    is_dated_option_contract, obtain, parse_nfo_instrument_id, search_identity,
+    search_rows_for_book, DepthStatus, GlanceStatus,
     GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
     SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
     DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
@@ -35,6 +37,8 @@ pub struct ObtainQuery {
     pub adapter: Option<String>,
     pub book: Option<String>,
     pub operation: Option<String>,
+    /// Prefix filter for `operation=search` (not an instrument id).
+    pub q: Option<String>,
 }
 
 fn query_id(raw: Option<&str>) -> Option<&str> {
@@ -139,8 +143,12 @@ pub async fn obtain_handler(
         // Enrichers are sync, but the options snapshots are async fetches that
         // only glance used to run. Kick them here, or obtain stays unavailable
         // forever unless a glance happened to land first.
+        kick_spot_private(&state, &envelope).await;
         kick_options_snapshot(&state, &envelope).await;
-        envelope = enrich_obtain(&state, envelope);
+        kick_kotak_nfo_depth(&state, &envelope).await;
+        kick_kotak_nfo_oi_session(&state, &envelope).await;
+        kick_kotak_private(&state, &envelope).await;
+        envelope = enrich_obtain(&state, envelope, &query);
     }
     Json(envelope)
 }
@@ -153,6 +161,18 @@ fn selected_options_contract(state: &AppState) -> String {
         .selected_quote_for(BINANCE_COM_OPTIONS_BOOK_ID)
         .filter(|id| is_dated_option_contract(id))
         .unwrap_or_default()
+}
+
+/// Spot private account reads are host-mediated kicks into AccountBook.
+async fn kick_spot_private(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != BINANCE_COM_SPOT_BOOK_ID {
+        return;
+    }
+    match envelope.operation.as_str() {
+        "funds" => ensure_spot_account(state).await,
+        "orderbook" => ensure_spot_open_orders(state).await,
+        _ => {}
+    }
 }
 
 /// Options are the only book whose obtain snapshot is fetched rather than
@@ -188,11 +208,80 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
             }
             super::glance::ensure_options_depth(state, &instrument).await;
         }
+        "tradebook" => {
+            let instrument = selected_options_contract(state);
+            if instrument.is_empty() {
+                return;
+            }
+            ensure_options_user_trades(state, &instrument).await;
+        }
         _ => {}
     }
 }
 
-fn enrich_obtain(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+/// Kotak NFO depth is REST `quote_type=depth` on the selected contract.
+async fn kick_kotak_nfo_depth(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != KOTAK_NSE_NFO_BOOK_ID || envelope.operation != "depth" {
+        return;
+    }
+    let instrument = state
+        .selected_quote_for(KOTAK_NSE_NFO_BOOK_ID)
+        .filter(|id| crate::data::parse_nfo_instrument_id(id).is_some())
+        .unwrap_or_default();
+    if instrument.is_empty() {
+        return;
+    }
+    crate::kotak_rest_quotes::await_kotak_rest_depth(
+        state.depthbook.clone(),
+        state.broker_sync_control.credential_vault(),
+        state.kotak_session_locator.clone(),
+        &instrument,
+    )
+    .await;
+}
+
+/// Kotak NFO session OI band is REST `quote_type=oi` on the selected contract.
+/// Supplementary to `open_int` on `all` — never overwrites `open_interest`.
+async fn kick_kotak_nfo_oi_session(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != KOTAK_NSE_NFO_BOOK_ID || envelope.operation != "open_interest" {
+        return;
+    }
+    let instrument = state
+        .selected_quote_for(KOTAK_NSE_NFO_BOOK_ID)
+        .filter(|id| crate::data::parse_nfo_instrument_id(id).is_some())
+        .unwrap_or_default();
+    if instrument.is_empty() {
+        return;
+    }
+    crate::kotak_rest_quotes::await_kotak_rest_oi_session(
+        state.nfo_oi_session.clone(),
+        state.broker_sync_control.credential_vault(),
+        state.kotak_session_locator.clone(),
+        &instrument,
+    )
+    .await;
+}
+
+/// Kotak private account reads — one venue GET fans out to named books via segment.
+async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
+    match (envelope.book_id.as_str(), envelope.operation.as_str()) {
+        ("kotak-nse-bse-cash", "orderbook") | ("kotak-nse-nfo", "orderbook") => {
+            crate::data::ensure_kotak_orders(state, &envelope.book_id).await;
+        }
+        ("kotak-nse-bse-cash", "positionbook") | ("kotak-nse-nfo", "positionbook") => {
+            crate::data::ensure_kotak_positions(state, &envelope.book_id).await;
+        }
+        ("kotak-nse-bse-cash", "holdings") => {
+            crate::data::ensure_kotak_holdings(state).await;
+        }
+        _ => {}
+    }
+}
+
+fn enrich_obtain(state: &AppState, envelope: ObtainEnvelope, query: &ObtainQuery) -> ObtainEnvelope {
+    if envelope.operation == "search" {
+        return enrich_search(state, envelope, query);
+    }
     match enricher(&envelope.book_id, &envelope.operation) {
         Some(apply) => apply(state, envelope),
         None => envelope,
@@ -209,20 +298,28 @@ fn enricher(
         ("binance-com-spot", "instruments") => Some(enrich_binance_instruments),
         ("binance-com-spot", "history") => Some(enrich_binance_history),
         ("binance-com-spot", "funds") => Some(enrich_binance_funds),
+        ("binance-com-spot", "orderbook") => Some(enrich_binance_orders),
         ("binance-com-spot", "tradebook") => Some(enrich_tradebook),
         ("kotak-nse-bse-cash", "quotes") => Some(enrich_tickbook_quotes),
         ("kotak-nse-bse-cash", "depth") => Some(enrich_depth),
         ("kotak-nse-bse-cash", "instruments") => Some(enrich_kotak_instruments),
         ("kotak-nse-bse-cash", "tradebook") => Some(enrich_tradebook),
+        ("kotak-nse-bse-cash", "orderbook") => Some(enrich_orders),
+        ("kotak-nse-bse-cash", "holdings") => Some(enrich_holdings),
+        ("kotak-nse-bse-cash", "positionbook") => Some(enrich_positions),
         ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
         ("kotak-nse-nfo", "tradebook") => Some(enrich_tradebook),
+        ("kotak-nse-nfo", "orderbook") => Some(enrich_orders),
+        ("kotak-nse-nfo", "positionbook") => Some(enrich_positions),
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         ("kotak-nse-nfo", "open_interest") => Some(enrich_open_interest),
+        ("kotak-nse-nfo", "depth") => Some(enrich_depth),
         ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-options", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "open_interest") => Some(enrich_open_interest),
         ("binance-com-options", "optiongreeks") => Some(enrich_greeks),
+        ("binance-com-options", "tradebook") => Some(enrich_tradebook),
         // Same enricher as spot/cash — safe only because the lookup is keyed by
         // `book_id`, not by the slug the two Binance books share.
         ("binance-com-options", "depth") => Some(enrich_depth),
@@ -319,6 +416,7 @@ fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
     let instrument = match book_id {
         BINANCE_COM_SPOT_BOOK_ID => state.selected_quote_for(BINANCE_COM_SPOT_BOOK_ID),
         KOTAK_NSE_BSE_CASH_BOOK_ID => state.selected_quote_for(KOTAK_NSE_BSE_CASH_BOOK_ID),
+        KOTAK_NSE_NFO_BOOK_ID => state.selected_quote_for(KOTAK_NSE_NFO_BOOK_ID),
         _ => None,
     }
     .unwrap_or_default();
@@ -371,17 +469,18 @@ fn enrich_depth(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelop
 }
 
 fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let snap = state
-        .broker_status
+    let book = state
+        .account_book
         .lock()
-        .expect("broker_status mutex poisoned");
-    let Some(balances) = snap.last_balances.as_ref() else {
+        .expect("account_book mutex poisoned");
+    let Some(slot) = book.funds_slot(&envelope.book_id) else {
         return envelope;
     };
     envelope.status = ObtainStatus::Success;
     envelope.data = Some(json!({
         "identity": account_identity("funds"),
-        "holdings": balances
+        "holdings": slot
+            .value
             .holdings
             .iter()
             .map(|h| json!({
@@ -390,10 +489,54 @@ fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
                 "locked": h.locked,
             }))
             .collect::<Vec<_>>(),
-        "unrealized_pnl": balances.unrealized_pnl,
-        "as_of_ms": snap.data_classes.balances_holdings.last_success_at_ms,
+        "unrealized_pnl": slot.value.unrealized_pnl,
+        "as_of_ms": slot.as_of_ms,
     }));
+    if !slot.provenance_path.is_empty() {
+        envelope.provenance_path = Some(slot.provenance_path.clone());
+    }
     envelope
+}
+
+fn broker_open_order_to_row(order: &crate::broker_data_class::BrokerOpenOrder) -> Value {
+    let mut row = json!({
+        "order_id": order.order_id,
+        "symbol": order.symbol,
+        "side": order.side,
+        "qty": order.qty,
+    });
+    if let Some(price) = order.price {
+        row["price"] = json!(price);
+    }
+    if let Some(ref product) = order.product {
+        row["product"] = json!(product);
+    }
+    if let Some(ref segment) = order.exchange_segment {
+        row["segment"] = json!(segment);
+    }
+    if let Some(ref status) = order.status {
+        row["status"] = json!(status);
+    }
+    if let Some(unfilled) = order.unfilled_qty {
+        row["unfilled_qty"] = json!(unfilled);
+    }
+    row
+}
+
+fn enrich_binance_orders(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    account_slot(state, envelope, "orders")
+}
+
+fn enrich_orders(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    account_slot(state, envelope, "orders")
+}
+
+fn enrich_holdings(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    account_slot(state, envelope, "holdings")
+}
+
+fn enrich_positions(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    account_slot(state, envelope, "positions")
 }
 
 fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
@@ -447,12 +590,151 @@ fn account_slot(state: &AppState, mut envelope: ObtainEnvelope, capability: &str
             }
             envelope
         }
+        "funds" => {
+            let book = state
+                .account_book
+                .lock()
+                .expect("account_book mutex poisoned");
+            let Some(slot) = book.funds_slot(&envelope.book_id) else {
+                return envelope;
+            };
+            envelope.status = ObtainStatus::Success;
+            envelope.data = Some(json!({
+                "identity": account_identity("funds"),
+                "holdings": slot
+                    .value
+                    .holdings
+                    .iter()
+                    .map(|h| json!({
+                        "asset": h.asset,
+                        "free": h.free,
+                        "locked": h.locked,
+                    }))
+                    .collect::<Vec<_>>(),
+                "unrealized_pnl": slot.value.unrealized_pnl,
+                "as_of_ms": slot.as_of_ms,
+            }));
+            if !slot.provenance_path.is_empty() {
+                envelope.provenance_path = Some(slot.provenance_path.clone());
+            }
+            envelope
+        }
+        "orders" => {
+            let book = state
+                .account_book
+                .lock()
+                .expect("account_book mutex poisoned");
+            let Some(slot) = book.orders_slot(&envelope.book_id) else {
+                return envelope;
+            };
+            let rows: Vec<Value> = slot
+                .value
+                .orders
+                .iter()
+                .map(broker_open_order_to_row)
+                .collect();
+            envelope.status = ObtainStatus::Success;
+            envelope.data = Some(json!({
+                "identity": account_identity("orders"),
+                "rows": rows,
+                "order_count": rows.len(),
+                "as_of_ms": slot.as_of_ms,
+            }));
+            if !slot.provenance_path.is_empty() {
+                envelope.provenance_path = Some(slot.provenance_path.clone());
+            }
+            envelope
+        }
+        "holdings" => {
+            let book = state
+                .account_book
+                .lock()
+                .expect("account_book mutex poisoned");
+            let Some(slot) = book.holdings_slot(&envelope.book_id) else {
+                return envelope;
+            };
+            let rows: Vec<Value> = slot
+                .value
+                .holdings
+                .iter()
+                .map(|h| {
+                    json!({
+                        "symbol": h.symbol,
+                        "segment": h.exchange_segment,
+                        "quantity": h.quantity,
+                        "sellable_quantity": h.sellable_quantity,
+                        "average_price": h.average_price,
+                        "market_value": h.market_value,
+                        "instrument_type": h.instrument_type,
+                    })
+                })
+                .collect();
+            envelope.status = ObtainStatus::Success;
+            envelope.data = Some(json!({
+                "identity": account_identity("holdings"),
+                "rows": rows,
+                "holding_count": rows.len(),
+                "as_of_ms": slot.as_of_ms,
+            }));
+            if !slot.provenance_path.is_empty() {
+                envelope.provenance_path = Some(slot.provenance_path.clone());
+            }
+            envelope
+        }
+        "positions" => {
+            let book = state
+                .account_book
+                .lock()
+                .expect("account_book mutex poisoned");
+            let Some(slot) = book.positions_slot(&envelope.book_id) else {
+                return envelope;
+            };
+            let rows: Vec<Value> = slot
+                .value
+                .positions
+                .iter()
+                .map(|p| {
+                    json!({
+                        "symbol": p.symbol,
+                        "segment": p.exchange_segment,
+                        "product": p.product,
+                        "net_qty": p.net_qty,
+                        "trading_symbol": p.trading_symbol,
+                    })
+                })
+                .collect();
+            envelope.status = ObtainStatus::Success;
+            envelope.data = Some(json!({
+                "identity": account_identity("positions"),
+                "rows": rows,
+                "position_count": rows.len(),
+                "as_of_ms": slot.as_of_ms,
+            }));
+            if !slot.provenance_path.is_empty() {
+                envelope.provenance_path = Some(slot.provenance_path.clone());
+            }
+            envelope
+        }
         _ => envelope,
     }
 }
 
 fn enrich_tradebook(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
     account_slot(state, envelope, "fills")
+}
+
+/// Local master prefix search. `q` len < 2 → Success + `rows: []`. No vendor GET.
+fn enrich_search(state: &AppState, mut envelope: ObtainEnvelope, query: &ObtainQuery) -> ObtainEnvelope {
+    let q = query.q.as_deref().unwrap_or("").trim();
+    let rows = search_rows_for_book(state, &envelope.book_id, q);
+    envelope.status = ObtainStatus::Success;
+    envelope.data = Some(json!({
+        "identity": search_identity(),
+        "q": q,
+        "rows": rows,
+        "row_count": rows.len(),
+    }));
+    envelope
 }
 
 fn enrich_binance_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
@@ -667,11 +949,18 @@ fn enrich_nfo_open_interest(state: &AppState, mut envelope: ObtainEnvelope) -> O
     let Some(reading) = reading else {
         return envelope;
     };
+    let session = state
+        .nfo_oi_session
+        .lock()
+        .expect("nfo oi session mutex poisoned")
+        .get(&instrument)
+        .cloned();
     let oi = crate::data::extract_open_interest_for_book(
         Some(KOTAK_NSE_NFO_BOOK_ID),
         &instrument,
         None,
         Some(&reading),
+        session.as_ref(),
     );
     if oi.status == GlanceStatus::Success {
         envelope.status = ObtainStatus::Success;
@@ -1012,8 +1301,7 @@ mod tests {
         assert!(enricher("binance-com-options", "open_interest").is_some());
         assert!(enricher("binance-com-options", "optiongreeks").is_some());
         assert!(enricher("binance-com-options", "depth").is_some());
-        // NFO depth is NOT SPECIFIED IN SOURCE — no enricher claims it.
-        assert!(enricher("kotak-nse-nfo", "depth").is_none());
+        assert!(enricher("kotak-nse-nfo", "depth").is_some());
         // The greeks door never opens on spot, cash or NFO.
         assert!(enricher("binance-com-spot", "optiongreeks").is_none());
         assert!(enricher("kotak-nse-bse-cash", "optiongreeks").is_none());

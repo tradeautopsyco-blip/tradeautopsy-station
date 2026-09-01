@@ -404,12 +404,18 @@ pub async fn oi_handler(
             ))
         }
         Some(id) if id == KOTAK_NSE_NFO_BOOK_ID => {
-            // Reads the slot the `quote_type=all` quote fetch already filled —
-            // this route never dials a second GET and never the `oi` slice.
+            // Reads the slot the `quote_type=all` quote fetch already filled for
+            // `open_int`; session band fields come from `nfo_oi_session` when present.
             let reading = state
                 .nfo_open_interest
                 .lock()
                 .expect("nfo open interest mutex poisoned")
+                .get(instrument.trim().to_ascii_lowercase().as_str())
+                .cloned();
+            let session = state
+                .nfo_oi_session
+                .lock()
+                .expect("nfo oi session mutex poisoned")
                 .get(instrument.trim().to_ascii_lowercase().as_str())
                 .cloned();
             Json(extract_open_interest_for_book(
@@ -417,6 +423,7 @@ pub async fn oi_handler(
                 &instrument,
                 None,
                 reading.as_ref(),
+                session.as_ref(),
             ))
         }
         other => Json(extract_open_interest(other, &instrument)),

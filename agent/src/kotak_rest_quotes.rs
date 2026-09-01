@@ -6,11 +6,11 @@
 //! HSM websocket skipped (WEBSOCKET.md: `mlhsm` not HTTP-allowlisted; `hsServerId` unspecified).
 
 use crate::data::{
-    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json, is_cash_segment,
-    json_array_first_object_keys, json_field_object_keys, json_first_nested_object_keys,
-    json_object_keys, kotak_quote_book_id, quote_ticks_from_kotak_json_for_book,
+    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json, json_array_first_object_keys,
+    json_field_object_keys, json_first_nested_object_keys, json_object_keys,
+    kotak_quote_book_id, quote_ticks_from_kotak_json_for_book,
     quotes_neosymbol_path, DepthBook, Registry, TickBook, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
+    KOTAK_NSE_NFO_BOOK_ID, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
 use crate::kotak_scrip_master::KOTAK_NEO;
 use crate::ubi::{
@@ -314,29 +314,15 @@ pub fn ensure_kotak_rest_depth(
     if instrument.is_empty() || !instrument.contains('|') {
         return;
     }
-    let segment = instrument.split('|').next().unwrap_or_default();
-    if !is_cash_segment(segment) {
-        // The R0 fence already permits `quote_type=depth` on the NFO book
-        // (`host_policy::authorize_book_call`), and REST.md:271 already assigns it
-        // `market/order_book/bounded_snapshot`. What is missing is an observed
-        // `nse_fo` depth body: REST.md records the schema as NOT SPECIFIED and the
-        // one founder observation is cash. Do not guess the ladder shape.
-        //
-        // Say so rather than dropping in silence — a caller cannot otherwise tell
-        // depth was never attempted from depth being empty.
-        tracing::debug!(
-            instrument = %instrument,
-            segment = segment,
-            "kotak REST depth not attempted: nse_fo body shape NOT SPECIFIED (REST.md)"
-        );
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
+    if book_id != KOTAK_NSE_BSE_CASH_BOOK_ID && book_id != KOTAK_NSE_NFO_BOOK_ID {
         return;
     }
     {
         let guard = book.lock().expect("depthbook mutex poisoned");
-        if guard
-            .get(KOTAK_NSE_BSE_CASH_BOOK_ID, &instrument)
-            .is_some_and(|row| row.completeness)
-        {
+        if guard.get(book_id, &instrument).is_some_and(|row| row.completeness) {
             return;
         }
     }
@@ -385,6 +371,48 @@ pub fn ensure_kotak_rest_depth(
             ),
         }
     });
+}
+
+/// Same REST GET as `ensure_kotak_rest_depth`, but the caller waits for DepthBook
+/// or a fetch failure. Obtain uses this so NFO depth is not left unavailable
+/// while the spawn from ensure is still in flight.
+pub async fn await_kotak_rest_depth(
+    book: Arc<Mutex<DepthBook>>,
+    vault: Arc<dyn BrokerCredentialVault>,
+    locator: SessionLocator,
+    instrument_id: &str,
+) {
+    let instrument = instrument_id.trim().to_ascii_lowercase();
+    if instrument.is_empty() || !instrument.contains('|') {
+        return;
+    }
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
+    if book_id != KOTAK_NSE_BSE_CASH_BOOK_ID && book_id != KOTAK_NSE_NFO_BOOK_ID {
+        return;
+    }
+    {
+        let guard = book.lock().expect("depthbook mutex poisoned");
+        if guard.get(book_id, &instrument).is_some_and(|row| row.completeness) {
+            return;
+        }
+    }
+    let loc = locator
+        .lock()
+        .expect("kotak session locator poisoned")
+        .clone();
+    let Some((environment, connection_id)) = loc else {
+        return;
+    };
+    let _ = fetch_and_apply_depth(
+        &book,
+        vault.as_ref(),
+        &environment,
+        &connection_id,
+        &instrument,
+    )
+    .await;
 }
 
 fn class_for_unusable_quotes_body(body: &str) -> QuoteFetchErrorClass {
@@ -469,6 +497,158 @@ async fn fetch_and_apply_depth(
     let received_at = Utc::now();
     let mut guard = book.lock().expect("depthbook mutex poisoned");
     let applied = apply_kotak_depth_body(&mut guard, &body, received_at);
+    Ok((applied, body))
+}
+
+/// Per-instrument NFO session OI band from `quote_type=oi`. A slot beside
+/// [`NfoOpenInterestSlot`] — supplementary fields, never overwriting `open_int`.
+pub type NfoOiSessionSlot = Arc<Mutex<HashMap<String, crate::data::NfoOiSessionSlice>>>;
+
+/// Land every `oi_las`/`oi_high`/`oi_low` row in this body into the slot.
+pub fn apply_nfo_oi_session_body(slot: &NfoOiSessionSlot, body: &str) -> usize {
+    let rows = crate::data::nfo_oi_session_from_kotak_json(body);
+    if rows.is_empty() {
+        return 0;
+    }
+    let mut guard = slot.lock().expect("nfo oi session mutex poisoned");
+    let mut applied = 0;
+    for row in rows {
+        guard.insert(row.instrument_id.clone(), row);
+        applied += 1;
+    }
+    applied
+}
+
+/// Fetch once per instrument when the OI session slot is empty. REST only —
+/// do not poll. Rate window unspecified.
+pub fn ensure_kotak_rest_oi_session(
+    slot: NfoOiSessionSlot,
+    vault: Arc<dyn BrokerCredentialVault>,
+    locator: SessionLocator,
+    inflight: &Arc<Mutex<HashSet<String>>>,
+    instrument_id: &str,
+) {
+    let instrument = instrument_id.trim().to_ascii_lowercase();
+    if instrument.is_empty() || !instrument.contains('|') {
+        return;
+    }
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
+    if book_id != KOTAK_NSE_NFO_BOOK_ID {
+        return;
+    }
+    {
+        let guard = slot.lock().expect("nfo oi session mutex poisoned");
+        if guard.contains_key(&instrument) {
+            return;
+        }
+    }
+    {
+        let mut guard = inflight.lock().expect("kotak oi session inflight poisoned");
+        if !guard.insert(instrument.clone()) {
+            return;
+        }
+    }
+    let loc = locator
+        .lock()
+        .expect("kotak session locator poisoned")
+        .clone();
+    let Some((environment, connection_id)) = loc else {
+        inflight
+            .lock()
+            .expect("kotak oi session inflight poisoned")
+            .remove(&instrument);
+        return;
+    };
+    let inflight = inflight.clone();
+    tokio::spawn(async move {
+        let result = fetch_and_apply_oi_session(
+            &slot,
+            vault.as_ref(),
+            &environment,
+            &connection_id,
+            &instrument,
+        )
+        .await;
+        inflight
+            .lock()
+            .expect("kotak oi session inflight poisoned")
+            .remove(&instrument);
+        match result {
+            Ok((n, _)) if n > 0 => tracing::info!(
+                instrument = %instrument,
+                rows = n,
+                "s1 desk: kotak REST oi session applied"
+            ),
+            Ok((_, body)) => log_unusable_quotes_keys(&instrument, &body, "oi"),
+            Err(err) => tracing::warn!(
+                instrument = %instrument,
+                error = %err,
+                "s1 desk: kotak REST oi session failed"
+            ),
+        }
+    });
+}
+
+/// Same REST GET as `ensure_kotak_rest_oi_session`, but the caller waits for
+/// the slot or a fetch failure. Obtain uses this so session fields are not left
+/// unavailable while a spawn from ensure is still in flight.
+pub async fn await_kotak_rest_oi_session(
+    slot: NfoOiSessionSlot,
+    vault: Arc<dyn BrokerCredentialVault>,
+    locator: SessionLocator,
+    instrument_id: &str,
+) {
+    let instrument = instrument_id.trim().to_ascii_lowercase();
+    if instrument.is_empty() || !instrument.contains('|') {
+        return;
+    }
+    let Some(book_id) = kotak_quote_book_id(&instrument) else {
+        return;
+    };
+    if book_id != KOTAK_NSE_NFO_BOOK_ID {
+        return;
+    }
+    {
+        let guard = slot.lock().expect("nfo oi session mutex poisoned");
+        if guard.contains_key(&instrument) {
+            return;
+        }
+    }
+    let loc = locator
+        .lock()
+        .expect("kotak session locator poisoned")
+        .clone();
+    let Some((environment, connection_id)) = loc else {
+        return;
+    };
+    let _ = fetch_and_apply_oi_session(
+        &slot,
+        vault.as_ref(),
+        &environment,
+        &connection_id,
+        &instrument,
+    )
+    .await;
+}
+
+async fn fetch_and_apply_oi_session(
+    slot: &NfoOiSessionSlot,
+    vault: &dyn BrokerCredentialVault,
+    environment: &str,
+    connection_id: &str,
+    instrument_id: &str,
+) -> Result<(usize, String), QuoteFetchError> {
+    let body = fetch_quotes_json(
+        vault,
+        environment,
+        connection_id,
+        instrument_id,
+        QUOTE_TYPE_OI,
+    )
+    .await?;
+    let applied = apply_nfo_oi_session_body(slot, &body);
     Ok((applied, body))
 }
 
@@ -1058,6 +1238,80 @@ mod fo_quotes_field_probe {
                             .map(|n| n > 0.0)
                             .unwrap_or(false)
                     );
+                }
+            }
+        }
+    }
+
+    /// Live capture for PR A1 — `quote_type=depth` on `nse_fo|56526`.
+    /// Writes the raw body to `fixtures/kotak/quotes_neosymbol_nfo_depth.json`.
+    ///
+    /// ```text
+    /// KOTAK_NFO_DEPTH_CAPTURE=1 cargo test --lib nfo_depth_live_capture -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore = "live authenticated Kotak GET; run deliberately with KOTAK_NFO_DEPTH_CAPTURE=1"]
+    async fn nfo_depth_live_capture() {
+        if std::env::var("KOTAK_NFO_DEPTH_CAPTURE").is_err() {
+            println!("set KOTAK_NFO_DEPTH_CAPTURE=1 to run the live depth capture");
+            return;
+        }
+        let vault = KeyringBrokerCredentialVault::new();
+        let connection_id = std::env::var("KOTAK_FO_PROBE_CONNECTION")
+            .unwrap_or_else(|_| "00000000-0000-4000-8000-000000000003".to_string());
+        let instrument_id = std::env::var("KOTAK_NFO_DEPTH_INSTRUMENT")
+            .unwrap_or_else(|_| "nse_fo|56526".to_string());
+        let body = match fetch_quotes_json(
+            &vault,
+            "prod",
+            &connection_id,
+            &instrument_id,
+            QUOTE_TYPE_DEPTH,
+        )
+        .await
+        {
+            Ok(body) => body,
+            Err(err) => {
+                panic!(
+                    "live depth capture failed ({err}) — session expired or HTTP refused; do not hand-author fixture"
+                );
+            }
+        };
+        let out =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/kotak/quotes_neosymbol_nfo_depth.json");
+        std::fs::write(&out, format!("{body}\n")).expect("write fixture");
+        println!("wrote {} bytes to {}", body.len(), out.display());
+        let Ok(value) = serde_json::from_str::<Value>(&body) else {
+            panic!("body is not valid JSON");
+        };
+        println!("{}", root_shape(&value));
+        if let Some(row) = first_row(&value) {
+            if let Value::Object(map) = row {
+                let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+                keys.sort_unstable();
+                println!("first-row keys (sorted): {keys:?}");
+                if let Some(depth) = map.get("depth") {
+                    println!("depth field type: {}", type_of(depth));
+                    if let Value::Object(depth_map) = depth {
+                        let mut depth_keys: Vec<&str> =
+                            depth_map.keys().map(String::as_str).collect();
+                        depth_keys.sort_unstable();
+                        println!("depth object keys: {depth_keys:?}");
+                        for side in ["buy", "sell", "bids", "asks", "bid", "ask"] {
+                            if let Some(levels) = depth_map.get(side).and_then(Value::as_array) {
+                                if let Some(first) = levels.first() {
+                                    if let Value::Object(level) = first {
+                                        let mut lk: Vec<&str> =
+                                            level.keys().map(String::as_str).collect();
+                                        lk.sort_unstable();
+                                        println!("  {side}[0] level keys: {lk:?}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    println!("no top-level depth key on first row");
                 }
             }
         }

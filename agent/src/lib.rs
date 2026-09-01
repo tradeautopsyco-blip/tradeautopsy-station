@@ -2,6 +2,7 @@ mod api;
 mod bar_fill_ingress;
 /// Native Binance.com spot modules — **reference only** (ADR 0001 / B5).
 /// Live Start uses `build_runtime_adapter` → `WasmBrokerAdapter`, never these.
+mod binance_com_options_client;
 mod binance_com_spot_adapter;
 mod binance_com_spot_client;
 mod binance_com_validation;
@@ -329,8 +330,17 @@ pub struct AgentConfig {
     pub plant_kotak_nfo_quote: bool,
     /// CI: plant lock-header FO CSV into the named NFO store. Not cash KotakScripMaster.
     pub plant_kotak_nfo_contracts: bool,
+    /// NFO order book CI: plant a bounded snapshot into DepthBook `{kotak-nse-nfo}`.
+    /// Live capture may carry zero levels when the market is shut; CI uses
+    /// representative non-zero levels with the observed key shape.
+    pub plant_kotak_nfo_depth: bool,
+    /// NFO session OI CI: plant `quote_type=oi` slice into `nfo_oi_session`.
+    /// Supplementary to `open_int` on the quote fixture — never overwrites it.
+    pub plant_kotak_nfo_oi_session: bool,
     /// S2 CI: plant committed klines JSON into HistoryBook. No live Binance.
     pub plant_binance_s2_history: bool,
+    /// Spot funds CI: plant AccountBook funds slot. No live Binance private GET.
+    pub plant_binance_spot_funds: bool,
     /// Options last CI: plant committed eapi ticker JSON into TickBook. No live eapi.
     pub plant_binance_options_quote: bool,
     /// Options chain/OI CI: plant committed exchangeInfo + OI JSON. No live eapi.
@@ -343,6 +353,9 @@ pub struct AgentConfig {
     /// Options order book CI: plant the committed `/eapi/v1/depth` JSON into the
     /// DepthBook's `binance-com-options` slot. No live eapi.
     pub plant_binance_options_depth: bool,
+    /// Options tradebook CI: plant the committed `/eapi/v1/userTrades` JSON into
+    /// AccountBook `binance-com-options`. No live eapi private GET.
+    pub plant_binance_options_fills: bool,
     /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
     pub eapi_public_fetch: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
@@ -458,12 +471,16 @@ impl AgentConfig {
             plant_kotak_s1k_fixtures: false,
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
+            plant_kotak_nfo_depth: false,
+            plant_kotak_nfo_oi_session: false,
             plant_binance_s2_history: false,
+            plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
+            plant_binance_options_fills: false,
             eapi_public_fetch: true,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
@@ -520,12 +537,16 @@ impl AgentConfig {
             plant_kotak_s1k_fixtures: false,
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
+            plant_kotak_nfo_depth: false,
+            plant_kotak_nfo_oi_session: false,
             plant_binance_s2_history: false,
+            plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
+            plant_binance_options_fills: false,
             eapi_public_fetch: false,
             instrument_master_cache_dir,
         }
@@ -835,6 +856,32 @@ fn plant_binance_options_mark_no_bid(mark: &Arc<Mutex<Option<crate::data::Cached
     );
 }
 
+/// Headless NFO depth: bounded snapshot into the named book. The committed
+/// live body may carry zero levels when the market is shut; CI plants
+/// representative non-zero levels using the observed key shape.
+fn plant_kotak_nfo_depth(depthbook: &Arc<Mutex<crate::data::DepthBook>>) {
+    let json = r#"[{
+        "exchange": "nse_fo",
+        "exchange_token": "56526",
+        "depth": {
+            "buy": [{"price": "10.50", "quantity": "120", "orders": "3"}],
+            "sell": [{"price": "11.00", "quantity": "90", "orders": "4"}]
+        }
+    }]"#;
+    let mut book = depthbook.lock().expect("depthbook mutex poisoned");
+    if crate::kotak_rest_quotes::apply_kotak_depth_body(&mut book, json, Utc::now()) == 0 {
+        tracing::warn!("nfo fixture: depth plant refused, no usable ladder");
+    }
+}
+
+/// Headless NFO session OI: `quote_type=oi` slice into the named slot.
+fn plant_kotak_nfo_oi_session(nfo_oi_session: &crate::kotak_rest_quotes::NfoOiSessionSlot) {
+    let json = include_str!("../fixtures/kotak/quotes_neosymbol_nfo_oi.json");
+    if crate::kotak_rest_quotes::apply_nfo_oi_session_body(nfo_oi_session, json) == 0 {
+        tracing::warn!("nfo fixture: oi session plant refused");
+    }
+}
+
 /// Headless options order book: the committed `/eapi/v1/depth` fixture into the
 /// **options** slot of the DepthBook. No live eapi. The symbol is supplied by
 /// Station (the body carries none), and stays mixed-case.
@@ -877,6 +924,45 @@ fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) 
         &mut historybook.lock().expect("historybook mutex poisoned"),
         series,
     );
+}
+
+fn plant_binance_spot_funds(account_book: &Arc<Mutex<crate::data::AccountBook>>) {
+    use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding};
+    account_book
+        .lock()
+        .expect("account_book mutex poisoned")
+        .replace_funds(
+            crate::data::BINANCE_COM_SPOT_BOOK_ID,
+            BrokerBalancesSnapshot {
+                holdings: vec![BrokerHolding {
+                    asset: "BTC".into(),
+                    free: 0.01,
+                    locked: 0.0,
+                }],
+                unrealized_pnl: None,
+            },
+            "/api/v3/account",
+            1_700_000_000_000,
+        );
+}
+
+fn plant_binance_options_fills(account_book: &Arc<Mutex<crate::data::AccountBook>>) {
+    let json = include_str!("../fixtures/binance/options_user_trades.json");
+    let trades = crate::binance_com_options_client::parse_user_trades(json)
+        .expect("committed options userTrades fixture must parse");
+    let fills: Vec<_> = trades
+        .iter()
+        .map(crate::binance_com_options_client::user_trade_to_broker_fill)
+        .collect();
+    account_book
+        .lock()
+        .expect("account_book mutex poisoned")
+        .replace_fills(
+            crate::data::BINANCE_COM_OPTIONS_BOOK_ID,
+            fills,
+            "/eapi/v1/userTrades",
+            1_700_000_000_000,
+        );
 }
 
 pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
@@ -1020,6 +1106,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let depthbook = Arc::new(std::sync::Mutex::new(crate::data::DepthBook::new()));
     let nfo_open_interest: crate::kotak_rest_quotes::NfoOpenInterestSlot =
         Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let nfo_oi_session: crate::kotak_rest_quotes::NfoOiSessionSlot =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     if config.plant_kotak_s1k_fixtures {
         plant_kotak_s1k_fixtures(
             quote_registry.as_ref(),
@@ -1041,8 +1129,20 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_kotak_nfo_contracts {
         plant_kotak_nfo_contracts(&kotak_nfo_scrip_master, &broker_status);
     }
+    if config.plant_kotak_nfo_depth {
+        plant_kotak_nfo_depth(&depthbook);
+    }
+    if config.plant_kotak_nfo_oi_session {
+        plant_kotak_nfo_oi_session(&nfo_oi_session);
+    }
     if config.plant_binance_s2_history {
         plant_binance_s2_history(&historybook);
+    }
+    if config.plant_binance_spot_funds {
+        plant_binance_spot_funds(&account_book);
+    }
+    if config.plant_binance_options_fills {
+        plant_binance_options_fills(&account_book);
     }
     if config.plant_binance_options_quote {
         plant_binance_options_quote(quote_registry.as_ref(), &tickbook);
@@ -1141,6 +1241,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         options_option_symbols,
         options_oi_rows,
         nfo_open_interest,
+        nfo_oi_session,
         options_mark,
         eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,

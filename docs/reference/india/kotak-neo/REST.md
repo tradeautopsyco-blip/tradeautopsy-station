@@ -270,9 +270,38 @@ Redacted example row (`all`) — names and JSON types only, no values:
 - **Last on FO is `ltp`**, a JSON **string** that parses as f64 — the same key name cash reports, now observed on FO in its own right rather than assumed from cash. `quote_type=ltp` is a genuinely thinner slice (4 keys) carrying **the same** `ltp` key.
 - **`last_traded_price`, `last`, `lastPrice`, `LTP` are ABSENT** from the live FO body. The v1 fixture `quotes_neosymbol_nfo.json` (`last_traded_price`) is hand-authored and is **not** an observation. `last_traded_quantity` / `last_volume` do exist but are quantity/volume, **not** price.
 - **Identity on FO is `exchange` + `exchange_token`** — observed `"nse_fo"` / `"56526"`, matching the cash/OpenAlgo shape, **not** v1 `exchange_segment` / `instrument_token`. A third key `display_symbol` (`"NIFTY2692221000PE"`) is present on all three slices.
-- **Open interest is named, and the spelling differs by slice.** `all` carries **`open_int`**; `oi` carries **`oi_las`**, **`oi_high`**, **`oi_low`** and **no** `open_int`. All are strings that parse as f64. **`oi_las` is verbatim** — truncated, no trailing `t`; do not silently read it as `oi_last`. What `oi_las` measures, and whether it equals `open_int` numerically, are **NOT SPECIFIED IN SOURCE** (values were not compared on this pass).
+- **Open interest is named, and the spelling differs by slice.** `all` carries **`open_int`**; `oi` carries **`oi_las`**, **`oi_high`**, **`oi_low`** and **no** `open_int`. All are strings that parse as f64. **`oi_las` is verbatim** — truncated, no trailing `t`; do not silently read it as `oi_last`. What `oi_las` measures, and whether it equals `open_int` numerically, are **NOT SPECIFIED IN SOURCE** on the 2026-08-31 pass (values were not compared on that pass).
+
+**Live FO OI slice compare (observed 2026-09-01 IST — same session, same day):** founder probe, logged-in session, token `nse_fo|68407` (`NIFTY26SEPFUT`). Two GETs on the same contract:
+
+| `quote_type` | URL path | Field | Observed value |
+|---|---|---|---|
+| `all` | `…/quotes/neosymbol/nse_fo%7C68407/all` | `open_int` | `"16271450"` |
+| `oi` | `…/quotes/neosymbol/nse_fo%7C68407/oi` | `oi_las` | `"0"` |
+| `oi` | same | `oi_high` | `"0"` |
+| `oi` | same | `oi_low` | `"0"` |
+
+**UNEQUAL** — Station publishes `open_interest` from `open_int` on `all` only. The `oi` slice's `oi_las` / `oi_high` / `oi_low` are supplementary `oi_session_*` fields from `quote_type=oi`; they must **not** overwrite `open_interest` when the two slices disagree.
 - **`ltp` and `open_int` can both be `"0"`, and that is a real reading.** Dogfood 2026-09-01 IST with the market shut, same session and path, two contracts: `nse_fo|68407` (`NIFTY26SEPFUT`) returned `ltp="24245.0000"` / `open_int="15778945"`, while `nse_fo|56526` (`NIFTY2692221000PE`) returned `"0"` for both. A liquid contract carrying real numbers at the same moment rules out a closed-market placeholder. So `ltp="0"` is not a price (last stays unusable — Station refuses `last <= 0`) and `open_int="0"` is a publishable reading of genuinely no open positions. Neither zero means "not fetched".
-- **A `depth` key is present as an object on FO `all`.** Its inner level shape was **not** inspected and stays **NOT SPECIFIED IN SOURCE** — this pass was scoped to the last and OI field names. This narrows, but does not answer, the FO-depth gap noted below: the correction is that a `depth` field does exist on an FO body, not that its ladder shape is known. The cash ladder shape must still not be assumed to carry over.
+- **A `depth` key is present as an object on FO `all`.** Its inner level shape was **not** inspected on that pass — see the dedicated FO depth row below for `quote_type=depth`.
+
+**Live FO depth body (observed 2026-09-01 IST — market shut, levels may be zero):** founder capture, logged-in session, host from session `baseUrl`, headers `Authorization` + `Content-Type` + `Auth` + `Sid` + `Accept`. One GET, token `nse_fo|56526` (`NIFTY2692221000PE`, live row in that day's `nse_fo` master):
+
+| `quote_type` | URL path | Root | First-row keys (sorted) | Depth field | Level keys (`buy`/`sell` rows) |
+|---|---|---|---|---|---|
+| `depth` | `…/quotes/neosymbol/nse_fo%7C56526/depth` | `root_keys=["<array>"]` len 1 | `depth`, `display_symbol`, `exchange`, `exchange_token` | **`depth`** (JSON object) | **`price`**, **`quantity`**, **`orders`** (JSON strings) |
+
+Redacted example row (`depth`) — names and JSON types only, no values:
+
+```json
+{"display_symbol": "<string>", "exchange": "<string>", "exchange_token": "<string>", "depth": {"buy": [{"price": "<string>", "quantity": "<string>", "orders": "<string>"}], "sell": [{"price": "<string>", "quantity": "<string>", "orders": "<string>"}]}}
+```
+
+- **Root is a JSON array**, same envelope family as cash `nse_cm|11536` and FO `all` — not the v1 `{ "message": [ … ] }` fixture.
+- **Depth field name is `depth`**, nested object with sides **`buy`** / **`sell`** (not `bids`/`asks`).
+- **Level keys are `price`, `quantity`, `orders`** — the same three names cash depth uses on `buy`/`sell`.
+- **Identity on FO depth is `exchange` + `exchange_token`** — observed `"nse_fo"` / `"56526"`, not v1 `exchange_segment` / `instrument_token`.
+- **Zero levels are a real reading when the market is shut.** This capture returned `"0"` for every `price`/`quantity`/`orders` cell on both sides. That is unusable as a ladder (Station refuses `price <= 0` / `quantity <= 0`), not a missing field — see the `ltp`/`open_int` zero note above on the same contract/day.
 
 **Gaps (NOT SPECIFIED IN SOURCE):**
 
@@ -290,9 +319,7 @@ Redacted example row (`all`) — names and JSON types only, no values:
 > - Not `AuthMode::Public` (Binance unsigned). Consumer key and/or session is **session attach**. Slice A should keep PrivateRead for Kotak quotes even though the SDK omits Sid/Auth on this GET.
 > - Quotes/subscribe are for a **later s1k** slice. v1 poll remains trade book only.
 > - Slice D: `quote_type=depth` is stored as `market/order_book/bounded_snapshot` (not `ordered_state`; HSM `isDepth` is out of scope).
-> - **`nse_fo` depth body is NOT SPECIFIED IN SOURCE (2026-08-31).** `exchange_segment` officially admits `nse_fo` (README table above) and the R0 fence already permits `quote_type=depth` on the `kotak-nse-nfo` book, so nothing on the wire blocks it. What is missing is an **observed FO body**: the only founder observation on this path is cash (`nse_cm|11536`, 2026-08-27), and `Quotes.md` still types the return as bare `object`. The in-repo fixtures `quotes_neosymbol_depth.json` (cash) and `quotes_neosymbol_nfo.json` (FO, no `depth` field) are hand-authored v1 shapes, **not** observations. **Refined 2026-08-31:** a live FO `quote_type=all` body *does* carry a `depth` key (JSON object) — see the FO observation above — so "FO has no depth field" is a fixture artefact, not a venue fact. The **level key names inside it remain unobserved**, so FO depth stays NOT SPECIFIED and Station still does not attempt it. Station therefore does not attempt FO depth and does not assume the cash ladder shape carries over. `ensure_kotak_rest_depth` logs the refusal rather than dropping silently.
->
->   **To unblock:** one live `GET {baseUrl}/quotes/neosymbol/nse_fo|{token}/depth` on a logged-in session; record root keys, the `depth` field name, and the level key names (`price`/`quantity`/`orders` vs other) as a dated row here, exactly as the cash row above was recorded. Then `kotak_instrument_id` may accept `nse_fo`.
+> - **`nse_fo` depth body observed 2026-09-01** on `GET …/quotes/neosymbol/nse_fo|56526/depth`: root JSON array; field **`depth`**; sides **`buy`/`sell`**; level keys **`price`/`quantity`/`orders`**. Identity **`exchange`/`exchange_token`**. Station maps FO depth into DepthBook slot `{kotak-nse-nfo}\0{nse_fo|token}`. Zero levels when the market is shut are unusable, not a schema gap.
 
 ---
 
@@ -361,3 +388,22 @@ Trade book (already documented): `GET {baseUrl}/quick/user/trades?sId={hsServerI
 | Treat live quotes as v1 `{ "message": [ last_traded_price, instrument_token ] }` only | Founder 2026-08-27: 200 root `["<array>"]`; OpenAlgo `data.py` uses `response[0].ltp` / `exchange` / `exchange_token` | Parser accepts both envelopes; cash only |
 
 No memory fills for method/path. Gaps stay `NOT SPECIFIED IN SOURCE`.
+
+---
+
+## Private account reads (PR A5 · observed 2026-09-01)
+
+Session: `prod.kotak_neo.00000000-0000-4000-8000-000000000003` · fixtures under `agent/fixtures/kotak/`.
+
+| Endpoint | Method | Root | Row key | Identity / notes |
+| -------- | ------ | ---- | ------- | ---------------- |
+| `/quick/user/orders` | **GET** | `{stat,stCode,data[]}` | `data[]` | `exSeg`, `prod`, `trdSym`, `nOrdNo`, `trnsTp`, `qty`, `prc`, `unFldSz`, `ordSt`. Open obtain rows: `unFldSz > 0` only. |
+| `/quick/user/positions` | **GET** | `{stat,stCode,data[]}` | `data[]` | `exSeg`, `prod`, `trdSym`, `flBuyQty`/`flSellQty`, `cfBuyQty`/`cfSellQty`. Net qty = (fl+cf buy) − (fl+cf sell). |
+| `/portfolio/v1/holdings` | **GET** | `{data[]}` only | `data[]` | `exchangeSegment`, `symbol`, `quantity`, `sellableQuantity`, `averagePrice`, `mktValue`, `instrumentType`. Cash book only (`nse_cm`/`bse_cm`). |
+| `/quick/user/limits` | **POST** (SDK) | — | — | Live probe **HTTP 500** empty body (2026-09-01). Allowlisted; not wired to obtain until a success body is captured. |
+| `/quick/user/check-margin` | **POST** (SDK) | — | — | Live probe **HTTP 500** empty body (2026-09-01). RMS ticket check, not `account/margin_estimate` calculator. |
+
+**Gaps (NOT SPECIFIED IN SOURCE):**
+
+- Success JSON for `limits` / `check-margin` on this tenant gateway.
+- Whether holdings GET requires `sId` query (SDK `portfolio_holdings_api.py` omits it; Station adds `sId` via session blob and GET succeeded).

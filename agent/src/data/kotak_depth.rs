@@ -5,12 +5,14 @@
 //! with `quote_type=depth` (SDK Quotes.md / `PROD_URL["quotes_neo_symbol"]`).
 //!
 //! Physics is `market/order_book/bounded_snapshot` only. Never `ordered_state`,
-//! never `synced`, never HSM `isDepth=true`. Cash `nse_cm` / `bse_cm` only.
-//! Depth JSON is not a TickBook last.
+//! never `synced`, never HSM `isDepth=true`. Cash `nse_cm` / `bse_cm` and named
+//! NFO `nse_fo` on REST `quote_type=depth`. Depth JSON is not a TickBook last.
 
-use super::descriptor::KOTAK_NEO_ADAPTER_ID;
+use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_NFO_BOOK_ID};
 use super::identity::{CapabilityId, Family, Identity, Physics};
-use super::kotak_quotes::{cash_instrument_id_from_quote_object, json_string, quote_objects};
+use super::kotak_quotes::{
+    depth_book_and_instrument_from_quote_object, json_string, quote_objects,
+};
 use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::Transport;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -111,7 +113,7 @@ pub fn depth_snapshots_from_kotak_json(
 }
 
 fn snapshot_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<DepthSnapshot> {
-    let instrument_id = cash_instrument_id_from_quote_object(value)?;
+    let (instrument_id, book_id) = depth_book_and_instrument_from_quote_object(value)?;
     let depth = value.get("depth").unwrap_or(value);
     let bids = levels_from(
         depth
@@ -132,8 +134,7 @@ fn snapshot_from_object(value: &Value, received_at: DateTime<Utc>) -> Option<Dep
     Some(DepthSnapshot {
         instrument_id,
         adapter_id: KOTAK_NEO_ADAPTER_ID.to_string(),
-        book_id: shipping_book_id_for_slug(KOTAK_NEO_ADAPTER_ID)
-            .unwrap_or_else(|| KOTAK_NEO_ADAPTER_ID.to_string()),
+        book_id,
         bids,
         asks,
         completeness: true,
@@ -361,16 +362,37 @@ mod tests {
     }
 
     #[test]
-    fn empty_or_fo_depth_is_unusable() {
+    fn empty_depth_is_unusable() {
         let empty = r#"{"instrument_token":"2885","exchange_segment":"nse_cm","depth":{"buy":[],"sell":[]}}"#;
         assert!(depth_snapshot_from_kotak_json(empty, received()).is_none());
-        let fo = r#"{"instrument_token":"12345","exchange_segment":"nse_fo","depth":{"buy":[{"price":"10","quantity":"1"}],"sell":[{"price":"11","quantity":"1"}]}}"#;
-        assert!(depth_snapshot_from_kotak_json(fo, received()).is_none());
         let book = DepthBook::new();
         let missing = extract_depth(&book, "nse_cm|2885", Some(KOTAK_NEO_ADAPTER_ID));
         assert_eq!(missing.status, DepthStatus::Unavailable);
         assert!(missing.data.is_none());
         assert!(depth_obtain_data(&missing).is_none());
+    }
+
+    #[test]
+    fn nfo_depth_uses_exchange_token_and_nfo_book() {
+        let json = r#"[{
+            "exchange": "nse_fo",
+            "exchange_token": "56526",
+            "depth": {
+                "buy": [{"price": "10.50", "quantity": "120", "orders": "3"}],
+                "sell": [{"price": "11.00", "quantity": "90", "orders": "4"}]
+            }
+        }]"#;
+        let snap = depth_snapshot_from_kotak_json(json, received()).expect("nfo depth");
+        assert_eq!(snap.instrument_id, "nse_fo|56526");
+        assert_eq!(snap.book_id, KOTAK_NSE_NFO_BOOK_ID);
+        assert!(!snap.bids.is_empty());
+        assert_eq!(snap.bids[0].orders.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn live_nfo_depth_fixture_with_zero_levels_is_unusable() {
+        let json = include_str!("../../fixtures/kotak/quotes_neosymbol_nfo_depth.json");
+        assert!(depth_snapshot_from_kotak_json(json, received()).is_none());
     }
 
     #[test]

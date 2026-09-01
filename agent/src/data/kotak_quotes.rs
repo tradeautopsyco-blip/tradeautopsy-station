@@ -20,6 +20,7 @@ pub const QUOTE_TYPE_ALL: &str = "all";
 pub const QUOTE_TYPE_LTP: &str = "ltp";
 pub const QUOTE_TYPE_OHLC: &str = "ohlc";
 pub const QUOTE_TYPE_DEPTH: &str = "depth";
+pub const QUOTE_TYPE_OI: &str = "oi";
 
 pub const DOCUMENTED_QUOTE_TYPES: &[&str] = &[
     "all",
@@ -228,6 +229,23 @@ pub(crate) fn cash_instrument_id_from_quote_object(value: &Value) -> Option<Stri
     kotak_instrument_id(&segment, &token)
 }
 
+/// Depth row identity + DepthBook slot. Cash → shipping cash book; `nse_fo` →
+/// named NFO book (`kotak-nse-nfo`).
+pub(crate) fn depth_book_and_instrument_from_quote_object(
+    value: &Value,
+) -> Option<(String, String)> {
+    let (segment, token) = quote_segment_and_token(value)?;
+    let segment = segment.trim().to_ascii_lowercase();
+    if is_nfo_segment(&segment) {
+        let instrument_id = kotak_nfo_instrument_id(&segment, &token)?;
+        return Some((instrument_id, KOTAK_NSE_NFO_BOOK_ID.to_string()));
+    }
+    let instrument_id = kotak_instrument_id(&segment, &token)?;
+    let book_id = shipping_book_id_for_slug(KOTAK_NEO_ADAPTER_ID)
+        .unwrap_or_else(|| KOTAK_NSE_BSE_CASH_BOOK_ID.to_string());
+    Some((instrument_id, book_id))
+}
+
 fn instrument_id_from_quote_object_for_book(value: &Value, book_id: &str) -> Option<String> {
     let (segment, token) = quote_segment_and_token(value)?;
     match book_id {
@@ -321,6 +339,47 @@ fn nfo_open_interest_from_object(value: &Value) -> Option<NfoOpenInterest> {
     Some(NfoOpenInterest {
         instrument_id,
         open_interest,
+    })
+}
+
+/// Session OI band from the separate `quote_type=oi` slice. Kept beside
+/// [`NfoOpenInterest`], never merged into `open_interest`: the venue names
+/// different keys on `all` vs `oi`, and live compare shows they can disagree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NfoOiSessionSlice {
+    /// `nse_fo|{token}` — the same identity as last and `open_int`.
+    pub instrument_id: String,
+    /// Verbatim `oi_las` from the `oi` slice — truncated spelling, not `oi_last`.
+    pub oi_session_las: String,
+    /// Verbatim `oi_high` from the `oi` slice.
+    pub oi_session_high: String,
+    /// Verbatim `oi_low` from the `oi` slice.
+    pub oi_session_low: String,
+}
+
+/// Parse every `quote_type=oi` row. Reads `oi_las` / `oi_high` / `oi_low`
+/// verbatim; does not consult `open_int` (that lives on `quote_type=all` only).
+pub fn nfo_oi_session_from_kotak_json(raw: &str) -> Vec<NfoOiSessionSlice> {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return Vec::new();
+    };
+    quote_objects(&value)
+        .into_iter()
+        .filter_map(nfo_oi_session_from_object)
+        .collect()
+}
+
+fn nfo_oi_session_from_object(value: &Value) -> Option<NfoOiSessionSlice> {
+    let (segment, token) = quote_segment_and_token(value)?;
+    let instrument_id = kotak_nfo_instrument_id(&segment, &token)?;
+    let oi_session_las = json_string(value.get("oi_las")?)?;
+    let oi_session_high = json_string(value.get("oi_high")?)?;
+    let oi_session_low = json_string(value.get("oi_low")?)?;
+    Some(NfoOiSessionSlice {
+        instrument_id,
+        oi_session_las,
+        oi_session_high,
+        oi_session_low,
     })
 }
 
@@ -790,5 +849,24 @@ mod tests {
             Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
         );
         assert!(kotak_quote_book_id("bse_fo|1").is_none());
+    }
+
+    #[test]
+    fn nfo_oi_session_reads_oi_slice_verbatim() {
+        let json = include_str!("../../fixtures/kotak/quotes_neosymbol_nfo_oi.json");
+        let rows = nfo_oi_session_from_kotak_json(json);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].instrument_id, "nse_fo|12345");
+        assert_eq!(rows[0].oi_session_las, "475000");
+        assert_eq!(rows[0].oi_session_high, "500000");
+        assert_eq!(rows[0].oi_session_low, "450000");
+
+        // `open_int` on `all` is a different slice — never parsed here.
+        let all =
+            r#"[{"exchange":"nse_fo","exchange_token":"12345","open_int":"480750","oi_las":"1"}]"#;
+        assert!(
+            nfo_oi_session_from_kotak_json(all).is_empty(),
+            "oi_las without oi_high/oi_low is not a session slice row"
+        );
     }
 }

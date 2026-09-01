@@ -135,6 +135,76 @@ pub fn fills_provenance_path(adapter_name: &str) -> &str {
     }
 }
 
+fn kotak_cash_product_ok(product: &str) -> bool {
+    matches!(product, "CNC" | "MIS")
+}
+
+fn kotak_nfo_row_ok(symbol: &str, product: &str, master: &KotakNfoScripMaster) -> bool {
+    let prod = product.trim().to_ascii_uppercase();
+    match prod.as_str() {
+        "NRML" => true,
+        "CNC" | "CO" | "BO" => false,
+        "MIS" => match master.get_by_trading_symbol(symbol) {
+            Some(row) => {
+                let inst = row.instrument_type.trim().to_ascii_uppercase();
+                matches!(inst.as_str(), "OPTIDX" | "FUTIDX" | "FUTSTK")
+            }
+            None => false,
+        },
+        _ => false,
+    }
+}
+
+pub fn split_kotak_orders_by_book(
+    orders: Vec<crate::broker_data_class::BrokerOpenOrder>,
+    master: &KotakNfoScripMaster,
+) -> HashMap<String, Vec<crate::broker_data_class::BrokerOpenOrder>> {
+    let mut cash = Vec::new();
+    let mut nfo = Vec::new();
+    for order in orders {
+        let segment = norm_seg(order.exchange_segment.as_deref().unwrap_or(""));
+        let product = order.product.as_deref().unwrap_or("");
+        if is_kotak_nfo_segment(&segment) && kotak_nfo_row_ok(&order.symbol, product, master) {
+            nfo.push(order);
+        } else if is_kotak_cash_segment(&segment) && kotak_cash_product_ok(product) {
+            cash.push(order);
+        }
+    }
+    let mut out = HashMap::new();
+    out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
+    out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
+    out
+}
+
+pub fn split_kotak_positions_by_book(
+    positions: Vec<crate::broker_data_class::BrokerPositionRow>,
+    master: &KotakNfoScripMaster,
+) -> HashMap<String, Vec<crate::broker_data_class::BrokerPositionRow>> {
+    let mut cash = Vec::new();
+    let mut nfo = Vec::new();
+    for row in positions {
+        let segment = norm_seg(&row.exchange_segment);
+        if is_kotak_nfo_segment(&segment) && kotak_nfo_row_ok(&row.trading_symbol, &row.product, master)
+        {
+            nfo.push(row);
+        } else if is_kotak_cash_segment(&segment) && kotak_cash_product_ok(&row.product) {
+            cash.push(row);
+        }
+    }
+    let mut out = HashMap::new();
+    out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
+    out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
+    out
+}
+
+pub fn split_kotak_holdings_by_book(
+    holdings: Vec<crate::broker_data_class::BrokerPortfolioHolding>,
+) -> HashMap<String, Vec<crate::broker_data_class::BrokerPortfolioHolding>> {
+    let mut out = HashMap::new();
+    out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), holdings);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

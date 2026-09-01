@@ -144,7 +144,9 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
             "optionchain",
             "open_interest",
             "optiongreeks",
-            "depth"
+            "depth",
+            "tradebook",
+            "search"
         ])
     );
     // OI is its own noun on its own binding, not a second chain arm.
@@ -161,6 +163,8 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
             "optionchain",
             "open_interest",
             "optiongreeks",
+            "search",
+            "tradebook",
             "depth"
         ]
     );
@@ -180,7 +184,7 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     // Depth stays research-only; `optiongreeks` is the one display grant here.
     assert_eq!(depth_bind["rights"]["display"], false);
 
-    // Depth is claimed on the options book only — NFO depth stays unspecified.
+    // Depth is claimed on both the options book and the named Kotak NFO book.
     let nfo = list
         .iter()
         .find(|m| m["book_id"] == "kotak-nse-nfo")
@@ -191,7 +195,17 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
         .iter()
         .filter_map(|op| op.as_str())
         .collect();
-    assert!(!nfo_ops.contains(&"depth"));
+    assert!(nfo_ops.contains(&"depth"));
+    let nfo_depth = nfo["bindings"]
+        .as_array()
+        .expect("nfo bindings")
+        .iter()
+        .find(|b| b["operation"] == "depth")
+        .expect("nfo depth binding");
+    assert_eq!(nfo_depth["capability_id"], "order_book");
+    assert_eq!(nfo_depth["physics"], "bounded_snapshot");
+    assert_eq!(nfo_depth["auth_mode"], "private_read");
+    assert_eq!(nfo_depth["transports"], serde_json::json!(["rest"]));
 
     handle.abort();
 }
@@ -1063,7 +1077,7 @@ async fn options_depth_obtain_is_unavailable_without_a_planted_ladder() {
     assert!(dark["data"].is_null());
     assert_eq!(dark["book_id"], "binance-com-options");
 
-    // NFO depth is NOT SPECIFIED IN SOURCE. It stays unclaimed, not merely dark.
+    // NFO depth is claimed. Without a snapshot it stays unavailable, not unsupported.
     let nfo: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=depth"
@@ -1075,7 +1089,8 @@ async fn options_depth_obtain_is_unavailable_without_a_planted_ladder() {
         .json()
         .await
         .expect("json");
-    assert_eq!(nfo["status"], "unsupported");
+    assert_eq!(nfo["status"], "unavailable");
+    assert_ne!(nfo["status"], "unsupported");
     assert!(nfo["data"].is_null());
 
     handle.abort();
@@ -1233,6 +1248,90 @@ async fn a_leftover_spot_id_leaves_options_depth_unavailable() {
     assert_ne!(obtain["status"], "success");
     assert!(obtain["data"].is_null());
     assert!(!obtain.to_string().contains("BTC-200730-9000-C"));
+
+    handle.abort();
+}
+
+/// Tradebook is implemented on this book. With no planted fills it stays
+/// `unavailable` — never `unsupported`, and never an empty success.
+#[tokio::test]
+async fn options_obtain_tradebook_is_unavailable_without_planted_fills() {
+    const PORT: u16 = 19_540;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+
+    let obtain: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=tradebook"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain tradebook")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "unavailable");
+    assert_ne!(obtain["status"], "unsupported");
+    assert_ne!(obtain["status"], "success");
+    assert!(obtain["data"].is_null());
+    assert_eq!(obtain["book_id"], "binance-com-options");
+
+    handle.abort();
+}
+
+/// Planted `/eapi/v1/userTrades` rows serve the options book tradebook only.
+#[tokio::test]
+async fn planted_options_fills_serve_tradebook_on_the_options_book() {
+    const PORT: u16 = 19_541;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_fills: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=tradebook"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain tradebook")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "success");
+    assert_eq!(obtain["book_id"], "binance-com-options");
+    assert_eq!(obtain["provenance_path"], "/eapi/v1/userTrades");
+    assert_eq!(obtain["data"]["fill_count"], 1);
+    assert_eq!(obtain["data"]["rows"][0]["symbol"], "BTC-200730-9000-C");
+    assert_eq!(obtain["data"]["rows"][0]["side"], "BUY");
+    assert_eq!(obtain["data"]["rows"][0]["price"], 1000.0);
+    assert_eq!(obtain["data"]["rows"][0]["qty"], 0.1);
+    let wire = obtain.to_string();
+    assert!(!wire.contains("btcusdt"));
+    assert!(!wire.contains("binance-com-spot"));
+
+    // Spot tradebook must not pick up the options fills slot.
+    let spot: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-spot&operation=tradebook"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain spot tradebook")
+        .json()
+        .await
+        .expect("json");
+    assert_ne!(spot["status"], "success");
+    assert!(spot["data"].is_null());
+    assert!(!spot.to_string().contains("BTC-200730-9000-C"));
 
     handle.abort();
 }

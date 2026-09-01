@@ -55,8 +55,14 @@ pub struct TestAgentOptions {
     pub plant_kotak_nfo_quote: bool,
     /// Plant lock-header FO CSV into the named NFO store (no live session).
     pub plant_kotak_nfo_contracts: bool,
+    /// NFO order book — plant bounded snapshot into DepthBook `kotak-nse-nfo`.
+    pub plant_kotak_nfo_depth: bool,
+    /// NFO session OI — plant `quote_type=oi` slice into `nfo_oi_session`.
+    pub plant_kotak_nfo_oi_session: bool,
     /// S2 — plant committed Binance klines JSON (no live Binance).
     pub plant_binance_s2_history: bool,
+    /// Spot funds — plant AccountBook funds slot (no live Binance private GET).
+    pub plant_binance_spot_funds: bool,
     /// Options last — plant committed eapi ticker JSON (no live eapi).
     pub plant_binance_options_quote: bool,
     /// Options chain/OI — plant committed exchangeInfo + OI JSON (no live eapi).
@@ -67,6 +73,8 @@ pub struct TestAgentOptions {
     pub plant_binance_options_mark_no_bid: bool,
     /// Options order book — plant the committed `/eapi/v1/depth` JSON (no live eapi).
     pub plant_binance_options_depth: bool,
+    /// Options tradebook — plant the committed `/eapi/v1/userTrades` JSON (no live eapi).
+    pub plant_binance_options_fills: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -99,12 +107,16 @@ impl Default for TestAgentOptions {
             plant_kotak_s1k_fixtures: false,
             plant_kotak_nfo_quote: false,
             plant_kotak_nfo_contracts: false,
+            plant_kotak_nfo_depth: false,
+            plant_kotak_nfo_oi_session: false,
             plant_binance_s2_history: false,
+            plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
+            plant_binance_options_fills: false,
         }
     }
 }
@@ -147,12 +159,16 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_kotak_s1k_fixtures = opts.plant_kotak_s1k_fixtures;
     cfg.plant_kotak_nfo_quote = opts.plant_kotak_nfo_quote;
     cfg.plant_kotak_nfo_contracts = opts.plant_kotak_nfo_contracts;
+    cfg.plant_kotak_nfo_depth = opts.plant_kotak_nfo_depth;
+    cfg.plant_kotak_nfo_oi_session = opts.plant_kotak_nfo_oi_session;
     cfg.plant_binance_s2_history = opts.plant_binance_s2_history;
+    cfg.plant_binance_spot_funds = opts.plant_binance_spot_funds;
     cfg.plant_binance_options_quote = opts.plant_binance_options_quote;
     cfg.plant_binance_options_chain = opts.plant_binance_options_chain;
     cfg.plant_binance_options_mark = opts.plant_binance_options_mark;
     cfg.plant_binance_options_mark_no_bid = opts.plant_binance_options_mark_no_bid;
     cfg.plant_binance_options_depth = opts.plant_binance_options_depth;
+    cfg.plant_binance_options_fills = opts.plant_binance_options_fills;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

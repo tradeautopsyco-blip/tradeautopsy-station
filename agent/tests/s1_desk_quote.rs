@@ -910,7 +910,7 @@ async fn nfo_plant_does_not_steal_cash_adapter_obtain() {
 
 /// O1 on the wire: `obtain?book=kotak-nse-nfo&operation=open_interest` Successes
 /// from `open_int` on the same `quote_type=all` body that feeds last. The `oi`
-/// slice spellings must not appear, and NFO depth stays unsupported.
+/// slice spellings must not appear. Depth without a planted snapshot stays dark.
 #[tokio::test]
 #[serial]
 async fn planted_nfo_open_interest_lights_from_open_int_only() {
@@ -962,9 +962,15 @@ async fn planted_nfo_open_interest_lights_from_open_int_only() {
     assert!(value.parse::<f64>().unwrap() >= 0.0);
     assert_eq!(oi["provenance_adapter_id"], "kotak_neo");
     let wire = oi.to_string();
-    // Unbound `oi` slice spellings, and the master CSV cell, never reach the wire.
+    // Raw `oi` slice spellings stay unbound; mapped session fields use `oi_session_*`.
     for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
         assert!(!wire.contains(unbound), "{unbound} must stay unbound");
+    }
+    for session_key in ["oi_session_las", "oi_session_high", "oi_session_low"] {
+        assert!(
+            oi["data"].get(session_key).is_none(),
+            "{session_key} requires plant_kotak_nfo_oi_session"
+        );
     }
     // OI is not a price: it must not be published as last.
     assert!(oi["data"].get("last").is_none());
@@ -984,7 +990,7 @@ async fn planted_nfo_open_interest_lights_from_open_int_only() {
     assert_eq!(glance["status"], "success");
     assert_eq!(glance["data"]["field"], "open_int");
 
-    // NFO depth is a separate, still-unobserved body — it stays unsupported.
+    // NFO depth is implemented but dark until a snapshot lands.
     let depth: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=depth"
@@ -996,7 +1002,127 @@ async fn planted_nfo_open_interest_lights_from_open_int_only() {
         .json()
         .await
         .expect("json");
-    assert_eq!(depth["status"], "unsupported");
+    assert_eq!(depth["status"], "unavailable");
+    assert_ne!(depth["status"], "unsupported");
+    assert!(depth["data"].is_null());
+
+    handle.abort();
+}
+
+/// When the `quote_type=oi` slice is planted, obtain adds supplementary
+/// `oi_session_*` fields without overwriting `open_interest` from `open_int`.
+#[tokio::test]
+#[serial]
+async fn planted_nfo_oi_session_adds_supplementary_fields_without_overwriting_open_int() {
+    const PORT: u16 = 19_540;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_sync_opts(TestAgentOptions {
+            plant_kotak_nfo_quote: true,
+            plant_kotak_nfo_oi_session: true,
+            ..TestAgentOptions::default()
+        }),
+    );
+    wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
+    let client = reqwest::Client::new();
+
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C12345"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind nfo")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "nse_fo|12345");
+
+    let oi: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=open_interest"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo oi obtain")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(oi["status"], "success");
+    assert_eq!(oi["data"]["field"], "open_int");
+    assert_eq!(oi["data"]["open_interest"], "480750");
+    assert_eq!(oi["data"]["oi_session_las"], "475000");
+    assert_eq!(oi["data"]["oi_session_high"], "500000");
+    assert_eq!(oi["data"]["oi_session_low"], "450000");
+    assert_eq!(oi["data"]["oi_session_provenance"]["quote_type"], "oi");
+    assert!(oi["data"]["oi_session_provenance"]["path"]
+        .as_str()
+        .expect("path")
+        .ends_with("/oi"));
+    let wire = oi.to_string();
+    for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
+        assert!(!wire.contains(unbound), "{unbound} must stay unbound on the wire");
+    }
+
+    handle.abort();
+}
+
+/// Planted NFO depth serves a REST bounded snapshot on the named book.
+#[tokio::test]
+#[serial]
+async fn planted_nfo_depth_serves_a_bounded_snapshot_on_the_nfo_book() {
+    const PORT: u16 = 19_539;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_sync_opts(TestAgentOptions {
+            plant_kotak_nfo_depth: true,
+            ..TestAgentOptions::default()
+        }),
+    );
+    wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
+    let client = reqwest::Client::new();
+
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C56526&book=kotak-nse-nfo"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind nfo depth contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "nse_fo|56526");
+    assert_eq!(bind["book_id"], "kotak-nse-nfo");
+
+    let obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=kotak_neo&book=kotak-nse-nfo&operation=depth"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain nfo depth")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "success");
+    assert_eq!(obtain["book_id"], "kotak-nse-nfo");
+    assert_eq!(obtain["provenance_adapter_id"], "kotak_neo");
+    let data = &obtain["data"];
+    assert_eq!(data["identity"]["capability_id"], "order_book");
+    assert_eq!(data["identity"]["physics"], "bounded_snapshot");
+    assert_ne!(data["identity"]["physics"], "ordered_state");
+    assert_eq!(data["source"], "rest_snapshot");
+    assert_eq!(data["instrument_id"], "nse_fo|56526");
+    assert!(!data["bids"].as_array().unwrap().is_empty());
+    assert!(!data["asks"].as_array().unwrap().is_empty());
+    assert_eq!(data["bids"][0]["orders"], "3");
 
     handle.abort();
 }
@@ -1025,6 +1151,123 @@ async fn nfo_open_interest_without_a_reading_is_unavailable_not_zero() {
     assert_ne!(oi["status"], "success");
     assert!(oi["data"].is_null());
     assert!(!oi.to_string().contains("\"open_interest\":\"0\""));
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn planted_binance_spot_funds_obtain_success() {
+    const PORT: u16 = 19_496;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_spot_funds: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let funds: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&operation=funds"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(funds["status"], "success");
+    assert_eq!(funds["adapter_id"], "binance_com");
+    assert_eq!(funds["book_id"], "binance-com-spot");
+    assert_eq!(funds["data"]["identity"]["capability_id"], "funds");
+    assert_eq!(funds["data"]["holdings"][0]["asset"], "BTC");
+    assert_eq!(funds["provenance_path"], "/api/v3/account");
+
+    handle.abort();
+}
+
+/// obtain search: short q → empty success; unknown book → unsupported.
+#[tokio::test]
+#[serial]
+async fn obtain_search_short_query_returns_empty_rows() {
+    const PORT: u16 = 19_520;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_nfo_contracts: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let short: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=search&q=n"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("search short q")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(short["status"], "success");
+    assert_eq!(short["data"]["row_count"], 0);
+    assert!(short["data"]["rows"].as_array().unwrap().is_empty());
+
+    let unknown: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=binance-com-usdm&operation=search&q=nifty"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("unknown book search")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(unknown["status"], "unsupported");
+    assert!(unknown["data"].is_null());
+
+    handle.abort();
+}
+
+/// Planted NFO master → obtain search returns prefix hits on the NFO book only.
+#[tokio::test]
+#[serial]
+async fn obtain_search_nfo_master_returns_prefix_hits() {
+    const PORT: u16 = 19_521;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_kotak_nfo_contracts: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let hits: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=kotak-nse-nfo&operation=search&q=NIFTY"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo search")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(hits["status"], "success");
+    assert_eq!(hits["data"]["identity"]["capability_id"], "instrument_search");
+    assert_eq!(hits["data"]["identity"]["physics"], "bounded_snapshot");
+    assert!(hits["data"]["row_count"].as_u64().unwrap_or(0) > 0);
+    let first = &hits["data"]["rows"][0];
+    assert_eq!(first["segment"], "nse_fo");
 
     handle.abort();
 }

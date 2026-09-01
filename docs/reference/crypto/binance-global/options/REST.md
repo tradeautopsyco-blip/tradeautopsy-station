@@ -36,7 +36,7 @@ Primary sources (accessed 2026-08-29):
 - Official OpenAPI-generated SDK `OpenInterestResponseInner` (`symbol`, `sumOpenInterest`, `sumOpenInterestUsd`, `timestamp`)
 - Live public `GET https://eapi.binance.com/eapi/v1/exchangeInfo` and `GET /eapi/v1/openInterest?underlyingAsset=BTC&expiration=260925` (field names only)
 
-`GET /eapi/v1/userTrades` stays off this slice. `POST /eapi/v1/order` is a mutation.
+`GET /eapi/v1/userTrades` is **Slice 4** (not Slice 2). PnL owner remains **none**. `POST /eapi/v1/order` is a mutation.
 
 
 | Item | Lock |
@@ -58,7 +58,7 @@ WS last on `<symbol>@ticker`: stream exists (`T` = transaction time). The **last
 
 No default subscribe symbol in this lock. Do not auto-dial a contract unless an env/lock names one later.
 
-`GET /eapi/v1/userTrades` stays off this slice. `POST /eapi/v1/order` is a mutation.
+`GET /eapi/v1/userTrades` is **Slice 4** (not Slice 2). PnL owner remains **none**. `POST /eapi/v1/order` is a mutation.
 
 ---
 
@@ -162,7 +162,7 @@ an eapi level is NOT SPECIFIED IN SOURCE.
 Identity is `market/order_book/bounded_snapshot`, the same as cash depth — it is a bounded
 snapshot with a named `lastUpdateId`, not an ordered state.
 
-`GET /eapi/v1/userTrades` stays off. `POST /eapi/v1/order` is a mutation.
+`GET /eapi/v1/userTrades` is **Slice 4** (not Slice 3). PnL owner remains **none**. `POST /eapi/v1/order` is a mutation.
 
 ---
 
@@ -245,7 +245,11 @@ RISK_LEVEL_CHANGE     Account risk level change (from 2023-08-29)
 
 ## TradeAutopsy Relevance
 
-Slice 2: public last + `optionSymbols` chain snapshot + `openInterest` `sumOpenInterest` on `binance-com-options`. Spot BTCUSDT last stays on `binance-com-spot`. No `/eapi/v1/optionChain`, no userTrades, no eapi orders.
+Slice 2: public last + `optionSymbols` chain snapshot + `openInterest` `sumOpenInterest` on `binance-com-options`. Spot BTCUSDT last stays on `binance-com-spot`. No `/eapi/v1/optionChain`, no eapi orders.
+
+Slice 4: **private tradebook** on `binance-com-options` — `GET /eapi/v1/userTrades?symbol=`
+(PrivateRead, HMAC) → `id` / `symbol` / `price` / `qty` / `side` / `time` only. Host fetch
+plants AccountBook fills on the options book; **not** merge_poll. PnL owner remains **none**.
 
 Slice 3: **venue-published greeks** on `binance-com-options` — `GET /eapi/v1/mark?symbol=`
 (public, weight 5 IP) → `delta` / `gamma` / `theta` / `vega` copied as the venue's own

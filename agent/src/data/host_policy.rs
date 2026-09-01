@@ -70,6 +70,10 @@ pub fn host_allowed(host: &str) -> bool {
 pub fn is_mutation(method: &str, path: &str) -> bool {
     let upper = method.to_ascii_uppercase();
     let lower = path.to_ascii_lowercase();
+    // RMS read POSTs — not place/modify/cancel (PR A5 lock).
+    if lower.contains("check-margin") || lower.ends_with("/limits") {
+        return false;
+    }
     if lower.contains("withdraw")
         || lower.contains("transfer")
         || lower.contains("apikey")
@@ -120,11 +124,30 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("fills", "GET", AuthMode::PrivateRead)
-            if path == "/api/v3/myTrades" || path.ends_with("/quick/user/trades") =>
+            if path == "/api/v3/myTrades"
+                || path.ends_with("/quick/user/trades")
+                || normalize_request_path(path) == "/eapi/v1/userTrades" =>
         {
             true
         }
         ("funds", "GET", AuthMode::PrivateRead) if path == "/api/v3/account" => true,
+        ("orders", "GET", AuthMode::PrivateRead)
+            if path == "/api/v3/openOrders" || path.ends_with("/quick/user/orders") =>
+        {
+            true
+        }
+        ("positions", "GET", AuthMode::PrivateRead) if path.ends_with("/quick/user/positions") => {
+            true
+        }
+        ("holdings", "GET", AuthMode::PrivateRead) if path.ends_with("/portfolio/v1/holdings") => {
+            true
+        }
+        ("margin_estimate", "POST", AuthMode::PrivateRead)
+            if path.ends_with("/quick/user/limits")
+                || path.ends_with("/quick/user/check-margin") =>
+        {
+            true
+        }
         ("instrument_master", "GET", AuthMode::PrivateRead)
             if path.ends_with("/script-details/1.0/masterscrip/file-paths") =>
         {
@@ -164,7 +187,24 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
         ("GET", "/api/v3/exchangeInfo") => Ok(("instrument_master", AuthMode::Public)),
         ("GET", "/api/v3/myTrades") => Ok(("fills", AuthMode::PrivateRead)),
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/userTrades" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
         ("GET", "/api/v3/account") => Ok(("funds", AuthMode::PrivateRead)),
+        ("GET", "/api/v3/openOrders") => Ok(("orders", AuthMode::PrivateRead)),
+        ("GET", p) if p.ends_with("/quick/user/orders") => Ok(("orders", AuthMode::PrivateRead)),
+        ("GET", p) if p.ends_with("/quick/user/positions") => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if p.ends_with("/portfolio/v1/holdings") => {
+            Ok(("holdings", AuthMode::PrivateRead))
+        }
+        ("POST", p) if p.ends_with("/quick/user/limits") => {
+            Ok(("margin_estimate", AuthMode::PrivateRead))
+        }
+        ("POST", p) if p.ends_with("/quick/user/check-margin") => {
+            Ok(("margin_estimate", AuthMode::PrivateRead))
+        }
         ("GET", p) if p.ends_with("/quick/user/trades") => Ok(("fills", AuthMode::PrivateRead)),
         ("GET", p) if p.ends_with("/script-details/1.0/masterscrip/file-paths") => {
             Ok(("instrument_master", AuthMode::PrivateRead))
@@ -499,6 +539,34 @@ mod tests {
                 true,
             )
             .unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+    }
+
+    #[test]
+    fn open_orders_allowlisted_and_post_order_still_forbidden() {
+        let (cap, mode) = infer_capability("GET", "/api/v3/openOrders").unwrap();
+        assert_eq!(cap, "orders");
+        assert_eq!(mode, AuthMode::PrivateRead);
+        authorize_host_call(
+            "api.binance.com",
+            "GET",
+            "/api/v3/openOrders",
+            "orders",
+            AuthMode::PrivateRead,
+            true,
+        )
+        .expect("signed openOrders poll remains allowlisted");
+        authorize_book_call(
+            "binance-com-spot",
+            "api.binance.com",
+            "GET",
+            "/api/v3/openOrders",
+            true,
+        )
+        .expect("spot book may GET openOrders");
+        assert_eq!(
+            infer_capability("POST", "/api/v3/order").unwrap_err(),
             HostRefuse::MutationForbidden
         );
     }
@@ -1272,19 +1340,19 @@ mod tests {
             HostRefuse::MutationForbidden
         );
         assert!(is_mutation("POST", "/eapi/v1/order"));
+        let (fills_cap, fills_mode) = infer_capability("GET", "/eapi/v1/userTrades").unwrap();
+        assert_eq!(fills_cap, "fills");
+        assert_eq!(fills_mode, AuthMode::PrivateRead);
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/userTrades",
+            true,
+        )
+        .expect("options userTrades is PrivateRead fills on the options book");
         assert_eq!(
-            infer_capability("GET", "/eapi/v1/userTrades").unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
-        assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/userTrades",
-                true,
-            )
-            .unwrap_err(),
+            infer_capability("GET", "/eapi/v1/optionChain").unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
         assert_eq!(
@@ -1469,27 +1537,23 @@ mod tests {
             .unwrap_err(),
             HostRefuse::HostNotAllowed
         );
-        assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/userTrades?symbol=BTC-200730-9000-C",
-                true,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
-        assert_eq!(
-            authorize_book_call(
-                "binance-com-options",
-                "eapi.binance.com",
-                "GET",
-                "/eapi/v1/userTrades",
-                false,
-            )
-            .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
-        );
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/userTrades?symbol=BTC-200730-9000-C",
+            true,
+        )
+        .expect("options userTrades with symbol query stays allowlisted");
+        let (opts_cap, opts_mode) = authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/userTrades",
+            false,
+        )
+        .expect("PrivateRead fills infers without attach_private at policy fence");
+        assert_eq!(opts_cap, "fills");
+        assert_eq!(opts_mode, AuthMode::PrivateRead);
     }
 }

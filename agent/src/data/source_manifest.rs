@@ -325,6 +325,26 @@ fn instruments_binding(
     }
 }
 
+fn search_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+) -> ManifestBinding {
+    ManifestBinding {
+        operation: "search".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Reference,
+        capability_id: "instrument_search".into(),
+        physics: Physics::BoundedSnapshot,
+        auth_mode,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::research_fetch_only(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Unknown,
+    }
+}
+
 fn history_binding(adapter_id: &str, coverage: Coverage) -> ManifestBinding {
     ManifestBinding {
         operation: "history".into(),
@@ -392,14 +412,17 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
+            "search".into(),
             "tradebook".into(),
             "funds".into(),
+            "orderbook".into(),
             "history".into(),
             "depth".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
             instruments_binding("binance_com", coverage.clone(), AuthMode::Public),
+            search_binding("binance_com", coverage.clone(), AuthMode::Public),
             account_binding(
                 "binance_com",
                 "tradebook",
@@ -411,6 +434,13 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
                 "binance_com",
                 "funds",
                 "funds",
+                coverage.clone(),
+                fills_limits.clone(),
+            ),
+            account_binding(
+                "binance_com",
+                "orderbook",
+                "orders",
                 coverage.clone(),
                 fills_limits,
             ),
@@ -441,16 +471,42 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
+            "search".into(),
             "tradebook".into(),
             "depth".into(),
+            "orderbook".into(),
+            "holdings".into(),
+            "positionbook".into(),
         ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            search_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             account_binding(
                 "kotak_neo",
                 "tradebook",
                 "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "orderbook",
+                "orders",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "holdings",
+                "holdings",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "positionbook",
+                "positions",
                 coverage.clone(),
                 Limits::default(),
             ),
@@ -482,13 +538,18 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
         implemented: vec![
             "quotes".into(),
             "instruments".into(),
+            "search".into(),
             "tradebook".into(),
             "optionchain".into(),
             "open_interest".into(),
+            "depth".into(),
+            "orderbook".into(),
+            "positionbook".into(),
         ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            search_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             account_binding(
                 "kotak_neo",
                 "tradebook",
@@ -496,11 +557,33 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
+            account_binding(
+                "kotak_neo",
+                "orderbook",
+                "orders",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "positionbook",
+                "positions",
+                coverage.clone(),
+                Limits::default(),
+            ),
             optionchain_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
             // LatestState from `open_int` on the `quote_type=all` body Station
             // already fetches for last. Observed 2026-08-31 — see the lock's OI
             // row. Not the `oi` slice, not master `dOpenInterest `.
-            open_interest_binding("kotak_neo", coverage, AuthMode::PrivateRead),
+            open_interest_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            // REST bounded snapshot of `quote_type=depth` — observed 2026-09-01 on
+            // `nse_fo|56526`. REST only; no HSM `isDepth`.
+            depth_binding(
+                "kotak_neo",
+                coverage,
+                AuthMode::PrivateRead,
+                vec![TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -527,12 +610,22 @@ pub fn binance_com_options_manifest() -> SourceManifest {
             "open_interest".into(),
             "optiongreeks".into(),
             "depth".into(),
+            "tradebook".into(),
+            "search".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
             optionchain_binding("binance_com", coverage.clone(), AuthMode::Public),
             open_interest_binding("binance_com", coverage.clone(), AuthMode::Public),
             optiongreeks_binding("binance_com", coverage.clone(), AuthMode::Public),
+            search_binding("binance_com", coverage.clone(), AuthMode::Public),
+            account_binding(
+                "binance_com",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
             // REST bounded snapshot of `GET /eapi/v1/depth` — `Rest` only. Spot's
             // `@depth` reconstruction loop is another book on another host, and
             // this binding must never claim `Stream`.
@@ -707,6 +800,7 @@ mod tests {
     fn spot_and_cash_tradebook_fills_are_bounded_snapshot() {
         for manifest in [
             binance_com_s1_manifest(),
+            binance_com_options_manifest(),
             kotak_neo_s1k_manifest(),
             kotak_neo_nfo_manifest(),
         ] {
@@ -744,8 +838,10 @@ mod tests {
             vec![
                 "quotes",
                 "instruments",
+                "search",
                 "tradebook",
                 "funds",
+                "orderbook",
                 "history",
                 "depth"
             ]
@@ -798,6 +894,10 @@ mod tests {
         assert_eq!(funds.status, ObtainStatus::Unavailable);
         assert_eq!(funds.book_id, "binance-com-spot");
         assert_eq!(funds.provenance_adapter_id.as_deref(), Some("binance_com"));
+        let orderbook = obtain(&manifest, "orderbook");
+        assert_eq!(orderbook.status, ObtainStatus::Unavailable);
+        assert_eq!(orderbook.book_id, "binance-com-spot");
+        assert_eq!(orderbook.provenance_adapter_id.as_deref(), Some("binance_com"));
         let depth = obtain(&manifest, "depth");
         assert_eq!(depth.status, ObtainStatus::Unavailable);
         assert!(depth.data.is_none());
@@ -819,7 +919,16 @@ mod tests {
         assert_eq!(manifest.book_id, "kotak-nse-bse-cash");
         assert_eq!(
             manifest.implemented,
-            vec!["quotes", "instruments", "tradebook", "depth"]
+            vec![
+                "quotes",
+                "instruments",
+                "search",
+                "tradebook",
+                "depth",
+                "orderbook",
+                "holdings",
+                "positionbook",
+            ]
         );
         let quotes_bind = manifest
             .bindings
@@ -957,10 +1066,13 @@ mod tests {
                 "optionchain",
                 "open_interest",
                 "optiongreeks",
-                "depth"
+                "depth",
+                "tradebook",
+                "search"
             ]
         );
         assert!(options.implemented.iter().any(|op| op == "optionchain"));
+        assert!(options.implemented.iter().any(|op| op == "tradebook"));
         assert!(options.implemented.iter().any(|op| op == "open_interest"));
         assert!(options.implemented.iter().any(|op| op == "optiongreeks"));
         // Implemented with no planted snapshot is Unavailable, never Unsupported.
@@ -981,9 +1093,11 @@ mod tests {
         assert_eq!(obtain(&options, "depth").status, ObtainStatus::Unavailable);
         assert_ne!(obtain(&options, "depth").status, ObtainStatus::Unsupported);
         assert!(obtain(&options, "depth").data.is_none());
-        // NFO depth is NOT SPECIFIED IN SOURCE and stays unclaimed.
+        // NFO depth with an empty DepthBook is Unavailable — never Unsupported.
         let nfo = manifest_for_book_id("kotak-nse-nfo").expect("nfo book");
-        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
+        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unavailable);
+        assert_ne!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
+        assert!(obtain(&nfo, "depth").data.is_none());
         let depth_bind = options
             .bindings
             .iter()
@@ -1073,9 +1187,13 @@ mod tests {
             vec![
                 "quotes",
                 "instruments",
+                "search",
                 "tradebook",
                 "optionchain",
-                "open_interest"
+                "open_interest",
+                "depth",
+                "orderbook",
+                "positionbook",
             ]
         );
         assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
@@ -1104,9 +1222,20 @@ mod tests {
         assert_eq!(nfo_oi.auth_mode, AuthMode::PrivateRead);
         assert_eq!(nfo_oi.rights, Rights::research_fetch_only());
         assert_ne!(nfo_oi.rights, Rights::desk_display());
-        // NFO depth stays unclaimed — that is a separate, still-unobserved body.
-        assert!(!nfo.implemented.iter().any(|op| op == "depth"));
-        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
+        // NFO depth is claimed on the named book — REST bounded snapshot only.
+        assert!(nfo.implemented.iter().any(|op| op == "depth"));
+        assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unavailable);
+        assert_ne!(obtain(&nfo, "depth").status, ObtainStatus::Unsupported);
+        let nfo_depth = nfo
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "depth")
+            .expect("nfo depth binding");
+        assert_eq!(nfo_depth.capability_id, "order_book");
+        assert_eq!(nfo_depth.physics, Physics::BoundedSnapshot);
+        assert_eq!(nfo_depth.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(nfo_depth.transports, vec![TransportKind::Rest]);
+        assert_eq!(nfo_depth.rights, Rights::research_fetch_only());
         assert_eq!(
             obtain(&nfo, "optionchain").status,
             ObtainStatus::Unavailable

@@ -400,9 +400,9 @@ pub fn spawn_broker_poll_loop(
             let mut last_err_msg: Option<String> = None;
             let mut new_fills: Vec<BrokerFill> = Vec::new();
             let slot = slug_to_slot(adapter.name());
+            let adapter_name = slug_to_slot(adapter.name()).unwrap_or(adapter.name());
 
             if let Ok(fills) = &fills_result {
-                let adapter_name = slug_to_slot(adapter.name()).unwrap_or(adapter.name());
                 let path = fills_provenance_path(adapter_name);
                 let split = if adapter_name == "kotak_neo" {
                     let master = nfo_master
@@ -504,6 +504,18 @@ pub fn spawn_broker_poll_loop(
                     );
                     class_failures.insert(BrokerDataClass::BalancesHoldings, 0);
                     st.last_balances = balances_result.as_ref().ok().cloned();
+                    if adapter_name == "binance_com" {
+                        if let Some(balances) = balances_result.as_ref().ok() {
+                            let mut book =
+                                account_book.lock().expect("account_book mutex poisoned");
+                            book.replace_funds(
+                                crate::data::BINANCE_COM_SPOT_BOOK_ID,
+                                balances.clone(),
+                                "/api/v3/account",
+                                ok_ms,
+                            );
+                        }
+                    }
                 } else if let Err(e) = &balances_result {
                     if !is_venue_stop(e) {
                         any_class_error = true;
@@ -525,6 +537,18 @@ pub fn spawn_broker_poll_loop(
                 if open_orders_result.is_ok() {
                     mark_class_success(&mut st.data_classes, BrokerDataClass::OpenOrders, ok_ms);
                     class_failures.insert(BrokerDataClass::OpenOrders, 0);
+                    if adapter_name == "binance_com" {
+                        if let Some(orders) = open_orders_result.as_ref().ok() {
+                            let mut book =
+                                account_book.lock().expect("account_book mutex poisoned");
+                            book.replace_orders(
+                                crate::data::BINANCE_COM_SPOT_BOOK_ID,
+                                orders.clone(),
+                                "/api/v3/openOrders",
+                                ok_ms,
+                            );
+                        }
+                    }
                 } else if let Err(e) = &open_orders_result {
                     if !is_venue_stop(e) {
                         any_class_error = true;

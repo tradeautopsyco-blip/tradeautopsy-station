@@ -19,7 +19,7 @@ use super::descriptor::{
 };
 use super::honesty::HonestyStatus;
 use super::identity::{CapabilityId, Family, Identity, Physics};
-use super::kotak_quotes::NfoOpenInterest;
+use super::kotak_quotes::{NfoOiSessionSlice, NfoOpenInterest};
 use super::provenance::ProvenanceLine;
 use super::tickbook::TickBook;
 use serde::Serialize;
@@ -139,11 +139,19 @@ fn chain_path_for_book(book_id: &str) -> &'static str {
 }
 
 /// Upstream path a lit OI came from. NFO OI rides the `quote_type=all` quotes
-/// GET that already feeds last — there is no second fetch and no `oi` slice.
+/// GET that already feeds last — there is no second fetch for `open_int`.
 fn oi_path_for_book(book_id: &str) -> &'static str {
     match book_id {
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/openInterest",
         id if id == KOTAK_NSE_NFO_BOOK_ID => "/script-details/1.0/quotes/neosymbol/{id}/all",
+        _ => "",
+    }
+}
+
+/// Upstream path for supplementary session OI from `quote_type=oi`.
+fn oi_session_path_for_book(book_id: &str) -> &'static str {
+    match book_id {
+        id if id == KOTAK_NSE_NFO_BOOK_ID => "/script-details/1.0/quotes/neosymbol/{id}/oi",
         _ => "",
     }
 }
@@ -274,7 +282,7 @@ pub fn extract_open_interest_from(
     instrument_id: &str,
     rows: Option<&[OptionsOiRow]>,
 ) -> GlanceEnvelope {
-    extract_open_interest_for_book(book_id, instrument_id, rows, None)
+    extract_open_interest_for_book(book_id, instrument_id, rows, None, None)
 }
 
 pub fn extract_open_interest_for_book(
@@ -282,6 +290,7 @@ pub fn extract_open_interest_for_book(
     instrument_id: &str,
     rows: Option<&[OptionsOiRow]>,
     nfo: Option<&NfoOpenInterest>,
+    nfo_session: Option<&NfoOiSessionSlice>,
 ) -> GlanceEnvelope {
     let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
         return dark_oi(book_id, instrument_id, BOOK_REQUIRED);
@@ -295,7 +304,7 @@ pub fn extract_open_interest_for_book(
             dark_oi(Some(book), instrument_id, SPOT_IS_NOT_CHAIN)
         }
         id if id == KOTAK_NSE_NFO_BOOK_ID => match nfo {
-            Some(row) => lit_nfo_oi(book, instrument_id, row),
+            Some(row) => lit_nfo_oi(book, instrument_id, row, nfo_session),
             // Empty / missing `open_int` is Unavailable — never `{oi: 0}` Success.
             None => dark_oi(Some(book), instrument_id, OI_FIELD_UNSPECIFIED),
         },
@@ -308,20 +317,36 @@ pub fn extract_open_interest_for_book(
 }
 
 /// LatestState from the one named field. `open_interest` is the venue's own
-/// `open_int` string, copied — Station does not rescale it, and it never carries
-/// `oi_las` / `oi_high` / `oi_low` (different slice, different spelling, unbound).
-fn lit_nfo_oi(book_id: &str, instrument_id: &str, row: &NfoOpenInterest) -> GlanceEnvelope {
+/// `open_int` string, copied — Station does not rescale it. Session band fields
+/// (`oi_session_*`) ride the separate `quote_type=oi` slice when present; raw
+/// `oi_las` / `oi_high` / `oi_low` never overwrite `open_interest`.
+fn lit_nfo_oi(
+    book_id: &str,
+    instrument_id: &str,
+    row: &NfoOpenInterest,
+    session: Option<&NfoOiSessionSlice>,
+) -> GlanceEnvelope {
     let identity = oi_identity();
+    let mut data = serde_json::json!({
+        "identity": identity,
+        "instrument_id": row.instrument_id,
+        "open_interest": row.open_interest,
+        "field": "open_int",
+    });
+    if let Some(sess) = session.filter(|s| s.instrument_id == row.instrument_id) {
+        data["oi_session_las"] = serde_json::Value::String(sess.oi_session_las.clone());
+        data["oi_session_high"] = serde_json::Value::String(sess.oi_session_high.clone());
+        data["oi_session_low"] = serde_json::Value::String(sess.oi_session_low.clone());
+        data["oi_session_provenance"] = serde_json::json!({
+            "quote_type": "oi",
+            "path": oi_session_path_for_book(book_id),
+        });
+    }
     GlanceEnvelope {
         identity: identity.clone(),
         instrument_id: display_instrument(Some(book_id), instrument_id),
         status: GlanceStatus::Success,
-        data: Some(serde_json::json!({
-            "identity": identity,
-            "instrument_id": row.instrument_id,
-            "open_interest": row.open_interest,
-            "field": "open_int",
-        })),
+        data: Some(data),
         provenance: ProvenanceLine {
             identity,
             model: "raw".to_string(),
@@ -397,6 +422,7 @@ mod tests {
             "nse_fo|56526",
             None,
             Some(&reading),
+            None,
         );
         assert_eq!(lit.status, GlanceStatus::Success);
         assert_eq!(lit.identity.physics, Physics::LatestState);
@@ -411,15 +437,21 @@ mod tests {
         assert!(lit.provenance.path.ends_with("/all"));
         assert!(!lit.provenance.path.contains("/oi"));
         assert!(!lit.provenance.path.contains("eapi"));
-        // The unbound `oi` slice spellings must not appear anywhere on the wire.
+        // The unbound raw `oi` slice spellings must not appear on the wire unless
+        // mapped to `oi_session_*` from a planted/fetched session slice.
         let wire = serde_json::to_string(&lit).expect("serialize");
         for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
             assert!(!wire.contains(unbound), "{unbound} must not reach the wire");
         }
 
         // No reading → Unavailable, and it says why.
-        let dark =
-            extract_open_interest_for_book(Some(KOTAK_NSE_NFO_BOOK_ID), "nse_fo|56526", None, None);
+        let dark = extract_open_interest_for_book(
+            Some(KOTAK_NSE_NFO_BOOK_ID),
+            "nse_fo|56526",
+            None,
+            None,
+            None,
+        );
         assert_eq!(dark.status, GlanceStatus::Unavailable);
         assert!(dark.data.is_none());
         assert_eq!(dark.ineligible, vec![OI_FIELD_UNSPECIFIED.to_string()]);

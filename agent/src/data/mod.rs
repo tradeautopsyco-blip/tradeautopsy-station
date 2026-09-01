@@ -9,8 +9,10 @@ mod binance_options_chain;
 mod binance_options_depth;
 mod binance_options_mark;
 mod binance_options_oi;
+mod binance_options_private;
 mod binance_options_public;
 mod binance_public;
+mod binance_spot_private;
 mod binance_spot_ticker;
 mod book_identity;
 mod connection;
@@ -29,10 +31,12 @@ mod historybook;
 mod honesty;
 mod host_policy;
 mod identity;
+mod instrument_search;
 mod inherit;
 mod instrument_master_status;
 mod klines_pager;
 mod kotak_depth;
+mod kotak_private;
 mod kotak_quotes;
 mod margin_estimate;
 mod market_bind;
@@ -83,6 +87,7 @@ pub use binance_options_mark::{
     OPTIONS_MARK_PATH,
 };
 pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
+pub use binance_options_private::ensure_options_user_trades;
 pub use binance_options_public::{
     ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
     quote_tick_from_options_ticker_json,
@@ -91,6 +96,7 @@ pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
     spawn_binance_com_trade_loop,
 };
+pub use binance_spot_private::{ensure_spot_account, ensure_spot_open_orders};
 pub use binance_spot_ticker::await_binance_spot_ticker_price;
 pub use book_identity::{book_accepts_symbol, query_symbol};
 pub use connection::BrokerConnectionRuntime;
@@ -130,6 +136,7 @@ pub use host_policy::{
     is_kotak_nse_fo_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
+pub use instrument_search::{search_identity, search_rows_for_book};
 pub use inherit::{capital_may_light, inherit};
 pub use instrument_master_status::{
     binance_exchange_info_cache_path, json_array_first_object_keys, json_field_object_keys,
@@ -146,11 +153,16 @@ pub use kotak_depth::{
     depth_obtain_data, depth_snapshot_from_kotak_json, depth_snapshots_from_kotak_json,
     extract_depth, extract_depth_on_book, DepthEnvelope, DepthStatus,
 };
+pub use kotak_private::{
+    ensure_kotak_holdings, ensure_kotak_orders, ensure_kotak_positions, KOTAK_CHECK_MARGIN_PATH,
+    KOTAK_HOLDINGS_PATH, KOTAK_LIMITS_PATH, KOTAK_ORDERS_PATH, KOTAK_POSITIONS_PATH,
+};
 pub use kotak_quotes::{
-    is_cash_segment, is_nfo_segment, kotak_quote_book_id, nfo_open_interest_from_kotak_json,
-    parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
-    quote_ticks_from_kotak_json, quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,
-    NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
+    is_cash_segment, is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json,
+    nfo_open_interest_from_kotak_json, parse_nfo_instrument_id, quote_tick_from_kotak_json,
+    quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, NfoOiSessionSlice,
+    NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
 pub use margin_estimate::extract_margin_estimate;
 pub use market_bind::MarketBind;

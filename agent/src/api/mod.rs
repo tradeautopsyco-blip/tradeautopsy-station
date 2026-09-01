@@ -120,9 +120,11 @@ pub struct AppState {
     /// Planted OI rows for CI. Live fetch fills this path when `eapi_public_fetch`.
     pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
     /// NFO open interest, keyed `nse_fo|{token}`, read off the same
-    /// `quote_type=all` body that feeds TickBook last. Never a second GET, never
-    /// the `oi` slice, never master `dOpenInterest `.
+    /// `quote_type=all` body that feeds TickBook last. Never master `dOpenInterest `.
     pub nfo_open_interest: crate::kotak_rest_quotes::NfoOpenInterestSlot,
+    /// NFO session OI band from `quote_type=oi`, keyed `nse_fo|{token}`.
+    /// Supplementary to `nfo_open_interest` — never overwrites `open_int`.
+    pub nfo_oi_session: crate::kotak_rest_quotes::NfoOiSessionSlot,
     /// One cached `/eapi/v1/mark` row, keyed by its own mixed-case symbol. Not a vec:
     /// mark is per contract, and a different contract is a miss, never a repaint.
     pub options_mark: Arc<Mutex<Option<crate::data::CachedMark>>>,
