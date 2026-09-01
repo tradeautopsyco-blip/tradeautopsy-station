@@ -307,6 +307,23 @@ enum BarDeskTemplate {
     static let kotakCashBookId = "kotak-nse-bse-cash"
     /// Named NFO book — same `kotak_neo` login slug; not a `BrokerCatalog.v1` row.
     static let kotakNfoBookId = "kotak-nse-nfo"
+    /// Public eapi book for dated contracts — execution stays on the active broker slug.
+    static let binanceComOptionsBookId = "binance-com-options"
+
+    /// Market book implied by instrument shape alone — independent of execution desk slug.
+    static func marketBook(for instrumentId: String) -> String? {
+        let trimmed = instrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if InstrumentTickBookId.isDatedOptionContract(trimmed) {
+            return binanceComOptionsBookId
+        }
+        if InstrumentTickBookId.isNfoIdentity(trimmed) {
+            return kotakNfoBookId
+        }
+        if InstrumentTickBookId.isCashIdentity(trimmed) {
+            return kotakCashBookId
+        }
+        return nil
+    }
 
     /// Desk book without a catalog row: Kotak slug + options class → `kotak-nse-nfo`.
     static func deskBookId(slug: String?, assetClass: BarDeclareAssetClass) -> String? {
@@ -319,17 +336,24 @@ enum BarDeskTemplate {
         isKotakNeoDesk(slug: slug) && assetClass == .options
     }
 
-    /// Crypto options desk: Binance slug + options declare + a dated contract binding.
+    /// Crypto options selection: options declare + a dated contract binding.
     /// A leftover `BTCUSDT` on the Options tab is a pair, not a contract — the instrument
-    /// shape is the discriminator, never the desk alone.
+    /// shape is the discriminator, never the execution broker slug.
+    static func isBinanceOptionsSelection(
+        assetClass: BarDeclareAssetClass,
+        instrumentId: String
+    ) -> Bool {
+        assetClass == .options
+            && InstrumentTickBookId.isDatedOptionContract(instrumentId)
+    }
+
+    @available(*, deprecated, renamed: "isBinanceOptionsSelection(assetClass:instrumentId:)")
     static func isBinanceOptionsDesk(
         slug: String?,
         assetClass: BarDeclareAssetClass,
         instrumentId: String
     ) -> Bool {
-        DeskCatalogAllowlist.isBinanceDesk(slug)
-            && assetClass == .options
-            && InstrumentTickBookId.isDatedOptionContract(instrumentId)
+        isBinanceOptionsSelection(assetClass: assetClass, instrumentId: instrumentId)
     }
 }
 
@@ -362,8 +386,7 @@ struct DeskExtractPlan: Equatable {
 
     static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
         let book = BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
-        let cryptoDated = BarDeskTemplate.isBinanceOptionsDesk(
-            slug: slug,
+        let cryptoDated = BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: assetClass,
             instrumentId: instrumentId
         )
@@ -400,9 +423,8 @@ enum DeskInstrumentShape: Equatable {
 /// which id to quote, and which underlying the chain is keyed on. Resolve once at
 /// selection, then act — so no branch can rebind against a stale field.
 struct DeskInstrumentBind: Equatable {
-    /// Catalog book for chain/OI on Kotak. **Nil on Binance bind** (`deskBookId` stays
-    /// nil so last routing can stay shape-based). Crypto Options glance names
-    /// `binance-com-options` on the extract path without storing it here.
+    /// Catalog book for chain/OI. Dated contracts name `binance-com-options`; Kotak
+    /// identities name their cash/NFO books. Binance spot pairs stay bookless.
     var bookId: String?
     /// Class implied by the instrument, or the caller's class when nothing is implied.
     var assetClass: BarDeclareAssetClass
@@ -490,11 +512,15 @@ struct DeskInstrumentBind: Equatable {
         )
     }
 
-    /// Dated contract vs pair — only on a Binance desk, so `M-M`-style cash tickers can
-    /// never be read as options and an unknown desk still falls through to `.unknown`.
+    /// Dated contract vs pair. Dated shape wins on any desk; pairs need a Binance venue
+    /// so `M-M`-style cash tickers never read as options on a Kotak desk.
     private static func binanceShape(_ ticker: String, binanceDesk: Bool) -> DeskInstrumentShape {
-        guard binanceDesk, !ticker.isEmpty else { return .unknown }
-        return InstrumentTickBookId.isDatedOptionContract(ticker) ? .binanceOption : .binanceSpot
+        guard !ticker.isEmpty else { return .unknown }
+        if InstrumentTickBookId.isDatedOptionContract(ticker) {
+            return .binanceOption
+        }
+        guard binanceDesk else { return .unknown }
+        return .binanceSpot
     }
 
     private static func make(
@@ -506,8 +532,8 @@ struct DeskInstrumentBind: Equatable {
     ) -> DeskInstrumentBind {
         let assetClass = shape.impliedAssetClass ?? currentClass
         return DeskInstrumentBind(
-            // Single source of truth for `book=` — nil for Binance falls out of it.
-            bookId: BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass),
+            bookId: BarDeskTemplate.marketBook(for: tickBookId)
+                ?? BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass),
             assetClass: assetClass,
             tickBookId: tickBookId,
             chainUnderlying: chainUnderlying,

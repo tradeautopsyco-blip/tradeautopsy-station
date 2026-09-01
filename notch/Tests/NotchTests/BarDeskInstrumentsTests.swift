@@ -456,7 +456,7 @@ struct BarDeskInstrumentsTests {
         #expect(bind.bookId == nil)
     }
 
-    @Test func binanceDatedContractResolvesToOptionsWithNoBookAndVerbatimId() {
+    @Test func binanceDatedContractResolvesToOptionsWithNamedMarketBookAndVerbatimId() {
         let contract = InstrumentResult(
             trading_symbol: "BTC-200730-9000-C",
             name: "BTC option",
@@ -470,7 +470,7 @@ struct BarDeskInstrumentsTests {
         #expect(bind.assetClass == .options)
         // Never lowercased, never rewritten into a TickBook segment id.
         #expect(bind.tickBookId == "BTC-200730-9000-C")
-        #expect(bind.bookId == nil)
+        #expect(bind.bookId == BarDeskTemplate.binanceComOptionsBookId)
         #expect(!InstrumentTickBookId.isNfoIdentity(bind.tickBookId))
         #expect(!InstrumentTickBookId.isCashIdentity(bind.tickBookId))
     }
@@ -559,16 +559,23 @@ struct BarDeskInstrumentsTests {
         )
         #expect(contract.shape == .binanceOption)
         #expect(contract.tickBookId == "BTC-200730-9000-C")
-        #expect(contract.bookId == nil)
+        #expect(contract.bookId == BarDeskTemplate.binanceComOptionsBookId)
     }
 
     @Test func kotakDeskNeverReadsAHyphenatedTickerAsAnOption() {
         // `M-M`-style cash tickers must not classify as contracts on a Kotak desk.
-        let bind = DeskInstrumentBind.resolve(
-            rawId: "BTC-200730-9000-C", slug: "kotak_neo", currentClass: .spot
+        let cashLike = DeskInstrumentBind.resolve(
+            rawId: "M-M", slug: "kotak_neo", currentClass: .spot
         )
-        #expect(bind.shape == .unknown)
-        #expect(bind.assetClass == .spot)
+        #expect(cashLike.shape == .unknown)
+        #expect(cashLike.assetClass == .spot)
+        // Dated contracts bind to public eapi data regardless of execution desk.
+        let dated = DeskInstrumentBind.resolve(
+            rawId: "BTC-200730-9000-C", slug: "kotak_neo", currentClass: .options
+        )
+        #expect(dated.shape == .binanceOption)
+        #expect(dated.bookId == BarDeskTemplate.binanceComOptionsBookId)
+        #expect(dated.assetClass == .options)
     }
 
     @Test func unknownDeskKeepsTheLegacyLtpPathNotABinanceBind() {
@@ -600,8 +607,8 @@ struct BarDeskInstrumentsTests {
         #expect(DeskInstrumentBind.resolve(pair, slug: nil, currentClass: .spot).shape == .binanceSpot)
     }
 
-    @Test func binanceBindNeverCarriesTheNfoBook() {
-        for raw in ["BTCUSDT", "BTC-200730-9000-C", "ETHUSDT"] {
+    @Test func binanceSpotBindNeverCarriesTheNfoBook() {
+        for raw in ["BTCUSDT", "ETHUSDT"] {
             for klass in BarDeclareAssetClass.allCases {
                 let bind = DeskInstrumentBind.resolve(
                     rawId: raw, slug: "binance_com", currentClass: klass
@@ -612,34 +619,42 @@ struct BarDeskInstrumentsTests {
         }
     }
 
-    // MARK: - Crypto options desk predicate + last formatting
+    @Test func datedContractBindNamesTheEapiMarketBook() {
+        let bind = DeskInstrumentBind.resolve(
+            rawId: "BTC-200730-9000-C", slug: "binance_com", currentClass: .options
+        )
+        #expect(bind.bookId == BarDeskTemplate.binanceComOptionsBookId)
+        let onKotak = DeskInstrumentBind.resolve(
+            rawId: "BTC-200730-9000-C", slug: "kotak_neo", currentClass: .options
+        )
+        #expect(onKotak.bookId == BarDeskTemplate.binanceComOptionsBookId)
+    }
 
-    @Test func binanceOptionsDeskNeedsDeskClassAndDatedContract() {
-        #expect(BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "binance_com", assetClass: .options, instrumentId: "BTC-200730-9000-C"
+    // MARK: - Crypto options selection predicate + last formatting
+
+    @Test func binanceOptionsSelectionNeedsClassAndDatedContract() {
+        #expect(BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "BTC-200730-9000-C"
         ))
-        #expect(BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "binance", assetClass: .options, instrumentId: "ETH-240927-3000-P"
+        #expect(BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "ETH-240927-3000-P"
         ))
         // A pair on the Options tab is not a contract.
-        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "binance_com", assetClass: .options, instrumentId: "BTCUSDT"
+        #expect(!BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "BTCUSDT"
         ))
         // NFO identity never reads as a Binance contract.
-        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "binance_com", assetClass: .options, instrumentId: "nse_fo|12345"
+        #expect(!BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "nse_fo|12345"
         ))
-        // Wrong desk, wrong class, no desk.
-        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "kotak_neo", assetClass: .options, instrumentId: "BTC-200730-9000-C"
+        // Execution desk does not gate the selection — Kotak + dated contract is valid.
+        #expect(BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "BTC-200730-9000-C"
         ))
-        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
-            slug: "binance_com", assetClass: .spot, instrumentId: "BTC-200730-9000-C"
+        #expect(!BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .spot, instrumentId: "BTC-200730-9000-C"
         ))
-        #expect(!BarDeskTemplate.isBinanceOptionsDesk(
-            slug: nil, assetClass: .options, instrumentId: "BTC-200730-9000-C"
-        ))
-        // The two options desks are disjoint.
+        // The two options surfaces are disjoint by shape, not broker slug.
         #expect(!BarDeskTemplate.isKotakNfoDesk(slug: "binance_com", assetClass: .options))
     }
 

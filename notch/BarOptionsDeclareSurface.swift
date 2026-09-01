@@ -15,15 +15,14 @@ enum BarOptionsDeclareSurface {
     }
 
     static func surface(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Surface {
-        if BarDeskTemplate.isKotakNfoDesk(slug: slug, assetClass: asset) {
-            return .nfoThreeZone
-        }
-        if BarDeskTemplate.isBinanceOptionsDesk(
-            slug: slug,
+        if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: asset,
             instrumentId: instrumentId
         ) {
             return .cryptoOptions
+        }
+        if BarDeskTemplate.isKotakNfoDesk(slug: slug, assetClass: asset) {
+            return .nfoThreeZone
         }
         return .standardForm
     }

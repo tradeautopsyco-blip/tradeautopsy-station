@@ -53,10 +53,54 @@ pub struct QuoteEnvelope {
     pub research: bool,
     pub canonical: bool,
     pub persist_canonical: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub book_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bind_status: Option<String>,
 }
 
 /// Alias used by callers/tests.
 pub type QuoteExtract = QuoteEnvelope;
+
+/// Explicit unavailable envelope when quote binding is refused. Never echoes the raw id.
+pub fn refused_quote_binding(
+    registry: &Registry,
+    adapter_id: Option<&str>,
+    book_id: &str,
+    refusal_class: &str,
+) -> QuoteEnvelope {
+    let identity = quote_latest_state();
+    let descriptor = adapter_id
+        .and_then(|id| registry.get_for_adapter(&identity, id))
+        .or_else(|| registry.get(&identity));
+    let rights = descriptor
+        .and_then(|binding| binding.rights)
+        .unwrap_or_else(Rights::research_fetch_only);
+    let delay_class = descriptor
+        .map(|binding| binding.delay_class)
+        .unwrap_or(DelayClass::Unknown);
+    QuoteEnvelope {
+        identity,
+        instrument_id: String::new(),
+        status: QuoteStatus::Unavailable,
+        data: None,
+        provenance: QuoteProvenance {
+            adapter_id: adapter_id
+                .map(str::to_string)
+                .or_else(|| descriptor.map(|binding| binding.adapter_id.clone()))
+                .unwrap_or_default(),
+            transport: None,
+            delay_class,
+        },
+        rights,
+        ineligible: vec![refusal_class.to_string()],
+        research: true,
+        canonical: false,
+        persist_canonical: false,
+        book_id: Some(book_id.to_string()),
+        bind_status: Some("refused".to_string()),
+    }
+}
 
 /// Extract latest quote. Delay class comes from the loaded descriptor, not freshness.
 pub fn extract_quote(
@@ -153,6 +197,8 @@ pub fn extract_quote_for_book(
             research: true,
             canonical: false,
             persist_canonical: false,
+            book_id: None,
+            bind_status: None,
         };
     };
 
@@ -188,6 +234,8 @@ pub fn extract_quote_for_book(
         research: true,
         canonical: false,
         persist_canonical: false,
+        book_id: None,
+        bind_status: None,
     }
 }
 

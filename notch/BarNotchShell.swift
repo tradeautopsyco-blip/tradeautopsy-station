@@ -531,7 +531,7 @@ struct BarNotchShell: View {
     }
 
     private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
-        let slug = viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+        let slug = viewModel.activeExecutionBrokerSlug ?? viewModel.barProtectiveBrokerSlug
         let postureKey = slug.trimmingCharacters(in: .whitespacesAndNewlines)
         let chrome = NotchViewModel.brokerPillChrome(
             brokerSyncClass: viewModel.brokerSyncClass,

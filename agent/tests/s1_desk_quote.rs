@@ -7,10 +7,52 @@
 
 mod common;
 
-use common::{spawn_test_agent, spawn_test_agent_with_options, wait_ready, TestAgentOptions};
+use common::{
+    apply_wire_v1, client, identity_start_body, seeded_hmac_vault, spawn_test_agent,
+    spawn_test_agent_with_options, wait_ready, TestAgentOptions, WireHeaderOverrides,
+};
+use serde_json::Value;
+use serial_test::serial;
+use std::sync::Arc;
+use std::time::Duration;
+use tradeautopsy_agent::{
+    BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, MemoryBrokerCredentialVault,
+};
 
 async fn wait_for_quote_route(port: u16) {
     wait_ready(port).await;
+}
+
+async fn post_kotak_sync_start(port: u16) {
+    let path = "/api/daemon/broker/sync/start";
+    let url = format!("http://127.0.0.1:{port}{path}");
+    let payload = serde_json::to_vec(&identity_start_body("kotak_neo")).expect("json");
+    apply_wire_v1(
+        client()
+            .post(&url)
+            .header("content-type", "application/json"),
+        "POST",
+        path,
+        &payload,
+        WireHeaderOverrides::default(),
+    )
+    .body(payload)
+    .timeout(Duration::from_secs(3))
+    .send()
+    .await
+    .expect("kotak start");
+    tokio::time::sleep(Duration::from_millis(350)).await;
+}
+
+fn kotak_sync_opts(extra: TestAgentOptions) -> TestAgentOptions {
+    let vault = seeded_hmac_vault("kotak_neo", "TA_TEST_SYNC");
+    let counter = Arc::new(CountingPollAdapter::new());
+    TestAgentOptions {
+        runtime_poll_adapter: Some(counter as Arc<dyn BrokerAdapter>),
+        broker_base_poll_ms: 80,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+        ..extra
+    }
 }
 
 #[tokio::test]
@@ -35,6 +77,8 @@ async fn get_station_quote_unavailable_without_ticks() {
     assert_eq!(body["identity"]["capability_id"], "quote");
     assert_eq!(body["identity"]["physics"], "latest_state");
     assert_eq!(body["instrument_id"], "btcusdt");
+    assert_eq!(body["book_id"], "binance-com-spot");
+    assert_eq!(body["bind_status"], "bound");
     assert_eq!(body["provenance"]["adapter_id"], "binance_com");
     assert_eq!(body["canonical"], false);
     assert_eq!(body["persist_canonical"], false);
@@ -534,17 +578,19 @@ async fn planted_binance_history_is_licensed_series_not_yahoo() {
 }
 
 #[tokio::test]
+#[serial]
 async fn planted_nfo_quote_last_is_not_cash_last() {
     const PORT: u16 = 19_490;
     let handle = spawn_test_agent_with_options(
         PORT,
-        TestAgentOptions {
+        kotak_sync_opts(TestAgentOptions {
             plant_kotak_s1k_fixtures: true,
             plant_kotak_nfo_quote: true,
             ..TestAgentOptions::default()
-        },
+        }),
     );
     wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
     let client = reqwest::Client::new();
 
     let nfo: serde_json::Value = client
@@ -561,6 +607,8 @@ async fn planted_nfo_quote_last_is_not_cash_last() {
     assert_ne!(nfo["status"], "unavailable");
     assert!(!nfo["data"].is_null());
     assert_eq!(nfo["instrument_id"], "nse_fo|12345");
+    assert_eq!(nfo["book_id"], "kotak-nse-nfo");
+    assert_eq!(nfo["bind_status"], "bound");
     assert_eq!(nfo["provenance"]["adapter_id"], "kotak_neo");
     let nfo_last = nfo["data"]["last"].as_str().expect("nfo last");
     assert_ne!(nfo_last, "0");
@@ -577,13 +625,13 @@ async fn planted_nfo_quote_last_is_not_cash_last() {
         .json()
         .await
         .unwrap();
-    assert_eq!(cash_obtain_after_nfo_select["status"], "success");
+    // Book-scoped: NFO selection must not paint cash obtain.
+    assert_eq!(cash_obtain_after_nfo_select["status"], "unavailable");
     assert_eq!(
         cash_obtain_after_nfo_select["book_id"],
         "kotak-nse-bse-cash"
     );
-    assert_eq!(cash_obtain_after_nfo_select["data"]["last"], "1400.50");
-    assert_ne!(cash_obtain_after_nfo_select["data"]["last"], nfo_last);
+    assert!(cash_obtain_after_nfo_select["data"].is_null());
 
     let cash: serde_json::Value = client
         .get(format!(
@@ -597,6 +645,8 @@ async fn planted_nfo_quote_last_is_not_cash_last() {
         .await
         .expect("cash json");
     assert_ne!(cash["status"], "unavailable");
+    assert_eq!(cash["book_id"], "kotak-nse-bse-cash");
+    assert_eq!(cash["bind_status"], "bound");
     let cash_last = cash["data"]["last"].as_str().expect("cash last");
     assert_ne!(nfo_last, cash_last);
     assert_eq!(nfo_last, "10.00");
@@ -638,17 +688,28 @@ async fn planted_nfo_quote_last_is_not_cash_last() {
 }
 
 #[tokio::test]
+#[serial]
 async fn planted_nfo_quote_without_master_optionchain_unavailable() {
     const PORT: u16 = 19_491;
     let handle = spawn_test_agent_with_options(
         PORT,
-        TestAgentOptions {
+        kotak_sync_opts(TestAgentOptions {
             plant_kotak_nfo_quote: true,
             ..TestAgentOptions::default()
-        },
+        }),
     );
     wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
     let client = reqwest::Client::new();
+
+    client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C12345"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind nfo");
 
     let quotes: serde_json::Value = client
         .get(format!(
@@ -684,18 +745,29 @@ async fn planted_nfo_quote_without_master_optionchain_unavailable() {
 }
 
 #[tokio::test]
+#[serial]
 async fn planted_nfo_instruments_and_optionchain_success_lock_lot() {
     const PORT: u16 = 19_493;
     let handle = spawn_test_agent_with_options(
         PORT,
-        TestAgentOptions {
+        kotak_sync_opts(TestAgentOptions {
             plant_kotak_s1k_fixtures: true,
             plant_kotak_nfo_contracts: true,
             ..TestAgentOptions::default()
-        },
+        }),
     );
     wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
     let client = reqwest::Client::new();
+
+    client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C56526"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind nfo contract");
 
     let nfo: serde_json::Value = client
         .get(format!(
@@ -711,17 +783,21 @@ async fn planted_nfo_instruments_and_optionchain_success_lock_lot() {
     assert_eq!(nfo["status"], "success");
     assert_eq!(nfo["book_id"], "kotak-nse-nfo");
     assert_eq!(nfo["adapter_id"], "kotak_neo");
-    assert_eq!(nfo["data"]["contract_count"], 1);
+    assert_eq!(nfo["data"]["contract_count"], 2);
     assert_eq!(nfo["data"]["identity"]["family"], "reference");
     assert_eq!(
         nfo["data"]["identity"]["capability_id"],
         "derivative_contracts"
     );
     assert_eq!(nfo["data"]["identity"]["physics"], "bounded_snapshot");
-    let lot = &nfo["data"]["rows"][0]["lot"];
+    let rows = nfo["data"]["rows"].as_array().expect("rows");
+    let nifty = rows
+        .iter()
+        .find(|row| row["instrument_id"] == "nse_fo|56526")
+        .expect("nse_fo|56526 row");
+    let lot = &nifty["lot"];
     assert!(lot.is_number(), "lot must be a JSON number: {lot}");
     assert_eq!(lot.as_i64(), Some(65));
-    assert_eq!(nfo["data"]["rows"][0]["instrument_id"], "nse_fo|56526");
     let dumped = nfo.to_string();
     assert!(!dumped.contains("57500"), "no ghost strike: {dumped}");
 
@@ -738,8 +814,12 @@ async fn planted_nfo_instruments_and_optionchain_success_lock_lot() {
         .unwrap();
     assert_eq!(chain["status"], "success");
     assert_eq!(chain["data"]["identity"]["capability_id"], "option_chain");
-    assert_eq!(chain["data"]["rows"][0]["instrument_id"], "nse_fo|56526");
-    assert_eq!(chain["data"]["rows"][0]["lot"], 65);
+    let chain_rows = chain["data"]["rows"].as_array().expect("chain rows");
+    let chain_nifty = chain_rows
+        .iter()
+        .find(|row| row["instrument_id"] == "nse_fo|56526")
+        .expect("NIFTY chain row");
+    assert_eq!(chain_nifty["lot"], 65);
     let dumped_chain = chain.to_string();
     assert!(
         !dumped_chain.contains("57500"),
@@ -832,16 +912,18 @@ async fn nfo_plant_does_not_steal_cash_adapter_obtain() {
 /// from `open_int` on the same `quote_type=all` body that feeds last. The `oi`
 /// slice spellings must not appear, and NFO depth stays unsupported.
 #[tokio::test]
+#[serial]
 async fn planted_nfo_open_interest_lights_from_open_int_only() {
     const PORT: u16 = 19_494;
     let handle = spawn_test_agent_with_options(
         PORT,
-        TestAgentOptions {
+        kotak_sync_opts(TestAgentOptions {
             plant_kotak_nfo_quote: true,
             ..TestAgentOptions::default()
-        },
+        }),
     );
     wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
     let client = reqwest::Client::new();
 
     // Select the contract the way the desk does.

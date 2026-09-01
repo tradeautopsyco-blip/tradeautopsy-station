@@ -282,14 +282,23 @@ public final class NotchViewModel: ObservableObject {
     @Published var lastAlert: String?
     @Published var pulseAttention: PulseAttention = .none
     @Published public var brokerSessionActive: Bool = false
-    /// Catalog slug of the active UBI sync (`binance_com` / `kotak_neo`) — desk honesty (R7).
-    /// The slug picks `deskBookId`, so a change must drop the previous desk's extracts.
-    @Published public var activeBrokerSlug: String? {
+    /// Catalog slug of the active UBI sync (`binance_com` / `kotak_neo`) — execution desk (R7).
+    /// The slug picks desk-honest money formatting; market books follow instrument shape.
+    @Published public var activeExecutionBrokerSlug: String? {
         didSet {
-            guard oldValue != activeBrokerSlug else { return }
+            guard oldValue != activeExecutionBrokerSlug else { return }
             invalidateDeskMarketExtracts(reason: "broker-slug")
         }
     }
+
+    @available(*, deprecated, renamed: "activeExecutionBrokerSlug")
+    public var activeBrokerSlug: String? {
+        get { activeExecutionBrokerSlug }
+        set { activeExecutionBrokerSlug = newValue }
+    }
+
+    /// Named market book for the selected instrument (`kotak-nse-nfo`, `binance-com-options`, …).
+    @Published public var selectedMarketBookId: String?
     /// Quote currency for Notch/Today formatting; follows active connection (never FX-blend).
     @Published public var deskQuoteCurrency: String?
     /// Calc profile id for the active connection (`crypto_spot_usd` / `equities_inr_cash`).
@@ -546,7 +555,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private var resolvedBrokerSlugForBridge: String {
-        let slug = (activeBrokerSlug ?? barProtectiveBrokerSlug)
+        let slug = (activeExecutionBrokerSlug ?? barProtectiveBrokerSlug)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         // Empty protective slug still bridges Connect to first-pair dogfood default.
@@ -1271,6 +1280,7 @@ public final class NotchViewModel: ObservableObject {
         // Last may survive), then fetch — which captures the generation it must match.
         clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
+        selectedMarketBookId = Self.marketBook(for: bind.tickBookId)
         invalidateDeskMarketExtracts(reason: "select-symbol")
         switch bind.shape {
         case .kotakNfo, .kotakCash:
@@ -1354,6 +1364,7 @@ public final class NotchViewModel: ObservableObject {
         // Last may survive), then fetch — which captures the generation it must match.
         clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
+        selectedMarketBookId = Self.marketBook(for: bind.tickBookId)
         invalidateDeskMarketExtracts(reason: "commit-symbol")
         // No `applyLTP` seed: there is no catalog row here, and a spot-shaped last never
         // seeds a premium.
@@ -1374,11 +1385,33 @@ public final class NotchViewModel: ObservableObject {
             : "Select a Kotak cash instrument"
     }
 
-    /// Active catalog slug for desk-honest Last/history routing.
+    /// Active execution broker slug for desk-honest Last/history routing.
     var resolvedDeskSlug: String? {
-        let raw = (activeBrokerSlug ?? barProtectiveBrokerSlug)
+        let raw = (activeExecutionBrokerSlug ?? barProtectiveBrokerSlug)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return raw.isEmpty ? nil : raw
+    }
+
+    /// Named market book implied by instrument shape — independent of execution desk.
+    static func marketBook(for instrumentId: String) -> String? {
+        BarDeskTemplate.marketBook(for: instrumentId)
+    }
+
+    /// Whether the active execution broker can place orders for the selected instrument.
+    /// Kotak market books require `kotak_neo`; `binance-com-options` is public data only.
+    func canExecuteSelectedInstrument() -> Bool {
+        let book = Self.marketBook(for: deskSelectedInstrumentId) ?? selectedMarketBookId
+        guard let book else {
+            return DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
+                && !InstrumentTickBookId.isDatedOptionContract(deskSelectedInstrumentId)
+        }
+        if book == BarDeskTemplate.binanceComOptionsBookId {
+            return false
+        }
+        if book == BarDeskTemplate.kotakNfoBookId || book == BarDeskTemplate.kotakCashBookId {
+            return BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        }
+        return false
     }
 
     /// Live Kotak/Binance desk — empty slug still counts when session is up (bridge defaults kotak_neo).
@@ -1501,14 +1534,12 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Options last is desk-scoped: a Kotak NFO TickBook id, or a dated Binance contract on
-    /// the Binance desk. A Binance *pair* — and any spot envelope answering for one — must
-    /// not paint the options declare, so the instrument shape is the discriminator here,
-    /// never the adapter or the desk alone.
+    /// Options last is market-book scoped: a Kotak NFO TickBook id, or a dated Binance
+    /// contract on `binance-com-options`. A Binance *pair* must not paint the options
+    /// declare, so the instrument shape is the discriminator here.
     func shouldBindQuoteLast(adapter: String?, instrumentId: String) -> Bool {
         if declareAssetClass == .options {
-            if BarDeskTemplate.isBinanceOptionsDesk(
-                slug: resolvedDeskSlug,
+            if BarDeskTemplate.isBinanceOptionsSelection(
                 assetClass: declareAssetClass,
                 instrumentId: instrumentId
             ) {
@@ -1536,8 +1567,7 @@ public final class NotchViewModel: ObservableObject {
     /// `rawLast` is the wire string the Double was parsed from, kept verbatim on the crypto
     /// options path where `%.2f` would round a sub-cent premium to `0.00`.
     func applyLTP(_ ltp: Double, rawLast: String? = nil) {
-        let cryptoOptions = BarDeskTemplate.isBinanceOptionsDesk(
-            slug: resolvedDeskSlug,
+        let cryptoOptions = BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
             instrumentId: deskSelectedInstrumentId
         )
@@ -1653,16 +1683,17 @@ public final class NotchViewModel: ObservableObject {
         return deskExtractGeneration
     }
 
-    /// Testable quote path. Only the crypto options desk names a book — `binance-com-options`
-    /// is the eapi book, and no other desk sends `book=` on a quote at all.
+    /// Testable quote path. Dated contracts name `binance-com-options`; Kotak identities
+    /// stay bookless on quote — no other desk sends `book=` on a quote at all.
     func deskQuoteExtractPath(instrument: String) -> String {
         let encoded = InstrumentTickBookId.queryEncode(instrument)
-        let book = BarDeskTemplate.isBinanceOptionsDesk(
-            slug: resolvedDeskSlug,
-            assetClass: declareAssetClass,
-            instrumentId: instrument
-        ) ? "&book=binance-com-options" : ""
-        return "/api/station/quote?instrument=\(encoded)\(book)"
+        guard let book = Self.marketBook(for: instrument),
+              book == BarDeskTemplate.binanceComOptionsBookId
+        else {
+            return "/api/station/quote?instrument=\(encoded)"
+        }
+        let encodedBook = InstrumentTickBookId.queryEncode(book)
+        return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
     }
 
     /// Testable chain glance path. Kotak names `deskBookId` and an underlying ticker.
@@ -1696,8 +1727,7 @@ public final class NotchViewModel: ObservableObject {
     /// so `optionSymbols` can match and `openInterest` can take YYMMDD.
     private func glanceInstrument(symbol: String) -> String {
         let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
-        if BarDeskTemplate.isBinanceOptionsDesk(
-            slug: resolvedDeskSlug,
+        if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
             instrumentId: selected
         ) {
@@ -1710,18 +1740,14 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func glanceBookId(symbol: String) -> String? {
-        if let named = BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass) {
-            return named
-        }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
-        if BarDeskTemplate.isBinanceOptionsDesk(
-            slug: resolvedDeskSlug,
+        if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
             instrumentId: instrument
         ) {
-            return "binance-com-options"
+            return BarDeskTemplate.binanceComOptionsBookId
         }
-        return nil
+        return BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass)
     }
 
     /// Apply one `/api/station/greeks` envelope. Pure state, no HTTP — the parse is the
@@ -4041,25 +4067,25 @@ extension NotchViewModel {
             ?? (payload["active_broker_slug"] as? String)
             ?? (payload["broker_slug"] as? String)
         if let slug, !slug.isEmpty {
-            activeBrokerSlug = slug
+            activeExecutionBrokerSlug = slug
         }
         if let ccy = payload["quoteCurrency"] as? String, !ccy.isEmpty {
             deskQuoteCurrency = ccy.uppercased()
         } else if let ccy = payload["quote_currency"] as? String, !ccy.isEmpty {
             deskQuoteCurrency = ccy.uppercased()
-        } else if let mapped = DeskMoneyFormatting.quoteCurrency(forBrokerSlug: activeBrokerSlug) {
+        } else if let mapped = DeskMoneyFormatting.quoteCurrency(forBrokerSlug: activeExecutionBrokerSlug) {
             deskQuoteCurrency = mapped
         }
         if let calc = payload["calcProfileId"] as? String, !calc.isEmpty {
             deskCalcProfileId = calc
         } else if let calc = payload["calc_profile_id"] as? String, !calc.isEmpty {
             deskCalcProfileId = calc
-        } else if let mapped = DeskMoneyFormatting.calcProfileId(forBrokerSlug: activeBrokerSlug) {
+        } else if let mapped = DeskMoneyFormatting.calcProfileId(forBrokerSlug: activeExecutionBrokerSlug) {
             deskCalcProfileId = mapped
         }
         if brokerSyncClass == "not_connected" {
             // Start-off only: founder Stop. Do not clear on `disconnected` (poll-circuit) or COM banned.
-            activeBrokerSlug = nil
+            activeExecutionBrokerSlug = nil
         }
     }
 
@@ -4257,7 +4283,7 @@ extension NotchViewModel {
                 return
             }
             brokerSyncClass = "not_connected"
-            activeBrokerSlug = nil
+            activeExecutionBrokerSlug = nil
             brokerSessionActive = false
             brokerSyncLastPollAtMs = nil
             deskQuoteCapability = "unavailable"

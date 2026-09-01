@@ -190,6 +190,18 @@ pub async fn stop_handler(State(state): State<AppState>) -> Json<Value> {
                 .kotak_session_locator
                 .lock()
                 .expect("kotak session locator poisoned") = None;
+            state
+                .quote_selections
+                .lock()
+                .expect("quote selections poisoned")
+                .clear_adapter_books("kotak_neo");
+        } else {
+            drop(map);
+            state
+                .quote_selections
+                .lock()
+                .expect("quote selections poisoned")
+                .clear_adapter_books(&slug);
         }
     } else {
         map.clear();
@@ -198,11 +210,12 @@ pub async fn stop_handler(State(state): State<AppState>) -> Json<Value> {
             .kotak_session_locator
             .lock()
             .expect("kotak session locator poisoned") = None;
+        state
+            .quote_selections
+            .lock()
+            .expect("quote selections poisoned")
+            .clear_all();
     }
-    *state
-        .selected_quote_instrument
-        .lock()
-        .expect("selected quote instrument poisoned") = None;
     Json(json!({ "ok": true }))
 }
 

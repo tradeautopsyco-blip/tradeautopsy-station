@@ -1,10 +1,12 @@
 //! S1 desk extract on Station loopback. TickBook ≠ BAR LiveBook. No ingestSignal. No Neon.
 
+use crate::api::quote_selection::QuoteBindError;
 use crate::api::AppState;
 use crate::data::{
-    extract_quote_for_book, is_dated_option_contract, normalize_options_instrument,
-    parse_nfo_instrument_id, quote_subscription_for, QuoteEnvelope, QuoteStatus, QuoteSubscription,
-    BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    extract_quote_for_book, is_dated_option_contract, kotak_quote_book_id,
+    parse_nfo_instrument_id, refused_quote_binding, QuoteEnvelope, QuoteStatus,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -14,17 +16,11 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct QuoteQuery {
     pub instrument: Option<String>,
-    /// Named TickBook slot. Only `binance-com-options` is honoured; see `named_book_for`.
+    /// Named TickBook slot (`binance-com-options`, `binance-com-spot`, etc.).
     pub book: Option<String>,
 }
 
-/// Named TickBook slot for the extract. `binance-com-options` is the only book a
-/// caller may request by name; every other `book=` value — `binance-com-spot`
-/// included — is ignored, so spot / NFO routing stays exactly as it was.
-/// A dated contract routes to the options book with no `book=` at all, matching
-/// the desk bind (`DeskInstrumentBind` resolves `BTC-200730-9000-C` with `bookId == nil`).
-/// The options book wins over the `nse_fo|` shape: the options lookup misses and
-/// the envelope is `unavailable` rather than NFO data.
+/// Shape-based book inference for refusal envelopes and legacy unit tests.
 pub(crate) fn named_book_for(
     instrument: &str,
     requested_book: Option<&str>,
@@ -35,6 +31,38 @@ pub(crate) fn named_book_for(
         return Some(BINANCE_COM_OPTIONS_BOOK_ID);
     }
     parse_nfo_instrument_id(instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID)
+}
+
+fn inferred_quote_book(raw: &str) -> Option<&'static str> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if is_dated_option_contract(raw) {
+        return Some(BINANCE_COM_OPTIONS_BOOK_ID);
+    }
+    if parse_nfo_instrument_id(raw).is_some() {
+        return Some(KOTAK_NSE_NFO_BOOK_ID);
+    }
+    if kotak_quote_book_id(raw) == Some(KOTAK_NSE_BSE_CASH_BOOK_ID) {
+        return Some(KOTAK_NSE_BSE_CASH_BOOK_ID);
+    }
+    Some(BINANCE_COM_SPOT_BOOK_ID)
+}
+
+fn refused_quote_envelope(
+    state: &AppState,
+    err: QuoteBindError,
+    requested_book: Option<&str>,
+    raw: &str,
+) -> QuoteEnvelope {
+    let book_id = err.book_id_for_refusal(requested_book, inferred_quote_book(raw));
+    refused_quote_binding(
+        state.quote_registry.as_ref(),
+        state.active_adapter_id().as_deref(),
+        &book_id,
+        err.refusal_class(),
+    )
 }
 
 pub async fn handler(
@@ -59,76 +87,38 @@ pub async fn handler(
         ));
     }
 
-    let instrument = match state.validated_quote_id(&raw) {
-        Some(id) => {
-            let nfo = parse_nfo_instrument_id(&id).is_some();
-            match quote_subscription_for(&id, state.should_subscribe_quote(&id)) {
-                QuoteSubscription::OptionsQuote => {
-                    *state
-                        .selected_quote_instrument
-                        .lock()
-                        .expect("selected quote instrument poisoned") = Some(id.clone());
-                    // Shape bind: options record + unbind spot. Do not subscribe_instrument
-                    // (that helper is “COM desk is on,” not “this id is spot”).
-                    state.bind_spot_market(&id);
-                }
-                QuoteSubscription::Desk => {
-                    *state
-                        .selected_quote_instrument
-                        .lock()
-                        .expect("selected quote instrument poisoned") = Some(id.clone());
-                    if state.is_kotak_neo_desk() {
-                        state.prime_kotak_quote(&id).await;
-                    } else {
-                        // Order is load-bearing. The REST last must land before
-                        // the trade stream subscribes this id, or `apply_quote`
-                        // refuses it `RestClosed` and Last stays empty until the
-                        // first `@trade`. Depth and klines still ride the
-                        // subscribe, unchanged.
-                        state.prime_binance_spot_ticker(&id).await;
-                        state.subscribe_instrument(&id);
-                    }
-                }
-                QuoteSubscription::None => {
-                    if state.is_kotak_neo_desk() && nfo {
-                        *state
-                            .selected_quote_instrument
-                            .lock()
-                            .expect("selected quote instrument poisoned") = Some(id.clone());
-                        state.prime_kotak_quote(&id).await;
-                    }
-                }
-            }
-            id
-        }
-        None => {
-            if state.is_kotak_neo_desk() {
-                raw.trim().to_string()
-            } else if is_dated_option_contract(&raw) {
-                normalize_options_instrument(&raw)
-            } else {
-                state.resolve_instrument(&raw)
-            }
+    let binding = match state.validate_quote_binding(&raw, query.book.as_deref()) {
+        Ok(binding) => binding,
+        Err(err) => {
+            return Json(refused_quote_envelope(
+                &state,
+                err,
+                query.book.as_deref(),
+                &raw,
+            ));
         }
     };
 
-    let named_book = named_book_for(&instrument, query.book.as_deref());
+    state.bind_quote_selection(&binding).await;
+
     let book = state.tickbook.lock().expect("tickbook mutex poisoned");
     let mut env = extract_quote_for_book(
         state.quote_registry.as_ref(),
         &book,
-        &instrument,
+        &binding.instrument_id,
         Utc::now(),
         state.quote_freshness,
         adapter.as_deref(),
-        named_book,
+        Some(binding.book_id),
     );
+    env.book_id = Some(binding.book_id.to_string());
+    env.bind_status = Some("bound".to_string());
     if env.status == QuoteStatus::Unavailable {
         if let Some(class) = state
             .quote_fetch_error
             .lock()
             .expect("quote fetch error poisoned")
-            .get(&instrument)
+            .get(&binding.instrument_id)
             .cloned()
         {
             env.ineligible = vec![class];
@@ -141,7 +131,7 @@ pub async fn handler(
 mod tests {
     use super::*;
     use crate::api::desk::bind_spot_market_ids;
-    use crate::data::MarketBind;
+    use crate::data::{quote_subscription_for, MarketBind, QuoteSubscription};
 
     #[test]
     fn empty_instrument_query_is_unresolved() {
@@ -194,38 +184,33 @@ mod tests {
         );
         assert_eq!(named_book_for("nse_cm|2885", None), None);
         assert_eq!(named_book_for("btcusdt", None), None);
-        // No `book=` on a dated contract still routes to the options book — the
-        // desk binds these with `bookId == nil`. Shape decides, not the query.
         assert_eq!(
             named_book_for("BTC-200730-9000-C", None),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
         );
-        // An ignored `book=` does not drag a dated contract onto the spot slot.
         assert_eq!(
             named_book_for("BTC-200730-9000-C", Some("binance-com-spot")),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
         );
-        // Unknown / other book names are ignored — never a silent named book.
         assert_eq!(named_book_for("btcusdt", Some("binance-com-spot")), None);
         assert_eq!(named_book_for("btcusdt", Some("kotak-nse-nfo")), None);
         assert_eq!(named_book_for("btcusdt", Some("nonsense")), None);
         assert_eq!(named_book_for("btcusdt", Some("")), None);
-        // Options book wins over the NFO shape; the lookup misses rather than
-        // serving NFO data.
         assert_eq!(
             named_book_for("nse_fo|12345", Some(BINANCE_COM_OPTIONS_BOOK_ID)),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
         );
-        // An unknown book on an `nse_fo|` id keeps today's NFO routing.
         assert_eq!(
             named_book_for("nse_fo|12345", Some("nonsense")),
             Some(KOTAK_NSE_NFO_BOOK_ID)
         );
     }
 
+    use crate::data::normalize_options_instrument;
+
     #[test]
     fn options_id_reaches_the_extract_in_verbatim_case() {
-        let id = crate::data::normalize_options_instrument("  BTC-200730-9000-C  ");
+        let id = normalize_options_instrument("  BTC-200730-9000-C  ");
         assert_eq!(id, "BTC-200730-9000-C");
         assert_ne!(id, "btc-200730-9000-c");
         assert_ne!(
@@ -238,8 +223,6 @@ mod tests {
         );
     }
 
-    /// The seam for "no spot stream opens": a dated contract never reaches
-    /// `subscribe_instrument`, and the only key it records is `{book}\0{symbol}`.
     #[test]
     fn dated_contract_records_options_key_and_no_spot_key() {
         assert_eq!(
@@ -272,7 +255,6 @@ mod tests {
         let set = spawned.lock().expect("quote stream set poisoned");
         assert_eq!(set.len(), 1);
         assert!(set.contains(&format!("{BINANCE_COM_OPTIONS_BOOK_ID}\0BTC-200730-9000-C")));
-        // Spot trade bind is MarketBind — dated must not lowercase into it.
         assert!(trade.current().is_none());
         assert!(depth.current().is_none());
         assert_ne!(trade.current().as_deref(), Some("btc-200730-9000-c"));

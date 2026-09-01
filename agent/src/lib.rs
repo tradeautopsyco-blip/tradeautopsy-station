@@ -1155,7 +1155,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         instrument_master_status,
         instrument_master_cancel,
         instrument_master_cache_dir,
-        selected_quote_instrument: Arc::new(std::sync::Mutex::new(None)),
+        quote_selections: Arc::new(std::sync::Mutex::new(
+            crate::api::QuoteSelections::default(),
+        )),
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     crate::data::spawn_binance_com_trade_loop(

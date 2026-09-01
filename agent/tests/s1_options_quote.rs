@@ -209,6 +209,20 @@ async fn planted_options_ticker_last_stays_mixed_case() {
     wait_for_quote_route(PORT).await;
     let client = reqwest::Client::new();
 
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind options contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["bind_status"], "bound");
+    assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+
     let obtain: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=quotes"
@@ -416,6 +430,8 @@ async fn planted_options_master_lights_chain_and_oi_on_glance_and_obtain() {
         .await
         .expect("json");
     assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(bind["book_id"], "binance-com-options");
+    assert_eq!(bind["bind_status"], "bound");
 
     let obtain_chain: serde_json::Value = client
         .get(format!(
@@ -546,6 +562,8 @@ async fn quote_route_named_options_book_serves_mixed_case_last() {
     assert_ne!(body["data"]["last"], "0");
     assert_eq!(body["instrument_id"], "BTC-200730-9000-C");
     assert_ne!(body["instrument_id"], "btc-200730-9000-c");
+    assert_eq!(body["book_id"], "binance-com-options");
+    assert_eq!(body["bind_status"], "bound");
     assert_eq!(body["provenance"]["adapter_id"], "binance_com");
     assert_eq!(body["provenance"]["transport"], "rest");
     assert_eq!(body["identity"]["capability_id"], "quote");
@@ -565,6 +583,9 @@ async fn quote_route_named_options_book_serves_mixed_case_last() {
         .expect("json");
     assert_eq!(nfo["status"], "unavailable");
     assert!(nfo["data"].is_null());
+    assert_eq!(nfo["bind_status"], "refused");
+    assert_eq!(nfo["book_id"], "kotak-nse-nfo");
+    assert_eq!(nfo["instrument_id"], "");
 
     handle.abort();
 }
@@ -599,6 +620,8 @@ async fn quote_route_without_book_routes_dated_contract_by_shape() {
     // Case is preserved — the spot resolver never rewrote the id.
     assert_eq!(body["instrument_id"], "BTC-200730-9000-C");
     assert_ne!(body["instrument_id"], "btc-200730-9000-c");
+    assert_eq!(body["book_id"], "binance-com-options");
+    assert_eq!(body["bind_status"], "bound");
     assert_eq!(body["provenance"]["adapter_id"], "binance_com");
 
     // The lowercased spot form is a different id and stays a hole: the options
@@ -935,6 +958,8 @@ async fn obtain_optiongreeks_succeeds_on_the_selected_contract() {
         .await
         .expect("json");
     assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(bind["book_id"], "binance-com-options");
+    assert_eq!(bind["bind_status"], "bound");
 
     let obtain: serde_json::Value = client
         .get(format!(
@@ -1084,6 +1109,8 @@ async fn planted_options_depth_serves_a_bounded_snapshot_on_the_options_book() {
         .await
         .expect("json");
     assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(bind["book_id"], "binance-com-options");
+    assert_eq!(bind["bind_status"], "bound");
 
     let obtain: serde_json::Value = client
         .get(format!(

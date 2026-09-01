@@ -38,10 +38,10 @@ struct BarOptionsDeclareTests {
             }
         }
 
-        // No desk at all: nothing is licensed, so nothing splits.
+        // Dated contracts split by instrument shape — execution desk does not gate the surface.
         #expect(BarOptionsDeclareSurface.surface(
             for: .options, slug: nil, instrumentId: "BTC-200730-9000-C"
-        ) == .standardForm)
+        ) == .cryptoOptions)
         #expect(!BarOptionsDeclareSurface.usesThreeZone(
             for: .options, slug: nil, instrumentId: "nse_fo|12345"
         ))
@@ -576,10 +576,10 @@ struct BarOptionsDeclareTests {
         #expect(HonestyStatus.fromWire(vm.deskLastStatus) == nil)
     }
 
-    @Test func kotakDeskRefusesTheCryptoOptionsEnvelope() {
+    @Test func kotakDeskAcceptsTheCryptoOptionsEnvelope() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.brokerSyncClass = "synced"
-        vm.activeBrokerSlug = "kotak_neo"
+        vm.activeExecutionBrokerSlug = "kotak_neo"
         vm.declareAssetClass = .options
         vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
         vm.declEntryPrice = ""
@@ -589,21 +589,22 @@ struct BarOptionsDeclareTests {
             "data": ["last": "0.001"],
             "provenance": ["adapter_id": "binance_com"],
         ])
-        #expect(vm.deskLastStatus == "unavailable")
-        #expect(vm.deskQuoteCapability == "unavailable")
-        #expect(vm.declEntryPrice.isEmpty)
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.declEntryPrice == "0.001")
+        #expect(!vm.canExecuteSelectedInstrument())
     }
 
     @Test func optionsBindTruthTableIsTwoKeyed() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.declareAssetClass = .options
 
-        vm.activeBrokerSlug = "kotak_neo"
+        vm.activeExecutionBrokerSlug = "kotak_neo"
         #expect(vm.shouldBindQuoteLast(adapter: "kotak_neo", instrumentId: "nse_fo|12345"))
         #expect(!vm.shouldBindQuoteLast(adapter: "kotak_neo", instrumentId: "nse_cm|2885"))
-        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
+        #expect(vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
 
-        vm.activeBrokerSlug = "binance_com"
+        vm.activeExecutionBrokerSlug = "binance_com"
         #expect(vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
         #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTCUSDT"))
         #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "nse_fo|12345"))
@@ -713,23 +714,25 @@ struct BarOptionsDeclareTests {
         ) == .standardForm)
     }
 
-    @Test func datedContractOnAKotakDeskIsRefusedNotBound() {
+    @Test func datedContractOnAKotakDeskBindsToBinanceComOptions() {
         let vm = NotchViewModel(planSurfaceOnly: true)
-        vm.activeBrokerSlug = "kotak_neo"
+        vm.activeExecutionBrokerSlug = "kotak_neo"
         vm.declareAssetClass = .options
         vm.deskSelectedInstrumentId = "nse_fo|12345"
 
         vm.barDeclarationSymbol = "BTC-250926-90000-C"
         vm.commitDeskSymbol()
 
-        #expect(vm.deskSelectedInstrumentId == "nse_fo|12345")
-        #expect(vm.barDeclarationLastError != nil)
-        #expect(vm.declOptionExpiry.isEmpty)
+        #expect(vm.deskSelectedInstrumentId == "BTC-250926-90000-C")
+        #expect(vm.barDeclarationLastError == nil)
+        #expect(vm.declOptionExpiry == "250926")
+        #expect(vm.selectedMarketBookId == BarDeskTemplate.binanceComOptionsBookId)
         #expect(BarOptionsDeclareSurface.surface(
             for: vm.declareAssetClass,
             slug: vm.resolvedDeskSlug,
             instrumentId: vm.deskSelectedInstrumentId
-        ) == .nfoThreeZone)
+        ) == .cryptoOptions)
+        #expect(!vm.canExecuteSelectedInstrument())
     }
 
     @Test func recommittingTheSameContractDoesNotReinvalidate() {

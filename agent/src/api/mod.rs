@@ -34,6 +34,10 @@ mod broker_sync_state;
 mod capture;
 pub mod daemon_commands;
 pub(crate) mod desk;
+mod quote_selection;
+pub(crate) use quote_selection::{
+    QuoteBindError, QuoteSelections, QuoteSource, ValidatedQuoteBinding,
+};
 mod health;
 mod instruments;
 mod kill_switch;
@@ -148,8 +152,8 @@ pub struct AppState {
     /// Stop / re-Start cancels in-flight catalog retries.
     pub instrument_master_cancel: Arc<AtomicBool>,
     pub instrument_master_cache_dir: std::path::PathBuf,
-    /// Last quote GET that passed connected-broker id validation. Quote pill keys off this.
-    pub selected_quote_instrument: Arc<Mutex<Option<String>>>,
+    /// Per-book selected instruments. Quote obtain reads `selected_quote_for(book_id)`.
+    pub quote_selections: Arc<Mutex<QuoteSelections>>,
     /// Per-instrument quote fetch class (`quotes_http` / `session` / `quotes_unusable`) — never URLs or bodies.
     pub quote_fetch_error: Arc<Mutex<HashMap<String, String>>>,
 }

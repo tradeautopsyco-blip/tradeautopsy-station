@@ -8,8 +8,8 @@ use crate::data::{
     extract_open_interest_from, extract_quote_for_book, history_obtain_data,
     is_dated_option_contract, obtain, parse_nfo_instrument_id, DepthStatus, GlanceStatus,
     GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
-    SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -150,13 +150,9 @@ pub async fn obtain_handler(
 /// than smashing a spot chain in.
 fn selected_options_contract(state: &AppState) -> String {
     state
-        .selected_quote_instrument
-        .lock()
-        .expect("selected quote instrument poisoned")
-        .clone()
+        .selected_quote_for(BINANCE_COM_OPTIONS_BOOK_ID)
+        .filter(|id| is_dated_option_contract(id))
         .unwrap_or_default()
-        .trim()
-        .to_string()
 }
 
 /// Options are the only book whose obtain snapshot is fetched rather than
@@ -235,11 +231,8 @@ fn enricher(
 }
 
 fn enrich_tickbook_quotes(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let selected = state
-        .selected_quote_instrument
-        .lock()
-        .expect("selected quote instrument poisoned")
-        .clone();
+    let book_id = envelope.book_id.clone();
+    let selected = state.selected_quote_for(&book_id);
     let book = state.tickbook.lock().expect("tickbook mutex poisoned");
     enrich_tickbook_quotes_with(
         state.quote_registry.as_ref(),
@@ -250,11 +243,11 @@ fn enrich_tickbook_quotes(state: &AppState, envelope: ObtainEnvelope) -> ObtainE
     )
 }
 
-/// One global `selected_quote_instrument`. NFO identity must not paint cash obtain.
+/// Book-scoped selection only — no cross-book fallback when this book's selection is missing.
 fn quotes_instrument_for_envelope(
     selected: Option<&str>,
     book: &TickBook,
-    adapter: &str,
+    _adapter: &str,
     envelope_book_id: &str,
 ) -> String {
     let mut instrument = selected.unwrap_or("").trim().to_string();
@@ -263,20 +256,14 @@ fn quotes_instrument_for_envelope(
     {
         instrument.clear();
     }
-    let selected_ok = !instrument.is_empty() && book.get(envelope_book_id, &instrument).is_some();
-    if !selected_ok {
-        if let Some((_, row)) = book.iter().find(|(_, row)| row.book_id == envelope_book_id) {
-            instrument = row.instrument_id.clone();
-        } else if let Some((_, row)) = book
-            .iter()
-            .find(|(_, row)| row.adapter_id == adapter && row.book_id == envelope_book_id)
-        {
-            instrument = row.instrument_id.clone();
-        } else {
-            instrument.clear();
-        }
+    if instrument.is_empty() {
+        return String::new();
     }
-    instrument
+    if book.get(envelope_book_id, &instrument).is_some() {
+        instrument
+    } else {
+        String::new()
+    }
 }
 
 fn enrich_tickbook_quotes_with(
@@ -329,12 +316,13 @@ fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
     if book_id == BINANCE_COM_OPTIONS_BOOK_ID {
         return options_depth_instrument(&selected_options_contract(state)).unwrap_or_default();
     }
-    let instrument = state
-        .resolve_candidates()
-        .first()
-        .cloned()
-        .unwrap_or_else(|| state.s1_desk_symbol.clone().unwrap_or_default());
-    if book_id == "binance-com-spot" {
+    let instrument = match book_id {
+        BINANCE_COM_SPOT_BOOK_ID => state.selected_quote_for(BINANCE_COM_SPOT_BOOK_ID),
+        KOTAK_NSE_BSE_CASH_BOOK_ID => state.selected_quote_for(KOTAK_NSE_BSE_CASH_BOOK_ID),
+        _ => None,
+    }
+    .unwrap_or_default();
+    if book_id == BINANCE_COM_SPOT_BOOK_ID {
         crate::data::normalize_quote_instrument(&instrument)
     } else {
         instrument
@@ -519,14 +507,11 @@ fn enrich_kotak_nfo_instruments(state: &AppState, mut envelope: ObtainEnvelope) 
 
 fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
     let book_id = envelope.book_id.clone();
-    let selected = state
-        .selected_quote_instrument
-        .lock()
-        .expect("selected quote instrument poisoned")
-        .clone()
-        .unwrap_or_default();
     let chain = match book_id.as_str() {
         KOTAK_NSE_NFO_BOOK_ID => {
+            let selected = state
+                .selected_quote_for(KOTAK_NSE_NFO_BOOK_ID)
+                .unwrap_or_default();
             let master = state
                 .kotak_nfo_scrip_master
                 .lock()
@@ -569,7 +554,7 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
             // Must be the dated contract. An empty selection, an empty master,
             // or no matching (underlying, expiry) all stay Unavailable — never
             // a Success with an empty rows array.
-            let instrument = selected.trim().to_string();
+            let instrument = selected_options_contract(state);
             if instrument.is_empty() {
                 return envelope;
             }
@@ -617,10 +602,7 @@ fn enrich_optionchain(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainE
 /// than reading some other book's slot.
 fn selected_nfo_instrument(state: &AppState) -> String {
     let selected = state
-        .selected_quote_instrument
-        .lock()
-        .expect("selected quote instrument poisoned")
-        .clone()
+        .selected_quote_for(KOTAK_NSE_NFO_BOOK_ID)
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
@@ -743,21 +725,17 @@ fn enrich_greeks(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelo
 }
 
 fn enrich_binance_history(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
-    let instrument = {
-        let selected = state
-            .selected_quote_instrument
-            .lock()
-            .expect("selected quote instrument poisoned")
-            .clone()
-            .filter(|s| !s.is_empty());
-        let desk = state
-            .s1_desk_symbol
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
-        selected.or(desk).unwrap_or_default()
-    };
+    let instrument = state
+        .selected_quote_for(BINANCE_COM_SPOT_BOOK_ID)
+        .or_else(|| {
+            state
+                .s1_desk_symbol
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
     let book = state
         .historybook
         .lock()
@@ -1222,7 +1200,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_nfo_does_not_steal_cash_obtain_last() {
+    fn book_scoped_selection_does_not_cross_paint_obtain_last() {
         use crate::data::{
             apply_quote, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
             kotak_neo_s1k_manifest, quote_tick_from_kotak_json,
@@ -1257,7 +1235,7 @@ mod tests {
         let cash = enrich_tickbook_quotes_with(
             &registry,
             &book,
-            Some("nse_fo|12345"),
+            Some("nse_cm|2885"),
             freshness,
             crate::data::obtain(&kotak_neo_s1k_manifest(), "quotes"),
         );
@@ -1276,5 +1254,14 @@ mod tests {
         assert_eq!(nfo.status, ObtainStatus::Success);
         assert_eq!(nfo.book_id, "kotak-nse-nfo");
         assert_eq!(nfo.data.as_ref().unwrap()["last"], "10.00");
+
+        let cash_without_selection = enrich_tickbook_quotes_with(
+            &registry,
+            &book,
+            None,
+            freshness,
+            crate::data::obtain(&kotak_neo_s1k_manifest(), "quotes"),
+        );
+        assert_eq!(cash_without_selection.status, ObtainStatus::Unavailable);
     }
 }

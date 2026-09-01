@@ -283,7 +283,7 @@ struct BarSettingsView: View {
 
     private var brokerDisplayName: String {
         NotchViewModel.brokerDisplayName(
-            forSlug: viewModel.activeBrokerSlug ?? viewModel.barProtectiveBrokerSlug
+            forSlug: viewModel.activeExecutionBrokerSlug ?? viewModel.barProtectiveBrokerSlug
         )
     }
 

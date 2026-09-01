@@ -102,7 +102,8 @@ pub use descriptor::{
     KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 pub use extract::{
-    extract_quote, extract_quote_for, extract_quote_for_book, QuoteEnvelope, QuoteStatus,
+    extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,
+    QuoteStatus,
 };
 pub use force_order::{
     extract_force_order, reject_lossy_as_complete, ForceOrderEnvelope, LossyStatus,

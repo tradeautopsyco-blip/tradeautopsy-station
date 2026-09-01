@@ -1,14 +1,18 @@
 //! S1 desk helpers: resolve/subscribe against the connected broker, not env-only.
 
+use super::quote_selection::{
+    is_known_quote_book, QuoteBindError, QuoteSource, ValidatedQuoteBinding,
+};
 use super::AppState;
 use crate::data::{
     apply_history_series, binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
     ensure_binance_com_options_quote, ensure_binance_com_trade_stream, extract_quote_for_book,
-    is_dated_option_contract, normalize_options_instrument, normalize_quote_instrument,
-    parse_nfo_instrument_id, resolve_among, series_from_klines_json, validate_kline_request,
-    write_raw_cache, HistoryBook, InstrumentMasterErrorClass, InstrumentMasterFetchError,
-    InstrumentMasterStatus, MarketBind, QuoteStatus, Transport, DEFAULT_HISTORY_INTERVAL,
-    KLINE_LIMIT_DEFAULT, KOTAK_NSE_NFO_BOOK_ID,
+    is_dated_option_contract, kotak_quote_book_id, normalize_options_instrument,
+    normalize_quote_instrument, parse_nfo_instrument_id, resolve_among, series_from_klines_json,
+    validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
+    InstrumentMasterFetchError, InstrumentMasterStatus, MarketBind, QuoteStatus, Transport,
+    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, BINANCE_COM_OPTIONS_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -408,9 +412,6 @@ impl AppState {
     /// already subscribed — boot's bound `btcusdt` therefore costs nothing.
     /// Depth and klines are untouched; they still ride `subscribe_instrument`.
     pub async fn prime_binance_spot_ticker(&self, instrument: &str) {
-        if !self.is_binance_com_desk() {
-            return;
-        }
         crate::data::await_binance_spot_ticker_price(
             self.quote_registry.clone(),
             self.tickbook.clone(),
@@ -422,43 +423,298 @@ impl AppState {
     }
 
     pub fn validated_quote_id(&self, raw: &str) -> Option<String> {
+        self.validate_quote_binding(raw, None)
+            .ok()
+            .map(|binding| binding.instrument_id)
+    }
+
+    pub fn validate_quote_binding(
+        &self,
+        raw: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
         let raw = raw.trim();
         if raw.is_empty() {
-            return None;
+            return Err(QuoteBindError::InstrumentInvalid);
         }
-        if self.is_kotak_neo_desk() {
-            if let Some(id) = parse_nfo_instrument_id(raw) {
-                return Some(id);
+        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+            if !is_known_quote_book(book) {
+                return Err(QuoteBindError::UnknownBook);
             }
-            let (segment, token) = kotak_scrip_master::parse_instrument_id(raw)?;
-            let id = kotak_scrip_master::instrument_id(&segment, token);
-            let master = self
-                .kotak_scrip_master
-                .lock()
-                .expect("kotak scrip master mutex poisoned");
-            if master.contains_id(&id) {
-                return Some(id);
-            }
-            return None;
         }
-        // Dated option contracts keep verbatim case; `resolve_instrument` would
-        // lowercase `BTC-200730-9000-C` into a spot-shaped id. The Kotak desk
-        // already returned above, so this never loosens a broker id.
+
         if is_dated_option_contract(raw) {
-            return Some(normalize_options_instrument(raw));
+            return self.validate_dated_options_binding(raw, requested_book);
         }
-        let id = self.resolve_instrument(raw);
-        if self.is_binance_com_desk() {
-            if self.is_binance_path(&id) {
-                return Some(id);
+
+        if let Some(id) = parse_nfo_instrument_id(raw) {
+            return self.validate_kotak_nfo_binding(&id, requested_book);
+        }
+
+        if let Some(id) = self.resolve_kotak_cash_instrument(raw) {
+            return self.validate_kotak_cash_binding(&id, requested_book);
+        }
+
+        self.validate_binance_spot_binding(raw, requested_book)
+    }
+
+    fn validate_dated_options_binding(
+        &self,
+        raw: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
+        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+            if book != BINANCE_COM_OPTIONS_BOOK_ID {
+                return Err(QuoteBindError::InstrumentBookMismatch);
             }
-            return None;
         }
-        if id.is_empty() {
-            None
-        } else {
-            Some(id)
+        let instrument_id = normalize_options_instrument(raw);
+        if instrument_id.is_empty() {
+            return Err(QuoteBindError::InstrumentInvalid);
         }
+        Ok(ValidatedQuoteBinding {
+            book_id: BINANCE_COM_OPTIONS_BOOK_ID,
+            instrument_id,
+            source: QuoteSource::BinanceOptionsPublic,
+        })
+    }
+
+    fn validate_kotak_nfo_binding(
+        &self,
+        instrument_id: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
+        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+            if book == BINANCE_COM_OPTIONS_BOOK_ID || book != KOTAK_NSE_NFO_BOOK_ID {
+                return Err(QuoteBindError::InstrumentBookMismatch);
+            }
+        }
+        self.ensure_kotak_private_ready()?;
+        Ok(ValidatedQuoteBinding {
+            book_id: KOTAK_NSE_NFO_BOOK_ID,
+            instrument_id: instrument_id.to_string(),
+            source: QuoteSource::KotakPrivate,
+        })
+    }
+
+    fn resolve_kotak_cash_instrument(&self, raw: &str) -> Option<String> {
+        if let Some((segment, token)) = kotak_scrip_master::parse_instrument_id(raw) {
+            return Some(kotak_scrip_master::instrument_id(&segment, token));
+        }
+        let master = self
+            .kotak_scrip_master
+            .lock()
+            .expect("kotak scrip master mutex poisoned");
+        let id = master.resolve_id(raw)?;
+        kotak_quote_book_id(&id)
+            .filter(|book| *book == KOTAK_NSE_BSE_CASH_BOOK_ID)
+            .map(|_| id)
+    }
+
+    fn validate_kotak_cash_binding(
+        &self,
+        instrument_id: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
+        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+            if book != KOTAK_NSE_BSE_CASH_BOOK_ID {
+                return Err(QuoteBindError::InstrumentBookMismatch);
+            }
+        }
+        self.ensure_kotak_private_ready()?;
+        let in_master = self
+            .kotak_scrip_master
+            .lock()
+            .expect("kotak scrip master mutex poisoned")
+            .contains_id(instrument_id);
+        if !in_master {
+            return Err(QuoteBindError::InstrumentNotInMaster);
+        }
+        Ok(ValidatedQuoteBinding {
+            book_id: KOTAK_NSE_BSE_CASH_BOOK_ID,
+            instrument_id: instrument_id.to_string(),
+            source: QuoteSource::KotakPrivate,
+        })
+    }
+
+    fn validate_binance_spot_binding(
+        &self,
+        raw: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
+        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+            if book != BINANCE_COM_SPOT_BOOK_ID {
+                return Err(QuoteBindError::InstrumentBookMismatch);
+            }
+        }
+        let instrument_id = resolve_among(raw, self.spot_resolve_candidates().iter().map(String::as_str))
+            .unwrap_or_else(|| normalize_quote_instrument(raw));
+        if instrument_id.is_empty() || !self.is_binance_spot_instrument(&instrument_id) {
+            return Err(QuoteBindError::InstrumentInvalid);
+        }
+        Ok(ValidatedQuoteBinding {
+            book_id: BINANCE_COM_SPOT_BOOK_ID,
+            instrument_id,
+            source: QuoteSource::BinanceSpotPublic,
+        })
+    }
+
+    fn spot_resolve_candidates(&self) -> Vec<String> {
+        let mut candidates = Vec::new();
+        if let Some(env) = &self.s1_desk_symbol {
+            candidates.push(normalize_quote_instrument(env));
+        }
+        {
+            let master = self
+                .instrument_master
+                .lock()
+                .expect("instrument master mutex poisoned");
+            for symbol in master.iter_symbols() {
+                let id = normalize_quote_instrument(symbol);
+                if !candidates.iter().any(|existing| existing == &id) {
+                    candidates.push(id);
+                }
+            }
+        }
+        {
+            let map = self
+                .broker_connections
+                .lock()
+                .expect("broker connections mutex poisoned");
+            if let Some(runtime) = map.get(BINANCE_COM) {
+                for id in &runtime.subscriptions {
+                    if !candidates.iter().any(|existing| existing == id) {
+                        candidates.push(id.clone());
+                    }
+                }
+            }
+        }
+        candidates
+    }
+
+    fn is_binance_spot_instrument(&self, instrument: &str) -> bool {
+        let id = normalize_quote_instrument(instrument);
+        if id.is_empty() || id.contains('|') || is_dated_option_contract(instrument) {
+            return false;
+        }
+        if self.is_binance_com_desk() {
+            return self.is_binance_path(instrument);
+        }
+        if self
+            .instrument_master
+            .lock()
+            .expect("instrument master mutex poisoned")
+            .contains_symbol(&id)
+        {
+            return true;
+        }
+        if self
+            .s1_desk_symbol
+            .as_deref()
+            .is_some_and(|env| normalize_quote_instrument(env) == id)
+        {
+            return true;
+        }
+        if self
+            .broker_connections
+            .lock()
+            .expect("broker connections mutex poisoned")
+            .get(BINANCE_COM)
+            .is_some_and(|runtime| runtime.subscriptions.iter().any(|sub| sub == &id))
+        {
+            return true;
+        }
+        // Public spot pairs are valid without a loaded master or active COM desk.
+        id.chars().all(|c| c.is_ascii_alphanumeric())
+    }
+
+    fn ensure_kotak_private_ready(&self) -> Result<(), QuoteBindError> {
+        let connections = self
+            .broker_connections
+            .lock()
+            .expect("broker connections mutex poisoned");
+        if !connections.contains_key(KOTAK_NEO) {
+            return Err(QuoteBindError::BookNotShipping);
+        }
+        drop(connections);
+        let locator = self
+            .kotak_session_locator
+            .lock()
+            .expect("kotak session locator poisoned");
+        if locator.is_none() {
+            return Err(QuoteBindError::PrivateSessionUnavailable);
+        }
+        Ok(())
+    }
+
+    pub async fn bind_quote_selection(&self, binding: &ValidatedQuoteBinding) {
+        {
+            let mut selections = self
+                .quote_selections
+                .lock()
+                .expect("quote selections poisoned");
+            selections.bind(binding.book_id, binding.instrument_id.clone());
+        }
+        match binding.source {
+            QuoteSource::BinanceOptionsPublic => {
+                self.bind_spot_market(&binding.instrument_id);
+            }
+            QuoteSource::BinanceSpotPublic => {
+                if self.is_binance_com_desk()
+                    || self
+                        .broker_connections
+                        .lock()
+                        .expect("broker connections mutex poisoned")
+                        .contains_key(BINANCE_COM)
+                {
+                    self.prime_binance_spot_ticker(&binding.instrument_id)
+                        .await;
+                    self.subscribe_instrument(&binding.instrument_id);
+                }
+                // Else: selection only until COM Start — no streams, no REST dial.
+            }
+            QuoteSource::KotakPrivate => {
+                self.prime_kotak_quote(&binding.instrument_id).await;
+            }
+        }
+    }
+
+    pub fn selected_quote_for(&self, book_id: &str) -> Option<String> {
+        self.quote_selections
+            .lock()
+            .expect("quote selections poisoned")
+            .selected(book_id)
+            .map(str::to_string)
+    }
+
+    fn capability_selection(&self) -> Option<(String, &'static str)> {
+        if self.is_kotak_neo_desk() {
+            if let Some(id) = self.selected_quote_for(KOTAK_NSE_NFO_BOOK_ID) {
+                return Some((id, KOTAK_NSE_NFO_BOOK_ID));
+            }
+            if let Some(id) = self.selected_quote_for(KOTAK_NSE_BSE_CASH_BOOK_ID) {
+                return Some((id, KOTAK_NSE_BSE_CASH_BOOK_ID));
+            }
+        }
+        if self.is_binance_com_desk() {
+            if let Some(id) = self.selected_quote_for(BINANCE_COM_SPOT_BOOK_ID) {
+                return Some((id, BINANCE_COM_SPOT_BOOK_ID));
+            }
+            if let Some(id) = self.selected_quote_for(BINANCE_COM_OPTIONS_BOOK_ID) {
+                return Some((id, BINANCE_COM_OPTIONS_BOOK_ID));
+            }
+        }
+        for book in [
+            BINANCE_COM_OPTIONS_BOOK_ID,
+            BINANCE_COM_SPOT_BOOK_ID,
+            KOTAK_NSE_NFO_BOOK_ID,
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+        ] {
+            if let Some(id) = self.selected_quote_for(book) {
+                return Some((id, book));
+            }
+        }
+        None
     }
 
     pub fn should_subscribe_quote(&self, id: &str) -> bool {
@@ -506,16 +762,13 @@ impl AppState {
     }
 
     pub fn quote_capability_status(&self) -> &'static str {
-        let selected = self
-            .selected_quote_instrument
-            .lock()
-            .expect("selected quote instrument poisoned")
-            .clone();
-        let Some(instrument) = selected.filter(|s| !s.is_empty()) else {
+        let Some((instrument, book_id)) = self.capability_selection() else {
             return "unavailable";
         };
+        if instrument.trim().is_empty() {
+            return "unavailable";
+        }
         let adapter = self.active_adapter_id();
-        let named_book = parse_nfo_instrument_id(&instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID);
         let book = self.tickbook.lock().expect("tickbook mutex poisoned");
         let env = extract_quote_for_book(
             self.quote_registry.as_ref(),
@@ -524,7 +777,7 @@ impl AppState {
             Utc::now(),
             self.quote_freshness,
             adapter.as_deref(),
-            named_book,
+            Some(book_id),
         );
         if env.status != QuoteStatus::Unavailable {
             return quote_status_wire(env.status);
