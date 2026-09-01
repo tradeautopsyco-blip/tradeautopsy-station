@@ -419,11 +419,13 @@ fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
         "product": fill.product,
         "segment": fill.exchange_segment,
         "time": fill.filled_at.to_rfc3339_opts(SecondsFormat::Millis, true),
-        "fees": fill.fee_amount.map(|amount| json!({
+    });
+    if let Some(amount) = fill.fee_amount {
+        row["fees"] = json!({
             "amount": amount,
             "asset": fill.fee_asset,
-        })),
-    });
+        });
+    }
     if let Some(lot) = fill.lot {
         row["lot"] = json!(lot);
     }

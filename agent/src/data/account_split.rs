@@ -51,24 +51,17 @@ fn kotak_nfo_fill_ok(fill: &BrokerFill, master: &KotakNfoScripMaster) -> bool {
     }
 }
 
-fn instrument_type_from_master(row: &KotakNfoContract, existing: Option<&str>) -> String {
+/// Master hit only — never fall back to symbol-suffix guess (TB2 stamp lock).
+fn instrument_type_from_master(row: &KotakNfoContract) -> Option<String> {
     let opt = row.option_type.trim().to_ascii_uppercase();
     if matches!(opt.as_str(), "CE" | "PE") {
-        return opt;
+        return Some(opt);
     }
     let inst = row.instrument_type.trim().to_ascii_uppercase();
     if matches!(inst.as_str(), "FUTIDX" | "FUTSTK") {
-        return "FUT".to_string();
+        return Some("FUT".to_string());
     }
-    if let Some(ex) = existing {
-        let ex_upper = ex.trim().to_ascii_uppercase();
-        if matches!(ex_upper.as_str(), "CE" | "PE" | "FUT") {
-            return ex_upper;
-        }
-    }
-    existing
-        .map(|s| s.trim().to_ascii_uppercase())
-        .unwrap_or_default()
+    None
 }
 
 /// Stamp NFO book fills from an exact master join. Prefix search is not used.
@@ -76,10 +69,7 @@ pub fn stamp_nfo_fills(fills: &mut [BrokerFill], master: &KotakNfoScripMaster) {
     for fill in fills.iter_mut() {
         if let Some(row) = master.get_by_trading_symbol(&fill.symbol) {
             fill.lot = Some(row.lot);
-            fill.instrument_type = Some(instrument_type_from_master(
-                row,
-                fill.instrument_type.as_deref(),
-            ));
+            fill.instrument_type = instrument_type_from_master(row);
         }
     }
 }
@@ -310,6 +300,23 @@ mod tests {
         stamp_nfo_fills(&mut fills, &master);
         assert_eq!(fills[0].lot, None);
         assert_eq!(fills[0].instrument_type.as_deref(), Some("CE"));
+    }
+
+    #[test]
+    fn stamp_nfo_fills_master_pe_overrides_ce_suffix_guess() {
+        let master = fixture_master();
+        let mut fills = vec![kotak_fill_sym("nse_fo", "NRML", "NIFTY2692221000PE", None)];
+        fills[0].instrument_type = Some("CE".into());
+        stamp_nfo_fills(&mut fills, &master);
+        assert_eq!(fills[0].instrument_type.as_deref(), Some("PE"));
+    }
+
+    #[test]
+    fn kotak_bo_dropped_from_nfo() {
+        let master = fixture_master();
+        let fills = vec![kotak_fill("nse_fo", "BO", None)];
+        let split = split_fills_by_book("kotak_neo", fills, Some(&master));
+        assert_eq!(split[KOTAK_NSE_NFO_BOOK_ID].len(), 0);
     }
 
     #[test]

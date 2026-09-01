@@ -70,9 +70,10 @@ impl AccountBook {
     }
 
     pub fn books_for_adapter_name(name: &str) -> &'static [&'static str] {
-        if name.contains("binance_com") {
+        let lower = name.trim().to_ascii_lowercase();
+        if lower.contains("binance") {
             &[BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID]
-        } else if name.contains("kotak") {
+        } else if lower.contains("kotak") {
             &[KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID]
         } else {
             &[]
@@ -132,6 +133,10 @@ mod tests {
     fn books_for_adapter_name_maps_known_slugs() {
         assert_eq!(
             AccountBook::books_for_adapter_name("binance_com"),
+            &[BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID]
+        );
+        assert_eq!(
+            AccountBook::books_for_adapter_name("binance_us"),
             &[BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID]
         );
         assert_eq!(

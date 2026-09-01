@@ -13,7 +13,7 @@ use serial_test::serial;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tradeautopsy_agent::{
-    BrokerAdapter, BrokerBalancesSnapshot, BrokerCredentialVault, BrokerFill,
+    BrokerAdapter, BrokerBalancesSnapshot, BrokerCredentialVault, BrokerError, BrokerFill,
     BrokerOpenOrdersSnapshot, ConfigurableDataClassAdapter, DataClassPollRound,
 };
 
@@ -62,6 +62,46 @@ impl BrokerAdapter for NamedFillAdapter {
     async fn poll_open_orders(
         &self,
     ) -> Result<BrokerOpenOrdersSnapshot, tradeautopsy_agent::BrokerError> {
+        Ok(BrokerOpenOrdersSnapshot::empty())
+    }
+}
+
+/// Always-Err fills poll — slot must stay `None` (obtain unavailable, not stale success).
+#[derive(Clone)]
+struct ErrFillAdapter {
+    adapter_name: &'static str,
+}
+
+impl ErrFillAdapter {
+    fn kotak() -> Arc<Self> {
+        Arc::new(Self {
+            adapter_name: "kotak_neo",
+        })
+    }
+}
+
+#[async_trait]
+impl BrokerAdapter for ErrFillAdapter {
+    fn name(&self) -> &'static str {
+        self.adapter_name
+    }
+
+    async fn poll_fills(
+        &self,
+        _since: Option<chrono::DateTime<Utc>>,
+    ) -> Result<Vec<BrokerFill>, BrokerError> {
+        Err(BrokerError::Http("poll failed".into()))
+    }
+
+    async fn poll_balances_holdings(
+        &self,
+    ) -> Result<BrokerBalancesSnapshot, BrokerError> {
+        Ok(BrokerBalancesSnapshot::default())
+    }
+
+    async fn poll_open_orders(
+        &self,
+    ) -> Result<BrokerOpenOrdersSnapshot, BrokerError> {
         Ok(BrokerOpenOrdersSnapshot::empty())
     }
 }
@@ -152,6 +192,52 @@ async fn obtain_tradebook(port: u16, book: &str) -> Value {
         .json()
         .await
         .expect("obtain json")
+}
+
+async fn post_broker_sync_stop(port: u16) -> reqwest::Response {
+    let path = "/api/daemon/broker/sync/stop";
+    let url = format!("http://127.0.0.1:{port}{path}");
+    apply_wire_v1(
+        client().post(&url),
+        "POST",
+        path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .timeout(Duration::from_secs(3))
+    .send()
+    .await
+    .expect("stop")
+}
+
+async fn fetch_recent_trades(port: u16) -> Value {
+    let path = "/api/daemon/toolbar/recent-trades";
+    let url = format!("http://127.0.0.1:{port}{path}");
+    apply_wire_v1(
+        client().get(&url),
+        "GET",
+        path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .timeout(Duration::from_secs(3))
+    .send()
+    .await
+    .expect("recent-trades")
+    .json()
+    .await
+    .expect("recent-trades json")
+}
+
+fn assert_dual_no_blend_tradebook_wire(envelope: &Value) {
+    let wire = serde_json::to_string(envelope).expect("wire json");
+    for forbidden in ["exchange_rate", "eapi", "usd", "USD"] {
+        assert!(
+            !wire.contains(forbidden),
+            "NFO tradebook envelope must not blend COM/eapi fields: found {forbidden:?} in {wire}"
+        );
+    }
+    assert_eq!(envelope["data"]["rows"][0]["currency"], "INR");
 }
 
 fn start_opts(adapter: Arc<dyn BrokerAdapter>, slug: &str) -> TestAgentOptions {
@@ -479,6 +565,226 @@ async fn obtain_does_not_start_sync() {
     let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
     assert_eq!(nfo["status"], "unavailable");
     assert!(nfo["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn bo_dropped_from_nfo_obtain() {
+    const PORT: u16 = 19_620;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "BO", 1.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 0);
+    assert!(nfo["data"]["rows"].as_array().unwrap().is_empty());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn nfo_tradebook_dual_no_blend_envelope() {
+    const PORT: u16 = 19_621;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 2.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_dual_no_blend_tradebook_wire(&nfo);
+    let row = &nfo["data"]["rows"][0];
+    assert!(row.get("fees").is_none(), "chrgs absent must omit fees key");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn err_poll_never_ok_stays_unavailable() {
+    const PORT: u16 = 19_622;
+    let err = ErrFillAdapter::kotak();
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(err as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+    tokio::time::sleep(Duration::from_millis(350)).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(
+        nfo["status"], "unavailable",
+        "Err-only poll must not create a slot"
+    );
+    assert!(nfo["data"].is_null());
+
+    let cash = obtain_tradebook(PORT, "kotak-nse-bse-cash").await;
+    assert_eq!(cash["status"], "unavailable");
+    assert!(cash["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn stop_kotak_clears_cash_and_nfo_obtain() {
+    const PORT: u16 = 19_623;
+    let named = NamedFillAdapter::kotak(vec![kotak_cash_fill(), kotak_nfo_fill()]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["fill_count"], 1);
+
+    assert_eq!(post_broker_sync_stop(PORT).await.status(), 200);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let nfo_after = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo_after["status"], "unavailable");
+    assert!(nfo_after["data"].is_null());
+
+    let cash_after = obtain_tradebook(PORT, "kotak-nse-bse-cash").await;
+    assert_eq!(cash_after["status"], "unavailable");
+    assert!(cash_after["data"].is_null());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn master_pe_wins_over_ce_suffix_on_obtain() {
+    const PORT: u16 = 19_624;
+    let mut fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 2.0, "nse_fo");
+    fill.instrument_type = Some("CE".into());
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["data"]["rows"][0]["instrument_type"], "PE");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn instrument_type_never_nrml_or_optidx_on_obtain() {
+    const PORT: u16 = 19_625;
+    let fill = kotak_nfo_fill_sym("NIFTY2692221000PE", "NRML", 2.0, "nse_fo");
+    let named = NamedFillAdapter::kotak(vec![fill]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+
+    let nfo = obtain_tradebook(PORT, "kotak-nse-nfo").await;
+    for row in nfo["data"]["rows"].as_array().unwrap() {
+        let it = row
+            .get("instrument_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            !matches!(it, "NRML" | "OPTIDX" | "NSE" | "OPTSTK" | "FUTIDX" | "FUTSTK"),
+            "instrument_type must be desk CE/PE/FUT only, got {it:?}"
+        );
+    }
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_poll_excludes_nfo_fills() {
+    const PORT: u16 = 19_626;
+    let named = NamedFillAdapter::kotak(vec![kotak_cash_fill(), kotak_nfo_fill()]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_start_opts(named as Arc<dyn BrokerAdapter>, "kotak_neo", true),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    start_kotak_sync(PORT).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let recent = fetch_recent_trades(PORT).await;
+    let trades = recent["trades"].as_array().expect("trades array");
+    assert_eq!(trades.len(), 1, "merge_poll must ship cash only");
+    assert_eq!(trades[0]["symbol"], "nse_cm|2885");
+    assert!(
+        trades.iter().all(|t| t["symbol"] != "NIFTY2692221000PE"),
+        "NFO fills must not enter merge_poll / toolbar"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn stop_binance_clears_spot_obtain_only() {
+    const PORT: u16 = 19_627;
+    let named = NamedFillAdapter::binance(vec![com_fill()]);
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        start_opts(named as Arc<dyn BrokerAdapter>, "binance_us"),
+    );
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    assert_eq!(
+        post_broker_sync_start(PORT, identity_start_body("binance_us"))
+            .await
+            .status(),
+        200
+    );
+    tokio::time::sleep(Duration::from_millis(350)).await;
+
+    let spot = obtain_tradebook(PORT, "binance-com-spot").await;
+    assert_eq!(spot["status"], "success");
+    assert_eq!(spot["data"]["fill_count"], 1);
+
+    assert_eq!(post_broker_sync_stop(PORT).await.status(), 200);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let spot_after = obtain_tradebook(PORT, "binance-com-spot").await;
+    assert_eq!(spot_after["status"], "unavailable");
+    assert!(spot_after["data"].is_null());
+
+    let kotak_cash = obtain_tradebook(PORT, "kotak-nse-bse-cash").await;
+    assert_eq!(
+        kotak_cash["status"], "unavailable",
+        "stop binance must not touch kotak books"
+    );
 
     handle.abort();
 }
