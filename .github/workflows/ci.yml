@@ -30,7 +30,7 @@ jobs:
 
   notch-build:
     name: Swift Notch build check
-    runs-on: macos-14
+    runs-on: macos-15 # Swift 6.0 toolchain
     steps:
       - uses: actions/checkout@v4
       - name: Build Notch (SwiftPM)
@@ -40,7 +40,7 @@ jobs:
 
   notch-tests:
     name: Notch tests
-    runs-on: macos-14
+    runs-on: macos-15 # Swift 6.0 toolchain
     steps:
       - uses: actions/checkout@v4
       - name: Run Notch tests
@@ -49,7 +49,7 @@ jobs:
 
   station-build:
     name: Station build
-    runs-on: macos-14 # SwiftPM build; macos-15 required for TradeAutopsy Station.app (see build-app)
+    runs-on: macos-15 # Swift 6.0 toolchain
     steps:
       - uses: actions/checkout@v4
       - name: Build Station (SwiftPM)
@@ -57,7 +57,7 @@ jobs:
 
   station-tests:
     name: Station tests
-    runs-on: macos-14
+    runs-on: macos-15 # Swift 6.0 toolchain
     steps:
       - uses: actions/checkout@v4
       - name: Run Station tests

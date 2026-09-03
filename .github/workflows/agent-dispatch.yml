@@ -1,0 +1,250 @@
+name: Agent Dispatch
+
+# Hands every UNBLOCKED `ready-for-agent` ticket to a Cursor Cloud Agent.
+# Blocking edges come from GitHub's native dependency graph, not prose.
+#
+# Requires: repo secret CURSOR_API_KEY, and the Cursor GitHub app connected
+# to this repository.
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "30 18 * * *" # 18:30 UTC = 00:00 IST — the overnight batch
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be dispatched, launch nothing"
+        type: boolean
+        default: false
+      max_agents:
+        description: "Max agents to launch in this run"
+        type: string
+        default: "3"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: agent-dispatch-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          MAX_AGENTS: ${{ inputs.max_agents || '3' }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const dryRun = process.env.DRY_RUN === 'true';
+            const maxAgents = parseInt(process.env.MAX_AGENTS || '3', 10);
+            const apiKey = process.env.CURSOR_API_KEY;
+            const auth = 'Basic ' + Buffer.from(apiKey + ':').toString('base64');
+
+            // Only two event shapes should do work: a ticket becoming
+            // ready-for-agent, and a PR actually merging.
+            if (context.eventName === 'issues' &&
+                context.payload.label?.name !== 'ready-for-agent') {
+              core.info(`Label '${context.payload.label?.name}' is not a trigger. Done.`);
+              return;
+            }
+            if (context.eventName === 'pull_request' &&
+                !context.payload.pull_request?.merged) {
+              core.info('PR closed without merging. Done.');
+              return;
+            }
+
+            const cursor = async (method, path, body) => {
+              const res = await fetch('https://api.cursor.com' + path, {
+                method,
+                headers: { Authorization: auth, 'Content-Type': 'application/json' },
+                body: body ? JSON.stringify(body) : undefined,
+              });
+              const text = await res.text();
+              if (!res.ok) throw new Error(`Cursor ${method} ${path} -> ${res.status}: ${text}`);
+              return text ? JSON.parse(text) : {};
+            };
+
+            const names = (i) => i.labels.map((l) => (typeof l === 'string' ? l : l.name));
+
+            // ---- 0. Preflight -------------------------------------------
+            // A bad key or a disconnected GitHub app would otherwise look
+            // identical to "nothing to do". Fail loudly instead.
+            let me;
+            try {
+              me = await cursor('GET', '/v1/me');
+            } catch (e) {
+              core.setFailed(`CURSOR_API_KEY rejected by Cursor: ${e.message}`);
+              return;
+            }
+            core.info(`Cursor key accepted: ${JSON.stringify(me)}`);
+
+            try {
+              const repoList = await cursor('GET', '/v1/repositories');
+              if (!JSON.stringify(repoList).includes(`${owner}/${repo}`)) {
+                core.setFailed(
+                  `Cursor's GitHub app cannot see ${owner}/${repo}. Install it on this ` +
+                  `repository, then re-run. Visible now: ${JSON.stringify(repoList)}`);
+                return;
+              }
+              core.info(`Cursor GitHub app sees ${owner}/${repo}`);
+            } catch (e) {
+              core.setFailed(`Cannot list Cursor repositories: ${e.message}`);
+              return;
+            }
+
+            // ---- 1. Reap stale runs -------------------------------------
+            // An agent that finished without opening a PR would otherwise sit
+            // on `agent-running` forever and silently stall its dependents.
+            const running = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'agent-running', per_page: 100,
+            });
+
+            for (const issue of running) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issue.number, per_page: 100,
+              });
+              const id = comments
+                .map((c) => c.body.match(/cursor-agent-id:\s*(\S+)/)?.[1])
+                .filter(Boolean)
+                .pop();
+              if (!id) continue;
+
+              let agent;
+              try {
+                agent = await cursor('GET', `/v1/agents/${id}`);
+              } catch (e) {
+                core.warning(`#${issue.number}: cannot read agent ${id}: ${e.message}`);
+                continue;
+              }
+              if (agent.status === 'ACTIVE') continue;
+
+              const runs = await cursor('GET', `/v1/agents/${id}/runs`).catch(() => ({ runs: [] }));
+              const opened = (runs.runs || []).some((r) =>
+                (r.git?.branches || []).some((b) => b.prUrl));
+              if (opened) continue;
+
+              core.warning(`#${issue.number}: agent ${id} is ${agent.status} with no PR -> agent-failed`);
+              if (dryRun) continue;
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: issue.number, labels: ['agent-failed'],
+              });
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number: issue.number, name: 'agent-running',
+              }).catch(() => {});
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `Agent \`${id}\` ended as **${agent.status}** without opening a PR. Labeled \`agent-failed\` for a human look.`,
+              });
+            }
+
+            // ---- 2. Find the frontier -----------------------------------
+            const candidates = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'ready-for-agent', per_page: 100,
+            });
+
+            const frontier = [];
+            for (const issue of candidates) {
+              if (issue.pull_request) continue;
+              const ls = names(issue);
+              if (ls.some((l) => ['agent-running', 'agent-failed', 'epic'].includes(l))) continue;
+
+              let blockers = [];
+              try {
+                const res = await github.request(
+                  'GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by',
+                  { owner, repo, issue_number: issue.number });
+                blockers = res.data || [];
+              } catch (e) {
+                core.warning(`#${issue.number}: dependency read failed (${e.status}); treating as unblocked`);
+              }
+
+              const open = blockers.filter((b) => b.state === 'open');
+              if (open.length) {
+                core.info(`#${issue.number} blocked by ${open.map((b) => '#' + b.number).join(', ')}`);
+                continue;
+              }
+              frontier.push(issue);
+            }
+
+            core.notice(`Frontier: ${frontier.length} unblocked of ${candidates.length} ready-for-agent`);
+            if (!frontier.length) return;
+
+            // ---- 3. Dispatch --------------------------------------------
+            const batch = frontier.slice(0, maxAgents);
+            if (frontier.length > batch.length) {
+              core.notice(`Capped at ${maxAgents}; ${frontier.length - batch.length} wait for the next run.`);
+            }
+
+            for (const issue of batch) {
+              const needsMacos = names(issue).includes('needs-macos');
+              const macosNote = needsMacos
+                ? `\n## Build constraint\n\nThis ticket touches Swift/Xcode code. You are running in a Linux container and CANNOT build or test it. Keep the diff tight and minimal, follow the existing patterns closely, and state clearly in the PR description that a local macOS build is required to verify. CI runs on macos-14.\n`
+                : '';
+
+              const prompt = [
+                `Implement GitHub issue #${issue.number} in ${owner}/${repo}.`,
+                ``,
+                `## ${issue.title}`,
+                ``,
+                issue.body || '(no description)',
+                macosNote,
+                `## How to work`,
+                ``,
+                `1. Read AGENTS.md, CONTEXT.md and NAV.md (whichever exist) BEFORE writing code.`,
+                `   Honour every architectural invariant they state - they are not suggestions.`,
+                `2. Use the project's domain vocabulary from CONTEXT.md in names and tests.`,
+                `3. Work test-first at the seam named in this ticket. Test behaviour through`,
+                `   public interfaces, never implementation details. If the ticket names no`,
+                `   seam, say so in the PR description rather than inventing one.`,
+                `4. One vertical slice, end to end. Do not expand scope beyond this ticket.`,
+                `5. Open a PR against main. Include "Closes #${issue.number}" in the body.`,
+              ].join('\n');
+
+              if (dryRun) {
+                core.info(`[dry-run] would dispatch #${issue.number}: ${issue.title}`);
+                continue;
+              }
+
+              let agent;
+              try {
+                agent = await cursor('POST', '/v1/agents', {
+                  prompt: { text: prompt },
+                  repos: [{ url: `https://github.com/${owner}/${repo}`, startingRef: 'main' }],
+                  autoCreatePR: true,
+                });
+              } catch (e) {
+                core.error(`#${issue.number}: launch failed: ${e.message}`);
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: issue.number, labels: ['agent-failed'],
+                });
+                continue;
+              }
+
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: issue.number, labels: ['agent-running'],
+              });
+              await github.rest.issues.removeLabel({
+                owner, repo, issue_number: issue.number, name: 'ready-for-agent',
+              }).catch(() => {});
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: [
+                  `Dispatched to a Cursor Cloud Agent.`,
+                  ``,
+                  `cursor-agent-id: ${agent.id}`,
+                  agent.url ? `Follow it: ${agent.url}` : '',
+                  needsMacos ? `\n**\`needs-macos\`** - the agent cannot compile this. Build locally before merging.` : '',
+                ].filter(Boolean).join('\n'),
+              });
+              core.notice(`#${issue.number} -> agent ${agent.id}`);
+            }
