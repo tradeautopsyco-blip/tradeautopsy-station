@@ -5,6 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 AGENT_DIR="${REPO_ROOT}/agent"
 
+# Xcode Run Script phases inherit a minimal PATH — rustup is usually ~/.cargo/bin.
+if ! command -v cargo >/dev/null 2>&1; then
+  export PATH="${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-}"
+fi
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "error: cargo not found. Install Rust (https://rustup.rs) and rebuild." >&2
+  exit 1
+fi
+
 GIT_SHA="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
 
 echo "Building tradeautopsy-agent (GIT_SHA=${GIT_SHA})..."
