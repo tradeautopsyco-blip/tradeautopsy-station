@@ -215,15 +215,28 @@ jobs:
                 continue;
               }
 
-              let agent;
+              let created;
               try {
-                agent = await cursor('POST', '/v1/agents', {
+                created = await cursor('POST', '/v1/agents', {
                   prompt: { text: prompt },
                   repos: [{ url: `https://github.com/${owner}/${repo}`, startingRef: 'main' }],
                   autoCreatePR: true,
                 });
               } catch (e) {
                 core.error(`#${issue.number}: launch failed: ${e.message}`);
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: issue.number, labels: ['agent-failed'],
+                });
+                continue;
+              }
+
+              // POST /v1/agents answers { agent, run }, so the id is one level
+              // down. Accept a flat body too, in case the shape changes back.
+              const agent = created.agent ?? created;
+              if (!agent.id) {
+                core.error(
+                  `#${issue.number}: launched, but no agent id in the response, so the ` +
+                  `reaper cannot track it. Raw: ${JSON.stringify(created).slice(0, 500)}`);
                 await github.rest.issues.addLabels({
                   owner, repo, issue_number: issue.number, labels: ['agent-failed'],
                 });
