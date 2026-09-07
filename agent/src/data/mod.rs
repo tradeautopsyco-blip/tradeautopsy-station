@@ -154,8 +154,9 @@ pub use kotak_depth::{
     extract_depth, extract_depth_on_book, DepthEnvelope, DepthStatus,
 };
 pub use kotak_private::{
-    ensure_kotak_holdings, ensure_kotak_orders, ensure_kotak_positions, KOTAK_CHECK_MARGIN_PATH,
-    KOTAK_HOLDINGS_PATH, KOTAK_LIMITS_PATH, KOTAK_ORDERS_PATH, KOTAK_POSITIONS_PATH,
+    ensure_kotak_funds, ensure_kotak_holdings, ensure_kotak_orders, ensure_kotak_positions,
+    KOTAK_CHECK_MARGIN_PATH, KOTAK_HOLDINGS_PATH, KOTAK_LIMITS_PATH, KOTAK_ORDERS_PATH,
+    KOTAK_POSITIONS_PATH,
 };
 pub use kotak_quotes::{
     is_cash_segment, is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json,

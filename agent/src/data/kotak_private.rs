@@ -39,6 +39,7 @@ pub async fn fetch_kotak_private_json(
     method: &str,
     path: &str,
     body: Option<&str>,
+    direct_base: Option<&str>,
 ) -> Result<String, KotakPrivateFetchError> {
     let blob = vault
         .load(environment, KOTAK_NEO, connection_id)
@@ -67,13 +68,57 @@ pub async fn fetch_kotak_private_json(
         &creds,
         0,
     );
-    send_private(book_id, &prepared).await
+    send_private(book_id, &prepared, direct_base).await
+}
+
+fn rewrite_prepared_url(prepared_url: &str, direct_base: &str) -> String {
+    let base = direct_base.trim_end_matches('/');
+    let path_and_query = prepared_url
+        .find("://")
+        .and_then(|scheme| {
+            prepared_url[scheme + 3..]
+                .find('/')
+                .map(|slash| &prepared_url[scheme + 3 + slash..])
+        })
+        .unwrap_or("/");
+    format!("{base}{path_and_query}")
 }
 
 async fn send_private(
     book_id: &str,
     prepared: &PreparedHttpRequest,
+    direct_base: Option<&str>,
 ) -> Result<String, KotakPrivateFetchError> {
+    if let Some(base) = direct_base.map(str::trim).filter(|s| !s.is_empty()) {
+        let url = rewrite_prepared_url(&prepared.url, base);
+        let client = crate::egress::shared_client();
+        let mut req = match prepared.method.to_ascii_uppercase().as_str() {
+            "POST" => client.post(&url),
+            _ => client.get(&url),
+        };
+        for (name, value) in &prepared.headers {
+            req = req.header(name, value);
+        }
+        if let Some(body) = &prepared.body {
+            req = req.body(body.clone());
+        }
+        let response = req
+            .send()
+            .await
+            .map_err(|_| KotakPrivateFetchError::Http(0))?;
+        let status = response.status().as_u16();
+        let body = response
+            .text()
+            .await
+            .map_err(|_| KotakPrivateFetchError::Http(0))?;
+        if matches!(status, 401 | 403) {
+            return Err(KotakPrivateFetchError::Session);
+        }
+        if !(200..300).contains(&status) {
+            return Err(KotakPrivateFetchError::Http(status));
+        }
+        return Ok(body);
+    }
     let resp = crate::egress::shared()
         .send_prepared(
             book_id,
@@ -96,8 +141,8 @@ const KOTAK_PRIVATE_MAX_AGE_MS: i64 = 5_000;
 
 use crate::api::AppState;
 use crate::broker_data_class::{
-    BrokerHoldingsSnapshot, BrokerOpenOrder, BrokerOpenOrdersSnapshot, BrokerPortfolioHolding,
-    BrokerPositionRow, BrokerPositionsSnapshot,
+    BrokerBalancesSnapshot, BrokerHolding, BrokerHoldingsSnapshot, BrokerOpenOrder,
+    BrokerOpenOrdersSnapshot, BrokerPortfolioHolding, BrokerPositionRow, BrokerPositionsSnapshot,
 };
 use crate::kotak_nfo_scrip::KotakNfoScripMaster;
 use chrono::Utc;
@@ -275,6 +320,39 @@ pub fn parse_kotak_holdings_json(body: &str) -> Result<Vec<BrokerPortfolioHoldin
     Ok(rows.iter().filter_map(kotak_holding_from_row).collect())
 }
 
+/// Maps Limits.md `Net`/`MarginUsed` onto AccountBook INR funds.
+///
+/// See `docs/reference/india/kotak-neo/FUNDS-LIMITS.md`. Copy those keys;
+/// do not derive free from `CollateralValue - MarginUsed`. Do not parse
+/// SPAN into `margin_estimate`.
+pub fn parse_kotak_limits_json(body: &str) -> Result<BrokerBalancesSnapshot, String> {
+    let root: Value = serde_json::from_str(body).map_err(|e| format!("limits json: {e}"))?;
+    if root.get("stCode").and_then(|v| v.as_i64()) == Some(1003) {
+        return Err("kotak_neo session_expired".into());
+    }
+    if let Some(stat) = string_field(&root, "stat") {
+        if !stat.eq_ignore_ascii_case("ok") {
+            return Err(format!("kotak_neo limits_not_ok ({stat})"));
+        }
+    }
+    let free = parse_f64(root.get("Net")).ok_or_else(|| "kotak limits missing Net".to_string())?;
+    let locked =
+        parse_f64(root.get("MarginUsed")).ok_or_else(|| "kotak limits missing MarginUsed".to_string())?;
+    let holdings = if free + locked <= 0.0 {
+        Vec::new()
+    } else {
+        vec![BrokerHolding {
+            asset: "INR".to_string(),
+            free,
+            locked,
+        }]
+    };
+    Ok(BrokerBalancesSnapshot {
+        holdings,
+        unrealized_pnl: None,
+    })
+}
+
 fn nfo_master(state: &AppState) -> KotakNfoScripMaster {
     state
         .kotak_nfo_scrip_master
@@ -296,6 +374,7 @@ async fn fetch_and_plant_orders(
         "GET",
         KOTAK_ORDERS_PATH,
         None,
+        state.kotak_private_base_url.as_deref(),
     )
     .await?;
     let orders = parse_kotak_orders_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
@@ -318,6 +397,7 @@ async fn fetch_and_plant_positions(
         "GET",
         KOTAK_POSITIONS_PATH,
         None,
+        state.kotak_private_base_url.as_deref(),
     )
     .await?;
     let positions =
@@ -341,6 +421,7 @@ async fn fetch_and_plant_holdings(
         "GET",
         KOTAK_HOLDINGS_PATH,
         None,
+        state.kotak_private_base_url.as_deref(),
     )
     .await?;
     let holdings =
@@ -361,6 +442,37 @@ async fn fetch_and_plant_holdings(
                 as_of_ms,
             );
     }
+    Ok(())
+}
+
+async fn fetch_and_plant_funds(
+    state: &AppState,
+    environment: &str,
+    connection_id: &str,
+) -> Result<(), KotakPrivateFetchError> {
+    let body = fetch_kotak_private_json(
+        state.broker_sync_control.credential_vault().as_ref(),
+        environment,
+        connection_id,
+        KOTAK_NSE_BSE_CASH_BOOK_ID,
+        "POST",
+        KOTAK_LIMITS_PATH,
+        Some("seg=ALL&exch=ALL&prod=ALL"),
+        state.kotak_private_base_url.as_deref(),
+    )
+    .await?;
+    let snapshot = parse_kotak_limits_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
+    let as_of_ms = Utc::now().timestamp_millis();
+    state
+        .account_book
+        .lock()
+        .expect("account_book mutex poisoned")
+        .replace_funds(
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+            snapshot,
+            KOTAK_LIMITS_PATH,
+            as_of_ms,
+        );
     Ok(())
 }
 
@@ -502,6 +614,36 @@ pub async fn ensure_kotak_holdings(state: &AppState) {
     let _ = fetch_and_plant_holdings(state, &environment, &connection_id).await;
 }
 
+pub async fn ensure_kotak_funds(state: &AppState) {
+    {
+        let book = state
+            .account_book
+            .lock()
+            .expect("account_book mutex poisoned");
+        if book
+            .funds_slot(KOTAK_NSE_BSE_CASH_BOOK_ID)
+            .is_some_and(|slot| slot_fresh(slot.as_of_ms, KOTAK_PRIVATE_MAX_AGE_MS))
+        {
+            return;
+        }
+    }
+    if authorize_book_call(
+        KOTAK_NSE_BSE_CASH_BOOK_ID,
+        "cis.kotaksecurities.com",
+        "POST",
+        KOTAK_LIMITS_PATH,
+        true,
+    )
+    .is_err()
+    {
+        return;
+    }
+    let Some((environment, connection_id)) = kotak_session(state) else {
+        return;
+    };
+    let _ = fetch_and_plant_funds(state, &environment, &connection_id).await;
+}
+
 #[cfg(test)]
 pub(crate) async fn fetch_kotak_private_debug(
     vault: &dyn BrokerCredentialVault,
@@ -545,7 +687,7 @@ pub(crate) async fn fetch_kotak_private_debug(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::host_policy::{authorize_inferred_call, HostRefuse};
+    use crate::data::host_policy::{authorize_inferred_call, AuthMode, HostRefuse};
     use crate::ubi::KeyringBrokerCredentialVault;
     use serde_json::Value;
 
@@ -701,8 +843,11 @@ mod tests {
             .expect("positions");
         authorize_inferred_call("cis.kotaksecurities.com", "GET", KOTAK_HOLDINGS_PATH, true)
             .expect("holdings");
-        authorize_inferred_call("cis.kotaksecurities.com", "POST", KOTAK_LIMITS_PATH, true)
-            .expect("limits");
+        let (limits_cap, limits_mode) =
+            authorize_inferred_call("cis.kotaksecurities.com", "POST", KOTAK_LIMITS_PATH, true)
+                .expect("limits");
+        assert_eq!(limits_cap, "funds");
+        assert_eq!(limits_mode, AuthMode::PrivateRead);
         authorize_inferred_call(
             "cis.kotaksecurities.com",
             "POST",
@@ -748,6 +893,38 @@ mod tests {
         assert!(rows
             .iter()
             .all(|h| matches!(h.exchange_segment.as_str(), "nse_cm" | "bse_cm")));
+    }
+
+    #[test]
+    fn limits_fixture_maps_net_and_margin_used_to_inr() {
+        let body = include_str!("../../fixtures/kotak/quick_user_limits.json");
+        let payload: Value = serde_json::from_str(body).expect("limits fixture parses");
+        let snapshot = parse_kotak_limits_json(body).expect("limits parse");
+        assert_eq!(snapshot.holdings.len(), 1);
+        assert_eq!(snapshot.holdings[0].asset, "INR");
+        assert_eq!(snapshot.holdings[0].free, 19.409999999999997);
+        assert_eq!(snapshot.holdings[0].locked, 18.78);
+        assert!(snapshot.unrealized_pnl.is_none());
+        assert!(payload.get("SpanMarginPrsnt").is_some());
+        assert!(payload.get("CollateralValue").is_some());
+    }
+
+    #[test]
+    fn limits_zero_net_and_used_drops_inr_row() {
+        let body = r#"{"stat":"Ok","stCode":200,"Net":"0","MarginUsed":"0"}"#;
+        let snapshot = parse_kotak_limits_json(body).expect("zero limits parse");
+        assert!(snapshot.holdings.is_empty());
+    }
+
+    #[test]
+    fn rewrite_prepared_url_keeps_path_and_query() {
+        assert_eq!(
+            rewrite_prepared_url(
+                "https://cis.kotaksecurities.com/portfolio/v1/holdings?sId=server4",
+                "http://127.0.0.1:9",
+            ),
+            "http://127.0.0.1:9/portfolio/v1/holdings?sId=server4"
+        );
     }
 
     #[test]

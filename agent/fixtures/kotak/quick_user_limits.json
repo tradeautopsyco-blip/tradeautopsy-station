@@ -1,0 +1,12 @@
+{
+    "Category": "CLIENT_SPECIAL",
+    "CollateralValue": "38.19",
+    "NotionalCash": "0",
+    "SpanMarginPrsnt": "0",
+    "ExposureMarginPrsnt": "0",
+    "MarginUsed": "18.78",
+    "Net": "19.409999999999997",
+    "TimeStamp": "1737540175823",
+    "stCode": 200,
+    "stat": "Ok"
+}

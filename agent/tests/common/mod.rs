@@ -77,6 +77,8 @@ pub struct TestAgentOptions {
     pub plant_binance_options_fills: bool,
     /// Spot private reads — point `BinanceComSpotClient` at wiremock (not `api.binance.com`).
     pub binance_spot_base_url: Option<String>,
+    /// Kotak private reads — Direct HTTP to wiremock (not `cis.kotaksecurities.com`).
+    pub kotak_private_base_url: Option<String>,
 }
 
 impl Default for TestAgentOptions {
@@ -120,6 +122,7 @@ impl Default for TestAgentOptions {
             plant_binance_options_depth: false,
             plant_binance_options_fills: false,
             binance_spot_base_url: None,
+            kotak_private_base_url: None,
         }
     }
 }
@@ -174,6 +177,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_options_depth = opts.plant_binance_options_depth;
     cfg.plant_binance_options_fills = opts.plant_binance_options_fills;
     cfg.binance_spot_base_url = opts.binance_spot_base_url.clone();
+    cfg.kotak_private_base_url = opts.kotak_private_base_url.clone();
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

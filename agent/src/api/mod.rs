@@ -160,6 +160,8 @@ pub struct AppState {
     pub quote_fetch_error: Arc<Mutex<HashMap<String, String>>>,
     /// Test seam: wiremock base for spot USER_DATA. Prod is always `None`.
     pub binance_spot_base_url: Option<String>,
+    /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
+    pub kotak_private_base_url: Option<String>,
 }
 
 pub fn router(state: AppState) -> Router {

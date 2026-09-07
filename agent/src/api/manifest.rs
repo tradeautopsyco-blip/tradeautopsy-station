@@ -274,6 +274,9 @@ async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
         ("kotak-nse-bse-cash", "holdings") => {
             crate::data::ensure_kotak_holdings(state).await;
         }
+        ("kotak-nse-bse-cash", "funds") => {
+            crate::data::ensure_kotak_funds(state).await;
+        }
         _ => {}
     }
 }
@@ -307,6 +310,7 @@ fn enricher(
         ("kotak-nse-bse-cash", "orderbook") => Some(enrich_orders),
         ("kotak-nse-bse-cash", "holdings") => Some(enrich_holdings),
         ("kotak-nse-bse-cash", "positionbook") => Some(enrich_positions),
+        ("kotak-nse-bse-cash", "funds") => Some(enrich_binance_funds),
         ("kotak-nse-nfo", "quotes") => Some(enrich_tickbook_quotes),
         ("kotak-nse-nfo", "tradebook") => Some(enrich_tradebook),
         ("kotak-nse-nfo", "orderbook") => Some(enrich_orders),

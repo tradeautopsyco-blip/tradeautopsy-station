@@ -41,6 +41,7 @@ How brokers actually compute P&L, fees, margin, and settlement.
 - What belongs here: fill price mechanics, fee calculation formulas, margin call rules,
   settlement timelines, open-order semantics, rate limits.
 - [`india/kotak-neo/MARGIN-CALCULATOR.md`](./india/kotak-neo/MARGIN-CALCULATOR.md) — Kotak Neo `account/margin_estimate` (calculator path unspecified; dark envelope).
+- [`india/kotak-neo/FUNDS-LIMITS.md`](./india/kotak-neo/FUNDS-LIMITS.md) — Kotak Neo cash `obtain(funds)` from RMS `POST /quick/user/limits` (`Net` / `MarginUsed` copied; not SPAN).
 
 ### `market-structure/`
 

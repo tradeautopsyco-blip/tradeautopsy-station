@@ -62,7 +62,7 @@ impl AccountBook {
         path: &str,
         as_of_ms: i64,
     ) {
-        if book_id != BINANCE_COM_SPOT_BOOK_ID {
+        if book_id != BINANCE_COM_SPOT_BOOK_ID && book_id != KOTAK_NSE_BSE_CASH_BOOK_ID {
             return;
         }
         let entry = self.slots.entry(book_id.to_string()).or_default();
@@ -230,6 +230,27 @@ mod tests {
             3_000,
         );
         assert!(book.funds_slot(BINANCE_COM_OPTIONS_BOOK_ID).is_none());
+        book.replace_funds(
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+            BrokerBalancesSnapshot {
+                holdings: vec![BrokerHolding {
+                    asset: "INR".into(),
+                    free: 19.41,
+                    locked: 18.78,
+                }],
+                unrealized_pnl: None,
+            },
+            "/quick/user/limits",
+            4_000,
+        );
+        assert!(book.funds_slot(KOTAK_NSE_BSE_CASH_BOOK_ID).is_some());
+        book.replace_funds(
+            KOTAK_NSE_NFO_BOOK_ID,
+            BrokerBalancesSnapshot::default(),
+            "/quick/user/limits",
+            5_000,
+        );
+        assert!(book.funds_slot(KOTAK_NSE_NFO_BOOK_ID).is_none());
     }
 
     #[test]

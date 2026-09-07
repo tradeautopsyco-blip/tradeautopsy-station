@@ -477,6 +477,7 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
             "orderbook".into(),
             "holdings".into(),
             "positionbook".into(),
+            "funds".into(),
         ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
@@ -507,6 +508,13 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
                 "kotak_neo",
                 "positionbook",
                 "positions",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "funds",
+                "funds",
                 coverage.clone(),
                 Limits::default(),
             ),
@@ -928,6 +936,7 @@ mod tests {
                 "orderbook",
                 "holdings",
                 "positionbook",
+                "funds",
             ]
         );
         let quotes_bind = manifest

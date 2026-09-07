@@ -131,6 +131,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("funds", "GET", AuthMode::PrivateRead) if path == "/api/v3/account" => true,
+        ("funds", "POST", AuthMode::PrivateRead) if path.ends_with("/quick/user/limits") => true,
         ("orders", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/openOrders" || path.ends_with("/quick/user/orders") =>
         {
@@ -143,8 +144,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("margin_estimate", "POST", AuthMode::PrivateRead)
-            if path.ends_with("/quick/user/limits")
-                || path.ends_with("/quick/user/check-margin") =>
+            if path.ends_with("/quick/user/check-margin") =>
         {
             true
         }
@@ -199,9 +199,7 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if p.ends_with("/portfolio/v1/holdings") => {
             Ok(("holdings", AuthMode::PrivateRead))
         }
-        ("POST", p) if p.ends_with("/quick/user/limits") => {
-            Ok(("margin_estimate", AuthMode::PrivateRead))
-        }
+        ("POST", p) if p.ends_with("/quick/user/limits") => Ok(("funds", AuthMode::PrivateRead)),
         ("POST", p) if p.ends_with("/quick/user/check-margin") => {
             Ok(("margin_estimate", AuthMode::PrivateRead))
         }
