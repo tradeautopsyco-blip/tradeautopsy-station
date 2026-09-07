@@ -147,6 +147,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.test_runtime_adapter = opts.runtime_poll_adapter.clone();
     cfg.test_start_key_log = opts.start_key_log.clone();
     cfg.station_token_store = opts.station_token_store.clone();
+    cfg.station_token_store_explicit = opts.station_token_store.is_some();
     if let Some(vault) = &opts.credential_vault {
         cfg.broker_credential_vault = Some(vault.clone());
     }

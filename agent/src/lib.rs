@@ -308,6 +308,9 @@ pub struct AgentConfig {
     pub daemon_poll_user_id: Option<String>,
     /// Override Station token store (tests use memory; prod uses Keychain).
     pub station_token_store: Option<Arc<dyn StationTokenStore>>,
+    /// True when [`station_token_store`] was set by the caller (not the test harness default).
+    /// An explicit empty store blocks loopback `STATION_ACCESS_TOKEN` bootstrap.
+    pub station_token_store_explicit: bool,
     /// Optional planted LiveBook snapshot (tests). Prod starts empty until snapshot-once.
     pub live_book_snapshot: Option<serde_json::Value>,
     /// Sibling SQLite for typed facts — never the capture outbox.
@@ -447,6 +450,7 @@ impl AgentConfig {
             broker_credential_vault: None,
             daemon_poll_user_id,
             station_token_store: None,
+            station_token_store_explicit: false,
             live_book_snapshot: None,
             fact_outbox_db_path,
             fact_online_interval_ms: std::env::var("AGENT_FACT_ONLINE_INTERVAL_MS")
@@ -526,6 +530,7 @@ impl AgentConfig {
             broker_credential_vault: Some(memory_credential_vault()),
             daemon_poll_user_id: None,
             station_token_store: None,
+            station_token_store_explicit: false,
             live_book_snapshot: None,
             fact_outbox_db_path,
             fact_online_interval_ms: 20_000,
@@ -1164,12 +1169,18 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
 
     let injected_station_tokens = config.station_token_store.is_some();
+    let station_token_store_explicit = config.station_token_store_explicit;
     let station_token_store = config
         .station_token_store
         .unwrap_or_else(|| Arc::new(KeyringStationTokenStore));
+    let station_tokens_in_store = station_token_store.load().ok().flatten().is_some();
+    let loopback_bootstrap_jwt = upstream.config.is_loopback_http_bootstrap()
+        && std::env::var("STATION_ACCESS_TOKEN")
+            .ok()
+            .is_some_and(|t| !t.trim().is_empty());
     let mut fact_outbox =
         crate::fact_outbox::FactOutbox::open(&config.fact_outbox_db_path, upstream.clone())?;
-    if injected_station_tokens {
+    if station_tokens_in_store || (injected_station_tokens && station_token_store_explicit) {
         fact_outbox = fact_outbox.with_token_store(station_token_store.clone());
     }
     if let Some(clock) = config.fact_clock_ms.clone() {
@@ -1178,11 +1189,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let fact_outbox = Arc::new(fact_outbox);
 
     let jwt_loadable = if injected_station_tokens {
-        station_token_store.load().ok().flatten().is_some()
-    } else if upstream.config.is_loopback_http_bootstrap() {
-        std::env::var("STATION_ACCESS_TOKEN")
-            .ok()
-            .is_some_and(|t| !t.trim().is_empty())
+        station_tokens_in_store || (!station_token_store_explicit && loopback_bootstrap_jwt)
+    } else if loopback_bootstrap_jwt {
+        true
     } else {
         tokio::task::spawn_blocking(|| KeyringStationTokenStore.load().ok().flatten().is_some())
             .await
