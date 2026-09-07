@@ -75,6 +75,8 @@ pub struct TestAgentOptions {
     pub plant_binance_options_depth: bool,
     /// Options tradebook — plant the committed `/eapi/v1/userTrades` JSON (no live eapi).
     pub plant_binance_options_fills: bool,
+    /// Spot private reads — point `BinanceComSpotClient` at wiremock (not `api.binance.com`).
+    pub binance_spot_base_url: Option<String>,
 }
 
 impl Default for TestAgentOptions {
@@ -117,6 +119,7 @@ impl Default for TestAgentOptions {
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
             plant_binance_options_fills: false,
+            binance_spot_base_url: None,
         }
     }
 }
@@ -170,6 +173,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_options_mark_no_bid = opts.plant_binance_options_mark_no_bid;
     cfg.plant_binance_options_depth = opts.plant_binance_options_depth;
     cfg.plant_binance_options_fills = opts.plant_binance_options_fills;
+    cfg.binance_spot_base_url = opts.binance_spot_base_url.clone();
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

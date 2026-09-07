@@ -67,6 +67,16 @@ fn resolve_spot_client(state: &AppState) -> Option<BinanceComSpotClient> {
     else {
         return None;
     };
+    if let Some(base) = state
+        .binance_spot_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(BinanceComSpotClient::with_base_url(
+            base, api_key, api_secret,
+        ));
+    }
     Some(BinanceComSpotClient::new(api_key, api_secret))
 }
 

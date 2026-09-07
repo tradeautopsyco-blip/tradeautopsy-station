@@ -361,6 +361,8 @@ pub struct AgentConfig {
     pub plant_binance_options_fills: bool,
     /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
     pub eapi_public_fetch: bool,
+    /// Test seam: non-venue base URL for spot private reads (wiremock). `None` = `api.binance.com`.
+    pub binance_spot_base_url: Option<String>,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
     pub instrument_master_cache_dir: PathBuf,
 }
@@ -486,6 +488,7 @@ impl AgentConfig {
             plant_binance_options_depth: false,
             plant_binance_options_fills: false,
             eapi_public_fetch: true,
+            binance_spot_base_url: None,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
@@ -553,6 +556,7 @@ impl AgentConfig {
             plant_binance_options_depth: false,
             plant_binance_options_fills: false,
             eapi_public_fetch: false,
+            binance_spot_base_url: None,
             instrument_master_cache_dir,
         }
     }
@@ -1269,6 +1273,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             crate::api::QuoteSelections::default(),
         )),
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        binance_spot_base_url: config.binance_spot_base_url.clone(),
     };
     crate::data::spawn_binance_com_trade_loop(
         state.quote_registry.clone(),
