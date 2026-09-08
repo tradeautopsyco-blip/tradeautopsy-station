@@ -116,6 +116,12 @@ struct BarSettingsView: View {
             brokerMetricsGrid
             connectedBrokerCard
             deskCapabilityRow
+            BarSectionLabel(text: "Account")
+            BarAccountPulseLedger(snapshot: viewModel.accountChrome)
+                .padding(.bottom, 8)
+                .onAppear {
+                    Task { await viewModel.refreshAccountChrome() }
+                }
             brokerActionRow
 
             Rectangle()

@@ -66,10 +66,37 @@ OpenAlgo operation merely because it exists in the compatibility vocabulary
 
 **Connected-broker primary**:
 Per-capability selection policy after eligibility: fresh broker local projection →
-connected broker stream → connected broker REST → explicit broker-gap adapter → typed
-unavailable. Specialized non-broker domains route directly to their declaring adapters.
-_Avoid:_ “broker always last”; vendor key preempts broker; one broker must provide every
-domain
+connected broker stream → connected broker REST → **declared broker-gap vendor** → typed
+unavailable. A vendor may fill a **declared gap** (e.g. Kotak has no history API) on the
+same desk. The series keeps **vendor provenance** (own book_id, currency, host). It is
+never claimed as the broker's own last, funds, or fills.
+_Avoid:_ silent stitching (Yahoo candles labelled as Kotak); vendor key preempting a
+**healthy** broker binding; one broker must provide every domain; user-pasted arbitrary
+fetch URLs (hosts are allowlisted; keys live in Keychain)
+
+**Declared broker-gap vendor**:
+A specialized, B6-sheeted, host-fenced source that supplies one capability the connected
+broker does not implement (typical: `history`). The trader enables it from an allowlist
+and stores only a credential. Rate limits are **per vendor**, fail-closed, and do not
+steal the broker quote budget. DualNoBlend still applies: vendor INR and broker INR are
+the same currency but **different books**.
+_Avoid:_ OpenBB/Yahoo as an unnamed fallback; one blended “market history” across USD+INR
+
+**Provenance strip**:
+Visible chrome on any vendor-backed pane: capability, vendor id, book_id, and “broker
+has none” when the connected adapter's binding is unsupported.
+_Avoid:_ hiding the vendor name so the desk looks native-Kotak
+
+**optiongreeks**:
+Station catalog noun (`Family::Derived`, capability `greeks`). Wire keys on the desk are
+always `delta`, `gamma`, `theta`, `vega`, `iv` plus provenance
+(`VenuePublished` vs `ModelComputed`). Each broker adapter **maps** venue JSON onto those
+keys; Notch never shows Kotak/eapi field names. If the venue publishes nothing, the
+binding is `pricing_model_unspecified` / unsupported — not a second dialect of greek
+columns. Station does not run Black-76 until a later named lock. Never copy one book's
+published mark onto another (`if CRYPTO` onto NFO).
+_Avoid:_ “Kotak greek fields” as product schema; per-broker UI columns; guessing NFO
+greeks from Quotes `quote_type`
 
 **OpenAlgo compatibility baseline**:
 OpenAlgo Data + Accounts nouns define Station's normalized read operation vocabulary.

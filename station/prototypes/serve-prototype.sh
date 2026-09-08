@@ -1,9 +1,9 @@
 #!/bin/sh
-# PROTOTYPE — throwaway. One command to view risk-layer variants.
+# PROTOTYPE — throwaway. One command to view HTML variants.
 cd "$(dirname "$0")"
 PORT="${PORT:-8766}"
-URL="http://127.0.0.1:${PORT}/risk-flow/PROTOTYPE-risk-flow.html?variant=detect"
-echo "PROTOTYPE flow (throwaway) — $URL"
-echo "Old layout variants (wrong question) — http://127.0.0.1:${PORT}/PROTOTYPE-risk-layers.html?variant=A"
-echo "Scenes: detect → today → console → notch → circle. ← →"
+echo "S8 account chrome — http://127.0.0.1:${PORT}/PROTOTYPE-s8-account-chrome.html?variant=C"
+echo "Risk flow — http://127.0.0.1:${PORT}/risk-flow/PROTOTYPE-risk-flow.html?variant=detect"
+echo "Old risk layout (wrong question) — http://127.0.0.1:${PORT}/PROTOTYPE-risk-layers.html?variant=A"
+echo "← → or the bottom bar. Ctrl-C to stop."
 python3 -m http.server "$PORT"

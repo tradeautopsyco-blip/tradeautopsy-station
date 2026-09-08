@@ -502,6 +502,10 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskFillsCapability: String = "unavailable"
     /// Desk-level `capabilities.instruments` from sync-state — independent of quote/account.
     @Published var deskInstrumentsCapability: String = "unavailable"
+    /// S8 obtain pulse + ledger for the shipping book of Start. Never Today fill-inventory.
+    @Published var accountChrome: BarAccountChrome.Snapshot = .empty
+    /// Drop stale account obtain replies when Start slug / session changes.
+    private var accountChromeGeneration: UInt64 = 0
     /// Last selected TickBook id (`nse_cm|2885`, `nse_fo|token`, or Binance pair).
     @Published var deskSelectedInstrumentId: String = ""
     /// Bumped on every desk rebind (symbol, asset class, broker slug). An extract
@@ -4106,6 +4110,9 @@ extension NotchViewModel {
         }
         applyDeskHonesty(from: json)
         applyDeskCapabilities(from: json)
+        if brokerSyncClass == "not_connected" {
+            accountChrome = .empty
+        }
     }
 
     /// Quote vs funds/fills stay independent — one broker pill is not enough.
@@ -4145,9 +4152,70 @@ extension NotchViewModel {
                 return
             }
             applyBrokerSyncStatePayload(json)
+            await refreshAccountChrome()
         } catch {
             // Agent down: keep last known; UI already has daemon FSM / live-state strips.
         }
+    }
+
+    /// Test seam: plant obtain envelopes without hitting the agent.
+    func applyAccountObtainEnvelopes(
+        funds: [String: Any]?,
+        holdings: [String: Any]?,
+        positions: [String: Any]?,
+        orders: [String: Any]?
+    ) {
+        guard let book = BarAccountChrome.shippingBookId(forStartSlug: activeExecutionBrokerSlug) else {
+            accountChrome = .empty
+            return
+        }
+        let ccy = deskQuoteCurrency
+            ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: activeExecutionBrokerSlug)
+            ?? ""
+        accountChrome = BarAccountChrome.compose(
+            shippingBookId: book,
+            quoteCurrency: ccy,
+            funds: funds,
+            holdings: holdings,
+            positions: positions,
+            orders: orders
+        )
+    }
+
+    func refreshAccountChrome() async {
+        guard brokerSessionActive,
+              let slug = activeExecutionBrokerSlug,
+              let adapter = BarAccountChrome.obtainAdapterId(forStartSlug: slug),
+              let book = BarAccountChrome.shippingBookId(forStartSlug: slug)
+        else {
+            accountChrome = .empty
+            return
+        }
+        accountChromeGeneration += 1
+        let gen = accountChromeGeneration
+        async let funds = getExtractJSON(
+            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "funds")
+        )
+        async let holdings = getExtractJSON(
+            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "holdings")
+        )
+        async let positions = getExtractJSON(
+            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "positionbook")
+        )
+        async let orders = getExtractJSON(
+            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "orderbook")
+        )
+        let fundsJSON = await funds
+        let holdingsJSON = await holdings
+        let positionsJSON = await positions
+        let ordersJSON = await orders
+        guard gen == accountChromeGeneration else { return }
+        applyAccountObtainEnvelopes(
+            funds: fundsJSON,
+            holdings: holdingsJSON,
+            positions: positionsJSON,
+            orders: ordersJSON
+        )
     }
 
     static func brokerDisplayName(forSlug slug: String?) -> String {

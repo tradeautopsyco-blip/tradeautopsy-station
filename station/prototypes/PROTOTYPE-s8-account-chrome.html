@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Question: what should S8 Notch account chrome look like?
+  Three variants via ?variant=A|B|C. Open with:
+    python3 -m http.server 8766   (from station/prototypes)
+    http://127.0.0.1:8766/PROTOTYPE-s8-account-chrome.html?variant=A
+  Not production. No real obtain. DualNoBlend: cash INR vs spot USD never one strip.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — S8 account chrome</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --card: #111111;
+      --elevated: #1c1c1e;
+      --accent: #63E6E2;
+      --gain: #30D158;
+      --loss: #FF453A;
+      --caution: #FF9F0A;
+      --label: #fff;
+      --secondary: rgba(255,255,255,.6);
+      --tertiary: rgba(255,255,255,.3);
+      --bd: rgba(255,255,255,.08);
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: #1a1a1c;
+      color: var(--label);
+      min-height: 100vh;
+      padding: 28px 24px 96px;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+    .meta { color: var(--tertiary); font-size: 11px; margin: 6px 0 22px; max-width: 640px; }
+    .meta code { color: var(--accent); }
+    .stage {
+      width: 380px;
+      margin: 0 auto;
+      background: var(--bg);
+      border: 1px solid var(--bd);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,.45);
+    }
+    .pill-row { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--bd); }
+    .cap {
+      font-size: 10px; font-weight: 500; padding: 4px 8px; border-radius: 999px;
+      background: rgba(99,230,226,.12); color: var(--accent);
+    }
+    .cap.amber { background: rgba(255,159,10,.12); color: var(--caution); }
+    .cap.red { background: rgba(255,69,58,.12); color: var(--loss); }
+    .book {
+      font-size: 10px; color: var(--secondary); padding: 8px 12px 0;
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; color: var(--tertiary); font-weight: 500; font-size: 10px; padding: 6px 8px; }
+    td { padding: 7px 8px; border-top: 1px solid var(--bd); font-variant-numeric: tabular-nums; }
+    .inr { font-family: var(--mono); font-size: 11px; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 10px;
+      background: #000; color: #fff; border: 1px solid #444;
+      border-radius: 999px; padding: 8px 14px; z-index: 9;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5); font-size: 12px;
+    }
+    .switcher button {
+      background: #222; color: #fff; border: 0; width: 28px; height: 28px;
+      border-radius: 50%; cursor: pointer; font-size: 14px;
+    }
+    /* A — drawer under settings pills */
+    .A-drawer { padding: 10px 12px 16px; }
+    .A-funds { font-size: 22px; font-weight: 600; letter-spacing: -0.03em; margin: 4px 0 12px; }
+    .A-sec { color: var(--tertiary); font-size: 10px; text-transform: uppercase; margin: 12px 0 4px; }
+    /* B — tabbed sheet */
+    .B-tabs { display: flex; border-bottom: 1px solid var(--bd); }
+    .B-tabs button {
+      flex: 1; background: none; border: 0; color: var(--tertiary);
+      padding: 10px 0; font-size: 11px; cursor: pointer;
+    }
+    .B-tabs button.on { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+    .B-body { padding: 12px; min-height: 280px; }
+    .B-hero { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
+    .B-sub { font-size: 11px; color: var(--secondary); margin-bottom: 16px; }
+    /* C — pulse + full-bleed ledger */
+    .C-pulse {
+      display: flex; justify-content: space-between; align-items: baseline;
+      padding: 14px 14px 10px;
+    }
+    .C-amt { font-size: 20px; font-weight: 600; }
+    .C-counts { display: flex; gap: 14px; padding: 0 14px 12px; font-size: 11px; color: var(--secondary); }
+    .C-ledger { background: var(--elevated); padding: 12px 14px 20px; }
+    .C-ledger h2 { font-size: 11px; color: var(--tertiary); font-weight: 500; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>S8 account chrome — throwaway prototype</h1>
+  <p class="meta">
+    Question: how should Notch show <strong>funds / holdings / positions / orders</strong> from obtain
+    (shipping book of Start), not Today fill-inventory.
+    Flip <code>?variant=A|B|C</code> or use the bar / ← →.
+    Mock: Kotak cash after Start. DualNoBlend: this strip is INR only.
+  </p>
+  <div class="stage" id="stage"></div>
+  <div class="switcher">
+    <button type="button" id="prev" aria-label="Previous variant">←</button>
+    <span id="label">A</span>
+    <button type="button" id="next" aria-label="Next variant">→</button>
+  </div>
+  <script>
+    const VARIANTS = {
+      A: "A (drawer under pills)",
+      B: "B (tabbed Account sheet)",
+      C: "C (pulse + ledger)"
+    };
+    const keys = Object.keys(VARIANTS);
+
+    const funds = { free: "19.41", locked: "18.78", ccy: "INR" };
+    const holdings = [
+      { s: "IDBI", qty: "200", seg: "nse_cm" },
+      { s: "PNB", qty: "150", seg: "nse_cm" }
+    ];
+    const positions = [
+      { s: "RELIANCE", qty: "+10", pnl: "—" }
+    ];
+    const orders = [
+      { s: "IDFCFIRSTB", side: "BUY", qty: "50", st: "open" }
+    ];
+
+    function pills() {
+      return `<div class="pill-row">
+        <span class="cap">Quote · fresh</span>
+        <span class="cap">Instruments · fresh</span>
+        <span class="cap">Funds · fresh</span>
+        <span class="cap amber">Orders · unavailable</span>
+      </div>
+      <div class="book">kotak-nse-bse-cash · INR · not a second USD wallet</div>`;
+    }
+
+    function table(cols, rows) {
+      const head = cols.map((c) => `<th>${c}</th>`).join("");
+      const body = rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("");
+      return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function renderA() {
+      return `${pills()}
+        <div class="A-drawer">
+          <div class="A-sec">Free</div>
+          <div class="A-funds">${funds.ccy} ${funds.free}</div>
+          <div class="A-sec">Holdings</div>
+          ${table(["Symbol", "Qty"], holdings.map((h) => [h.s, h.qty]))}
+          <div class="A-sec">Positions</div>
+          ${table(["Symbol", "Qty"], positions.map((p) => [p.s, p.qty]))}
+          <div class="A-sec">Open orders</div>
+          <p style="font-size:12px;color:var(--caution);padding:8px 0">unavailable — obtain orders not yet kicked</p>
+        </div>`;
+    }
+
+    function renderB() {
+      return `${pills()}
+        <div class="B-tabs">
+          <button type="button" class="on" data-tab="funds">Funds</button>
+          <button type="button" data-tab="hold">Holdings</button>
+          <button type="button" data-tab="pos">Positions</button>
+          <button type="button" data-tab="ord">Orders</button>
+        </div>
+        <div class="B-body" id="bbody"></div>`;
+    }
+
+    const Bpanes = {
+      funds: `<div class="B-hero">${funds.ccy} ${funds.free}</div>
+        <div class="B-sub">Locked ${funds.locked} · obtain POST /quick/user/limits · not poller green</div>`,
+      hold: table(["Symbol", "Qty", "Seg"], holdings.map((h) => [h.s, h.qty, h.seg])),
+      pos: table(["Symbol", "Qty", "uPnL"], positions.map((p) => [p.s, p.qty, p.pnl])),
+      ord: `<p style="color:var(--caution);font-size:12px">unsupported or unavailable until obtain(orderbook) lights the slot.</p>`
+    };
+
+    function renderC() {
+      return `<div class="C-pulse">
+          <div>
+            <div class="book" style="padding:0">Cash · INR</div>
+            <div class="C-amt">${funds.ccy} ${funds.free}</div>
+          </div>
+          <span class="cap">Funds · fresh</span>
+        </div>
+        <div class="C-counts">
+          <span>${holdings.length} holdings</span>
+          <span>${positions.length} positions</span>
+          <span>orders unavailable</span>
+        </div>
+        <div class="C-ledger">
+          <h2>Holdings (obtain)</h2>
+          ${table(["Symbol", "Qty"], holdings.map((h) => [h.s, h.qty]))}
+          <h2 style="margin-top:16px">Positions (obtain) — not Today fill inventory</h2>
+          ${table(["Symbol", "Qty"], positions.map((p) => [p.s, p.qty]))}
+        </div>`;
+    }
+
+    function setVariant(k) {
+      const u = new URL(location.href);
+      u.searchParams.set("variant", k);
+      history.replaceState({}, "", u);
+      document.getElementById("label").textContent = VARIANTS[k];
+      const stage = document.getElementById("stage");
+      if (k === "A") stage.innerHTML = renderA();
+      if (k === "B") {
+        stage.innerHTML = renderB();
+        const body = document.getElementById("bbody");
+        body.innerHTML = Bpanes.funds;
+        stage.querySelectorAll("[data-tab]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            stage.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("on"));
+            btn.classList.add("on");
+            body.innerHTML = Bpanes[btn.dataset.tab];
+          });
+        });
+      }
+      if (k === "C") stage.innerHTML = renderC();
+    }
+
+    function current() {
+      const v = new URLSearchParams(location.search).get("variant") || "C";
+      return keys.includes(v) ? v : "A";
+    }
+    function cycle(d) {
+      const i = keys.indexOf(current());
+      setVariant(keys[(i + d + keys.length) % keys.length]);
+    }
+    document.getElementById("prev").onclick = () => cycle(-1);
+    document.getElementById("next").onclick = () => cycle(1);
+    document.addEventListener("keydown", (e) => {
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "ArrowLeft") cycle(-1);
+      if (e.key === "ArrowRight") cycle(1);
+    });
+    setVariant(current());
+  </script>
+</body>
+</html>

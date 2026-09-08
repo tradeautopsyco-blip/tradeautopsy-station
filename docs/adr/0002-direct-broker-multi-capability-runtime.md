@@ -38,12 +38,14 @@ Selection is capability-specific:
 1. fresh local projection produced by the connected broker;
 2. connected broker stream;
 3. connected broker REST;
-4. explicit eligible broker-gap adapter;
+4. declared broker-gap vendor (allowlisted, Keychain key only — [ADR 0003](./0003-declared-broker-gap-vendors.md));
 5. typed unsupported/unavailable.
 
 Specialized providers serve non-broker domains such as news, economic statistics,
 regulatory positioning, legislative records, energy, and macro data. They do not preempt
-a capable connected broker merely because a credential exists.
+a capable connected broker merely because a credential exists. A declared vendor may fill
+a **named gap** (e.g. no broker history API) with visible provenance; it never becomes the
+broker's last, funds, or fills.
 
 A future optional OpenAlgo-compatible adapter may be installed by a trader who already
 runs OpenAlgo. It occupies the same source-adapter seam and cannot create a second control
