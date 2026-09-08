@@ -1,6 +1,7 @@
 //! Canonical Station Data runtime (this agent). Console `crates/agent` is a CI mirror only.
 
 mod account_book;
+mod account_capability;
 mod account_split;
 mod apply;
 mod binance_depth;
@@ -54,6 +55,9 @@ mod tick;
 mod tickbook;
 
 pub use account_book::{AccountBook, BookAccount, Slot};
+pub use account_capability::{
+    account_capability_wire, account_capability_wire_key, ACCOUNT_CAPABILITY_OPS,
+};
 pub use account_split::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };

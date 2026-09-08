@@ -852,6 +852,7 @@ pub fn quote_status_wire(status: QuoteStatus) -> &'static str {
     }
 }
 
+#[allow(dead_code)] // poller completeness axis; account caps now read AccountBook
 pub fn class_freshness_wire(current: bool, last_success_at_ms: Option<i64>) -> &'static str {
     if current {
         "fresh"
