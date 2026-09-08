@@ -50,6 +50,7 @@ mod resample;
 mod resolve;
 mod rights;
 mod router;
+mod source_route;
 mod source_manifest;
 mod tick;
 mod tickbook;
@@ -128,8 +129,8 @@ pub use greeks::{
     extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksSource, GreeksStatus,
 };
 pub use history::{
-    apply_history_series, extract_history, extract_licensed_history, history_obtain_data,
-    HistoryEnvelope, HistoryStatus,
+    apply_history_series, extract_gap_vendor_history, extract_history, extract_licensed_history,
+    gap_history_obtain_data, history_obtain_data, HistoryEnvelope, HistoryStatus,
 };
 pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;
@@ -181,5 +182,10 @@ pub use source_manifest::{
     load_first_party_manifests, manifest_for_book_id, manifest_for_slug, obtain, shared_budget,
     shipping_book_id_for_slug, ObtainEnvelope, ObtainStatus, SourceManifest,
 };
+pub use source_route::{
+    apply_kotak_source_route, decide_kotak_route, secret_looks_like_url, should_source_route,
+    GapVendorConfig, LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_BOOK_ID,
+};
+pub use router::RouteOutcome;
 pub use tick::{QuoteTick, SessionOhlc, Transport};
 pub use tickbook::TickBook;

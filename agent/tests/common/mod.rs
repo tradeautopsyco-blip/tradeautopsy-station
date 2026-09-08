@@ -79,6 +79,11 @@ pub struct TestAgentOptions {
     pub binance_spot_base_url: Option<String>,
     /// Kotak private reads — Direct HTTP to wiremock (not `cis.kotaksecurities.com`).
     pub kotak_private_base_url: Option<String>,
+    pub gap_vendor_enabled: bool,
+    pub gap_vendor_key: Option<String>,
+    pub gap_vendor_history_budget: u32,
+    pub kotak_quote_budget: u32,
+    pub plant_licensed_history_gap: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -123,6 +128,11 @@ impl Default for TestAgentOptions {
             plant_binance_options_fills: false,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
+            gap_vendor_enabled: false,
+            gap_vendor_key: None,
+            gap_vendor_history_budget: 0,
+            kotak_quote_budget: 1_000,
+            plant_licensed_history_gap: false,
         }
     }
 }
@@ -178,6 +188,11 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_options_fills = opts.plant_binance_options_fills;
     cfg.binance_spot_base_url = opts.binance_spot_base_url.clone();
     cfg.kotak_private_base_url = opts.kotak_private_base_url.clone();
+    cfg.gap_vendor_enabled = opts.gap_vendor_enabled;
+    cfg.gap_vendor_key = opts.gap_vendor_key.clone();
+    cfg.gap_vendor_history_budget = opts.gap_vendor_history_budget;
+    cfg.kotak_quote_budget = opts.kotak_quote_budget;
+    cfg.plant_licensed_history_gap = opts.plant_licensed_history_gap;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

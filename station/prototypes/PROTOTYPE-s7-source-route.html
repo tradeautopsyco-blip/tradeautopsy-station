@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Question: when Kotak has no history, who answers,
+  whose book, whose budget, and what does the desk say?
+  Open this file, or:
+    ./serve-prototype.sh
+    http://127.0.0.1:8766/PROTOTYPE-s7-source-route.html
+  Not production. Placeholder vendor id is licensed_history — not Yahoo/OpenBB.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — S7 source route</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --card: #111;
+      --elevated: #1c1c1e;
+      --accent: #63E6E2;
+      --loss: #FF453A;
+      --caution: #FF9F0A;
+      --label: #fff;
+      --secondary: rgba(255,255,255,.6);
+      --tertiary: rgba(255,255,255,.3);
+      --bd: rgba(255,255,255,.08);
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sans);
+      background: #1a1a1c;
+      color: var(--label);
+      min-height: 100vh;
+      padding: 28px 24px 40px;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    .meta { color: var(--tertiary); font-size: 12px; margin: 8px 0 22px; max-width: 720px; line-height: 1.45; }
+    .meta code { color: var(--accent); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 980px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--bg);
+      border: 1px solid var(--bd);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); margin-bottom: 12px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--bd); font-size: 13px; }
+    .row:first-of-type { border-top: 0; }
+    .k { color: var(--secondary); }
+    .v { font-family: var(--mono); font-size: 12px; text-align: right; }
+    .changed { color: var(--accent); }
+    .desk {
+      background: var(--elevated);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .desk .title { font-size: 11px; color: var(--tertiary); text-transform: uppercase; letter-spacing: .06em; }
+    .desk .amt { font-size: 20px; font-weight: 600; margin: 4px 0 8px; }
+    .strip { font-size: 12px; color: var(--caution); }
+    .strip.ok { color: var(--accent); }
+    .strip.bad { color: var(--loss); }
+    .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    button {
+      background: #222; color: #fff; border: 1px solid #444;
+      border-radius: 999px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    button.danger { color: var(--loss); border-color: rgba(255,69,58,.4); }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .tabs button.on { background: rgba(99,230,226,.15); color: var(--accent); border-color: transparent; }
+    .scene { font-size: 13px; color: var(--secondary); line-height: 1.45; margin-bottom: 10px; }
+    .step { font-size: 12px; color: var(--tertiary); margin-bottom: 8px; }
+    .note { margin-top: 10px; font-size: 12px; color: var(--caution); min-height: 1.4em; }
+  </style>
+</head>
+<body>
+  <h1>S7 source route — throwaway prototype</h1>
+  <p class="meta">
+    Question: when Kotak has no history API, <strong>who answers, whose book, whose budget, and what does the desk say?</strong>
+    Grill already locked: keys not URLs · per-vendor meters · provenance strip · vendor <code>book_id</code> · vendor cannot take a healthy broker last.
+    Placeholder vendor is <code>licensed_history</code> (not Yahoo). Click a walkthrough, then free-play.
+  </p>
+  <div class="grid">
+    <div class="panel">
+      <h2>Desk</h2>
+      <div class="desk">
+        <div class="title" id="deskBook">—</div>
+        <div class="amt" id="deskLast">Last —</div>
+        <div class="strip" id="deskHistory">History —</div>
+      </div>
+      <h2>State</h2>
+      <div id="stateRows"></div>
+      <p class="note" id="justChanged"></p>
+    </div>
+    <div class="panel">
+      <h2>Walkthroughs</h2>
+      <div class="tabs" id="tabs"></div>
+      <p class="scene" id="scene"></p>
+      <p class="step" id="stepHint"></p>
+      <div class="btns" id="sceneBtns"></div>
+      <h2 style="margin-top:22px">Free-play</h2>
+      <div class="btns" id="freeBtns"></div>
+    </div>
+  </div>
+  <script>
+    /* ===== liftable module: S7 pick + meters (no DOM) ===== */
+    const VENDOR_ID = "licensed_history";
+    const VENDOR_BOOK = "licensed-history-inr";
+    const BROKER_ID = "kotak_neo";
+    const NFO_BOOK = "kotak-nse-nfo";
+
+    function initialState() {
+      return {
+        started: false,
+        vendorEnabled: false,
+        vendorKey: false,
+        lastPaste: null,
+        brokerQuoteBudget: 60,
+        vendorBudget: 5,
+        last: { status: "unavailable", provenance: null, book: null },
+        history: { status: "unavailable", provenance: null, book: null, strip: null },
+        note: ""
+      };
+    }
+
+    function looksLikeUrl(s) {
+      return /^https?:\/\//i.test(String(s || "").trim());
+    }
+
+    function pick(state, capability) {
+      if (!state.started) {
+        return { outcome: "unavailable", adapter: null, book: null, strip: null, reason: "not started" };
+      }
+      if (capability === "quote") {
+        if (state.brokerQuoteBudget <= 0) {
+          return { outcome: "unavailable", adapter: null, book: NFO_BOOK, strip: null, reason: "broker quote budget empty" };
+        }
+        return {
+          outcome: "picked",
+          adapter: BROKER_ID,
+          book: NFO_BOOK,
+          strip: null,
+          reason: "connected broker stream"
+        };
+      }
+      // history
+      const brokerHistoryUnsupported = true;
+      if (!brokerHistoryUnsupported) {
+        return { outcome: "picked", adapter: BROKER_ID, book: NFO_BOOK, strip: null, reason: "broker history" };
+      }
+      const vendorEligible = state.vendorEnabled && state.vendorKey;
+      if (vendorEligible && state.vendorBudget > 0) {
+        return {
+          outcome: "picked",
+          adapter: VENDOR_ID,
+          book: VENDOR_BOOK,
+          strip: "History: licensed_history (Kotak has none)",
+          reason: "declared broker-gap vendor"
+        };
+      }
+      if (vendorEligible && state.vendorBudget <= 0) {
+        return {
+          outcome: "unavailable",
+          adapter: null,
+          book: VENDOR_BOOK,
+          strip: "History: licensed_history budget empty (Kotak has none)",
+          reason: "vendor meter empty — did not steal quote budget"
+        };
+      }
+      return {
+        outcome: "unsupported",
+        adapter: null,
+        book: NFO_BOOK,
+        strip: "History: unsupported (Kotak has none)",
+        reason: "broker gap, vendor off"
+      };
+    }
+
+    function reduce(state, action) {
+      const s = JSON.parse(JSON.stringify(state));
+      s.note = "";
+      switch (action.type) {
+        case "RESET":
+          return initialState();
+        case "START":
+          s.started = true;
+          applyQuote(s);
+          applyHistory(s);
+          s.note = "Start attached kotak_neo. Last is Kotak. History is still a gap.";
+          return s;
+        case "STOP":
+          s.started = false;
+          s.last = { status: "unavailable", provenance: null, book: null };
+          s.history = { status: "unavailable", provenance: null, book: null, strip: null };
+          s.note = "Stop. Vendor key (if any) stays in the vault; desk is dark.";
+          return s;
+        case "PASTE_KEY":
+          if (looksLikeUrl(action.value)) {
+            s.lastPaste = "url-refused";
+            s.note = "Refused: paste a key, not a fetch URL (host allowlist / SSRF).";
+            return s;
+          }
+          s.vendorKey = true;
+          s.lastPaste = "key";
+          s.note = "Key stored. Vendor still off until you enable it.";
+          return s;
+        case "PASTE_URL":
+          s.lastPaste = "url-refused";
+          s.note = "Refused: paste a key, not a fetch URL.";
+          return s;
+        case "ENABLE_VENDOR":
+          if (!s.vendorKey) {
+            s.note = "Enable does nothing without a key.";
+            return s;
+          }
+          s.vendorEnabled = true;
+          applyHistory(s);
+          s.note = s.history.strip || "Vendor enabled.";
+          return s;
+        case "DISABLE_VENDOR":
+          s.vendorEnabled = false;
+          applyHistory(s);
+          s.note = "Vendor off. History returns to unsupported — no silent Yahoo.";
+          return s;
+        case "ASK_QUOTE": {
+          const d = pick(s, "quote");
+          if (d.outcome === "picked") s.brokerQuoteBudget = Math.max(0, s.brokerQuoteBudget - 1);
+          applyQuote(s);
+          s.note = d.reason + " · quote budget " + s.brokerQuoteBudget + " · vendor budget untouched " + s.vendorBudget;
+          return s;
+        }
+        case "ASK_HISTORY": {
+          const d = pick(s, "history");
+          if (d.outcome === "picked" && d.adapter === VENDOR_ID) {
+            s.vendorBudget = Math.max(0, s.vendorBudget - 1);
+          }
+          applyHistory(s);
+          s.note = d.reason + " · vendor budget " + s.vendorBudget + " · quote budget still " + s.brokerQuoteBudget;
+          return s;
+        }
+        case "EXHAUST_VENDOR":
+          s.vendorBudget = 0;
+          applyHistory(s);
+          s.note = "Vendor meter empty. Last (Kotak) must still work.";
+          return s;
+        case "EXHAUST_QUOTE":
+          s.brokerQuoteBudget = 0;
+          applyQuote(s);
+          s.note = "Broker quote budget empty. Vendor history budget is a different meter.";
+          return s;
+        default:
+          return s;
+      }
+    }
+
+    function applyQuote(s) {
+      const d = pick(s, "quote");
+      s.last = {
+        status: d.outcome === "picked" ? "fresh" : d.outcome,
+        provenance: d.adapter,
+        book: d.book
+      };
+    }
+    function applyHistory(s) {
+      const d = pick(s, "history");
+      s.history = {
+        status: d.outcome === "picked" ? "success" : d.outcome,
+        provenance: d.adapter,
+        book: d.book,
+        strip: d.strip
+      };
+    }
+
+    /* ===== page shell ===== */
+    const SCENES = {
+      gap: {
+        label: "Kotak gap, vendor off",
+        blurb: "Start Kotak. Last is the broker. History stays unsupported — no Yahoo stitch.",
+        steps: [
+          { type: "RESET", label: "Reset" },
+          { type: "START", label: "Start Kotak" },
+          { type: "ASK_QUOTE", label: "Ask last" },
+          { type: "ASK_HISTORY", label: "Ask history" }
+        ]
+      },
+      enable: {
+        label: "Enable declared vendor",
+        blurb: "Paste a key (not a URL), enable. History sits on the NFO desk with a provenance strip and the vendor book_id.",
+        steps: [
+          { type: "RESET", label: "Reset" },
+          { type: "START", label: "Start Kotak" },
+          { type: "PASTE_KEY", label: "Paste key", value: "sk_live_demo" },
+          { type: "ENABLE_VENDOR", label: "Enable licensed_history" },
+          { type: "ASK_HISTORY", label: "Ask history" }
+        ]
+      },
+      url: {
+        label: "Paste URL (must refuse)",
+        blurb: "Arbitrary fetch URLs are SSRF. Hosts are allowlisted; traders only paste keys.",
+        steps: [
+          { type: "RESET", label: "Reset" },
+          { type: "START", label: "Start Kotak" },
+          { type: "PASTE_URL", label: "Paste https://yahoo…" }
+        ]
+      },
+      meters: {
+        label: "Separate meters",
+        blurb: "Empty vendor history budget must not steal the Kotak quote budget. Last stays Kotak.",
+        steps: [
+          { type: "RESET", label: "Reset" },
+          { type: "START", label: "Start Kotak" },
+          { type: "PASTE_KEY", label: "Paste key", value: "sk_live_demo" },
+          { type: "ENABLE_VENDOR", label: "Enable vendor" },
+          { type: "EXHAUST_VENDOR", label: "Empty vendor budget" },
+          { type: "ASK_HISTORY", label: "Ask history" },
+          { type: "ASK_QUOTE", label: "Ask last (must still work)" }
+        ]
+      }
+    };
+
+    const FREE = [
+      { type: "START", label: "Start Kotak" },
+      { type: "STOP", label: "Stop" },
+      { type: "PASTE_KEY", label: "Paste key", value: "sk_live_demo" },
+      { type: "PASTE_URL", label: "Paste URL", className: "danger" },
+      { type: "ENABLE_VENDOR", label: "Enable vendor" },
+      { type: "DISABLE_VENDOR", label: "Disable vendor" },
+      { type: "ASK_QUOTE", label: "Ask last" },
+      { type: "ASK_HISTORY", label: "Ask history" },
+      { type: "EXHAUST_VENDOR", label: "Empty vendor budget" },
+      { type: "EXHAUST_QUOTE", label: "Empty quote budget" },
+      { type: "RESET", label: "Reset" }
+    ];
+
+    let state = initialState();
+    let sceneId = "gap";
+    let sceneStep = 0;
+    let prev = null;
+
+    function dispatch(action, fromScene) {
+      prev = state;
+      state = reduce(state, action);
+      if (fromScene) sceneStep += 1;
+      render();
+    }
+
+    function row(k, v, changed) {
+      return `<div class="row"><span class="k">${k}</span><span class="v${changed ? " changed" : ""}">${v}</span></div>`;
+    }
+
+    function render() {
+      const lastLabel = state.last.provenance
+        ? `${state.last.status} · ${state.last.provenance}`
+        : state.last.status;
+      const histLabel = state.history.provenance
+        ? `${state.history.status} · ${state.history.provenance}`
+        : state.history.status;
+      document.getElementById("deskBook").textContent = (state.last.book || NFO_BOOK) + " desk";
+      document.getElementById("deskLast").textContent = "Last " + lastLabel;
+      const strip = document.getElementById("deskHistory");
+      strip.textContent = state.history.strip || ("History: " + histLabel);
+      strip.className = "strip" + (state.history.provenance === VENDOR_ID ? " ok" : state.history.status === "unsupported" ? " bad" : "");
+
+      const p = prev || {};
+      const rows = [
+        ["Started", String(state.started), p.started !== state.started],
+        ["Vendor enabled", String(state.vendorEnabled), p.vendorEnabled !== state.vendorEnabled],
+        ["Key in vault", String(state.vendorKey), p.vendorKey !== state.vendorKey],
+        ["Last paste", state.lastPaste || "—", p.lastPaste !== state.lastPaste],
+        ["Quote budget (Kotak)", String(state.brokerQuoteBudget), p.brokerQuoteBudget !== state.brokerQuoteBudget],
+        ["History budget (vendor)", String(state.vendorBudget), p.vendorBudget !== state.vendorBudget],
+        ["Last provenance", state.last.provenance || "—", (p.last && p.last.provenance) !== state.last.provenance],
+        ["Last book_id", state.last.book || "—", (p.last && p.last.book) !== state.last.book],
+        ["History provenance", state.history.provenance || "—", (p.history && p.history.provenance) !== state.history.provenance],
+        ["History book_id", state.history.book || "—", (p.history && p.history.book) !== state.history.book],
+        ["History status", state.history.status, (p.history && p.history.status) !== state.history.status]
+      ];
+      document.getElementById("stateRows").innerHTML = rows.map(([k, v, c]) => row(k, v, c)).join("");
+      document.getElementById("justChanged").textContent = state.note;
+
+      const tabs = document.getElementById("tabs");
+      tabs.innerHTML = "";
+      Object.keys(SCENES).forEach((id) => {
+        const b = document.createElement("button");
+        b.textContent = SCENES[id].label;
+        b.className = id === sceneId ? "on" : "";
+        b.onclick = () => {
+          sceneId = id;
+          sceneStep = 0;
+          state = initialState();
+          prev = null;
+          render();
+        };
+        tabs.appendChild(b);
+      });
+      const scene = SCENES[sceneId];
+      document.getElementById("scene").textContent = scene.blurb;
+      document.getElementById("stepHint").textContent = sceneStep >= scene.steps.length
+        ? "Walkthrough done. Free-play anything."
+        : "Step " + (sceneStep + 1) + " of " + scene.steps.length;
+      const sceneBtns = document.getElementById("sceneBtns");
+      sceneBtns.innerHTML = "";
+      const next = scene.steps[sceneStep];
+      if (next) {
+        const b = document.createElement("button");
+        b.textContent = next.label;
+        b.onclick = () => dispatch(next, true);
+        sceneBtns.appendChild(b);
+      }
+
+      const free = document.getElementById("freeBtns");
+      free.innerHTML = "";
+      FREE.forEach((a) => {
+        const b = document.createElement("button");
+        b.textContent = a.label;
+        if (a.className) b.className = a.className;
+        b.onclick = () => dispatch(a, false);
+        free.appendChild(b);
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>

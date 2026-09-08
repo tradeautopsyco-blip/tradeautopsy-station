@@ -111,15 +111,28 @@ pub fn pick_route(request: &Identity, candidates: &[RouteCandidate]) -> RouteDec
         };
     }
 
-    if let Some(gap) = matching
-        .iter()
-        .find(|candidate| candidate.role == SourceRole::ExplicitGap && candidate.eligible)
-    {
+    if let Some(gap) = matching.iter().find(|candidate| {
+        candidate.role == SourceRole::ExplicitGap
+            && candidate.eligible
+            && candidate.budget_remaining > 0
+    }) {
         return RouteDecision {
             adapter_id: Some(gap.adapter_id.clone()),
             transport: Some(TransportPick::Rest),
             outcome: RouteOutcome::Picked,
             provenance_adapter_id: Some(gap.adapter_id.clone()),
+        };
+    }
+
+    if matching
+        .iter()
+        .any(|candidate| candidate.role == SourceRole::ExplicitGap && candidate.budget_remaining == 0)
+    {
+        return RouteDecision {
+            adapter_id: None,
+            transport: None,
+            outcome: RouteOutcome::Unavailable,
+            provenance_adapter_id: None,
         };
     }
 
@@ -235,6 +248,35 @@ mod tests {
             Some("licensed_history")
         );
         assert_ne!(decision.provenance_adapter_id.as_deref(), Some("kotak_neo"));
+    }
+
+    #[test]
+    fn gap_budget_zero_is_unavailable_not_unsupported() {
+        let kotak = RouteCandidate {
+            adapter_id: "kotak_neo".into(),
+            identity: history_identity(),
+            role: SourceRole::ConnectedBroker,
+            eligible: false,
+            broker_unsupported: true,
+            local_fresh: false,
+            stream_available: false,
+            rest_available: false,
+            budget_remaining: 10,
+        };
+        let gap = RouteCandidate {
+            adapter_id: "licensed_history".into(),
+            identity: history_identity(),
+            role: SourceRole::ExplicitGap,
+            eligible: false,
+            broker_unsupported: false,
+            local_fresh: false,
+            stream_available: false,
+            rest_available: true,
+            budget_remaining: 0,
+        };
+        let decision = pick_route(&history_identity(), &[kotak, gap]);
+        assert_eq!(decision.outcome, RouteOutcome::Unavailable);
+        assert!(decision.adapter_id.is_none());
     }
 
     #[test]

@@ -365,6 +365,12 @@ pub struct AgentConfig {
     pub binance_spot_base_url: Option<String>,
     /// Test seam: non-venue base URL for Kotak private reads (wiremock). `None` = session `baseUrl`.
     pub kotak_private_base_url: Option<String>,
+    /// S7 CI: enable fixture `licensed_history` as a declared Kotak history gap.
+    pub gap_vendor_enabled: bool,
+    pub gap_vendor_key: Option<String>,
+    pub gap_vendor_history_budget: u32,
+    pub kotak_quote_budget: u32,
+    pub plant_licensed_history_gap: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
     pub instrument_master_cache_dir: PathBuf,
 }
@@ -492,6 +498,11 @@ impl AgentConfig {
             eapi_public_fetch: true,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
+            gap_vendor_enabled: false,
+            gap_vendor_key: None,
+            gap_vendor_history_budget: 0,
+            kotak_quote_budget: 1_000,
+            plant_licensed_history_gap: false,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
@@ -561,6 +572,11 @@ impl AgentConfig {
             eapi_public_fetch: false,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
+            gap_vendor_enabled: false,
+            gap_vendor_key: None,
+            gap_vendor_history_budget: 0,
+            kotak_quote_budget: 1_000,
+            plant_licensed_history_gap: false,
             instrument_master_cache_dir,
         }
     }
@@ -924,6 +940,28 @@ fn plant_options_mark_json(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>, j
     });
 }
 
+fn plant_licensed_history_gap(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+    let series = crate::data::HistorySeries {
+        instrument_id: "nse_cm|2885".into(),
+        adapter_id: crate::data::LICENSED_HISTORY_ADAPTER_ID.into(),
+        interval: crate::data::DEFAULT_HISTORY_INTERVAL.into(),
+        candles: vec![crate::data::HistoryCandle {
+            open_time_ms: 1_700_000_000_000,
+            open: "1400.00".into(),
+            high: "1402.00".into(),
+            low: "1398.00".into(),
+            close: "1401.00".into(),
+            volume: "10".into(),
+            close_time_ms: 1_700_000_060_000,
+        }],
+        transport: crate::data::Transport::Fixture,
+    };
+    crate::data::apply_history_series(
+        &mut historybook.lock().expect("historybook mutex poisoned"),
+        series,
+    );
+}
+
 fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
@@ -1151,6 +1189,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_s2_history {
         plant_binance_s2_history(&historybook);
     }
+    if config.plant_licensed_history_gap {
+        plant_licensed_history_gap(&historybook);
+    }
     if config.plant_binance_spot_funds {
         plant_binance_spot_funds(&account_book);
     }
@@ -1279,6 +1320,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         binance_spot_base_url: config.binance_spot_base_url.clone(),
         kotak_private_base_url: config.kotak_private_base_url.clone(),
+        gap_vendor: crate::data::GapVendorConfig {
+            enabled: config.gap_vendor_enabled,
+            key: config.gap_vendor_key.clone(),
+            history_budget: config.gap_vendor_history_budget,
+            quote_budget: config.kotak_quote_budget,
+        },
     };
     crate::data::spawn_binance_com_trade_loop(
         state.quote_registry.clone(),

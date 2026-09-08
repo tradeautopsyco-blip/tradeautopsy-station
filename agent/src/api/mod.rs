@@ -162,6 +162,8 @@ pub struct AppState {
     pub binance_spot_base_url: Option<String>,
     /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
     pub kotak_private_base_url: Option<String>,
+    /// S7 declared-gap fixture. Prod stays disabled until a B6 vendor ships.
+    pub gap_vendor: crate::data::GapVendorConfig,
 }
 
 pub fn router(state: AppState) -> Router {

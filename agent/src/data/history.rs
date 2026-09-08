@@ -137,6 +137,44 @@ pub fn extract_licensed_history(
     licensed_success(row)
 }
 
+/// Fixture gap vendor series. Separate adapter_id from COM klines (DualNoBlend).
+pub fn extract_gap_vendor_history(
+    book: &HistoryBook,
+    adapter_id: &str,
+    instrument_id: &str,
+    interval: Option<&str>,
+) -> HistoryEnvelope {
+    let instrument_id = super::binance_public::normalize_quote_instrument(instrument_id);
+    let interval = interval
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_HISTORY_INTERVAL);
+    let row = if instrument_id.is_empty() {
+        book.first_for_adapter(adapter_id)
+    } else {
+        book.get(adapter_id, &instrument_id, interval)
+    };
+    let Some(row) = row else {
+        return empty_licensed(instrument_id, adapter_id, Vec::new());
+    };
+    licensed_success(row)
+}
+
+/// Obtain(history) for a declared gap vendor — never COM, never Kotak.
+pub fn gap_history_obtain_data(envelope: &HistoryEnvelope, adapter_id: &str) -> Option<serde_json::Value> {
+    if envelope.status != HistoryStatus::Success {
+        return None;
+    }
+    if envelope.provenance.adapter_id != adapter_id {
+        return None;
+    }
+    let data = envelope.data.as_ref()?;
+    if data.get("candles").and_then(|c| c.as_array())?.is_empty() {
+        return None;
+    }
+    Some(data.clone())
+}
+
 fn licensed_success(row: &HistorySeries) -> HistoryEnvelope {
     let rights = Rights::research_fetch_only();
     HistoryEnvelope {

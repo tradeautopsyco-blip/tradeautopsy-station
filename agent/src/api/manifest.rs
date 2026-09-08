@@ -139,6 +139,35 @@ pub async fn obtain_handler(
         return Json(unsupported_obtain(adapter, book, operation));
     };
     let mut envelope = obtain(manifest, operation);
+    if crate::data::should_source_route(&envelope.book_id, &envelope.operation) {
+        use crate::data::{
+            apply_kotak_source_route, extract_gap_vendor_history, gap_history_obtain_data,
+            decide_kotak_route, LICENSED_HISTORY_ADAPTER_ID,
+        };
+        if envelope.operation == "quotes" {
+            let decision = decide_kotak_route("quotes", &state.gap_vendor);
+            if decision.outcome == crate::data::RouteOutcome::Unavailable {
+                envelope.status = crate::data::ObtainStatus::Unavailable;
+                envelope.data = None;
+                return Json(envelope);
+            }
+        } else if envelope.operation == "history" {
+            let book = state
+                .historybook
+                .lock()
+                .expect("historybook mutex poisoned");
+            let hist = extract_gap_vendor_history(
+                &book,
+                LICENSED_HISTORY_ADAPTER_ID,
+                "",
+                Some(crate::data::DEFAULT_HISTORY_INTERVAL),
+            );
+            let gap = gap_history_obtain_data(&hist, LICENSED_HISTORY_ADAPTER_ID);
+            drop(book);
+            envelope = apply_kotak_source_route(envelope, &state.gap_vendor, gap);
+            return Json(envelope);
+        }
+    }
     if envelope.status == ObtainStatus::Unavailable {
         // Enrichers are sync, but the options snapshots are async fetches that
         // only glance used to run. Kick them here, or obtain stays unavailable
