@@ -14,4 +14,4 @@
 | B | Notch flip | The declared-plan box is the desk. Chart becomes risk the instant the form is submitted. Today is a filmstrip. Console is a second window. |
 | C | Session tape | Time is the desk. Overnight carries pin at the top. Fills are cards in the tape. Console is an inspector. Notch is a FAB. |
 
-**Verdict** (fill after founder flips): _pending — steal bits, then delete this prototype._
+**Verdict (2026-09-08):** founder chose **switchable A/B/C** after S7. Production: `RiskDeskMode` default A; detect card + DualNoBlend; Today inventory ≠ obtain; no T8 remaining-risk tile; inspector Station-local (T4 N2 journal images later). Path SoT remains `risk-flow/NOTES.md`. Do not delete this prototype until epic #62 closes.

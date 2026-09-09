@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Notch
 
 @MainActor
 public final class TodayViewModel: ObservableObject {
@@ -129,6 +130,21 @@ public final class TodayViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    public func detectCardInput() -> DetectCardInput? {
+        guard let pos = sessionModel.positions.first else { return nil }
+        let ccy = lastPayload?.deskQuoteCurrency ?? lastDeskQuoteCurrency ?? "INR"
+        return DetectCardInput(
+            qty: pos.qty,
+            entry: nil,
+            planStop: nil,
+            liveStop: nil,
+            sideBuy: !pos.direction.uppercased().contains("SELL"),
+            accountEquity: nil,
+            tradeCurrency: ccy,
+            accountCurrency: ccy
+        )
     }
 
     public func stopSessionMirrorPolling() {

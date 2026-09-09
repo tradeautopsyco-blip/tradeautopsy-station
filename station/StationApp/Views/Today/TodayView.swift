@@ -1,10 +1,16 @@
 import SwiftUI
+import Notch
 
 public struct TodayView: View {
     @ObservedObject private var viewModel: TodayViewModel
+    @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
+    private let onOpenNotch: (() -> Void)?
+    @State private var inspector: ThisTradeInspectorModel?
+    @State private var dismissDetect = false
 
-    public init(viewModel: TodayViewModel) {
+    public init(viewModel: TodayViewModel, onOpenNotch: (() -> Void)? = nil) {
         self.viewModel = viewModel
+        self.onOpenNotch = onOpenNotch
     }
 
     public var body: some View {
@@ -24,7 +30,14 @@ public struct TodayView: View {
                     }
                     heroGrid
                     signalsSection
-                    openBookSection
+                    if let detect = viewModel.detectCardInput(), !dismissDetect {
+                        DetectCardView(
+                            result: DetectCard.evaluate(detect),
+                            onPlanInNotch: { onOpenNotch?() },
+                            onNotNow: { dismissDetect = true }
+                        )
+                    }
+                    openBookForMode
                     tradesSection
                     Text(viewModel.presentation.caption)
                         .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
@@ -40,6 +53,16 @@ public struct TodayView: View {
         .refreshable {
             await viewModel.load()
         }
+        .sheet(item: inspectorBinding) { model in
+            ThisTradeInspectorSheet(model: model) { inspector = nil }
+        }
+    }
+
+    private var inspectorBinding: Binding<ThisTradeInspectorModel?> {
+        Binding(
+            get: { inspector },
+            set: { inspector = $0 }
+        )
     }
 
     private var header: some View {
@@ -161,6 +184,18 @@ public struct TodayView: View {
         )
     }
 
+    @ViewBuilder
+    private var openBookForMode: some View {
+        switch deskModeStore.mode {
+        case .blotter:
+            openBookSection
+        case .notchFlip:
+            openBookFilmstrip
+        case .sessionTape:
+            sessionTapeSection
+        }
+    }
+
     private var openBookSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -168,10 +203,13 @@ public struct TodayView: View {
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
                     .foregroundStyle(StationDS.Text.secondary)
                 Spacer()
-                Text("Same book as Pulse · overnight carries stay here")
+                Text("Fill inventory · not obtain holdings · MTM stays — until a lock owns it")
                     .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                     .foregroundStyle(StationDS.Text.muted)
             }
+            Text("Overnight tagging needs a session date on the row. Gap-through-SL is a sentence, not a remaining-risk tile.")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
             if viewModel.presentation.showShallowImpact,
                !viewModel.presentation.shallowImpactCaption.isEmpty {
                 Text(viewModel.presentation.shallowImpactCaption)
@@ -197,10 +235,8 @@ public struct TodayView: View {
                         cell("Side", width: 56, header: true)
                         cell("Qty", width: 48, header: true, align: .trailing)
                         cell("MTM", width: 88, header: true, align: .trailing)
-                        if viewModel.presentation.showShallowImpact {
-                            cell("Account", width: 64, header: true, align: .trailing)
-                            cell("Goal", width: 56, header: true, align: .trailing)
-                        }
+                        cell("Behavior", width: 88, header: true)
+                        cell("Deeper", width: 56, header: true, align: .trailing)
                     }
                     .padding(.horizontal, 14)
                     .frame(height: 30)
@@ -211,10 +247,12 @@ public struct TodayView: View {
                             cell(row.sideText, width: 56, mono: true)
                             cell(row.qtyText, width: 48, align: .trailing, mono: true)
                             cell(row.mtmText, width: 88, align: .trailing, mono: true, tone: row.mtmTone)
-                            if viewModel.presentation.showShallowImpact {
-                                cell(row.accountShareText, width: 64, align: .trailing, mono: true, tone: .empty)
-                                cell(row.goalText, width: 56, align: .trailing, mono: true, tone: .empty)
-                            }
+                            behaviorPill(row.behaviorText)
+                            Button("Deeper") { openInspector(row) }
+                                .buttonStyle(.plain)
+                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                                .foregroundStyle(StationDS.Accent.teal)
+                                .frame(width: 56, alignment: .trailing)
                         }
                         .padding(.horizontal, 14)
                         .frame(height: 36)
@@ -228,6 +266,172 @@ public struct TodayView: View {
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(StationDS.Border.divider, lineWidth: 1))
             }
         }
+    }
+
+    private var openBookFilmstrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Today · filmstrip")
+                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                .foregroundStyle(StationDS.Text.secondary)
+            Text("Mode B — Notch is the desk. This strip is inventory, not a second blotter.")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.presentation.openRows) { row in
+                        Button {
+                            openInspector(row)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(row.symbol)
+                                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                                Text("\(row.sideText) · \(row.qtyText) · MTM \(row.mtmText)")
+                                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                                    .foregroundStyle(StationDS.Text.muted)
+                            }
+                            .padding(10)
+                            .background(StationDS.Fill.input)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if viewModel.presentation.showEmptyOpenBook {
+                        Text("No open inventory")
+                            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                            .foregroundStyle(StationDS.Text.muted)
+                            .padding(10)
+                    }
+                }
+            }
+        }
+    }
+
+    private var sessionTapeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Session tape")
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.secondary)
+                Spacer()
+                Button {
+                    onOpenNotch?()
+                } label: {
+                    Text("Notch")
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(StationDS.Accent.teal.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Notch")
+            }
+            Text("Pinned while still open · fill inventory, not overnight remaining-risk.")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(viewModel.presentation.openRows) { row in
+                        Text("\(row.symbol) · \(row.behaviorText)")
+                            .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(StationDS.Fill.input)
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            ForEach(viewModel.presentation.trades) { trade in
+                Button {
+                    inspector = ThisTradeInspectorModel(
+                        symbol: trade.symbol,
+                        sideText: "closed",
+                        qtyText: "—",
+                        planStopText: "—",
+                        liveStopText: "—",
+                        pulseMTMText: trade.pnlText,
+                        equityIfSLCaption: "Closed round-trip. Detect is for open fills."
+                    )
+                } label: {
+                    HStack {
+                        Text(trade.timeText)
+                            .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                            .foregroundStyle(StationDS.Text.muted)
+                            .frame(width: 52, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(trade.symbol)
+                                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .semibold))
+                            Text("Tape card · \(trade.pnlText)")
+                                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                                .foregroundStyle(StationDS.Text.muted)
+                        }
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(StationDS.Fill.input)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+            ForEach(viewModel.presentation.openRows) { row in
+                Button {
+                    openInspector(row)
+                } label: {
+                    HStack {
+                        Text("open")
+                            .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                            .foregroundStyle(StationDS.Text.muted)
+                            .frame(width: 52, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.symbol)
+                                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .semibold))
+                            Text("Still on the book · MTM \(row.mtmText)")
+                                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                                .foregroundStyle(StationDS.Text.muted)
+                        }
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(StationDS.Fill.input)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func behaviorPill(_ text: String) -> some View {
+        Text(text)
+            .font(StationDS.monoFont(9, weight: .semibold))
+            .foregroundStyle(StationDS.Text.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(StationDS.Fill.appPanel)
+            .clipShape(Capsule())
+            .frame(width: 88, alignment: .leading)
+    }
+
+    private func openInspector(_ row: TodayOpenRowPresentation) {
+        let detect = DetectCard.evaluate(
+            viewModel.detectCardInput()
+                ?? DetectCardInput(
+                    qty: Double(row.qtyText) ?? 0,
+                    entry: nil,
+                    planStop: nil,
+                    liveStop: nil,
+                    sideBuy: !row.sideText.uppercased().contains("SELL"),
+                    accountEquity: nil,
+                    tradeCurrency: viewModel.lastDeskQuoteCurrency ?? "INR",
+                    accountCurrency: viewModel.lastDeskQuoteCurrency ?? "INR"
+                )
+        )
+        inspector = ThisTradeInspectorModel.fromOpenRow(
+            symbol: row.symbol,
+            sideText: row.sideText,
+            qtyText: row.qtyText,
+            mtmText: row.mtmText,
+            detect: detect
+        )
     }
 
     private var tradesSection: some View {
@@ -454,6 +658,48 @@ public struct TodayView: View {
         case .firing: return Color(hex: TodayPalette.loss).opacity(0.12)
         case .watch: return Color(hex: TodayPalette.watch).opacity(0.12)
         default: return StationDS.Fill.appPanel
+        }
+    }
+}
+
+struct ThisTradeInspectorSheet: View {
+    let model: ThisTradeInspectorModel
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("This trade")
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                Spacer()
+                Button("Close", action: onClose)
+                    .buttonStyle(.plain)
+            }
+            Text("\(model.symbol) · \(model.sideText) · \(model.qtyText)")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+            labeled("Plan stop (loss)", model.planStopText)
+            labeled("Live stop (loss)", model.liveStopText)
+            labeled("Pulse MTM", model.pulseMTMText)
+            Text(model.equityIfSLCaption)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
+                .foregroundStyle(StationDS.Text.secondary)
+            Text(model.journalStub)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+            Spacer()
+        }
+        .padding(20)
+        .frame(minWidth: 360, minHeight: 280)
+    }
+
+    private func labeled(_ title: String, _ value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
+                .foregroundStyle(StationDS.Text.muted)
+            Spacer()
+            Text(value)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
         }
     }
 }

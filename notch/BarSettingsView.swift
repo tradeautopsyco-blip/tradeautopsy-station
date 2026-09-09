@@ -6,7 +6,7 @@ struct BarSettingsView: View {
     @ObservedObject var viewModel: NotchViewModel
 
     private enum SettingsTab: String, CaseIterable {
-        case broker, risk, behavior, notifications
+        case broker, risk, behavior, desk, notifications
     }
 
     private enum BehaviorArchetypeTab: String, CaseIterable {
@@ -37,6 +37,7 @@ struct BarSettingsView: View {
 
     @State private var activeTab: SettingsTab = .broker
     @State private var clock: Date = Date()
+    @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
 
     @State private var dailyLossLimit: String = ""
     @State private var weeklyLossLimit: String = ""
@@ -92,6 +93,7 @@ struct BarSettingsView: View {
             BarTab(label: "Broker", active: activeTab == .broker) { activeTab = .broker }
             BarTab(label: "Risk limits", active: activeTab == .risk) { activeTab = .risk }
             BarTab(label: "Behavior", active: activeTab == .behavior) { activeTab = .behavior }
+            BarTab(label: "Desk", active: activeTab == .desk) { activeTab = .desk }
             BarTab(label: "Notifications", active: activeTab == .notifications) { activeTab = .notifications }
         }
         .padding(.bottom, 14)
@@ -103,6 +105,7 @@ struct BarSettingsView: View {
         case .broker: brokerTab
         case .risk: riskTab
         case .behavior: behaviorTab
+        case .desk: deskTab
         case .notifications: notificationsTab
         }
     }
@@ -725,6 +728,41 @@ struct BarSettingsView: View {
                 ("Wednesday", "1.35×", BarDS.Accent.amber),
                 ("Intraday", "1.4×", BarDS.Accent.amber),
             ])
+        }
+    }
+
+    // MARK: - Desk (A/B/C shells — one active)
+
+    private var deskTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            BarSectionLabel(text: "Who is the desk")
+            Text("One mode. Math, DualNoBlend, and detect rules stay identical. Switching does not merge books.")
+                .font(BarDS.bodyFont(11, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(RiskDeskMode.allCases, id: \.rawValue) { mode in
+                Button {
+                    deskModeStore.setMode(mode)
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: deskModeStore.mode == mode ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(deskModeStore.mode == mode ? BarDS.Accent.teal : BarDS.Text.muted)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mode.title)
+                                .font(BarDS.bodyFont(12, weight: .semibold))
+                                .foregroundColor(BarDS.Text.primary)
+                            Text(mode.whoIsTheDesk)
+                                .font(BarDS.bodyFont(11, weight: .regular))
+                                .foregroundColor(BarDS.Text.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(10)
+                    .background(deskModeStore.mode == mode ? BarDS.Accent.teal.opacity(0.08) : BarDS.Fill.card)
+                    .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

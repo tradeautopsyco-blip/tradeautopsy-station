@@ -31,6 +31,24 @@ struct BarPlanStateView: View {
         VStack(alignment: .leading, spacing: 12) {
             BarUndeclaredPositionBanner(position: payload?.undeclaredPosition)
 
+            if let pos = payload?.undeclaredPosition {
+                let ccy = DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug) ?? "INR"
+                DetectCardView(
+                    result: DetectCard.evaluate(
+                        DetectCardInput(
+                            qty: Double(pos.quantity),
+                            entry: nil,
+                            planStop: payload?.pendingDeclaration?.stopLoss,
+                            liveStop: payload?.slPrice,
+                            sideBuy: !pos.side.uppercased().contains("SELL"),
+                            accountEquity: nil,
+                            tradeCurrency: ccy,
+                            accountCurrency: ccy
+                        )
+                    )
+                )
+            }
+
             planStateBanner
 
             if shouldShowMetricStrip { liveMetricStrip }

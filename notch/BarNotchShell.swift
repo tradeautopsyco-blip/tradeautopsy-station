@@ -27,6 +27,7 @@ struct BarNotchShell: View {
     @AppStorage("notch.planMorningBriefConsumed") private var morningBriefConsumed: Bool = false
     @State private var hoveredSession: BarNotchScreen?
     @State private var analysisOpen: Bool = false
+    @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
 
     init(viewModel: NotchViewModel, activeScreen: Binding<BarNotchScreen>? = nil) {
         self.viewModel = viewModel
@@ -711,19 +712,44 @@ struct BarNotchShell: View {
 
     @ViewBuilder
     private var liveBody: some View {
+        let flip = deskModeStore.mode == .notchFlip
+        let pending = viewModel.barLiveState?.pendingDeclaration
+        let declared = viewModel.barOptimisticArmedDisplay != nil
+            || pending != nil
+            || viewModel.barSurfacePhase == .armed
+        let units = pending.map(\.quantity)
+            ?? Double(viewModel.declLots.trimmingCharacters(in: .whitespacesAndNewlines))
+        let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
+        let stop = pending?.stopLoss
+            ?? Double(viewModel.declStopLoss.trimmingCharacters(in: .whitespacesAndNewlines))
+        let sideBuy = !(pending?.side.uppercased().contains("SELL") ?? false)
+        let snap = EquityIfSL.snapshot(
+            units: units,
+            entry: entry,
+            stop: stop,
+            sideBuy: sideBuy,
+            declared: declared
+        )
         switch viewModel.barSurfacePhase {
         case .armed:
             if viewModel.barLiveState != nil {
                 VStack(alignment: .leading, spacing: 16) {
+                    if flip { BarEquityIfSLBox(snapshot: snap) }
                     BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
                     planPanelDivider
                     barArmedWaiting
                 }
             } else {
-                barArmedWaiting
+                VStack(alignment: .leading, spacing: 16) {
+                    if flip { BarEquityIfSLBox(snapshot: snap) }
+                    barArmedWaiting
+                }
             }
         default:
-            BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
+            VStack(alignment: .leading, spacing: 16) {
+                if flip { BarEquityIfSLBox(snapshot: snap) }
+                BarPlanStateView(viewModel: viewModel, embedEscrow: activeScreen.wrappedValue != .escrow)
+            }
         }
     }
 
