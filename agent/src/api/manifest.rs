@@ -6,11 +6,12 @@ use crate::data::{
     chain_rows_for_contract, depth_obtain_data, describe, ensure_options_user_trades,
     ensure_spot_account, ensure_spot_open_orders, extract_chain_from, extract_depth_on_book,
     extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
-    extract_quote_for_book, history_obtain_data, is_dated_option_contract, obtain,
-    parse_nfo_instrument_id, search_identity, search_rows_for_book, DepthStatus, GlanceStatus,
-    GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
+    extract_options_history, extract_quote_for_book, history_obtain_data, is_dated_option_contract,
+    obtain, parse_nfo_instrument_id, search_identity, search_rows_for_book, DepthStatus,
+    GlanceStatus, GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
     SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_KLINES_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -245,6 +246,13 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
             }
             super::glance::ensure_options_depth(state, &instrument).await;
         }
+        "history" => {
+            let instrument = selected_options_contract(state);
+            if !is_dated_option_contract(&instrument) {
+                return;
+            }
+            super::glance::ensure_options_klines(state, &instrument).await;
+        }
         "tradebook" => {
             let instrument = selected_options_contract(state);
             if instrument.is_empty() {
@@ -368,6 +376,7 @@ fn enricher(
         // Same enricher as spot/cash — safe only because the lookup is keyed by
         // `book_id`, not by the slug the two Binance books share.
         ("binance-com-options", "depth") => Some(enrich_depth),
+        ("binance-com-options", "history") => Some(enrich_options_history),
         _ => None,
     }
 }
@@ -1092,6 +1101,30 @@ fn enrich_binance_history(state: &AppState, mut envelope: ObtainEnvelope) -> Obt
     envelope
 }
 
+fn enrich_options_history(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let instrument = selected_options_contract(state);
+    if instrument.is_empty() {
+        return envelope;
+    }
+    let book = state
+        .historybook
+        .lock()
+        .expect("historybook mutex poisoned");
+    let history = extract_options_history(
+        &book,
+        &instrument,
+        Some(DEFAULT_OPTIONS_HISTORY_INTERVAL),
+        None,
+    );
+    if let Some(data) = history_obtain_data(&history) {
+        envelope.status = ObtainStatus::Success;
+        envelope.data = Some(data);
+        envelope.provenance_adapter_id = Some(history.provenance.adapter_id);
+        envelope.provenance_path = Some(OPTIONS_KLINES_PATH.to_string());
+    }
+    envelope
+}
+
 fn kotak_instruments_data(
     master: &crate::kotak_scrip_master::KotakScripMaster,
 ) -> Option<serde_json::Value> {
@@ -1354,6 +1387,7 @@ mod tests {
         assert!(enricher("binance-com-options", "open_interest").is_some());
         assert!(enricher("binance-com-options", "optiongreeks").is_some());
         assert!(enricher("binance-com-options", "depth").is_some());
+        assert!(enricher("binance-com-options", "history").is_some());
         assert!(enricher("kotak-nse-nfo", "depth").is_some());
         // The greeks door never opens on spot, cash or NFO.
         assert!(enricher("binance-com-spot", "optiongreeks").is_none());

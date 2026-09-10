@@ -325,11 +325,7 @@ fn instruments_binding(
     }
 }
 
-fn search_binding(
-    adapter_id: &str,
-    coverage: Coverage,
-    auth_mode: AuthMode,
-) -> ManifestBinding {
+fn search_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> ManifestBinding {
     ManifestBinding {
         operation: "search".into(),
         adapter_id: adapter_id.to_string(),
@@ -596,17 +592,24 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
     }
 }
 
-/// Named options book on the same `binance_com` adapter. Public last only
-/// (`GET /eapi/v1/ticker` → `lastPrice`). Lock: `locks/binance-com-options.md`
-/// Way 3 last + chain/OI snapshot from exchangeInfo / openInterest.
-/// Catalog / Start slug still ships spot. Obtain `optionchain` stays unsupported
-/// — Binance has no `/eapi/v1/optionChain`; Station glance rebuilds from master.
+/// Named options book on the same `binance_com` adapter. Public last + chain/OI
+/// + mark greeks + REST depth + eapi klines `history` (`ohlcv` / `historical_series`).
+/// Lock: `locks/binance-com-options.md`. Catalog / Start slug still ships spot.
 pub fn binance_com_options_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["binance.com".into()],
         asset_classes: vec!["crypto_options".into()],
         history_range: None,
         intervals: vec![],
+    };
+    let history_coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_options".into()],
+        history_range: None,
+        intervals: super::binance_options_klines::OPTIONS_KLINE_INTERVALS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
     };
     SourceManifest {
         manifest_id: "binance_com.options.v1".into(),
@@ -618,6 +621,7 @@ pub fn binance_com_options_manifest() -> SourceManifest {
             "open_interest".into(),
             "optiongreeks".into(),
             "depth".into(),
+            "history".into(),
             "tradebook".into(),
             "search".into(),
         ],
@@ -634,6 +638,7 @@ pub fn binance_com_options_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
+            history_binding("binance_com", history_coverage),
             // REST bounded snapshot of `GET /eapi/v1/depth` — `Rest` only. Spot's
             // `@depth` reconstruction loop is another book on another host, and
             // this binding must never claim `Stream`.
@@ -905,7 +910,10 @@ mod tests {
         let orderbook = obtain(&manifest, "orderbook");
         assert_eq!(orderbook.status, ObtainStatus::Unavailable);
         assert_eq!(orderbook.book_id, "binance-com-spot");
-        assert_eq!(orderbook.provenance_adapter_id.as_deref(), Some("binance_com"));
+        assert_eq!(
+            orderbook.provenance_adapter_id.as_deref(),
+            Some("binance_com")
+        );
         let depth = obtain(&manifest, "depth");
         assert_eq!(depth.status, ObtainStatus::Unavailable);
         assert!(depth.data.is_none());
@@ -1076,6 +1084,7 @@ mod tests {
                 "open_interest",
                 "optiongreeks",
                 "depth",
+                "history",
                 "tradebook",
                 "search"
             ]
@@ -1102,6 +1111,15 @@ mod tests {
         assert_eq!(obtain(&options, "depth").status, ObtainStatus::Unavailable);
         assert_ne!(obtain(&options, "depth").status, ObtainStatus::Unsupported);
         assert!(obtain(&options, "depth").data.is_none());
+        assert_eq!(
+            obtain(&options, "history").status,
+            ObtainStatus::Unavailable
+        );
+        assert_ne!(
+            obtain(&options, "history").status,
+            ObtainStatus::Unsupported
+        );
+        assert!(obtain(&options, "history").data.is_none());
         // NFO depth with an empty DepthBook is Unavailable — never Unsupported.
         let nfo = manifest_for_book_id("kotak-nse-nfo").expect("nfo book");
         assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unavailable);
@@ -1125,6 +1143,19 @@ mod tests {
         assert_eq!(depth_bind.rights, Rights::research_fetch_only());
         assert_ne!(depth_bind.rights, Rights::desk_display());
         assert_eq!(depth_bind.coverage.asset_classes, vec!["crypto_options"]);
+        let history_bind = options
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "history")
+            .expect("options history binding");
+        assert_eq!(history_bind.capability_id, "ohlcv");
+        assert_eq!(history_bind.family, Family::Market);
+        assert_eq!(history_bind.physics, Physics::HistoricalSeries);
+        assert_eq!(history_bind.auth_mode, AuthMode::Public);
+        assert_eq!(history_bind.transports, vec![TransportKind::Rest]);
+        assert!(history_bind.coverage.intervals.contains(&"1m".into()));
+        assert!(history_bind.coverage.intervals.contains(&"8h".into()));
+        assert!(!history_bind.coverage.intervals.contains(&"1s".into()));
         let chain_bind = options
             .bindings
             .iter()
@@ -1254,14 +1285,8 @@ mod tests {
             ObtainStatus::Unavailable
         );
         // Claimed tradebook with empty store → Unavailable, never Unsupported.
-        assert_eq!(
-            obtain(&nfo, "tradebook").status,
-            ObtainStatus::Unavailable
-        );
-        assert_ne!(
-            obtain(&nfo, "tradebook").status,
-            ObtainStatus::Unsupported
-        );
+        assert_eq!(obtain(&nfo, "tradebook").status, ObtainStatus::Unavailable);
+        assert_ne!(obtain(&nfo, "tradebook").status, ObtainStatus::Unsupported);
         assert!(obtain(&nfo, "tradebook").data.is_none());
         let spot = manifest_for_book_id("binance-com-spot").unwrap();
         let cash = manifest_for_book_id("kotak-nse-bse-cash").unwrap();

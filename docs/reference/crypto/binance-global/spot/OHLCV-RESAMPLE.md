@@ -31,7 +31,7 @@
 | Agent matrix | `agent/src/data/matrix.rs` `known_physics` | 2026-08-31 | `(Family::Derived, "ohlcv")` → `HistoricalSeries`. Also `(Family::Market, "ohlcv")` → `HistoricalSeries`. |
 | PRD #358 | Station Data PRD locked decision | 2026-08-25 | “Fetched venue history vs Station-computed derived. Resample from one licensed finer series. Rights inherit.” |
 | Kotak S0 | `kotak_neo.s1k.v1` / `kotak_neo.nfo.v1` | 2026-08-31 | `history` **unsupported**. No FO/cash klines. |
-| Binance options | `locks/binance-com-options.md` | 2026-08-29 | No klines path this book. |
+| Binance options | `locks/binance-com-options.md` | 2026-09-10 | `GET /eapi/v1/klines` is `market/ohlcv`. This file is **derived** resample — still a hole. |
 
 ---
 
@@ -54,7 +54,7 @@
 
 | Term / Field | Source definition | Units / type |
 | ------------ | ----------------- | ------------ |
-| Market ohlcv | venue klines (COM `GET /api/v3/klines`) | `historical_series` |
+| Market ohlcv | venue klines (COM `GET /api/v3/klines`; options `GET /eapi/v1/klines`) | `historical_series` |
 | Derived ohlcv | Station-computed series from a licensed finer input | `historical_series` |
 | Aggregation identity | **NOT SPECIFIED IN SOURCE** | — |
 
@@ -136,7 +136,7 @@ marked **NOT SPECIFIED IN SOURCE (do not invent for the S2 quality layer)**.
 >
 > - Named input = one licensed COM kline series (or inherit-dark).
 > - Kotak books: history unsupported → this extract’s hole (`kotak_history_unsupported`), not a Yahoo fill.
-> - Options book: no klines path → hole (`options_history_unspecified`).
+> - Options book: venue `GET /eapi/v1/klines` is `market/ohlcv`. This derived extract stays a hole (`options_history_unspecified`) — do not resample 1m into 1h.
 
 ---
 

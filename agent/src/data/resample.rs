@@ -119,7 +119,9 @@ mod tests {
     }
 
     #[test]
-    fn binance_options_has_no_klines_path() {
+    fn binance_options_derived_ohlcv_stays_unspecified() {
+        // Venue `GET /eapi/v1/klines` is `market/ohlcv`. This extract is derived
+        // resample — still a hole. Do not compose 1h from 1m.
         let envelope = extract_resample(Some(BINANCE_COM_OPTIONS_BOOK_ID), InputHonesty::Lit);
         assert_eq!(envelope.status, HonestyStatus::Unavailable);
         assert!(envelope

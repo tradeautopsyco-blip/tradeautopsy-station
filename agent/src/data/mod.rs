@@ -8,6 +8,7 @@ mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
 mod binance_options_depth;
+mod binance_options_klines;
 mod binance_options_mark;
 mod binance_options_oi;
 mod binance_options_private;
@@ -87,6 +88,11 @@ pub use binance_options_depth::{
     depth_snapshot_from_eapi_json, options_depth_query, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_LIMIT,
     OPTIONS_DEPTH_PATH,
 };
+pub use binance_options_klines::{
+    options_klines_query, series_from_eapi_klines_json, validate_options_kline_request,
+    DEFAULT_OPTIONS_HISTORY_INTERVAL, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
+    OPTIONS_KLINE_LIMIT_DEFAULT,
+};
 pub use binance_options_mark::{
     mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OptionsMarkRow,
     OPTIONS_MARK_PATH,
@@ -131,7 +137,8 @@ pub use greeks::{
 };
 pub use history::{
     apply_history_series, extract_gap_vendor_history, extract_history, extract_licensed_history,
-    gap_history_obtain_data, history_obtain_data, HistoryEnvelope, HistoryStatus,
+    extract_options_history, gap_history_obtain_data, history_obtain_data, HistoryEnvelope,
+    HistoryStatus,
 };
 pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;

@@ -420,6 +420,7 @@ struct BarOptionsDeclareTests {
         let plan = DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options)
         #expect(plan.fetchesGlance == false)
         #expect(plan.usesKotakHistoryObtain == false)
+        #expect(plan.usesOptionsHistoryObtain == false)
         // Same for the bare alias and for a desk with no slug at all — no book, no ask.
         #expect(!DeskExtractPlan.resolve(slug: "binance", assetClass: .options).fetchesGlance)
         #expect(!DeskExtractPlan.resolve(slug: nil, assetClass: .options).fetchesGlance)
@@ -433,6 +434,7 @@ struct BarOptionsDeclareTests {
         )
         #expect(plan.fetchesGlance)
         #expect(!plan.usesKotakHistoryObtain)
+        #expect(plan.usesOptionsHistoryObtain)
 
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"
@@ -502,6 +504,12 @@ struct BarOptionsDeclareTests {
         #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).usesKotakHistoryObtain)
         #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .spot).usesKotakHistoryObtain)
         #expect(DeskExtractPlan.resolve(slug: "kotak_neo", assetClass: .options).usesKotakHistoryObtain)
+        #expect(DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .options,
+            instrumentId: "XRP-260911-1.36-C"
+        ).usesOptionsHistoryObtain)
+        #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).usesOptionsHistoryObtain)
 
         // A dark reply on the Binance options desk is "unavailable", never Kotak's
         // "unsupported" — the two desks do not share a history verdict.
@@ -511,6 +519,91 @@ struct BarOptionsDeclareTests {
         vm.applyStationHistoryEnvelope([:])
         #expect(vm.deskHistoryStatus == "unavailable")
         #expect(vm.deskYahooHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+        #expect(vm.deskOptionsHistoryExtractPath().contains("book=binance-com-options"))
+        #expect(vm.deskOptionsHistoryExtractPath().contains("operation=history"))
+        #expect(!vm.deskOptionsHistoryExtractPath().contains("/api/v3/klines"))
+    }
+
+    @Test func binanceOptionsSessionChartLightsFromEapiKlines() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "XRP-260911-1.36-C"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-options",
+            "operation": "history",
+            "provenance_path": "/eapi/v1/klines",
+            "data": [
+                "source": "eapi_klines",
+                "instrument_id": "XRP-260911-1.36-C",
+                "interval": "1m",
+                "candles": [[
+                    "open_time_ms": 1499040000000,
+                    "open": "950",
+                    "high": "1100",
+                    "low": "900",
+                    "close": "1000",
+                    "volume": "100",
+                    "close_time_ms": 1499040059999,
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].open == "950")
+        #expect(vm.deskHistoryCandles[0].close == "1000")
+        #expect(vm.deskHistoryCandles[0].open != "0")
+    }
+
+    @Test func binanceOptionsEmptySeriesIsUnavailableNotZeroCandle() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "XRP-260911-1.36-C"
+        vm.deskHistoryCandles = [
+            DeskSessionCandle(
+                openTimeMs: 1,
+                open: "0",
+                high: "0",
+                low: "0",
+                close: "0",
+                volume: "0"
+            ),
+        ]
+        vm.applyStationHistoryEnvelope([
+            "status": "unavailable",
+            "book_id": "binance-com-options",
+            "operation": "history",
+            "data": NSNull(),
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+    }
+
+    @Test func binanceOptionsRefusesSpotKlinesSource() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "XRP-260911-1.36-C"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-spot",
+            "data": [
+                "source": "binance_klines",
+                "candles": [[
+                    "open_time_ms": 1,
+                    "open": "1",
+                    "high": "1",
+                    "low": "1",
+                    "close": "1",
+                    "volume": "1",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
     }
 
     @Test func optionsDeclareDoesNotBindUnderlyingTickerWithoutToken() {

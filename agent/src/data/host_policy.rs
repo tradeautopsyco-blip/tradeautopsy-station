@@ -97,7 +97,11 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         {
             true
         }
-        ("ohlcv", "GET", AuthMode::Public) if path == "/api/v3/klines" => true,
+        ("ohlcv", "GET", AuthMode::Public)
+            if path == "/api/v3/klines" || normalize_request_path(path) == "/eapi/v1/klines" =>
+        {
+            true
+        }
         ("order_book", "GET", AuthMode::Public)
             if path == "/api/v3/depth" || normalize_request_path(path) == "/eapi/v1/depth" =>
         {
@@ -184,6 +188,9 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
             Ok(("order_book", AuthMode::Public))
         }
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/klines" => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
         ("GET", "/api/v3/exchangeInfo") => Ok(("instrument_master", AuthMode::Public)),
         ("GET", "/api/v3/myTrades") => Ok(("fills", AuthMode::PrivateRead)),
@@ -466,9 +473,13 @@ pub fn authorize_host_call(
     }
     let host_norm = host.trim().trim_end_matches('.').to_ascii_lowercase();
     // Public klines / depth are COM-only. Not api.binance.us, not data-api.binance.vision.
+    // Options klines live on eapi.binance.com — a different book, a different path.
     if (path.trim() == "/api/v3/klines" || path.trim() == "/api/v3/depth")
         && host_norm != "api.binance.com"
     {
+        return Err(HostRefuse::HostNotAllowed);
+    }
+    if normalize_request_path(path) == "/eapi/v1/klines" && host_norm != "eapi.binance.com" {
         return Err(HostRefuse::HostNotAllowed);
     }
     if (is_kotak_cash_scrip_csv_path(path) || is_kotak_fo_scrip_csv_path(path))
@@ -1334,6 +1345,52 @@ mod tests {
         assert_eq!(cap, "quote");
         assert_eq!(mode, AuthMode::Public);
         assert_eq!(
+            infer_capability("GET", "/eapi/v1/klines").unwrap(),
+            ("ohlcv", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/klines?symbol=XRP-260911-1.36-C&interval=1m",
+            false,
+        )
+        .expect("options public klines infers ohlcv");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/klines",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "api.binance.com",
+                "GET",
+                "/api/v3/klines",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_host_call(
+                "api.binance.com",
+                "GET",
+                "/eapi/v1/klines",
+                "ohlcv",
+                AuthMode::Public,
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
             infer_capability("POST", "/eapi/v1/order").unwrap_err(),
             HostRefuse::MutationForbidden
         );
@@ -1484,6 +1541,7 @@ mod tests {
             "/eapi/v1/openInterest",
             "/eapi/v1/depth",
             "/eapi/v1/ticker",
+            "/eapi/v1/klines",
         ] {
             assert_eq!(
                 authorize_book_call("binance-com-spot", "eapi.binance.com", "GET", path, false)

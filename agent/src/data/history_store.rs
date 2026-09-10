@@ -4,8 +4,17 @@
 //! NOT SPECIFIED IN SOURCE — never emit `insufficient_retention` from a gap here.
 
 use super::binance_klines::{HistoryCandle, HistorySeries};
+use super::binance_options_public::{is_dated_option_contract, normalize_options_instrument};
 use super::binance_public::normalize_quote_instrument;
 use super::tick::Transport;
+
+fn persist_instrument_id(instrument_id: &str) -> String {
+    if is_dated_option_contract(instrument_id) {
+        normalize_options_instrument(instrument_id)
+    } else {
+        normalize_quote_instrument(instrument_id)
+    }
+}
 use anyhow::Context;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -65,7 +74,7 @@ CREATE TABLE IF NOT EXISTS history_coverage (
             return Ok(());
         }
         let adapter_id = series.adapter_id.trim();
-        let instrument_id = normalize_quote_instrument(&series.instrument_id);
+        let instrument_id = persist_instrument_id(&series.instrument_id);
         let interval = series.interval.trim();
         let first_open_ms = series
             .candles
@@ -248,6 +257,25 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM history_candles", [], |r| r.get(0))
             .expect("count");
         assert_eq!(n, 0);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn history_store_keeps_mixed_case_dated_option_id() {
+        let (path, store) = temp_db();
+        let json = include_str!("../../fixtures/binance/options_klines.json");
+        let series = crate::data::series_from_eapi_klines_json(
+            json,
+            "BTC-200730-9000-C",
+            "1m",
+            Transport::Fixture,
+        )
+        .expect("options fixture");
+        store.upsert_series(&series).expect("upsert");
+        let loaded = store.load_all_series().expect("load");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].instrument_id, "BTC-200730-9000-C");
+        assert_ne!(loaded[0].instrument_id, "btc-200730-9000-c");
         cleanup(&path);
     }
 }

@@ -4,6 +4,10 @@
 //! Yahoo is research_segment + `rights_forbid_canonical` and is never persisted.
 
 use super::binance_klines::{validate_kline_request, HistorySeries, DEFAULT_HISTORY_INTERVAL};
+use super::binance_options_klines::{
+    validate_options_kline_request, DEFAULT_OPTIONS_HISTORY_INTERVAL,
+};
+use super::binance_options_public::{is_dated_option_contract, normalize_options_instrument};
 use super::descriptor::BINANCE_COM_ADAPTER_ID;
 use super::historybook::HistoryBook;
 use super::identity::{CapabilityId, Family, Identity, Physics};
@@ -109,6 +113,13 @@ pub fn extract_licensed_history(
     interval: Option<&str>,
     limit: Option<u32>,
 ) -> HistoryEnvelope {
+    if is_dated_option_contract(instrument_id) {
+        return empty_licensed(
+            normalize_options_instrument(instrument_id),
+            BINANCE_COM_ADAPTER_ID,
+            Vec::new(),
+        );
+    }
     let instrument_id = super::binance_public::normalize_quote_instrument(instrument_id);
     let interval = interval
         .map(str::trim)
@@ -134,7 +145,45 @@ pub fn extract_licensed_history(
     let Some(row) = row else {
         return empty_licensed(instrument_id, BINANCE_COM_ADAPTER_ID, Vec::new());
     };
-    licensed_success(row)
+    if is_dated_option_contract(&row.instrument_id) {
+        return empty_licensed(instrument_id, BINANCE_COM_ADAPTER_ID, Vec::new());
+    }
+    licensed_success(row, "binance_klines")
+}
+
+/// Named options book series. Mixed-case id. Never `first_for_adapter` (that
+/// would serve a leftover spot pair). Empty series stays unavailable.
+pub fn extract_options_history(
+    book: &HistoryBook,
+    instrument_id: &str,
+    interval: Option<&str>,
+    limit: Option<u32>,
+) -> HistoryEnvelope {
+    let instrument_id = normalize_options_instrument(instrument_id);
+    if instrument_id.is_empty() || !is_dated_option_contract(&instrument_id) {
+        return empty_licensed(instrument_id, BINANCE_COM_ADAPTER_ID, Vec::new());
+    }
+    let interval = interval
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_OPTIONS_HISTORY_INTERVAL);
+    match validate_options_kline_request(interval, limit) {
+        Err(refuse) => {
+            return empty_licensed(
+                instrument_id,
+                BINANCE_COM_ADAPTER_ID,
+                vec![refuse.as_ineligible().to_string()],
+            );
+        }
+        Ok(_) => {}
+    }
+    let Some(row) = book.get(BINANCE_COM_ADAPTER_ID, &instrument_id, interval) else {
+        return empty_licensed(instrument_id, BINANCE_COM_ADAPTER_ID, Vec::new());
+    };
+    if !is_dated_option_contract(&row.instrument_id) {
+        return empty_licensed(instrument_id, BINANCE_COM_ADAPTER_ID, Vec::new());
+    }
+    licensed_success(row, "eapi_klines")
 }
 
 /// Fixture gap vendor series. Separate adapter_id from COM klines (DualNoBlend).
@@ -157,11 +206,14 @@ pub fn extract_gap_vendor_history(
     let Some(row) = row else {
         return empty_licensed(instrument_id, adapter_id, Vec::new());
     };
-    licensed_success(row)
+    licensed_success(row, "binance_klines")
 }
 
 /// Obtain(history) for a declared gap vendor — never COM, never Kotak.
-pub fn gap_history_obtain_data(envelope: &HistoryEnvelope, adapter_id: &str) -> Option<serde_json::Value> {
+pub fn gap_history_obtain_data(
+    envelope: &HistoryEnvelope,
+    adapter_id: &str,
+) -> Option<serde_json::Value> {
     if envelope.status != HistoryStatus::Success {
         return None;
     }
@@ -175,13 +227,13 @@ pub fn gap_history_obtain_data(envelope: &HistoryEnvelope, adapter_id: &str) -> 
     Some(data.clone())
 }
 
-fn licensed_success(row: &HistorySeries) -> HistoryEnvelope {
+fn licensed_success(row: &HistorySeries, source: &str) -> HistoryEnvelope {
     let rights = Rights::research_fetch_only();
     HistoryEnvelope {
         identity: ohlcv_identity(),
         instrument_id: row.instrument_id.clone(),
         status: HistoryStatus::Success,
-        data: Some(series_json(row)),
+        data: Some(series_json(row, source)),
         rights,
         ineligible: Vec::new(),
         research: true,
@@ -193,7 +245,7 @@ fn licensed_success(row: &HistorySeries) -> HistoryEnvelope {
     }
 }
 
-fn series_json(row: &HistorySeries) -> serde_json::Value {
+fn series_json(row: &HistorySeries, source: &str) -> serde_json::Value {
     let last_close = row.candles.last().map(|c| c.close.clone());
     serde_json::json!({
         "identity": ohlcv_identity(),
@@ -201,7 +253,7 @@ fn series_json(row: &HistorySeries) -> serde_json::Value {
         "interval": row.interval,
         "candles": row.candles,
         "last_close": last_close,
-        "source": "binance_klines",
+        "source": source,
         "transport": row.transport,
     })
 }
@@ -363,6 +415,83 @@ mod tests {
                 .ineligible
                 .len(),
             0
+        );
+    }
+
+    #[test]
+    fn options_history_keeps_mixed_case_and_eapi_source() {
+        let json = include_str!("../../fixtures/binance/options_klines.json");
+        let series = crate::data::series_from_eapi_klines_json(
+            json,
+            "BTC-200730-9000-C",
+            "1m",
+            Transport::Fixture,
+        )
+        .unwrap();
+        let mut book = HistoryBook::new();
+        apply_history_series(&mut book, series);
+        let env = extract_options_history(&book, "BTC-200730-9000-C", Some("1m"), None);
+        assert_eq!(env.status, HistoryStatus::Success);
+        assert_eq!(env.instrument_id, "BTC-200730-9000-C");
+        assert_eq!(env.data.as_ref().unwrap()["source"], "eapi_klines");
+        assert_ne!(env.data.as_ref().unwrap()["source"], "binance_klines");
+        assert_eq!(
+            env.data.as_ref().unwrap()["candles"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(history_obtain_data(&env).is_some());
+        let miss = extract_options_history(&book, "btc-200730-9000-c", Some("1m"), None);
+        assert_eq!(miss.status, HistoryStatus::Unavailable);
+        assert!(history_obtain_data(&miss).is_none());
+    }
+
+    #[test]
+    fn options_history_does_not_inherit_spot_series() {
+        let json = include_str!("../../fixtures/binance/klines.json");
+        let series = series_from_klines_json(json, "BTCUSDT", "1m", Transport::Fixture).unwrap();
+        let mut book = HistoryBook::new();
+        apply_history_series(&mut book, series);
+        let env = extract_options_history(&book, "BTC-200730-9000-C", Some("1m"), None);
+        assert_eq!(env.status, HistoryStatus::Unavailable);
+        assert!(env.data.is_none());
+        let empty = extract_options_history(&HistoryBook::new(), "", Some("1m"), None);
+        assert_eq!(empty.status, HistoryStatus::Unavailable);
+        assert!(empty.data.is_none());
+    }
+
+    #[test]
+    fn options_one_s_is_unsupported_not_resample() {
+        let env =
+            extract_options_history(&HistoryBook::new(), "BTC-200730-9000-C", Some("1s"), None);
+        assert_eq!(env.status, HistoryStatus::Unavailable);
+        assert_eq!(env.ineligible, ["unsupported_interval"]);
+        assert!(history_obtain_data(&env).is_none());
+    }
+
+    #[test]
+    fn spot_history_does_not_inherit_options_series() {
+        let json = include_str!("../../fixtures/binance/options_klines.json");
+        let series = crate::data::series_from_eapi_klines_json(
+            json,
+            "BTC-200730-9000-C",
+            "1m",
+            Transport::Fixture,
+        )
+        .unwrap();
+        let mut book = HistoryBook::new();
+        apply_history_series(&mut book, series);
+        let empty = extract_licensed_history(&book, "", Some("1m"), None);
+        assert_eq!(empty.status, HistoryStatus::Unavailable);
+        assert!(empty.data.is_none());
+        let dated = extract_licensed_history(&book, "BTC-200730-9000-C", Some("1m"), None);
+        assert_eq!(dated.status, HistoryStatus::Unavailable);
+        assert!(dated.data.is_none());
+        assert_ne!(
+            dated.data.as_ref().and_then(|d| d.get("source")),
+            Some(&serde_json::json!("eapi_klines"))
         );
     }
 }

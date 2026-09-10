@@ -3,16 +3,19 @@
 
 use crate::api::AppState;
 use crate::data::{
-    apply_quote, chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
-    expiration_from_dated_contract, extract_chain_from, extract_greeks_from_mark,
-    extract_open_interest, extract_open_interest_for_book, extract_open_interest_from,
-    is_dated_option_contract, mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
-    option_symbols_from_exchange_info_json, options_depth_query, options_ticker_query,
-    parse_nfo_instrument_id, quote_tick_from_options_ticker_json_for_symbol,
-    underlying_asset_from_dated_contract, CachedMark, ChainRow, GlanceEnvelope, GreeksEnvelope,
-    InputHonesty, OptionsOiRow, BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    apply_history_series, apply_quote, chain_input_honesty, chain_rows_for_contract,
+    depth_snapshot_from_eapi_json, expiration_from_dated_contract, extract_chain_from,
+    extract_greeks_from_mark, extract_open_interest, extract_open_interest_for_book,
+    extract_open_interest_from, is_dated_option_contract, mark_row_for_symbol,
+    normalize_options_instrument, oi_rows_from_json, option_symbols_from_exchange_info_json,
+    options_depth_query, options_klines_query, options_ticker_query, parse_nfo_instrument_id,
+    quote_tick_from_options_ticker_json_for_symbol, series_from_eapi_klines_json,
+    underlying_asset_from_dated_contract, validate_options_kline_request, CachedMark, ChainRow,
+    GlanceEnvelope, GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_EAPI_HOST,
-    OPTIONS_MARK_PATH, OPTIONS_TICKER_PATH,
+    OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH, OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH,
+    OPTIONS_TICKER_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -34,6 +37,8 @@ const OPTIONS_DEPTH_MAX_AGE_MS: i64 = 1_000;
 /// share one last. REST.md publishes no ticker weight, so this is coalesce only,
 /// not a budget. Never the unfiltered list.
 const OPTIONS_TICKER_MAX_AGE_MS: i64 = 1_000;
+/// Same coalesce window as COM klines. Weight 1; not a budget.
+const OPTIONS_KLINES_MAX_AGE_MS: i64 = 2_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -380,6 +385,71 @@ pub(crate) async fn ensure_options_depth(state: &AppState, instrument: &str) {
         .lock()
         .expect("depthbook mutex poisoned")
         .upsert(snapshot);
+}
+
+/// One `GET /eapi/v1/klines?symbol=&interval=` series into HistoryBook.
+///
+/// Never fabricates: empty / unparseable body leaves the book untouched so
+/// obtain stays Unavailable rather than a zero candle. Never `/api/v3/klines`.
+/// Mixed-case `?symbol=`. No HMAC.
+pub(crate) async fn ensure_options_klines(state: &AppState, instrument: &str) {
+    if !state.eapi_public_fetch {
+        return;
+    }
+    let dial = normalize_options_instrument(instrument);
+    if !is_dated_option_contract(&dial) {
+        return;
+    }
+    let interval = DEFAULT_OPTIONS_HISTORY_INTERVAL;
+    {
+        let book = state
+            .historybook
+            .lock()
+            .expect("historybook mutex poisoned");
+        if book.get(BINANCE_COM_ADAPTER_ID, &dial, interval).is_some() {
+            return;
+        }
+    }
+    let inflight_key = format!("{dial}\0{interval}");
+    {
+        let mut guard = state
+            .klines_inflight
+            .lock()
+            .expect("klines inflight poisoned");
+        if !guard.insert(inflight_key) {
+            return;
+        }
+    }
+    let Ok(limit) = validate_options_kline_request(interval, Some(OPTIONS_KLINE_LIMIT_DEFAULT))
+    else {
+        return;
+    };
+    let call = EgressCall::get(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        OPTIONS_KLINES_HOST,
+        OPTIONS_KLINES_PATH,
+        Lane::MarketData,
+    )
+    .with_query(options_klines_query(&dial, interval, limit))
+    .with_max_age_ms(OPTIONS_KLINES_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return;
+    };
+    if !resp.is_success() {
+        return;
+    }
+    let Some(series) = series_from_eapi_klines_json(&resp.body, &dial, interval, Transport::Rest)
+    else {
+        return;
+    };
+    apply_history_series(
+        &mut state
+            .historybook
+            .lock()
+            .expect("historybook mutex poisoned"),
+        series,
+    );
 }
 
 /// Obtain enriches synchronously, but the OI snapshot is an async fetch. Land

@@ -356,10 +356,13 @@ pub struct AgentConfig {
     /// Options order book CI: plant the committed `/eapi/v1/depth` JSON into the
     /// DepthBook's `binance-com-options` slot. No live eapi.
     pub plant_binance_options_depth: bool,
+    /// Options session series CI: plant committed eapi klines JSON into HistoryBook.
+    /// No live eapi. Mixed-case dated contract — never spot `/api/v3/klines`.
+    pub plant_binance_options_history: bool,
     /// Options tradebook CI: plant the committed `/eapi/v1/userTrades` JSON into
     /// AccountBook `binance-com-options`. No live eapi private GET.
     pub plant_binance_options_fills: bool,
-    /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth.
+    /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth / klines.
     /// Tests stay false.
     pub eapi_public_fetch: bool,
     /// Test seam: non-venue base URL for spot private reads (wiremock). `None` = `api.binance.com`.
@@ -495,6 +498,7 @@ impl AgentConfig {
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
+            plant_binance_options_history: false,
             plant_binance_options_fills: false,
             eapi_public_fetch: true,
             binance_spot_base_url: None,
@@ -569,6 +573,7 @@ impl AgentConfig {
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
             plant_binance_options_depth: false,
+            plant_binance_options_history: false,
             plant_binance_options_fills: false,
             eapi_public_fetch: false,
             binance_spot_base_url: None,
@@ -978,6 +983,21 @@ fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) 
     );
 }
 
+fn plant_binance_options_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+    let json = include_str!("../fixtures/binance/options_klines.json");
+    let series = crate::data::series_from_eapi_klines_json(
+        json,
+        "BTC-200730-9000-C",
+        crate::data::DEFAULT_OPTIONS_HISTORY_INTERVAL,
+        crate::data::Transport::Fixture,
+    )
+    .expect("committed eapi klines fixture must parse");
+    crate::data::apply_history_series(
+        &mut historybook.lock().expect("historybook mutex poisoned"),
+        series,
+    );
+}
+
 fn plant_binance_spot_funds(account_book: &Arc<Mutex<crate::data::AccountBook>>) {
     use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding};
     account_book
@@ -1189,6 +1209,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
     if config.plant_binance_s2_history {
         plant_binance_s2_history(&historybook);
+    }
+    if config.plant_binance_options_history {
+        plant_binance_options_history(&historybook);
     }
     if config.plant_licensed_history_gap {
         plant_licensed_history_gap(&historybook);
@@ -1429,7 +1452,6 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
 
     let addr = SocketAddr::from(([127, 0, 0, 1], config.port));
-    tracing::info!(%addr, "tradeautopsy-agent listening");
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| {
@@ -1444,6 +1466,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
                 e.into()
             }
         })?;
+    tracing::info!(%addr, "tradeautopsy-agent listening");
     let serve_result = axum::serve(listener, router).await;
     background.abort_all();
     serve_result?;

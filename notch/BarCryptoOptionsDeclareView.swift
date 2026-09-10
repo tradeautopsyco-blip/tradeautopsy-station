@@ -29,13 +29,13 @@ struct BarCryptoOptionsDeclareView: View {
     private var analyticsZone: some View {
         optionsZone(
             title: "Analytics",
-            note: "market/quote · market/option_chain · derived/ohlcv",
+            note: "market/quote · market/option_chain · market/ohlcv",
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 panelHead("Session", trailing: sessionTrailing)
                 lastStrip
-                sessionChartHole
-                Text("History · the ohlcv obtain is licensed to the Kotak desk. Binance session bars need a live TickBook.")
+                sessionChart
+                Text("History · GET /eapi/v1/klines on binance-com-options. Empty is unavailable, not a zero candle. Spot XRPUSDT klines stay off this panel.")
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -50,10 +50,7 @@ struct BarCryptoOptionsDeclareView: View {
 
     /// Only vocabulary on this strip is the desk's own wire status — nothing is hardcoded.
     private var sessionTrailing: String {
-        HonestyStatus.fromWire(viewModel.deskLastStatus) == .unavailable
-            || viewModel.deskLastStatus.lowercased() == "unavailable"
-            ? "quote unavailable"
-            : viewModel.deskLastStatus
+        viewModel.deskHistoryStatus
     }
 
     /// Last is live on this desk. The number shown is the entry the desk prefilled or you
@@ -91,12 +88,28 @@ struct BarCryptoOptionsDeclareView: View {
         )
     }
 
+    @ViewBuilder
+    private var sessionChart: some View {
+        if viewModel.deskHistoryStatus == "success", !viewModel.deskHistoryCandles.isEmpty {
+            BarOptionsSessionChart(candles: viewModel.deskHistoryCandles)
+                .frame(maxWidth: .infinity, minHeight: 88)
+                .background(BarDS.Fill.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                        .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+                )
+        } else {
+            sessionChartHole
+        }
+    }
+
     private var sessionChartHole: some View {
         VStack(spacing: 6) {
             Text("no session series")
                 .font(BarDS.monoFont(11, weight: .medium))
                 .foregroundColor(BarDS.Accent.red)
-            Text("market/ohlcv · no Binance obtain in this slice")
+            Text("market/ohlcv · GET /eapi/v1/klines · unavailable")
                 .font(BarDS.monoFont(10, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
         }
@@ -1144,4 +1157,57 @@ private struct BarCryptoLadderRung {
     var sub: String
     var amountUSDT: Double?
     var honesty: HonestyStatus?
+}
+
+/// Venue OHLC bars for the crypto Options session panel. No demo series.
+struct BarOptionsSessionChart: View {
+    let candles: [DeskSessionCandle]
+
+    var body: some View {
+        Canvas { context, size in
+            let parsed: [(high: Double, low: Double, open: Double, close: Double)] = candles.compactMap { c in
+                guard let h = Double(c.high), let l = Double(c.low),
+                      let o = Double(c.open), let cl = Double(c.close)
+                else { return nil }
+                return (h, l, o, cl)
+            }
+            guard parsed.count >= 1 else { return }
+            let lo = parsed.map(\.low).min() ?? 0
+            let hi = parsed.map(\.high).max() ?? 1
+            var minY = lo
+            var maxY = hi
+            if maxY <= minY { maxY = minY + 1 }
+            let pad = (maxY - minY) * 0.12
+            minY -= pad
+            maxY += pad
+            let n = parsed.count
+            let slot = size.width / CGFloat(max(n, 1))
+            let bodyW = max(2, slot * 0.45)
+            for (i, bar) in parsed.enumerated() {
+                let x = slot * (CGFloat(i) + 0.5)
+                let yHigh = y(bar.high, minY: minY, maxY: maxY, height: size.height)
+                let yLow = y(bar.low, minY: minY, maxY: maxY, height: size.height)
+                let yOpen = y(bar.open, minY: minY, maxY: maxY, height: size.height)
+                let yClose = y(bar.close, minY: minY, maxY: maxY, height: size.height)
+                let up = bar.close >= bar.open
+                let color = up ? BarDS.Accent.teal : BarDS.Accent.red
+                var wick = Path()
+                wick.move(to: CGPoint(x: x, y: yHigh))
+                wick.addLine(to: CGPoint(x: x, y: yLow))
+                context.stroke(wick, with: .color(color), lineWidth: 1)
+                let top = min(yOpen, yClose)
+                let bodyH = max(1, abs(yClose - yOpen))
+                let rect = CGRect(x: x - bodyW / 2, y: top, width: bodyW, height: bodyH)
+                context.fill(Path(rect), with: .color(color.opacity(up ? 0.85 : 1)))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .accessibilityLabel("Session klines")
+    }
+
+    private func y(_ value: Double, minY: Double, maxY: Double, height: CGFloat) -> CGFloat {
+        let t = (value - minY) / (maxY - minY)
+        return height - CGFloat(t) * height
+    }
 }

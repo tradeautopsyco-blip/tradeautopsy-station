@@ -383,6 +383,8 @@ struct DeskExtractPlan: Equatable {
     var fetchesGlance: Bool
     /// The Kotak history obtain is licensed to the Kotak desk. No other desk borrows it.
     var usesKotakHistoryObtain: Bool
+    /// Dated crypto Options obtain `history` on `binance-com-options`. Never spot klines.
+    var usesOptionsHistoryObtain: Bool
 
     static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
         let book = BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
@@ -392,7 +394,8 @@ struct DeskExtractPlan: Equatable {
         )
         return DeskExtractPlan(
             fetchesGlance: cryptoDated || !(assetClass == .options && book == nil),
-            usesKotakHistoryObtain: BarDeskTemplate.isKotakNeoDesk(slug: slug)
+            usesKotakHistoryObtain: BarDeskTemplate.isKotakNeoDesk(slug: slug),
+            usesOptionsHistoryObtain: cryptoDated
         )
     }
 }

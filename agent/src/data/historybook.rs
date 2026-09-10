@@ -1,17 +1,18 @@
 //! Runtime historical_series store. Not TickBook. Not session OHLC on the quote envelope.
 
 use super::binance_klines::HistorySeries;
+use super::binance_options_public::{is_dated_option_contract, normalize_options_instrument};
 use super::history_store::HistoryStore;
 use std::collections::HashMap;
 use std::path::Path;
 
 fn key(adapter_id: &str, instrument_id: &str, interval: &str) -> String {
-    format!(
-        "{}\0{}\0{}",
-        adapter_id.trim(),
-        super::binance_public::normalize_quote_instrument(instrument_id),
-        interval.trim()
-    )
+    let instrument = if is_dated_option_contract(instrument_id) {
+        normalize_options_instrument(instrument_id)
+    } else {
+        super::binance_public::normalize_quote_instrument(instrument_id)
+    };
+    format!("{}\0{}\0{}", adapter_id.trim(), instrument, interval.trim())
 }
 
 #[derive(Clone, Default)]
@@ -75,10 +76,14 @@ impl HistoryBook {
         self.rows.insert(k, series);
     }
 
+    /// Spot boot/CI lookup. Dated options contracts share `binance_com` but
+    /// must never fill an empty-id spot extract.
     pub fn first_for_adapter(&self, adapter_id: &str) -> Option<&HistorySeries> {
-        self.rows
-            .values()
-            .find(|row| row.adapter_id == adapter_id && !row.candles.is_empty())
+        self.rows.values().find(|row| {
+            row.adapter_id == adapter_id
+                && !row.candles.is_empty()
+                && !is_dated_option_contract(&row.instrument_id)
+        })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -146,5 +151,34 @@ mod tests {
         });
         assert!(book.get("binance_com", "btcusdt", "1m").is_none());
         assert!(book.is_empty());
+    }
+
+    #[test]
+    fn historybook_keeps_mixed_case_dated_contract_and_skips_it_for_spot_first() {
+        let path = temp_path();
+        cleanup(&path);
+        let json = include_str!("../../fixtures/binance/options_klines.json");
+        let series = crate::data::series_from_eapi_klines_json(
+            json,
+            "BTC-200730-9000-C",
+            "1m",
+            crate::data::tick::Transport::Fixture,
+        )
+        .expect("options fixture");
+        {
+            let mut book = HistoryBook::open(&path).expect("open");
+            book.upsert(series);
+            assert!(book.get("binance_com", "BTC-200730-9000-C", "1m").is_some());
+            assert!(book.get("binance_com", "btc-200730-9000-c", "1m").is_none());
+            assert!(book.first_for_adapter("binance_com").is_none());
+        }
+        let book = HistoryBook::open(&path).expect("reopen");
+        let loaded = book
+            .get("binance_com", "BTC-200730-9000-C", "1m")
+            .expect("loaded mixed-case");
+        assert_eq!(loaded.instrument_id, "BTC-200730-9000-C");
+        assert_ne!(loaded.instrument_id, "btc-200730-9000-c");
+        assert!(book.first_for_adapter("binance_com").is_none());
+        cleanup(&path);
     }
 }

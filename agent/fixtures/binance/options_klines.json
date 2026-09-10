@@ -1,0 +1,16 @@
+[
+  {
+    "open": "950",
+    "high": "1100",
+    "low": "900",
+    "close": "1000",
+    "volume": "100",
+    "amount": "2",
+    "interval": "1m",
+    "tradeCount": 10,
+    "takerVolume": "100",
+    "takerAmount": "10000",
+    "openTime": 1499040000000,
+    "closeTime": 1499040059999
+  }
+]

@@ -51,6 +51,17 @@ struct DeskChainCatalogRow: Identifiable, Equatable {
     let last: String?
 }
 
+/// One eapi kline for the crypto Options session chart. Venue strings — never a fake zero.
+struct DeskSessionCandle: Identifiable, Equatable {
+    var id: String { "\(openTimeMs)" }
+    let openTimeMs: Int64
+    let open: String
+    let high: String
+    let low: String
+    let close: String
+    let volume: String
+}
+
 struct SignalBreakdown {
     var lossChasingScore: Double = 0
     var revengeScore: Double = 0
@@ -495,6 +506,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskLastStatus: String = "unavailable"
     @Published var deskHistoryStatus: String = "unavailable"
     @Published var deskHistoryIneligible: [String] = []
+    @Published var deskHistoryCandles: [DeskSessionCandle] = []
     @Published var deskYahooHistoryStatus: String = "unavailable"
     @Published var deskYahooHistoryIneligible: [String] = []
     @Published var deskChainStatus: String = "unavailable"
@@ -1671,7 +1683,8 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Bind History from a Station history extract (testable without network).
-    /// Pre-trade stays a status string — never candles, never Yahoo stitch.
+    /// Crypto Options session chart consumes eapi candles. Kotak stays unsupported.
+    /// Spot `/api/station/history` never paints a dated contract.
     func applyStationHistoryEnvelope(_ json: [String: Any]) {
         deskYahooHistoryStatus = "unavailable"
         deskYahooHistoryIneligible = []
@@ -1679,10 +1692,14 @@ public final class NotchViewModel: ObservableObject {
         if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
             deskHistoryStatus = "unsupported"
             deskHistoryIneligible = []
+            deskHistoryCandles = []
             return
         }
 
         let adapter = ((json["provenance"] as? [String: Any])?["adapter_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let provenanceAdapter = (json["provenance_adapter_id"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
         let dataSource = ((json["data"] as? [String: Any])?["source"] as? String)?
@@ -1691,10 +1708,28 @@ public final class NotchViewModel: ObservableObject {
         let status = (json["status"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? "unavailable"
+        let bookId = (json["book_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if adapter == "yahoo" || adapter == "yahoo_chart"
             || dataSource == "yahoo" || dataSource == "yahoo_chart"
             || status == "research_segment"
+            || provenanceAdapter == "yahoo" || provenanceAdapter == "yahoo_chart"
         {
+            deskHistoryCandles = []
+            return
+        }
+
+        let cryptoOptions = BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: declareAssetClass,
+            instrumentId: deskSelectedInstrumentId
+        )
+        if cryptoOptions {
+            applyOptionsSessionHistory(
+                json: json,
+                status: status,
+                dataSource: dataSource,
+                bookId: bookId
+            )
             return
         }
 
@@ -1702,6 +1737,70 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
+        deskHistoryCandles = []
+    }
+
+    private func applyOptionsSessionHistory(
+        json: [String: Any],
+        status: String,
+        dataSource: String,
+        bookId: String
+    ) {
+        if bookId == "binance-com-spot"
+            || dataSource == "binance_klines"
+        {
+            deskHistoryStatus = "unavailable"
+            deskHistoryIneligible = []
+            deskHistoryCandles = []
+            return
+        }
+        let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
+        if status == "success", !candles.isEmpty {
+            deskHistoryStatus = "success"
+            deskHistoryIneligible = []
+            deskHistoryCandles = candles
+            return
+        }
+        deskHistoryStatus = status == "unsupported" ? "unavailable" : (status.isEmpty ? "unavailable" : status)
+        if deskHistoryStatus == "success" {
+            deskHistoryStatus = "unavailable"
+        }
+        deskHistoryIneligible = stringList(json["ineligible"]).filter {
+            $0 != "rights_forbid_canonical"
+        }
+        deskHistoryCandles = []
+    }
+
+    static func parseSessionCandles(_ raw: Any?) -> [DeskSessionCandle] {
+        guard let rows = raw as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            let openTime = VenuePosture.parseInt64(row["open_time_ms"])
+            let open = stringScalar(row["open"])
+            let high = stringScalar(row["high"])
+            let low = stringScalar(row["low"])
+            let close = stringScalar(row["close"])
+            let volume = stringScalar(row["volume"])
+            guard let openTime, let open, let high, let low, let close, let volume else {
+                return nil
+            }
+            return DeskSessionCandle(
+                openTimeMs: openTime,
+                open: open,
+                high: high,
+                low: low,
+                close: close,
+                volume: volume
+            )
+        }
+    }
+
+    private static func stringScalar(_ raw: Any?) -> String? {
+        if let s = raw as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        if let n = raw as? NSNumber { return n.stringValue }
+        return nil
     }
 
     /// Drop every market extract bound to the previous instrument/book, and move the
@@ -1723,6 +1822,9 @@ public final class NotchViewModel: ObservableObject {
         deskOiStatus = "unavailable"
         clearDeskOiNumbers()
         clearDeskGreeks()
+        deskHistoryStatus = "unavailable"
+        deskHistoryIneligible = []
+        deskHistoryCandles = []
         if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
@@ -1741,6 +1843,11 @@ public final class NotchViewModel: ObservableObject {
         }
         let encodedBook = InstrumentTickBookId.queryEncode(book)
         return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
+    }
+
+    /// Dated crypto Options session series. Never Kotak history, never spot `/api/v3/klines`.
+    func deskOptionsHistoryExtractPath() -> String {
+        "/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=history"
     }
 
     /// Testable chain glance path. Kotak names `deskBookId` and an underlying ticker.
@@ -1984,16 +2091,23 @@ public final class NotchViewModel: ObservableObject {
         let chainPath = plan.fetchesGlance ? deskChainExtractPath(symbol: symbol) : nil
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
         let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
-        let historyPath = plan.usesKotakHistoryObtain
-            ? "/api/station/obtain?adapter=kotak_neo&operation=history"
-            : "/api/station/history?instrument=\(encoded)"
+        let historyPath: String?
+        if plan.usesKotakHistoryObtain {
+            historyPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
+        } else if plan.usesOptionsHistoryObtain {
+            historyPath = deskOptionsHistoryExtractPath()
+        } else if declareAssetClass == .options {
+            historyPath = nil
+        } else {
+            historyPath = "/api/station/history?instrument=\(encoded)"
+        }
         let generation = deskExtractGeneration
         Task { [weak self] in
             guard let self else { return }
             async let chain = self.getExtractJSON(optional: chainPath)
             async let oi = self.getExtractJSON(optional: oiPath)
             async let greeks = self.getExtractJSON(optional: greeksPath)
-            let licensedJSON = await self.getExtractJSON(historyPath)
+            let licensedJSON = await self.getExtractJSON(optional: historyPath)
             let chainJSON = await chain
             let oiJSON = await oi
             let greeksJSON = await greeks

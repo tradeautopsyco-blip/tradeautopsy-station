@@ -258,4 +258,13 @@ strings, served on `GET /api/station/greeks` and `obtain operation=optiongreeks`
 stays `research_fetch_only`. Four greeks, no rho. No IV `<= 0`. `/eapi/v1/depth` is
 allowlisted by the same lock but its parser is **not** this slice.
 
+#70 / session series: public `GET /eapi/v1/klines?symbol=<mixed-case>&interval=<ENUM>`
+on `eapi.binance.com` (weight 1, no HMAC). Official HTML Response Example names object
+keys `open` / `high` / `low` / `close` / `volume` / `amount` / `interval` / `tradeCount`
+/ `takerVolume` / `takerAmount` / `openTime` / `closeTime`. Live GET returns a 12-slot
+array; the lock maps those names onto the live slots. Obtain noun `history` on
+`binance-com-options`. Empty `[]` is unavailable, not a zero candle. Interval not on
+the ENUM is unsupported — Station does **not** resample (`OHLCV-RESAMPLE.md`). Never
+`/api/v3/klines` on a dated contract.
+
 Options positions as behavioral risk remain a later slice (see MECHANICS.md).

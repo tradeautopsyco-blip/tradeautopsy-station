@@ -73,6 +73,22 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     assert_ne!(oi["status"], "unsupported");
     assert!(oi["data"].is_null());
 
+    let history: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=history"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("history")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(history["status"], "unavailable");
+    assert_ne!(history["status"], "unsupported");
+    assert!(history["data"].is_null());
+    assert_ne!(history["data"]["candles"][0]["open"], "0");
+
     let slug_only: serde_json::Value = client
         .get(format!(
             "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&operation=quotes"
@@ -146,6 +162,7 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
             "open_interest",
             "optiongreeks",
             "depth",
+            "history",
             "tradebook",
             "search"
         ])
@@ -166,6 +183,7 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
             "optiongreeks",
             "search",
             "tradebook",
+            "history",
             "depth"
         ]
     );
@@ -1333,6 +1351,134 @@ async fn planted_options_fills_serve_tradebook_on_the_options_book() {
     assert_ne!(spot["status"], "success");
     assert!(spot["data"].is_null());
     assert!(!spot.to_string().contains("BTC-200730-9000-C"));
+
+    handle.abort();
+}
+
+/// Planted eapi klines serve `market/ohlcv` on the options book. Spot
+/// `/api/v3/klines` must not light this contract.
+#[tokio::test]
+async fn planted_options_klines_serve_history_on_the_options_book() {
+    const PORT: u16 = 19_542;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_history: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind dated contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(bind["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(bind["book_id"], "binance-com-options");
+
+    let obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=history"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain history")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "success");
+    assert_eq!(obtain["book_id"], "binance-com-options");
+    assert_eq!(obtain["provenance_path"], "/eapi/v1/klines");
+    assert_eq!(obtain["data"]["source"], "eapi_klines");
+    assert_ne!(obtain["data"]["source"], "binance_klines");
+    assert_eq!(obtain["data"]["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(obtain["data"]["interval"], "1m");
+    assert_eq!(obtain["data"]["candles"][0]["open"], "950");
+    assert_eq!(obtain["data"]["candles"][0]["close"], "1000");
+    let wire = obtain.to_string();
+    assert!(!wire.contains("btcusdt"));
+    assert!(!wire.contains("/api/v3/klines"));
+
+    let station: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/history?instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("station history")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(station["status"], "success");
+    assert_eq!(station["instrument_id"], "BTC-200730-9000-C");
+    assert_eq!(station["data"]["source"], "eapi_klines");
+
+    let spot: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-spot&operation=history"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("spot history")
+        .json()
+        .await
+        .expect("json");
+    assert_ne!(spot["status"], "success");
+    assert!(spot["data"].is_null());
+
+    handle.abort();
+}
+
+/// Spot klines plant must not fill the dated-contract options session.
+#[tokio::test]
+async fn spot_klines_plant_does_not_fill_options_session() {
+    const PORT: u16 = 19_543;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_s2_history: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let _bind: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind")
+        .json()
+        .await
+        .expect("json");
+
+    let obtain: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=history"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("obtain history")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(obtain["status"], "unavailable");
+    assert!(obtain["data"].is_null());
 
     handle.abort();
 }

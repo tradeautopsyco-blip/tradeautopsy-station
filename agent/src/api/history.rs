@@ -5,7 +5,9 @@
 
 use crate::api::AppState;
 use crate::data::{
-    extract_history, extract_licensed_history, HistoryEnvelope, DEFAULT_HISTORY_INTERVAL,
+    extract_history, extract_licensed_history, extract_options_history, is_dated_option_contract,
+    normalize_options_instrument, HistoryEnvelope, DEFAULT_HISTORY_INTERVAL,
+    DEFAULT_OPTIONS_HISTORY_INTERVAL,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -31,6 +33,10 @@ pub async fn handler(
         .map(str::to_string)
         .or_else(|| state.s1_desk_symbol.clone())
         .unwrap_or_default();
+    if crate::data::is_dated_option_contract(&raw) {
+        let instrument = crate::data::normalize_options_instrument(&raw);
+        return Json(extract_station_history(&state, &instrument, &query));
+    }
     let instrument = state.resolve_instrument(&raw);
     Json(extract_station_history(&state, &instrument, &query))
 }
@@ -49,6 +55,20 @@ fn extract_station_history(
         .unwrap_or(false);
     if yahoo {
         return extract_history(instrument, source);
+    }
+    if is_dated_option_contract(instrument) {
+        let instrument = normalize_options_instrument(instrument);
+        let interval = query
+            .interval
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(DEFAULT_OPTIONS_HISTORY_INTERVAL);
+        let book = state
+            .historybook
+            .lock()
+            .expect("historybook mutex poisoned");
+        return extract_options_history(&book, &instrument, Some(interval), query.limit);
     }
     if state.is_kotak_neo_desk() {
         return extract_history(instrument, None);
