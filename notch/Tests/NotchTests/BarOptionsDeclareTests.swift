@@ -968,7 +968,17 @@ struct BarOptionsDeclareTests {
             "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
             "rights": ["display": true],
         ])
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "sumOpenInterest": "12.5",
+                "sumOpenInterestUsd": "1000.00",
+                "timestamp": "1597026383085",
+            ],
+        ])
         #expect(vm.deskGreeksDelta != nil)
+        #expect(vm.deskOiSumOpenInterest == "12.5")
         let before = vm.deskExtractGeneration
 
         let after = vm.invalidateDeskMarketExtracts(reason: "select-symbol")
@@ -984,6 +994,8 @@ struct BarOptionsDeclareTests {
         // Same generation bump as chain/OI — one rebind, one wipe.
         #expect(vm.deskChainStatus == "unavailable")
         #expect(vm.deskOiStatus == "unavailable")
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiRows.isEmpty)
     }
 
     @Test func contractSwitchWipesGreeksSynchronously() {
@@ -1005,6 +1017,178 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskGreeksStatus == "unavailable")
         #expect(vm.deskGreeksVega == nil)
         #expect(vm.deskExtractInvalidationReason == "asset-class")
+    }
+
+    // MARK: - OI LatestState paint (eapi sumOpenInterest, crypto Options desk)
+
+    @Test func oiExactMatchPaintsVenueStringsVerbatim() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "sumOpenInterest": "12.5",
+                "sumOpenInterestUsd": "1000.00",
+                "timestamp": "1597026383085",
+            ],
+        ])
+        #expect(vm.deskOiStatus == "success")
+        // Venue text, digit for digit — not 12.50, not a Double round-trip.
+        #expect(vm.deskOiSumOpenInterest == "12.5")
+        #expect(vm.deskOiSumOpenInterestUsd == "1000.00")
+        #expect(vm.deskOiTimestamp == "1597026383085")
+        #expect(vm.deskOiSymbol == "BTC-200730-9000-C")
+        #expect(vm.deskOiRows.isEmpty)
+        #expect(HonestyStatus.fromWire(vm.deskOiStatus) == nil)
+    }
+
+    @Test func oiEmptyStringIsMissingNotZero() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "sumOpenInterest": "",
+                "sumOpenInterestUsd": "1000.00",
+                "timestamp": "1597026383085",
+            ],
+        ])
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiSumOpenInterest != "0")
+        #expect(vm.deskOiRows.isEmpty)
+    }
+
+    @Test func oiVenueZeroStringMayPaint() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "sumOpenInterest": "0",
+            ],
+        ])
+        #expect(vm.deskOiSumOpenInterest == "0")
+    }
+
+    @Test func oiNumericJsonValueIsNotTheStringContract() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "symbol": "BTC-200730-9000-C",
+                "sumOpenInterest": 12.5,
+                "sumOpenInterestUsd": 1000.00,
+                "timestamp": 1597026383085,
+            ],
+        ])
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiSumOpenInterestUsd == nil)
+        #expect(vm.deskOiTimestamp == nil)
+    }
+
+    @Test func oiRowsListDoesNotInventATotal() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "row_count": 2,
+                "rows": [
+                    [
+                        "symbol": "BTC-200730-9000-P",
+                        "sumOpenInterest": "3.0",
+                        "sumOpenInterestUsd": "200.00",
+                        "timestamp": "1596067200000",
+                    ],
+                    [
+                        "symbol": "ETH-200730-400-C",
+                        "sumOpenInterest": "12.5",
+                        "sumOpenInterestUsd": "1000.00",
+                        "timestamp": "1596067200000",
+                    ],
+                ],
+            ],
+        ])
+        #expect(vm.deskOiStatus == "success")
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiSumOpenInterestUsd == nil)
+        #expect(vm.deskOiSymbol == nil)
+        #expect(vm.deskOiRows.count == 2)
+        #expect(vm.deskOiRows[0].symbol == "BTC-200730-9000-P")
+        #expect(vm.deskOiRows[0].sumOpenInterest == "3.0")
+        #expect(vm.deskOiRows[1].symbol == "ETH-200730-400-C")
+        #expect(vm.deskOiRows[1].sumOpenInterest == "12.5")
+        // Never 3.0+12.5.
+        #expect(vm.deskOiSumOpenInterest != "15.5")
+    }
+
+    @Test func oiEmptyRowsStayUnavailableHonesty() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": ["row_count": 0, "rows": [] as [Any]],
+        ])
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiRows.isEmpty)
+        #expect(vm.deskOiSumOpenInterest != "0")
+    }
+
+    @Test func oiDarkEnvelopeLeavesEveryNumberNil() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationOiEnvelope([
+            "status": "unavailable",
+            "data": NSNull(),
+        ])
+        #expect(vm.deskOiStatus == "unavailable")
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiRows.isEmpty)
+        #expect(HonestyStatus.fromWire(vm.deskOiStatus) == .unavailable)
+    }
+
+    @Test func nfoOiEnvelopeDoesNotPaintEapiFields() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "open_interest": "480750",
+                "field": "open_int",
+                "instrument_id": "nse_fo|12345",
+            ],
+        ])
+        // Wire status stays the NFO glance word — the crypto number fields stay empty.
+        #expect(vm.deskOiStatus == "success")
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiRows.isEmpty)
+        #expect(BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345"
+        ))
+        #expect(!BarOptionsDeclareSurface.usesCryptoOptions(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345"
+        ))
+    }
+
+    @Test func spotOptionsTabStillNotCryptoOi() {
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
+        ) == .standardForm)
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": ["sumOpenInterest": "12.5", "symbol": "BTCUSDT"],
+        ])
+        // Apply is book-agnostic; the Options tab still is not the crypto surface.
+        #expect(!BarOptionsDeclareSurface.usesCryptoOptions(
+            for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
+        ))
     }
 }
 

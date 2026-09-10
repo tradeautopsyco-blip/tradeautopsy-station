@@ -156,12 +156,10 @@ struct BarCryptoOptionsDeclareView: View {
 
     @ViewBuilder
     private var oiHost: some View {
-        let wire = viewModel.deskOiStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if wire == "success" {
-            emptyBlock(
-                title: "open interest live · sumOpenInterest from eapi",
-                body: "LatestState for this underlying + expiry. Not depth. Not a strike grid.",
-            )
+        if let sum = viewModel.deskOiSumOpenInterest {
+            oiLatestExact(sum)
+        } else if !viewModel.deskOiRows.isEmpty {
+            oiLatestRows
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HonestyChip(status: .unavailable)
@@ -171,6 +169,75 @@ struct BarCryptoOptionsDeclareView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Exact-match LatestState: the venue's own `sumOpenInterest` string, digit for digit.
+    private func oiLatestExact(_ sum: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(sum)
+                .font(BarDS.monoFont(15, weight: .medium))
+                .foregroundColor(BarDS.Text.primary)
+            if let symbol = viewModel.deskOiSymbol {
+                Text(symbol)
+                    .font(BarDS.monoFont(11, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+            }
+            if let usd = viewModel.deskOiSumOpenInterestUsd {
+                Text("sumOpenInterestUsd \(usd)")
+                    .font(BarDS.monoFont(10.5, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+            }
+            if let timestamp = viewModel.deskOiTimestamp {
+                Text(timestamp)
+                    .font(BarDS.monoFont(10.5, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+            }
+            Text("LatestState · GET /eapi/v1/openInterest. Not depth. Not a strike grid.")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
+    }
+
+    /// No exact symbol match: list the expiry rows. Never invent a total.
+    private var oiLatestRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(viewModel.deskOiRows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.symbol)
+                        .font(BarDS.monoFont(11, weight: .regular))
+                        .foregroundColor(BarDS.Text.primary)
+                    Spacer(minLength: 8)
+                    if let oi = row.sumOpenInterest {
+                        Text(oi)
+                            .font(BarDS.monoFont(12, weight: .medium))
+                            .foregroundColor(BarDS.Text.primary)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+            Text("LatestState for this underlying + expiry. Not depth. Not a strike grid.")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
     }
 
     // MARK: Zone B

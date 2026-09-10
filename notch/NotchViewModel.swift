@@ -29,6 +29,16 @@ struct CautionSymbolRow: Identifiable, Equatable {
     var reason: String
 }
 
+/// One eapi `openInterest` row. Strings only — the venue's own text.
+/// Empty field = missing, not `"0"`. Mixed-case `symbol` is the identity.
+struct DeskOiExpiryRow: Identifiable, Equatable {
+    var id: String { symbol }
+    let symbol: String
+    let sumOpenInterest: String?
+    let sumOpenInterestUsd: String?
+    let timestamp: String?
+}
+
 struct SignalBreakdown {
     var lossChasingScore: Double = 0
     var revengeScore: Double = 0
@@ -477,6 +487,13 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskYahooHistoryIneligible: [String] = []
     @Published var deskChainStatus: String = "unavailable"
     @Published var deskOiStatus: String = "unavailable"
+    /// Exact-match `GET /eapi/v1/openInterest` fields. Venue strings, never a summed total.
+    @Published var deskOiSumOpenInterest: String? = nil
+    @Published var deskOiSumOpenInterestUsd: String? = nil
+    @Published var deskOiTimestamp: String? = nil
+    @Published var deskOiSymbol: String? = nil
+    /// Expiry row list when there is no exact symbol match. Do not sum these.
+    @Published var deskOiRows: [DeskOiExpiryRow] = []
     /// `GET /api/station/greeks` — the venue's own mark table, passed through. Never a pricer.
     @Published var deskGreeksStatus: String = "unavailable"
     /// The venue's published text for each greek. String, never Double: reparsing a
@@ -1679,6 +1696,7 @@ public final class NotchViewModel: ObservableObject {
         deskExtractInvalidationReason = reason
         deskChainStatus = "unavailable"
         deskOiStatus = "unavailable"
+        clearDeskOiNumbers()
         clearDeskGreeks()
         if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
@@ -1752,6 +1770,66 @@ public final class NotchViewModel: ObservableObject {
             return BarDeskTemplate.binanceComOptionsBookId
         }
         return BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+    }
+
+    /// Apply one `/api/station/open_interest` envelope. Pure state, no HTTP —
+    /// the parse is the seam under test.
+    ///
+    /// Exact mixed-case symbol match → copy `sumOpenInterest` / Usd / timestamp /
+    /// `symbol` as published strings. Rows-only → keep the list, leave the
+    /// single-contract fields nil, never sum. Empty string is missing, not `"0"`.
+    /// A venue `"0"` that actually arrived as a string may paint. Numeric JSON
+    /// is not the contract — never `as? Double`.
+    func applyStationOiEnvelope(_ json: [String: Any]) {
+        let rawStatus = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        clearDeskOiNumbers()
+        deskOiStatus = rawStatus.isEmpty ? "unavailable" : rawStatus
+
+        guard rawStatus.lowercased() == "success" else { return }
+        guard let data = json["data"] as? [String: Any] else { return }
+
+        if let rawRows = data["rows"] as? [Any] {
+            let parsed = rawRows.compactMap(Self.deskOiRow(from:))
+            if !parsed.isEmpty {
+                deskOiRows = parsed
+            }
+            return
+        }
+
+        guard let sum = Self.publishedVenueString(data["sumOpenInterest"]) else { return }
+        deskOiSumOpenInterest = sum
+        deskOiSumOpenInterestUsd = Self.publishedVenueString(data["sumOpenInterestUsd"])
+        deskOiTimestamp = Self.publishedVenueString(data["timestamp"])
+        deskOiSymbol = Self.publishedVenueString(data["symbol"])
+    }
+
+    /// Venue text only. Whitespace-only and non-strings are missing — not `"0"`.
+    private static func publishedVenueString(_ raw: Any?) -> String? {
+        guard let raw = raw as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func deskOiRow(from raw: Any) -> DeskOiExpiryRow? {
+        guard let obj = raw as? [String: Any],
+              let symbol = publishedVenueString(obj["symbol"])
+        else { return nil }
+        return DeskOiExpiryRow(
+            symbol: symbol,
+            sumOpenInterest: publishedVenueString(obj["sumOpenInterest"]),
+            sumOpenInterestUsd: publishedVenueString(obj["sumOpenInterestUsd"]),
+            timestamp: publishedVenueString(obj["timestamp"])
+        )
+    }
+
+    /// Numbers and the expiry list — status is owned by the caller / envelope.
+    private func clearDeskOiNumbers() {
+        deskOiSumOpenInterest = nil
+        deskOiSumOpenInterestUsd = nil
+        deskOiTimestamp = nil
+        deskOiSymbol = nil
+        deskOiRows = []
     }
 
     /// Apply one `/api/station/greeks` envelope. Pure state, no HTTP — the parse is the
@@ -1861,6 +1939,7 @@ public final class NotchViewModel: ObservableObject {
                 guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
+                self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
             }
         }
