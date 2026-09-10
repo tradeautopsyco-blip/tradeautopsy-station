@@ -4,11 +4,10 @@ use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
     chain_rows_for_contract, depth_obtain_data, describe, ensure_options_user_trades,
-    ensure_spot_account, ensure_spot_open_orders, extract_chain_from,
-    extract_depth_on_book, extract_greeks_from_mark, extract_licensed_history,
-    extract_open_interest_from, extract_quote_for_book, history_obtain_data,
-    is_dated_option_contract, obtain, parse_nfo_instrument_id, search_identity,
-    search_rows_for_book, DepthStatus, GlanceStatus,
+    ensure_spot_account, ensure_spot_open_orders, extract_chain_from, extract_depth_on_book,
+    extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
+    extract_quote_for_book, history_obtain_data, is_dated_option_contract, obtain,
+    parse_nfo_instrument_id, search_identity, search_rows_for_book, DepthStatus, GlanceStatus,
     GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
     SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
     DEFAULT_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
@@ -141,8 +140,8 @@ pub async fn obtain_handler(
     let mut envelope = obtain(manifest, operation);
     if crate::data::should_source_route(&envelope.book_id, &envelope.operation) {
         use crate::data::{
-            apply_kotak_source_route, extract_gap_vendor_history, gap_history_obtain_data,
-            decide_kotak_route, LICENSED_HISTORY_ADAPTER_ID,
+            apply_kotak_source_route, decide_kotak_route, extract_gap_vendor_history,
+            gap_history_obtain_data, LICENSED_HISTORY_ADAPTER_ID,
         };
         if envelope.operation == "quotes" {
             let decision = decide_kotak_route("quotes", &state.gap_vendor);
@@ -211,6 +210,15 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
         return;
     }
     match envelope.operation.as_str() {
+        "quotes" => {
+            // Last is per contract. `?symbol=` is mandatory; a leftover spot id
+            // is not a contract and must never reach the unfiltered ticker dump.
+            let instrument = selected_options_contract(state);
+            if !is_dated_option_contract(&instrument) {
+                return;
+            }
+            super::glance::ensure_options_ticker(state, &instrument).await;
+        }
         "optionchain" => super::glance::ensure_options_master(state).await,
         "open_interest" => {
             // OI is instrument-scoped — fetch only once the contract is known.
@@ -310,7 +318,11 @@ async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
     }
 }
 
-fn enrich_obtain(state: &AppState, envelope: ObtainEnvelope, query: &ObtainQuery) -> ObtainEnvelope {
+fn enrich_obtain(
+    state: &AppState,
+    envelope: ObtainEnvelope,
+    query: &ObtainQuery,
+) -> ObtainEnvelope {
     if envelope.operation == "search" {
         return enrich_search(state, envelope, query);
     }
@@ -600,7 +612,11 @@ fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
 }
 
 /// One obtain helper for all account nouns. `None` slot → Unavailable; empty vec → Success + `rows: []`.
-fn account_slot(state: &AppState, mut envelope: ObtainEnvelope, capability: &str) -> ObtainEnvelope {
+fn account_slot(
+    state: &AppState,
+    mut envelope: ObtainEnvelope,
+    capability: &str,
+) -> ObtainEnvelope {
     match capability {
         "fills" => {
             let book = state
@@ -757,7 +773,11 @@ fn enrich_tradebook(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelop
 }
 
 /// Local master prefix search. `q` len < 2 → Success + `rows: []`. No vendor GET.
-fn enrich_search(state: &AppState, mut envelope: ObtainEnvelope, query: &ObtainQuery) -> ObtainEnvelope {
+fn enrich_search(
+    state: &AppState,
+    mut envelope: ObtainEnvelope,
+    query: &ObtainQuery,
+) -> ObtainEnvelope {
     let q = query.q.as_deref().unwrap_or("").trim();
     let rows = search_rows_for_book(state, &envelope.book_id, q);
     envelope.status = ObtainStatus::Success;

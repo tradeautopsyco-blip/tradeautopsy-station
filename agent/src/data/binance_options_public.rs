@@ -1,9 +1,11 @@
 //! S1 desk: Binance.com European options public last into TickBook.
 //!
 //! Way 3 last-only: REST `GET /eapi/v1/ticker` → `lastPrice`
-//! (`issues/compliance/locks/binance-com-options.md`). Do not map spot
-//! `@trade` `p` or invent WS `c`. WS last field is NOT SPECIFIED — URL helper
-//! only; do not apply live payloads.
+//! (`issues/compliance/locks/binance-com-options.md`, REST.md Slice 1).
+//! Do not map spot `@trade` `p` or invent WS `c`. WS last field is NOT
+//! SPECIFIED — URL helper only; do not apply live WS payloads. The live
+//! dial is `ensure_options_ticker` (glance), gated on `eapi_public_fetch`
+//! and a dated mixed-case contract. Never the unfiltered ticker list.
 
 use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID};
 use super::tick::{QuoteTick, Transport};
@@ -12,11 +14,9 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-#[allow(dead_code)] // REST last lock — URL helpers are not dialed until WS last is specified.
 pub const OPTIONS_EAPI_HOST: &str = "eapi.binance.com";
-#[allow(dead_code)]
 pub const OPTIONS_TICKER_PATH: &str = "/eapi/v1/ticker";
-#[allow(dead_code)]
+#[allow(dead_code)] // WS last field is NOT SPECIFIED — keep the URL for the refuse-list tests.
 pub const OPTIONS_WS_BASE: &str = "wss://nbstream.binance.com/eoptions";
 
 /// Options contract ids stay mixed-case (`BTC-200730-9000-C`). Trim only.
@@ -29,7 +29,14 @@ pub fn binance_options_stream_base_url() -> &'static str {
     OPTIONS_WS_BASE
 }
 
-#[allow(dead_code)]
+/// `?symbol=` only. Never the unfiltered list — REST.md forbids auto-dial
+/// without a named contract, and the first row of a full ticker dump is not
+/// this book's selected last.
+pub fn options_ticker_query(symbol: &str) -> String {
+    format!("symbol={}", normalize_options_instrument(symbol))
+}
+
+#[allow(dead_code)] // Host-facing URL for refuse-list tests; live dial uses EgressCall.
 pub fn binance_options_ticker_url(symbol: Option<&str>) -> String {
     match symbol.map(str::trim).filter(|s| !s.is_empty()) {
         Some(symbol) => format!("https://{OPTIONS_EAPI_HOST}{OPTIONS_TICKER_PATH}?symbol={symbol}"),
@@ -64,7 +71,8 @@ pub fn options_quote_stream_key(symbol: &str) -> String {
 }
 
 /// Record `{book_id}\0{symbol}` so options cannot collide with spot `btcusdt`.
-/// Does not dial WS (last field unspecified) and must not call the spot `@trade` stream.
+/// Does not dial WS (last field unspecified) and must not call the spot `@trade`
+/// stream. REST last is `ensure_options_ticker`, not this set insert.
 pub fn ensure_binance_com_options_quote(spawned: &Arc<Mutex<HashSet<String>>>, symbol: &str) {
     let instrument = normalize_options_instrument(symbol);
     if instrument.is_empty() {
@@ -130,6 +138,23 @@ pub fn quote_tick_from_options_ticker_json(
     quote_ticks_from_options_ticker_json(raw, received_at)
         .into_iter()
         .next()
+}
+
+/// One last for exactly this mixed-case contract. A body whose `symbol` is a
+/// different contract, a leftover `BTCUSDT`, or a zero `lastPrice` is a miss —
+/// never paint the previous row onto this id.
+pub fn quote_tick_from_options_ticker_json_for_symbol(
+    raw: &str,
+    symbol: &str,
+    received_at: DateTime<Utc>,
+) -> Option<QuoteTick> {
+    let want = normalize_options_instrument(symbol);
+    if !is_dated_option_contract(&want) {
+        return None;
+    }
+    quote_ticks_from_options_ticker_json(raw, received_at)
+        .into_iter()
+        .find(|tick| tick.instrument_id == want)
 }
 
 #[cfg(test)]
@@ -232,5 +257,52 @@ mod tests {
         )
         .is_none());
         assert!(quote_tick_from_options_ticker_json("[]", received()).is_none());
+    }
+
+    #[test]
+    fn ticker_query_is_symbol_equals_mixed_case_never_lowercased() {
+        assert_eq!(
+            options_ticker_query("  BTC-200730-9000-C  "),
+            "symbol=BTC-200730-9000-C"
+        );
+        assert_ne!(
+            options_ticker_query("BTC-200730-9000-C"),
+            "symbol=btc-200730-9000-c"
+        );
+        assert_ne!(options_ticker_query("BTC-200730-9000-C"), "symbol=");
+        assert_ne!(options_ticker_query("BTC-200730-9000-C"), "/eapi/v1/ticker");
+    }
+
+    #[test]
+    fn for_symbol_picks_the_named_contract_and_refuses_a_foreign_row() {
+        let json = r#"[
+            {"symbol":"ETH-200730-4000-C","lastPrice":"9.00"},
+            {"symbol":"BTC-200730-9000-C","lastPrice":"1.23"}
+        ]"#;
+        let hit =
+            quote_tick_from_options_ticker_json_for_symbol(json, "BTC-200730-9000-C", received())
+                .unwrap();
+        assert_eq!(hit.instrument_id, "BTC-200730-9000-C");
+        assert_eq!(hit.last, "1.23");
+        assert_eq!(hit.book_id, BINANCE_COM_OPTIONS_BOOK_ID);
+        assert_eq!(hit.transport, Transport::Rest);
+        assert!(quote_tick_from_options_ticker_json_for_symbol(
+            json,
+            "BTC-200730-9500-C",
+            received()
+        )
+        .is_none());
+        assert!(quote_tick_from_options_ticker_json_for_symbol(
+            json,
+            "btc-200730-9000-c",
+            received()
+        )
+        .is_none());
+        assert!(
+            quote_tick_from_options_ticker_json_for_symbol(json, "BTCUSDT", received()).is_none()
+        );
+        let first = quote_tick_from_options_ticker_json(json, received()).unwrap();
+        assert_eq!(first.instrument_id, "ETH-200730-4000-C");
+        assert_ne!(first.instrument_id, hit.instrument_id);
     }
 }

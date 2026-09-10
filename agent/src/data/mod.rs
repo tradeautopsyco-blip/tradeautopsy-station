@@ -32,9 +32,9 @@ mod historybook;
 mod honesty;
 mod host_policy;
 mod identity;
-mod instrument_search;
 mod inherit;
 mod instrument_master_status;
+mod instrument_search;
 mod klines_pager;
 mod kotak_depth;
 mod kotak_private;
@@ -50,8 +50,8 @@ mod resample;
 mod resolve;
 mod rights;
 mod router;
-mod source_route;
 mod source_manifest;
+mod source_route;
 mod tick;
 mod tickbook;
 
@@ -95,7 +95,8 @@ pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
 pub use binance_options_private::ensure_options_user_trades;
 pub use binance_options_public::{
     ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
-    quote_tick_from_options_ticker_json,
+    options_ticker_query, quote_tick_from_options_ticker_json,
+    quote_tick_from_options_ticker_json_for_symbol, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH,
 };
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
@@ -141,7 +142,6 @@ pub use host_policy::{
     is_kotak_nse_fo_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
-pub use instrument_search::{search_identity, search_rows_for_book};
 pub use inherit::{capital_may_light, inherit};
 pub use instrument_master_status::{
     binance_exchange_info_cache_path, json_array_first_object_keys, json_field_object_keys,
@@ -149,6 +149,7 @@ pub use instrument_master_status::{
     write_raw_cache, InstrumentMasterErrorClass, InstrumentMasterFetchError, InstrumentMasterPhase,
     InstrumentMasterStatus,
 };
+pub use instrument_search::{search_identity, search_rows_for_book};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use klines_pager::{
     fetch_klines_page, next_start_time_ms, page_klines, walk_is_complete, walk_klines_page,
@@ -177,6 +178,7 @@ pub use quote_subscription::{quote_subscription_for, QuoteSubscription};
 pub use registry::Registry;
 pub use resample::extract_resample;
 pub use resolve::{resolve_among, resolve_desk_instrument};
+pub use router::RouteOutcome;
 pub use source_manifest::{
     describe, first_party_s0_manifests, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest,
     load_first_party_manifests, manifest_for_book_id, manifest_for_slug, obtain, shared_budget,
@@ -186,6 +188,5 @@ pub use source_route::{
     apply_kotak_source_route, decide_kotak_route, secret_looks_like_url, should_source_route,
     GapVendorConfig, LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_BOOK_ID,
 };
-pub use router::RouteOutcome;
 pub use tick::{QuoteTick, SessionOhlc, Transport};
 pub use tickbook::TickBook;

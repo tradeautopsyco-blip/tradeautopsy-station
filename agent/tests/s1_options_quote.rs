@@ -3,7 +3,8 @@
 //!
 //! Every `reqwest::Client::new()` here GETs `http://127.0.0.1:{port}/api/station/...`.
 //! The spawned agent plants fixtures; `eapi_public_fetch` is off; dated-contract
-//! quote records a stream key and does not dial eapi/WS. Ring 2 lints `src/` only;
+//! quote records a stream key and does not dial eapi/WS. Live last is
+//! `GET /eapi/v1/ticker?symbol=` when fetch is on. Ring 2 lints `src/` only;
 //! these tests stay off EXEMPT.
 
 mod common;

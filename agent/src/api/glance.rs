@@ -3,14 +3,16 @@
 
 use crate::api::AppState;
 use crate::data::{
-    chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
+    apply_quote, chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
     expiration_from_dated_contract, extract_chain_from, extract_greeks_from_mark,
     extract_open_interest, extract_open_interest_for_book, extract_open_interest_from,
     is_dated_option_contract, mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
-    option_symbols_from_exchange_info_json, options_depth_query, parse_nfo_instrument_id,
+    option_symbols_from_exchange_info_json, options_depth_query, options_ticker_query,
+    parse_nfo_instrument_id, quote_tick_from_options_ticker_json_for_symbol,
     underlying_asset_from_dated_contract, CachedMark, ChainRow, GlanceEnvelope, GreeksEnvelope,
     InputHonesty, OptionsOiRow, BINANCE_COM_OPTIONS_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_MARK_PATH,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_EAPI_HOST,
+    OPTIONS_MARK_PATH, OPTIONS_TICKER_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -28,6 +30,10 @@ const OPTIONS_MARK_MAX_AGE_MS: i64 = 5_000;
 /// A book moves fast, so the coalesce window is short — it exists so two obtain
 /// calls in the same tick are one GET, not so a stale ladder is served.
 const OPTIONS_DEPTH_MAX_AGE_MS: i64 = 1_000;
+/// Same short window as depth / spot `ticker/price`: two quote GETs in one tick
+/// share one last. REST.md publishes no ticker weight, so this is coalesce only,
+/// not a budget. Never the unfiltered list.
+const OPTIONS_TICKER_MAX_AGE_MS: i64 = 1_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -273,6 +279,63 @@ fn depth_dial_symbol(eapi_public_fetch: bool, instrument: &str) -> Option<String
     Some(instrument)
 }
 
+/// The symbol to dial `/eapi/v1/ticker` with, or `None` for "do not dial".
+///
+/// Same two refusals as mark/depth: tests stay fixture-only
+/// (`eapi_public_fetch` false), and a leftover `BTC` / `BTCUSDT` is not a dated
+/// contract. `?symbol=` is mandatory on this call — never the unfiltered 24hr
+/// dump, whose first row is not this book's selected last. Never lowercased.
+/// WS last is NOT SPECIFIED: this is REST `lastPrice` only.
+fn ticker_dial_symbol(eapi_public_fetch: bool, instrument: &str) -> Option<String> {
+    if !eapi_public_fetch {
+        return None;
+    }
+    let instrument = normalize_options_instrument(instrument);
+    if !is_dated_option_contract(&instrument) {
+        return None;
+    }
+    Some(instrument)
+}
+
+/// One `GET /eapi/v1/ticker?symbol=` last into TickBook's **options** slot.
+///
+/// Never fabricates: a non-success HTTP or a body whose `symbol` is not this
+/// contract leaves the book untouched, so quote/obtain stay Unavailable rather
+/// than serving `last=0`. No HMAC. Does not subscribe TickBook (REST stays
+/// open — this book has no specified WS last). Does not open
+/// `nbstream…/eoptions`.
+pub(crate) async fn ensure_options_ticker(state: &AppState, instrument: &str) {
+    let Some(dial) = ticker_dial_symbol(state.eapi_public_fetch, instrument) else {
+        return;
+    };
+    // The engine runs `authorize_book_call` itself; no HMAC is attached here —
+    // a private credential on this public path is a refusal, not an upgrade.
+    let call = EgressCall::get(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        OPTIONS_EAPI_HOST,
+        OPTIONS_TICKER_PATH,
+        Lane::MarketData,
+    )
+    .with_query(options_ticker_query(&dial))
+    .with_max_age_ms(OPTIONS_TICKER_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return;
+    };
+    if !resp.is_success() {
+        return;
+    }
+    let Some(tick) =
+        quote_tick_from_options_ticker_json_for_symbol(&resp.body, &dial, chrono::Utc::now())
+    else {
+        return;
+    };
+    let mut book = state.tickbook.lock().expect("tickbook mutex poisoned");
+    if let Err(err) = apply_quote(state.quote_registry.as_ref(), &mut book, tick) {
+        tracing::warn!(error = %err, "options ticker: apply refused");
+    }
+}
+
 /// One `GET /eapi/v1/depth` bounded snapshot into the DepthBook's **options** slot.
 ///
 /// Never fabricates: a non-success HTTP or a body the parser refuses leaves the
@@ -504,6 +567,32 @@ mod tests {
         assert!(cached_mark_hit(&store, "btc-200730-9000-c").is_none());
         assert!(cached_mark_hit(&store, "BTCUSDT").is_none());
         assert!(cached_mark_hit(&None, "BTC-200730-9000-C").is_none());
+    }
+
+    /// Same gate as mark/depth: no fixture-time dial, no spot id, no lowercase.
+    #[test]
+    fn ticker_is_not_dialled_without_public_fetch_or_a_dated_contract() {
+        assert!(ticker_dial_symbol(false, "BTC-200730-9000-C").is_none());
+        assert!(ticker_dial_symbol(true, "BTC").is_none());
+        assert!(ticker_dial_symbol(true, "BTCUSDT").is_none());
+        assert!(ticker_dial_symbol(true, "").is_none());
+        assert!(ticker_dial_symbol(true, "nse_cm|2885").is_none());
+        assert_eq!(
+            ticker_dial_symbol(true, "  BTC-200730-9000-C  ").as_deref(),
+            Some("BTC-200730-9000-C")
+        );
+        assert_ne!(
+            ticker_dial_symbol(true, "BTC-200730-9000-C").as_deref(),
+            Some("btc-200730-9000-c")
+        );
+        assert_eq!(OPTIONS_TICKER_PATH, "/eapi/v1/ticker");
+        assert_eq!(OPTIONS_EAPI_HOST, "eapi.binance.com");
+        assert_ne!(OPTIONS_TICKER_PATH, OPTIONS_MARK_PATH);
+        assert_ne!(OPTIONS_TICKER_PATH, OPTIONS_DEPTH_PATH);
+        assert_eq!(
+            options_ticker_query("BTC-200730-9000-C"),
+            "symbol=BTC-200730-9000-C"
+        );
     }
 
     /// Same gate as mark: no fixture-time dial, no spot id, no lowercase.

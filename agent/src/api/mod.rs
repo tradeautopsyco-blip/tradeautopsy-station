@@ -128,7 +128,7 @@ pub struct AppState {
     /// One cached `/eapi/v1/mark` row, keyed by its own mixed-case symbol. Not a vec:
     /// mark is per contract, and a different contract is a miss, never a repaint.
     pub options_mark: Arc<Mutex<Option<crate::data::CachedMark>>>,
-    /// Prod dials eapi for chain/OI. Tests stay fixture-only.
+    /// Prod dials eapi for last/chain/OI/mark/depth. Tests stay fixture-only.
     pub eapi_public_fetch: bool,
     /// Options quote keys `{book}\0{symbol}`. Spot trade is `com_trade`, not this set.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,

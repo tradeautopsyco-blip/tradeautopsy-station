@@ -359,7 +359,8 @@ pub struct AgentConfig {
     /// Options tradebook CI: plant the committed `/eapi/v1/userTrades` JSON into
     /// AccountBook `binance-com-options`. No live eapi private GET.
     pub plant_binance_options_fills: bool,
-    /// Prod may GET eapi exchangeInfo / openInterest. Tests stay false.
+    /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth.
+    /// Tests stay false.
     pub eapi_public_fetch: bool,
     /// Test seam: non-venue base URL for spot private reads (wiremock). `None` = `api.binance.com`.
     pub binance_spot_base_url: Option<String>,
@@ -1314,9 +1315,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         instrument_master_status,
         instrument_master_cancel,
         instrument_master_cache_dir,
-        quote_selections: Arc::new(std::sync::Mutex::new(
-            crate::api::QuoteSelections::default(),
-        )),
+        quote_selections: Arc::new(std::sync::Mutex::new(crate::api::QuoteSelections::default())),
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         binance_spot_base_url: config.binance_spot_base_url.clone(),
         kotak_private_base_url: config.kotak_private_base_url.clone(),

@@ -11,8 +11,8 @@ use crate::data::{
     normalize_quote_instrument, parse_nfo_instrument_id, resolve_among, series_from_klines_json,
     validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
     InstrumentMasterFetchError, InstrumentMasterStatus, MarketBind, QuoteStatus, Transport,
-    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, BINANCE_COM_OPTIONS_BOOK_ID,
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
+    KLINE_LIMIT_DEFAULT, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -284,6 +284,7 @@ impl AppState {
         match bind_spot_market_ids(id, &self.com_trade, &self.com_depth, &self.quote_streams) {
             BindSpotKind::Options => {
                 self.replace_klines_bind(None);
+                self.kick_options_rest_ticker(id);
                 self.kick_options_rest_depth(id);
             }
             BindSpotKind::Kotak => self.kick_kotak_rest_quote(id),
@@ -292,6 +293,25 @@ impl AppState {
                 self.replace_klines_bind(Some(spot.as_str()).filter(|s| !s.is_empty()));
             }
         }
+    }
+
+    /// Warm options last at bind time. One GET, gated on `eapi_public_fetch`
+    /// and on the id actually being a dated contract; quote bind awaits the
+    /// same ensure so Last lands before extract, and obtain kicks again when
+    /// TickBook is still empty.
+    ///
+    /// This does **not** open `nbstream…/eoptions` — WS last is NOT SPECIFIED.
+    /// REST `lastPrice` only, mixed-case `?symbol=`, no HMAC, never the
+    /// unfiltered ticker dump.
+    fn kick_options_rest_ticker(&self, id: &str) {
+        if !self.eapi_public_fetch || !is_dated_option_contract(id) {
+            return;
+        }
+        let state = self.clone();
+        let instrument = crate::data::normalize_options_instrument(id);
+        tokio::spawn(async move {
+            super::glance::ensure_options_ticker(&state, &instrument).await;
+        });
     }
 
     /// Warm the options order book at bind time, the way a Kotak bind kicks its
@@ -403,6 +423,16 @@ impl AppState {
         );
     }
 
+    /// Wait for one unsigned `GET /eapi/v1/ticker?symbol=` before extract.
+    /// Options last has no specified WS field, so REST is the only last —
+    /// unlike spot, this must land *instead of* a trade-stream subscribe.
+    ///
+    /// Gated inside `ensure_options_ticker`: tests stay fixture-only, and a
+    /// leftover `BTC` / `BTCUSDT` never reaches eapi.
+    pub async fn prime_binance_options_ticker(&self, instrument: &str) {
+        super::glance::ensure_options_ticker(self, instrument).await;
+    }
+
     /// Wait for one unsigned COM `GET /api/v3/ticker/price` before the caller
     /// subscribes this id. Ordering is load-bearing: once `subscribe_instrument`
     /// binds the trade stream, `apply_quote` refuses the REST tick `RestClosed`
@@ -437,7 +467,10 @@ impl AppState {
         if raw.is_empty() {
             return Err(QuoteBindError::InstrumentInvalid);
         }
-        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
             if !is_known_quote_book(book) {
                 return Err(QuoteBindError::UnknownBook);
             }
@@ -463,7 +496,10 @@ impl AppState {
         raw: &str,
         requested_book: Option<&str>,
     ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
-        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
             if book != BINANCE_COM_OPTIONS_BOOK_ID {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
@@ -484,7 +520,10 @@ impl AppState {
         instrument_id: &str,
         requested_book: Option<&str>,
     ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
-        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
             if book == BINANCE_COM_OPTIONS_BOOK_ID || book != KOTAK_NSE_NFO_BOOK_ID {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
@@ -516,7 +555,10 @@ impl AppState {
         instrument_id: &str,
         requested_book: Option<&str>,
     ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
-        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
             if book != KOTAK_NSE_BSE_CASH_BOOK_ID {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
@@ -542,13 +584,19 @@ impl AppState {
         raw: &str,
         requested_book: Option<&str>,
     ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
-        if let Some(book) = requested_book.map(str::trim).filter(|book| !book.is_empty()) {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
             if book != BINANCE_COM_SPOT_BOOK_ID {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
         }
-        let instrument_id = resolve_among(raw, self.spot_resolve_candidates().iter().map(String::as_str))
-            .unwrap_or_else(|| normalize_quote_instrument(raw));
+        let instrument_id = resolve_among(
+            raw,
+            self.spot_resolve_candidates().iter().map(String::as_str),
+        )
+        .unwrap_or_else(|| normalize_quote_instrument(raw));
         if instrument_id.is_empty() || !self.is_binance_spot_instrument(&instrument_id) {
             return Err(QuoteBindError::InstrumentInvalid);
         }
@@ -657,6 +705,8 @@ impl AppState {
         }
         match binding.source {
             QuoteSource::BinanceOptionsPublic => {
+                self.prime_binance_options_ticker(&binding.instrument_id)
+                    .await;
                 self.bind_spot_market(&binding.instrument_id);
             }
             QuoteSource::BinanceSpotPublic => {
@@ -667,8 +717,7 @@ impl AppState {
                         .expect("broker connections mutex poisoned")
                         .contains_key(BINANCE_COM)
                 {
-                    self.prime_binance_spot_ticker(&binding.instrument_id)
-                        .await;
+                    self.prime_binance_spot_ticker(&binding.instrument_id).await;
                     self.subscribe_instrument(&binding.instrument_id);
                 }
                 // Else: selection only until COM Start — no streams, no REST dial.
