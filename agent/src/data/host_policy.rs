@@ -127,6 +127,9 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         {
             true
         }
+        ("index", "GET", AuthMode::Public) if normalize_request_path(path) == "/eapi/v1/index" => {
+            true
+        }
         ("fills", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/myTrades"
                 || path.ends_with("/quick/user/trades")
@@ -180,6 +183,9 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         }
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/openInterest" => {
             Ok(("open_interest", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/index" => {
+            Ok(("index", AuthMode::Public))
         }
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/mark" => {
             Ok(("greeks", AuthMode::Public))
@@ -1348,6 +1354,38 @@ mod tests {
             infer_capability("GET", "/eapi/v1/klines").unwrap(),
             ("ohlcv", AuthMode::Public)
         );
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/index").unwrap(),
+            ("index", AuthMode::Public)
+        );
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/index?underlying=BTCUSDT").unwrap(),
+            ("index", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-options",
+            "eapi.binance.com",
+            "GET",
+            "/eapi/v1/index?underlying=BTCUSDT",
+            false,
+        )
+        .expect("options public index infers index");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-options",
+                "eapi.binance.com",
+                "GET",
+                "/eapi/v1/index",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        // OI's query name must not be how this path infers.
+        assert_eq!(
+            infer_capability("GET", "/eapi/v1/index?underlyingAsset=BTC").unwrap(),
+            ("index", AuthMode::Public)
+        );
         authorize_book_call(
             "binance-com-options",
             "eapi.binance.com",
@@ -1542,6 +1580,7 @@ mod tests {
             "/eapi/v1/depth",
             "/eapi/v1/ticker",
             "/eapi/v1/klines",
+            "/eapi/v1/index",
         ] {
             assert_eq!(
                 authorize_book_call("binance-com-spot", "eapi.binance.com", "GET", path, false)

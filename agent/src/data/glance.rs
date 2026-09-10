@@ -12,6 +12,8 @@
 //! Glance `status` uses [`GlanceStatus`] (depth-like). Success is not a fifth
 //! [`super::honesty::HonestyStatus`].
 
+use super::binance_options_chain::OptionsSymbolRow;
+use super::binance_options_index::CachedIndex;
 use super::binance_options_oi::OptionsOiRow;
 use super::descriptor::{
     BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
@@ -74,6 +76,11 @@ pub const FO_MASTER_UNSPECIFIED: &str = "nfo_scrip_master_refused";
 pub const OI_FIELD_UNSPECIFIED: &str = "oi_field_unspecified";
 pub const OPTIONS_MASTER_UNSPECIFIED: &str = "options_exchange_info_unspecified";
 pub const OPTIONS_OI_UNSPECIFIED: &str = "options_open_interest_unspecified";
+pub const OPTIONS_INDEX_UNSPECIFIED: &str = "options_index_unspecified";
+pub const INDEX_CATALOG_UNDERLYING_MISSING: &str = "index_catalog_underlying_missing";
+pub const SPOT_IS_NOT_INDEX: &str = "spot_is_not_index";
+pub const CASH_IS_NOT_INDEX: &str = "cash_is_not_index";
+pub const NFO_IS_NOT_INDEX: &str = "nfo_is_not_index";
 
 fn chain_identity() -> Identity {
     Identity::new(
@@ -87,6 +94,14 @@ fn oi_identity() -> Identity {
     Identity::new(
         Family::Market,
         CapabilityId::new("open_interest").expect("open_interest id"),
+        Physics::LatestState,
+    )
+}
+
+fn index_identity() -> Identity {
+    Identity::new(
+        Family::Market,
+        CapabilityId::new("index").expect("index id"),
         Physics::LatestState,
     )
 }
@@ -129,6 +144,20 @@ fn dark_oi(book_id: Option<&str>, instrument: &str, ineligible: &str) -> GlanceE
     }
 }
 
+fn dark_index(book_id: Option<&str>, instrument: &str, ineligible: &str) -> GlanceEnvelope {
+    let identity = index_identity();
+    GlanceEnvelope {
+        identity: identity.clone(),
+        instrument_id: display_instrument(book_id, instrument),
+        status: GlanceStatus::Unavailable,
+        data: None,
+        provenance: ProvenanceLine::raw_hole(identity),
+        ineligible: vec![ineligible.to_string()],
+        canonical: false,
+        persist_canonical: false,
+    }
+}
+
 /// Upstream path a lit chain was rebuilt from. NFO chain comes from the FO
 /// scrip master, so it must never name an eapi path.
 fn chain_path_for_book(book_id: &str) -> &'static str {
@@ -144,6 +173,13 @@ fn oi_path_for_book(book_id: &str) -> &'static str {
     match book_id {
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/openInterest",
         id if id == KOTAK_NSE_NFO_BOOK_ID => "/script-details/1.0/quotes/neosymbol/{id}/all",
+        _ => "",
+    }
+}
+
+fn index_path_for_book(book_id: &str) -> &'static str {
+    match book_id {
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => "/eapi/v1/index",
         _ => "",
     }
 }
@@ -313,6 +349,77 @@ pub fn extract_open_interest_for_book(
             _ => dark_oi(Some(book), instrument_id, OPTIONS_OI_UNSPECIFIED),
         },
         _ => dark_oi(Some(book), instrument_id, BOOK_REQUIRED),
+    }
+}
+
+/// LatestState from lock-named `indexPrice`. Catalog `underlying` is required —
+/// typing XRP / OI's `BTC` is not S. Empty cache is unavailable, never `"0"`.
+pub fn extract_index(
+    book_id: Option<&str>,
+    instrument_id: &str,
+    catalog: Option<&[OptionsSymbolRow]>,
+    cached: Option<&CachedIndex>,
+) -> GlanceEnvelope {
+    let Some(book) = book_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return dark_index(book_id, instrument_id, BOOK_REQUIRED);
+    };
+
+    match book {
+        id if id == KOTAK_NSE_BSE_CASH_BOOK_ID => {
+            dark_index(Some(book), instrument_id, CASH_IS_NOT_INDEX)
+        }
+        id if id == BINANCE_COM_SPOT_BOOK_ID => {
+            dark_index(Some(book), instrument_id, SPOT_IS_NOT_INDEX)
+        }
+        id if id == KOTAK_NSE_NFO_BOOK_ID => {
+            dark_index(Some(book), instrument_id, NFO_IS_NOT_INDEX)
+        }
+        id if id == BINANCE_COM_OPTIONS_BOOK_ID => {
+            let Some(rows) = catalog.filter(|r| !r.is_empty()) else {
+                return dark_index(Some(book), instrument_id, INDEX_CATALOG_UNDERLYING_MISSING);
+            };
+            let Some(underlying) = super::index_underlying_for_contract(instrument_id, rows) else {
+                return dark_index(Some(book), instrument_id, INDEX_CATALOG_UNDERLYING_MISSING);
+            };
+            match cached.filter(|row| row.underlying == underlying && !row.index_price.is_empty()) {
+                Some(row) => lit_index(book, instrument_id, row),
+                None => dark_index(Some(book), instrument_id, OPTIONS_INDEX_UNSPECIFIED),
+            }
+        }
+        _ => dark_index(Some(book), instrument_id, BOOK_REQUIRED),
+    }
+}
+
+fn lit_index(book_id: &str, instrument_id: &str, row: &CachedIndex) -> GlanceEnvelope {
+    let identity = index_identity();
+    let mut data = serde_json::json!({
+        "identity": identity,
+        "instrument_id": display_instrument(Some(book_id), instrument_id),
+        "underlying": row.underlying,
+        "indexPrice": row.index_price,
+    });
+    if let Some(time) = row.time {
+        data["time"] = serde_json::json!(time);
+    }
+    GlanceEnvelope {
+        identity: identity.clone(),
+        instrument_id: display_instrument(Some(book_id), instrument_id),
+        status: GlanceStatus::Success,
+        data: Some(data),
+        provenance: ProvenanceLine {
+            identity,
+            model: "raw".to_string(),
+            input_at: if row.as_of.is_empty() {
+                None
+            } else {
+                Some(row.as_of.clone())
+            },
+            adapter_id: adapter_for_book(book_id).to_string(),
+            path: index_path_for_book(book_id).to_string(),
+        },
+        ineligible: Vec::new(),
+        canonical: false,
+        persist_canonical: false,
     }
 }
 
@@ -682,5 +789,80 @@ mod tests {
         assert_eq!(json["status"], "success");
         assert!(json["data"].is_object());
         assert!(json.get("honesty").is_none());
+    }
+
+    #[test]
+    fn options_index_lights_from_catalog_underlying_and_lock_named_field() {
+        use crate::data::{
+            index_price_from_json_for_underlying, option_symbols_from_exchange_info_json,
+        };
+
+        let catalog = option_symbols_from_exchange_info_json(include_str!(
+            "../../fixtures/binance/options_exchange_info.json"
+        ));
+        let planted = index_price_from_json_for_underlying(
+            include_str!("../../fixtures/binance/options_index.json"),
+            "BTCUSDT",
+        )
+        .expect("fixture");
+
+        let lit = extract_index(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            "BTC-200730-9000-C",
+            Some(catalog.as_slice()),
+            Some(&planted),
+        );
+        assert_eq!(lit.status, GlanceStatus::Success);
+        assert_eq!(lit.identity.physics, Physics::LatestState);
+        assert_eq!(lit.identity.capability_id.as_str(), "index");
+        assert_eq!(lit.provenance.path, "/eapi/v1/index");
+        assert_ne!(lit.provenance.model, "model_computed");
+        assert_ne!(lit.provenance.model, "black_76");
+        let data = lit.data.as_ref().expect("index data");
+        assert_eq!(data["indexPrice"], "27670.21666667");
+        assert_eq!(data["underlying"], "BTCUSDT");
+        assert!(data.get("lastPrice").is_none());
+        assert!(data.get("markPrice").is_none());
+        let wire = serde_json::to_string(&lit).expect("serialize");
+        assert!(!wire.contains("lastPrice"));
+        assert!(!wire.contains("\"0\"") || data["indexPrice"] != "0");
+
+        // No catalog row → hole, even with a planted BTCUSDT index (typed XRP is not S).
+        let no_catalog = extract_index(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            "XRP-260911-1.36-C",
+            Some(catalog.as_slice()),
+            Some(&planted),
+        );
+        assert_eq!(no_catalog.status, GlanceStatus::Unavailable);
+        assert!(no_catalog.data.is_none());
+        assert!(no_catalog
+            .ineligible
+            .iter()
+            .any(|s| s == INDEX_CATALOG_UNDERLYING_MISSING));
+
+        // Catalog without a planted index → hole, never S=0.
+        let no_index = extract_index(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            "BTC-200730-9000-C",
+            Some(catalog.as_slice()),
+            None,
+        );
+        assert_eq!(no_index.status, GlanceStatus::Unavailable);
+        assert!(no_index.data.is_none());
+        let dark_wire = serde_json::to_string(&no_index).expect("serialize");
+        assert!(!dark_wire.contains("indexPrice"));
+
+        // Spot / NFO never stitch eapi S.
+        for book in [BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID] {
+            let dark = extract_index(
+                Some(book),
+                "BTC-200730-9000-C",
+                Some(catalog.as_slice()),
+                Some(&planted),
+            );
+            assert_eq!(dark.status, GlanceStatus::Unavailable, "{book}");
+            assert!(dark.data.is_none(), "{book}");
+        }
     }
 }

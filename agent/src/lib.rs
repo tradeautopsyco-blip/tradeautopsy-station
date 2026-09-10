@@ -72,18 +72,18 @@ pub use data::{
     apply_quote, authorize_book_call, authorize_book_fence, authorize_host_call,
     authorize_inferred_call, binance_com_quote_descriptor, capital_may_light, extract_chain,
     extract_contracts, extract_contracts_from_rows, extract_depth, extract_greeks, extract_history,
-    extract_licensed_history, extract_margin_estimate, extract_open_interest, extract_quote,
-    extract_quote_for, extract_quote_for_book, extract_resample, fixture_quote_descriptor,
-    infer_capability, inherit, is_kotak_fo_scrip_csv_path, kotak_neo_nfo_manifest,
-    kotak_neo_quote_descriptor, kotak_neo_s1k_manifest, normalize_quote_instrument, obtain,
-    quote_tick_from_binance_json, quote_tick_from_kotak_json, quote_tick_from_options_ticker_json,
-    resolve_desk_instrument, ApplyError, AuthMode, ContractRow, DepthBook, DepthEnvelope,
-    DepthStatus, GlanceEnvelope, GlanceStatus, HistoryBook, HistoryEnvelope, HistoryStatus,
-    HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus,
-    ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
-    Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID,
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
+    extract_index, extract_licensed_history, extract_margin_estimate, extract_open_interest,
+    extract_quote, extract_quote_for, extract_quote_for_book, extract_resample,
+    fixture_quote_descriptor, infer_capability, inherit, is_kotak_fo_scrip_csv_path,
+    kotak_neo_nfo_manifest, kotak_neo_quote_descriptor, kotak_neo_s1k_manifest,
+    normalize_quote_instrument, obtain, quote_tick_from_binance_json, quote_tick_from_kotak_json,
+    quote_tick_from_options_ticker_json, resolve_desk_instrument, ApplyError, AuthMode,
+    ContractRow, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope, GlanceStatus, HistoryBook,
+    HistoryEnvelope, HistoryStatus, HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase,
+    InstrumentMasterStatus, ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope,
+    QuoteStatus, QuoteTick, Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
@@ -362,7 +362,9 @@ pub struct AgentConfig {
     /// Options tradebook CI: plant the committed `/eapi/v1/userTrades` JSON into
     /// AccountBook `binance-com-options`. No live eapi private GET.
     pub plant_binance_options_fills: bool,
-    /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth / klines.
+    /// Options index S CI: plant committed `/eapi/v1/index` JSON. No live eapi.
+    pub plant_binance_options_index: bool,
+    /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth / klines / index.
     /// Tests stay false.
     pub eapi_public_fetch: bool,
     /// Test seam: non-venue base URL for spot private reads (wiremock). `None` = `api.binance.com`.
@@ -500,6 +502,7 @@ impl AgentConfig {
             plant_binance_options_depth: false,
             plant_binance_options_history: false,
             plant_binance_options_fills: false,
+            plant_binance_options_index: false,
             eapi_public_fetch: true,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
@@ -575,6 +578,7 @@ impl AgentConfig {
             plant_binance_options_depth: false,
             plant_binance_options_history: false,
             plant_binance_options_fills: false,
+            plant_binance_options_index: false,
             eapi_public_fetch: false,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
@@ -889,6 +893,18 @@ fn plant_binance_options_mark_no_bid(mark: &Arc<Mutex<Option<crate::data::Cached
         mark,
         include_str!("../fixtures/binance/options_mark_no_bid.json"),
     );
+}
+
+/// Headless index S: committed `/eapi/v1/index` fixture keyed by catalog
+/// `underlying=BTCUSDT` (the exchangeInfo plant's `optionSymbols.underlying`).
+/// No live eapi. Do not freeze a live price as a golden — this string is CI-only.
+fn plant_binance_options_index(index: &Arc<Mutex<Option<crate::data::CachedIndex>>>) {
+    let json = include_str!("../fixtures/binance/options_index.json");
+    let Some(mut row) = crate::data::index_price_from_json_for_underlying(json, "BTCUSDT") else {
+        return;
+    };
+    row.as_of = Utc::now().to_rfc3339();
+    *index.lock().expect("options index mutex poisoned") = Some(row);
 }
 
 /// Headless NFO depth: bounded snapshot into the named book. The committed
@@ -1237,6 +1253,10 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_options_mark_no_bid {
         plant_binance_options_mark_no_bid(&options_mark);
     }
+    let options_index = Arc::new(std::sync::Mutex::new(None));
+    if config.plant_binance_options_index {
+        plant_binance_options_index(&options_index);
+    }
     if config.plant_binance_options_depth {
         plant_binance_options_depth(&depthbook);
     }
@@ -1325,6 +1345,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         nfo_open_interest,
         nfo_oi_session,
         options_mark,
+        options_index,
         eapi_public_fetch: config.eapi_public_fetch,
         quote_streams,
         com_trade,

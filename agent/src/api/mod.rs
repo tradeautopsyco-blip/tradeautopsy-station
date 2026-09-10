@@ -128,7 +128,10 @@ pub struct AppState {
     /// One cached `/eapi/v1/mark` row, keyed by its own mixed-case symbol. Not a vec:
     /// mark is per contract, and a different contract is a miss, never a repaint.
     pub options_mark: Arc<Mutex<Option<crate::data::CachedMark>>>,
-    /// Prod dials eapi for last/chain/OI/mark/depth. Tests stay fixture-only.
+    /// One cached `/eapi/v1/index` row, keyed by catalog `underlying` (`BTCUSDT`).
+    /// Empty / fail stays unavailable — never S=0, never spot last.
+    pub options_index: Arc<Mutex<Option<crate::data::CachedIndex>>>,
+    /// Prod dials eapi for last/chain/OI/mark/depth/klines/index. Tests stay fixture-only.
     pub eapi_public_fetch: bool,
     /// Options quote keys `{book}\0{symbol}`. Spot trade is `com_trade`, not this set.
     pub quote_streams: Arc<Mutex<HashSet<String>>>,
@@ -298,6 +301,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/station/chain", get(glance::chain_handler))
         .route("/api/station/oi", get(glance::oi_handler))
         .route("/api/station/greeks", get(glance::greeks_handler))
+        .route("/api/station/index", get(glance::index_handler))
         .route("/api/station/manifest", get(manifest::manifest_handler))
         .route("/api/station/obtain", get(manifest::obtain_handler))
         .route("/api/station/sync-hint", get(sync_hint::handler))

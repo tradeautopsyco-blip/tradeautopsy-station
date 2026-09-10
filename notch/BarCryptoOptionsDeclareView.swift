@@ -4,8 +4,9 @@ import SwiftUI
 /// `BTC-260925-90000-C`). Money is USDT; there is no lot size, no NRML, no product code.
 /// Chain and OI glance the named options book. Greeks are the venue's own published mark
 /// table passed through per contract — lit only when the desk says `success` and the rights
-/// say `display`, dark as a chip otherwise; Station never computes them. σ / payoff still
-/// stay dark (`OPTIONS-PRICING.md` BLOCKER). Last is the live strip. Rung 1 runs on typed numbers.
+/// say `display`, dark as a chip otherwise; Station never computes them. At-expiry is the
+/// European cash settlement identity (S from eapi index). σ rungs 2–5 stay dark. Last is
+/// the live strip. Rung 1 runs on typed numbers.
 struct BarCryptoOptionsDeclareView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
@@ -333,8 +334,8 @@ struct BarCryptoOptionsDeclareView: View {
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                panelHead("At expiry", trailing: "scale anchored to your declared limit")
-                payoffHole
+                panelHead("At expiry", trailing: "per contract · unit not applied")
+                atExpiryPanel
 
                 ladderHeader
                 ladderRungs
@@ -465,14 +466,16 @@ struct BarCryptoOptionsDeclareView: View {
         return "derived/greeks — waiting on a declared contract."
     }
 
-    private var payoffHole: some View {
+    private func payoffHole(reason: String) -> some View {
         VStack(spacing: 6) {
-            Text("payoff unavailable")
+            Text(BarCryptoSettlement.holeTitle)
                 .font(BarDS.monoFont(11, weight: .medium))
                 .foregroundColor(BarDS.Accent.red)
-            Text("derived/payoff stays dark — OPTIONS-PRICING.md BLOCKER. A chain snapshot is not a pricer.")
+            Text(reason)
                 .font(BarDS.monoFont(10, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 88)
         .background(BarDS.Fill.elevated)
@@ -481,6 +484,91 @@ struct BarCryptoOptionsDeclareView: View {
             RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
                 .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
         )
+    }
+
+    private var settlementInputs: BarCryptoSettlement.Inputs {
+        let selected = viewModel.deskSelectedInstrumentId
+        let dated = InstrumentTickBookId.isDatedOptionContract(selected)
+            || viewModel.optionLegs.first != nil
+        let first = viewModel.optionLegs.first
+        let strike = first?.strike ?? viewModel.declOptionStrike
+        let right = BarCryptoSettlement.Right.fromWire(first?.right ?? viewModel.declOptionRight)
+        let side: BarCryptoSettlement.Side = (first?.sideBuy ?? sideBuy) ? .buy : .sell
+        let count = Int(planUnits ?? 0)
+        let indexLit = viewModel.deskIndexStatus
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "success"
+        return BarCryptoSettlement.Inputs(
+            datedContractBound: dated,
+            strikeText: strike,
+            right: right,
+            side: side,
+            premiumText: viewModel.declEntryPrice,
+            contractCount: count,
+            indexPriceText: indexLit ? viewModel.deskIndexPrice : nil,
+            expiryDateMs: expiryDateMs,
+            nowMs: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+    }
+
+    private var expiryDateMs: Int64? {
+        let selected = viewModel.deskSelectedInstrumentId
+        let raw = viewModel.deskChainRows.first(where: { $0.symbol == selected })?.expiryRaw
+            ?? viewModel.deskChainRows.first?.expiryRaw
+        if let raw, let ms = Int64(raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return ms
+        }
+        if InstrumentTickBookId.isDatedOptionContract(selected) {
+            return BarCryptoSettlement.expiryDateMs(fromDatedContract: selected)
+        }
+        if let expiry = viewModel.optionLegs.first?.expiry,
+           let fromLeg = BarCryptoSettlement.expiryDateMs(fromDatedContract: "X-\(expiry)-0-C")
+        {
+            return fromLeg
+        }
+        return nil
+    }
+
+    private var settlementKind: BarCryptoSettlement.Kind {
+        BarCryptoSettlement.evaluate(settlementInputs)
+    }
+
+    private var calendarDTEForChip: Int? {
+        if case let .lit(lit) = settlementKind, lit.dteKnown { return lit.dte }
+        if let ms = expiryDateMs {
+            return BarCryptoSettlement.calendarDTE(
+                expiryDateMs: ms,
+                nowMs: Int64(Date().timeIntervalSince1970 * 1000)
+            )
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var atExpiryPanel: some View {
+        switch settlementKind {
+        case let .hole(reason):
+            payoffHole(reason: reason)
+        case let .lit(lit):
+            VStack(alignment: .leading, spacing: 6) {
+                BarCryptoSettlementPolyline(
+                    points: lit.points,
+                    spotS: lit.spotS,
+                    openWing: lit.openWing
+                )
+                .frame(maxWidth: .infinity, minHeight: 88)
+                .background(BarDS.Fill.elevated)
+                .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                        .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+                )
+                Text(lit.caption)
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var declaredMax: Double? {
@@ -937,7 +1025,13 @@ struct BarCryptoOptionsDeclareView: View {
                 Text("DTE")
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
-                HonestyChip(status: .unavailable)
+                if let dte = calendarDTEForChip {
+                    Text("\(dte)")
+                        .font(BarDS.monoFont(12, weight: .medium))
+                        .foregroundColor(BarDS.Text.primary)
+                } else {
+                    HonestyChip(status: .unavailable)
+                }
             }
         }
     }
@@ -952,7 +1046,7 @@ struct BarCryptoOptionsDeclareView: View {
         let selected = viewModel.declHorizonMode == mode
         return BarChip(label: mode.chipLabel, selected: selected) {
             viewModel.declHorizonMode = mode
-            if let days = BarPlanHorizon.days(for: mode, dte: nil) {
+            if let days = BarPlanHorizon.days(for: mode, dte: calendarDTEForChip) {
                 viewModel.declHorizonDays = days
             }
             // expiry with unknown DTE: chip records intent, days stay as-is
@@ -1209,5 +1303,60 @@ struct BarOptionsSessionChart: View {
     private func y(_ value: Double, minY: Double, maxY: Double, height: CGFloat) -> CGFloat {
         let t = (value - minY) / (maxY - minY)
         return height - CGFloat(t) * height
+    }
+}
+
+/// European settlement polyline. Short call keeps an open right wing — no numeric cap.
+struct BarCryptoSettlementPolyline: View {
+    let points: [BarCryptoSettlement.Point]
+    let spotS: Double
+    let openWing: Bool
+
+    var body: some View {
+        Canvas { context, size in
+            guard points.count >= 2, size.width > 0, size.height > 0 else { return }
+            let xs = points.map(\.s)
+            let ys = points.map(\.pnl)
+            let minX = xs.min() ?? 0
+            var maxX = xs.max() ?? 1
+            var minY = ys.min() ?? 0
+            var maxY = ys.max() ?? 1
+            if openWing {
+                maxX = max(maxX, spotS) + max(abs(maxX - minX) * 0.15, 1)
+            }
+            if maxX <= minX { maxX = minX + 1 }
+            if maxY <= minY { maxY = minY + 1 }
+            let pad = (maxY - minY) * 0.12
+            minY -= pad
+            maxY += pad
+            func x(_ s: Double) -> CGFloat {
+                CGFloat((s - minX) / (maxX - minX)) * size.width
+            }
+            func y(_ pnl: Double) -> CGFloat {
+                let t = (pnl - minY) / (maxY - minY)
+                return size.height - CGFloat(t) * size.height
+            }
+            var line = Path()
+            let ordered = points.sorted { $0.s < $1.s }
+            if let first = ordered.first {
+                line.move(to: CGPoint(x: x(first.s), y: y(first.pnl)))
+                for p in ordered.dropFirst() {
+                    line.addLine(to: CGPoint(x: x(p.s), y: y(p.pnl)))
+                }
+                if openWing, let last = ordered.last {
+                    let edge = CGPoint(x: size.width, y: y(last.pnl))
+                    line.addLine(to: edge)
+                }
+            }
+            context.stroke(line, with: .color(BarDS.Accent.teal), lineWidth: 1.5)
+            let sx = x(spotS)
+            var marker = Path()
+            marker.move(to: CGPoint(x: sx, y: 0))
+            marker.addLine(to: CGPoint(x: sx, y: size.height))
+            context.stroke(marker, with: .color(BarDS.Text.muted.opacity(0.6)), lineWidth: 1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .accessibilityLabel("Settlement payoff")
     }
 }

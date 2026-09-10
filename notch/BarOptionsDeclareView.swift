@@ -218,10 +218,10 @@ struct BarOptionsDeclareView: View {
 
     private var payoffHole: some View {
         VStack(spacing: 6) {
-            Text("chain unavailable")
+            Text(BarNfoPayoffCopy.holeTitle)
                 .font(BarDS.monoFont(11, weight: .medium))
                 .foregroundColor(BarDS.Accent.red)
-            Text("derived/payoff inherits market/option_chain")
+            Text(BarNfoPayoffCopy.holeBody)
                 .font(BarDS.monoFont(10, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
         }

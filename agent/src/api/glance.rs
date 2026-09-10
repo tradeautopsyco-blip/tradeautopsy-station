@@ -5,17 +5,19 @@ use crate::api::AppState;
 use crate::data::{
     apply_history_series, apply_quote, chain_input_honesty, chain_rows_for_contract,
     depth_snapshot_from_eapi_json, expiration_from_dated_contract, extract_chain_from,
-    extract_greeks_from_mark, extract_open_interest, extract_open_interest_for_book,
-    extract_open_interest_from, is_dated_option_contract, mark_row_for_symbol,
+    extract_greeks_from_mark, extract_index, extract_open_interest, extract_open_interest_for_book,
+    extract_open_interest_from, index_price_from_json_for_underlying,
+    index_underlying_for_contract, is_dated_option_contract, mark_row_for_symbol,
     normalize_options_instrument, oi_rows_from_json, option_symbols_from_exchange_info_json,
-    options_depth_query, options_klines_query, options_ticker_query, parse_nfo_instrument_id,
-    quote_tick_from_options_ticker_json_for_symbol, series_from_eapi_klines_json,
-    underlying_asset_from_dated_contract, validate_options_kline_request, CachedMark, ChainRow,
-    GlanceEnvelope, GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
+    options_depth_query, options_index_query, options_klines_query, options_ticker_query,
+    parse_nfo_instrument_id, quote_tick_from_options_ticker_json_for_symbol,
+    series_from_eapi_klines_json, underlying_asset_from_dated_contract,
+    validate_options_kline_request, CachedIndex, CachedMark, ChainRow, GlanceEnvelope,
+    GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
     BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_EAPI_HOST,
-    OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH, OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH,
-    OPTIONS_TICKER_PATH,
+    OPTIONS_INDEX_HOST, OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
+    OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH, OPTIONS_TICKER_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -39,6 +41,8 @@ const OPTIONS_DEPTH_MAX_AGE_MS: i64 = 1_000;
 const OPTIONS_TICKER_MAX_AGE_MS: i64 = 1_000;
 /// Same coalesce window as COM klines. Weight 1; not a budget.
 const OPTIONS_KLINES_MAX_AGE_MS: i64 = 2_000;
+/// Same coalesce window as OI: one index call serves every panel asking for this underlying.
+const OPTIONS_INDEX_MAX_AGE_MS: i64 = 5_000;
 
 #[derive(Debug, Deserialize)]
 pub struct GlanceQuery {
@@ -474,6 +478,102 @@ pub(crate) async fn ensure_options_oi(state: &AppState, instrument: &str) {
         .expect("options oi mutex poisoned") = rows;
 }
 
+fn catalog_index_underlying(state: &AppState, instrument: &str) -> Option<String> {
+    let master = state
+        .options_option_symbols
+        .lock()
+        .expect("options option symbols mutex poisoned");
+    index_underlying_for_contract(instrument, &master).map(str::to_string)
+}
+
+/// Catalog `underlying` to dial `/eapi/v1/index` with, or `None` for "do not dial".
+///
+/// Three refusals: tests stay fixture-only (`eapi_public_fetch` false), a leftover
+/// `BTC` / `BTCUSDT` / typed `XRP` is not a catalog row, and OI's `BTC` is not
+/// this query. Never lowercased. Never `underlyingAsset=`.
+fn index_dial_underlying(
+    eapi_public_fetch: bool,
+    instrument: &str,
+    catalog_underlying: Option<&str>,
+) -> Option<String> {
+    if !eapi_public_fetch {
+        return None;
+    }
+    if !is_dated_option_contract(instrument) {
+        return None;
+    }
+    catalog_underlying
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(str::to_string)
+}
+
+/// One `GET /eapi/v1/index?underlying=` LatestState, or `None`.
+///
+/// Never fabricates: empty / fail / missing catalog underlying leaves the slot
+/// untouched so extract stays Unavailable rather than S=0. No HMAC. Never
+/// `/api/v3/`. Never OI's `underlyingAsset`.
+pub(crate) async fn fetch_options_index(state: &AppState, instrument: &str) -> Option<CachedIndex> {
+    let underlying = catalog_index_underlying(state, instrument)?;
+    {
+        let cached = state
+            .options_index
+            .lock()
+            .expect("options index mutex poisoned");
+        if let Some(hit) = crate::data::cached_index_hit(&cached, &underlying) {
+            return Some(hit.clone());
+        }
+        index_dial_underlying(
+            state.eapi_public_fetch,
+            instrument,
+            Some(underlying.as_str()),
+        )?;
+    }
+    let call = EgressCall::get(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        OPTIONS_INDEX_HOST,
+        OPTIONS_INDEX_PATH,
+        Lane::MarketData,
+    )
+    .with_query(options_index_query(&underlying))
+    .with_max_age_ms(OPTIONS_INDEX_MAX_AGE_MS)
+    .with_timeout(Duration::from_secs(15));
+    let Ok(resp) = crate::egress::shared().send(&call).await else {
+        return None;
+    };
+    if !resp.is_success() {
+        return None;
+    }
+    let mut row = index_price_from_json_for_underlying(&resp.body, &underlying)?;
+    row.as_of = chrono::Utc::now().to_rfc3339();
+    Some(row)
+}
+
+pub(crate) async fn ensure_options_index(state: &AppState, instrument: &str) {
+    if state.eapi_public_fetch {
+        ensure_options_master(state).await;
+    }
+    {
+        let underlying = catalog_index_underlying(state, instrument);
+        if let Some(ref und) = underlying {
+            let cached = state
+                .options_index
+                .lock()
+                .expect("options index mutex poisoned");
+            if crate::data::cached_index_hit(&cached, und).is_some() {
+                return;
+            }
+        }
+    }
+    let Some(fetched) = fetch_options_index(state, instrument).await else {
+        return;
+    };
+    *state
+        .options_index
+        .lock()
+        .expect("options index mutex poisoned") = Some(fetched);
+}
+
 pub async fn chain_handler(
     State(state): State<AppState>,
     Query(query): Query<GlanceQuery>,
@@ -611,6 +711,44 @@ pub async fn greeks_handler(
     }
 }
 
+/// LatestState index S. `book` is required — this route never falls back to
+/// `s1_desk_symbol`, because a spot id is not a contract and spot last is not S.
+pub async fn index_handler(
+    State(state): State<AppState>,
+    Query(query): Query<GlanceQuery>,
+) -> Json<GlanceEnvelope> {
+    let book = query_book(&query);
+    let instrument = query_instrument(&query);
+    match book.as_deref() {
+        Some(id) if id == BINANCE_COM_OPTIONS_BOOK_ID => {
+            ensure_options_index(&state, &instrument).await;
+            let cached = state
+                .options_index
+                .lock()
+                .expect("options index mutex poisoned")
+                .clone();
+            let catalog = {
+                let master = state
+                    .options_option_symbols
+                    .lock()
+                    .expect("options option symbols mutex poisoned");
+                master.clone()
+            };
+            Json(extract_index(
+                Some(BINANCE_COM_OPTIONS_BOOK_ID),
+                &instrument,
+                if catalog.is_empty() {
+                    None
+                } else {
+                    Some(catalog.as_slice())
+                },
+                cached.as_ref(),
+            ))
+        }
+        other => Json(extract_index(other, &instrument, None, None)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -692,5 +830,27 @@ mod tests {
             mark_dial_symbol(true, "BTC-200730-9000-C").as_deref(),
             Some("BTC-200730-9000-C")
         );
+    }
+
+    #[test]
+    fn index_is_not_dialled_without_public_fetch_catalog_underlying_or_a_dated_contract() {
+        assert!(index_dial_underlying(false, "BTC-200730-9000-C", Some("BTCUSDT")).is_none());
+        assert!(index_dial_underlying(true, "BTC", Some("BTCUSDT")).is_none());
+        assert!(index_dial_underlying(true, "BTCUSDT", Some("BTCUSDT")).is_none());
+        assert!(index_dial_underlying(true, "XRP", Some("XRPUSDT")).is_none());
+        assert!(index_dial_underlying(true, "BTC-200730-9000-C", None).is_none());
+        assert!(index_dial_underlying(true, "BTC-200730-9000-C", Some("")).is_none());
+        assert_eq!(
+            index_dial_underlying(true, "BTC-200730-9000-C", Some("BTCUSDT")).as_deref(),
+            Some("BTCUSDT")
+        );
+        assert_ne!(
+            index_dial_underlying(true, "BTC-200730-9000-C", Some("BTCUSDT")).as_deref(),
+            Some("BTC")
+        );
+        assert_eq!(OPTIONS_INDEX_PATH, "/eapi/v1/index");
+        assert_eq!(OPTIONS_INDEX_HOST, "eapi.binance.com");
+        assert_eq!(options_index_query("BTCUSDT"), "underlying=BTCUSDT");
+        assert_ne!(options_index_query("BTCUSDT"), "underlyingAsset=BTC");
     }
 }

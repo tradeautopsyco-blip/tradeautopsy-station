@@ -1027,6 +1027,63 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskGreeksExtractPath(symbol: "BTC").hasSuffix("BTC-200730-9000-C"))
     }
 
+    @Test func indexExtractPathNamesTheOptionsBookAndTheDatedContract() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        let path = vm.deskIndexExtractPath(symbol: "BTC-200730-9000-C")
+        #expect(path.contains("/api/station/index?"))
+        #expect(path.contains("book=binance-com-options"))
+        #expect(path.contains("instrument=BTC-200730-9000-C"))
+        #expect(!path.contains("kotak-nse-nfo"))
+        #expect(!path.contains("underlyingAsset"))
+    }
+
+    @Test func indexPathKeepsTheSelectedContractOverALeftoverTypedTicker() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.barDeclarationSymbol = "XRP"
+        #expect(vm.deskIndexExtractPath(symbol: "XRP").contains("instrument=BTC-200730-9000-C"))
+        #expect(!vm.deskIndexExtractPath(symbol: "XRP").contains("instrument=XRP"))
+    }
+
+    @Test func indexEnvelopeCopiesIndexPriceNeverLastOrMark() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationIndexEnvelope([
+            "status": "success",
+            "data": [
+                "indexPrice": "27670.21666667",
+                "underlying": "BTCUSDT",
+                "lastPrice": "1.23",
+                "markPrice": "1343.2883",
+            ],
+        ])
+        #expect(vm.deskIndexStatus == "success")
+        #expect(vm.deskIndexPrice == "27670.21666667")
+        #expect(vm.deskIndexUnderlying == "BTCUSDT")
+        #expect(vm.deskIndexPrice != "1.23")
+        #expect(vm.deskIndexPrice != "1343.2883")
+    }
+
+    @Test func indexEnvelopeHoleDoesNotInventZeroOrSpotLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.deskIndexPrice = "27670.21666667"
+        vm.applyStationIndexEnvelope(["status": "unavailable", "data": ["lastPrice": "1.23"]])
+        #expect(vm.deskIndexStatus == "unavailable")
+        #expect(vm.deskIndexPrice == nil)
+        vm.applyStationIndexEnvelope([
+            "status": "success",
+            "data": ["lastPrice": "1.23", "c": "100.00"],
+        ])
+        #expect(vm.deskIndexPrice == nil)
+        _ = vm.invalidateDeskMarketExtracts(reason: "select-symbol")
+        #expect(vm.deskIndexStatus == "unavailable")
+        #expect(vm.deskIndexPrice == nil)
+    }
+
     /// A bookless options desk issues no glance at all — so it issues no greeks request.
     @Test func booklessOptionsDeskIssuesNoGreeksRequest() {
         #expect(!DeskExtractPlan.resolve(slug: "binance_com", assetClass: .options).fetchesGlance)

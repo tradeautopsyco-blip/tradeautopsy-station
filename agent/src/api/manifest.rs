@@ -219,6 +219,8 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
                 return;
             }
             super::glance::ensure_options_ticker(state, &instrument).await;
+            // Index is a twin prime of last: same dated bind, catalog `underlying=`.
+            super::glance::ensure_options_index(state, &instrument).await;
         }
         "optionchain" => super::glance::ensure_options_master(state).await,
         "open_interest" => {

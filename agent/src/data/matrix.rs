@@ -46,6 +46,7 @@ pub fn is_market_capability_id(id: &str) -> bool {
             | "force_order"
             | "option_chain"
             | "open_interest"
+            | "index"
     )
 }
 
@@ -82,6 +83,7 @@ pub fn known_physics(family: Family, capability_id: &str) -> Option<&'static [Ph
         (Family::Market, "force_order") => Some(&[Physics::LossyEventObservation]),
         (Family::Market, "option_chain") => Some(&[Physics::BoundedSnapshot]),
         (Family::Market, "open_interest") => Some(&[Physics::LatestState]),
+        (Family::Market, "index") => Some(&[Physics::LatestState]),
         (Family::Account, "funds")
         | (Family::Account, "session")
         | (Family::Account, "positions")
@@ -251,6 +253,26 @@ mod tests {
             Family::Market,
             "open_interest",
             Physics::OrderedState
+        ));
+    }
+
+    #[test]
+    fn index_is_latest_state_not_quote() {
+        assert!(is_market_capability_id("index"));
+        assert!(known_id_physics_ok(
+            Family::Market,
+            "index",
+            Physics::LatestState
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Market,
+            "index",
+            Physics::OrderedState
+        ));
+        assert!(!known_id_physics_ok(
+            Family::Market,
+            "index",
+            Physics::HistoricalSeries
         ));
     }
 

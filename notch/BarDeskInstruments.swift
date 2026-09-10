@@ -569,6 +569,10 @@ enum DeskChainExtractQuery {
         glancePath(operation: "greeks", bookId: bookId, underlying: underlying)
     }
 
+    static func indexPath(bookId: String?, underlying: String) -> String {
+        glancePath(operation: "index", bookId: bookId, underlying: underlying)
+    }
+
     private static func glancePath(operation: String, bookId: String?, underlying: String) -> String {
         let instrument = InstrumentTickBookId.queryEncode(
             underlying.trimmingCharacters(in: .whitespacesAndNewlines)

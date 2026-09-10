@@ -8,6 +8,7 @@ mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
 mod binance_options_depth;
+mod binance_options_index;
 mod binance_options_klines;
 mod binance_options_mark;
 mod binance_options_oi;
@@ -88,6 +89,10 @@ pub use binance_options_depth::{
     depth_snapshot_from_eapi_json, options_depth_query, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_LIMIT,
     OPTIONS_DEPTH_PATH,
 };
+pub use binance_options_index::{
+    cached_index_hit, index_price_from_json_for_underlying, index_underlying_for_contract,
+    options_index_query, CachedIndex, OPTIONS_INDEX_HOST, OPTIONS_INDEX_PATH,
+};
 pub use binance_options_klines::{
     options_klines_query, series_from_eapi_klines_json, validate_options_kline_request,
     DEFAULT_OPTIONS_HISTORY_INTERVAL, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
@@ -128,7 +133,7 @@ pub use force_order::{
     LOSSY_CANNOT_CLAIM_COMPLETE,
 };
 pub use glance::{
-    chain_input_honesty, extract_chain, extract_chain_from, extract_open_interest,
+    chain_input_honesty, extract_chain, extract_chain_from, extract_index, extract_open_interest,
     extract_open_interest_for_book, extract_open_interest_from, ChainRow, GlanceEnvelope,
     GlanceStatus,
 };

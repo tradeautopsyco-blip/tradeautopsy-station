@@ -538,6 +538,10 @@ public final class NotchViewModel: ObservableObject {
     /// contract yet, so nothing was requested" from "asked the venue and got a hole" —
     /// two different sentences, and only one of them is "waiting".
     @Published private(set) var deskGreeksAsked: Bool = false
+    /// LatestState `indexPrice` string. Missing stays nil — never 0, never lastPrice.
+    @Published var deskIndexStatus: String = "unavailable"
+    @Published var deskIndexPrice: String? = nil
+    @Published var deskIndexUnderlying: String? = nil
     /// Desk-level `capabilities.quote` from sync-state — independent of funds/fills.
     @Published var deskQuoteCapability: String = "unavailable"
     /// Desk-level `capabilities.funds` from sync-state — independent of quote.
@@ -1822,6 +1826,7 @@ public final class NotchViewModel: ObservableObject {
         deskOiStatus = "unavailable"
         clearDeskOiNumbers()
         clearDeskGreeks()
+        clearDeskIndex()
         deskHistoryStatus = "unavailable"
         deskHistoryIneligible = []
         deskHistoryCandles = []
@@ -1872,6 +1877,14 @@ public final class NotchViewModel: ObservableObject {
     /// typed `BTC` must never replace the selected dated contract here either.
     func deskGreeksExtractPath(symbol: String) -> String {
         DeskChainExtractQuery.greeksPath(
+            bookId: glanceBookId(symbol: symbol),
+            underlying: glanceInstrument(symbol: symbol)
+        )
+    }
+
+    /// Same `book=` + instrument as chain. Index S is catalog `underlying=`, never OI's asset.
+    func deskIndexExtractPath(symbol: String) -> String {
+        DeskChainExtractQuery.indexPath(
             bookId: glanceBookId(symbol: symbol),
             underlying: glanceInstrument(symbol: symbol)
         )
@@ -2070,6 +2083,26 @@ public final class NotchViewModel: ObservableObject {
         deskGreeksAsked = false
     }
 
+    /// Apply one `/api/station/index` envelope. Pure state, no HTTP — the parse is the
+    /// seam under test. Lock-named `indexPrice` only. Never `lastPrice` / `markPrice` / `c`.
+    func applyStationIndexEnvelope(_ json: [String: Any]) {
+        let status = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        clearDeskIndex()
+        deskIndexStatus = status.isEmpty ? "unavailable" : status
+        guard status == "success" else { return }
+        guard let data = json["data"] as? [String: Any] else { return }
+        deskIndexPrice = Self.publishedVenueString(data["indexPrice"])
+        deskIndexUnderlying = Self.publishedVenueString(data["underlying"])
+    }
+
+    private func clearDeskIndex() {
+        deskIndexStatus = "unavailable"
+        deskIndexPrice = nil
+        deskIndexUnderlying = nil
+    }
+
     func refreshDeskExtracts(symbol: String, instrumentId: String? = nil) {
         let selected = deskSelectedInstrumentId
         let raw: String
@@ -2091,6 +2124,7 @@ public final class NotchViewModel: ObservableObject {
         let chainPath = plan.fetchesGlance ? deskChainExtractPath(symbol: symbol) : nil
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
         let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
+        let indexPath = plan.fetchesGlance ? deskIndexExtractPath(symbol: symbol) : nil
         let historyPath: String?
         if plan.usesKotakHistoryObtain {
             historyPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
@@ -2107,10 +2141,12 @@ public final class NotchViewModel: ObservableObject {
             async let chain = self.getExtractJSON(optional: chainPath)
             async let oi = self.getExtractJSON(optional: oiPath)
             async let greeks = self.getExtractJSON(optional: greeksPath)
+            async let index = self.getExtractJSON(optional: indexPath)
             let licensedJSON = await self.getExtractJSON(optional: historyPath)
             let chainJSON = await chain
             let oiJSON = await oi
             let greeksJSON = await greeks
+            let indexJSON = await index
             await MainActor.run {
                 // The desk rebound while this was in flight — these rows are for an
                 // instrument/book that is no longer selected. Leave the holes dark.
@@ -2123,6 +2159,7 @@ public final class NotchViewModel: ObservableObject {
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
                 self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
+                self.applyStationIndexEnvelope(indexJSON ?? [:])
             }
         }
     }

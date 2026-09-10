@@ -287,6 +287,7 @@ impl AppState {
                 self.kick_options_rest_ticker(id);
                 self.kick_options_rest_depth(id);
                 self.kick_options_rest_klines(id);
+                self.kick_options_rest_index(id);
             }
             BindSpotKind::Kotak => self.kick_kotak_rest_quote(id),
             BindSpotKind::Spot => {
@@ -341,6 +342,17 @@ impl AppState {
         let instrument = crate::data::normalize_options_instrument(id);
         tokio::spawn(async move {
             super::glance::ensure_options_klines(&state, &instrument).await;
+        });
+    }
+
+    fn kick_options_rest_index(&self, id: &str) {
+        if !self.eapi_public_fetch || !is_dated_option_contract(id) {
+            return;
+        }
+        let state = self.clone();
+        let instrument = crate::data::normalize_options_instrument(id);
+        tokio::spawn(async move {
+            super::glance::ensure_options_index(&state, &instrument).await;
         });
     }
 

@@ -1482,3 +1482,155 @@ async fn spot_klines_plant_does_not_fill_options_session() {
 
     handle.abort();
 }
+
+/// No planted index → hole. Never S=0, never spot last / markPrice as S.
+#[tokio::test]
+async fn index_route_without_a_snapshot_is_unavailable_not_zero() {
+    const PORT: u16 = 19_544;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/index?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("index route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert_ne!(body["status"], "success");
+    assert!(body["data"].is_null());
+    let wire = body.to_string();
+    assert!(!wire.contains("indexPrice"));
+    assert!(!wire.contains("lastPrice"));
+    assert!(!wire.contains("markPrice"));
+
+    handle.abort();
+}
+
+/// Planted index + catalog lights lock-named `indexPrice`. Query underlying is
+/// `optionSymbols.underlying` (BTCUSDT), not OI's BTC. Spot book stays dark.
+#[tokio::test]
+async fn planted_index_lights_lock_named_s_from_catalog_underlying() {
+    const PORT: u16 = 19_545;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_chain: true,
+            plant_binance_options_index: true,
+            plant_binance_options_quote: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let body: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/index?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("index route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "success");
+    assert_eq!(body["data"]["indexPrice"], "27670.21666667");
+    assert_eq!(body["data"]["underlying"], "BTCUSDT");
+    assert_ne!(body["data"]["underlying"], "BTC");
+    assert_eq!(body["provenance"]["path"], "/eapi/v1/index");
+    assert_eq!(body["identity"]["physics"], "latest_state");
+    assert_eq!(body["identity"]["capability_id"], "index");
+    assert_ne!(body["provenance"]["model"], "model_computed");
+    let wire = body.to_string();
+    assert!(!wire.contains("lastPrice"));
+    assert!(!wire.contains("markPrice"));
+    assert!(!wire.contains("underlyingAsset"));
+
+    for instrument in ["BTC", "BTCUSDT", "XRP"] {
+        let miss: serde_json::Value = client
+            .get(format!(
+                "http://127.0.0.1:{PORT}/api/station/index?book=binance-com-options&instrument={instrument}"
+            ))
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .expect("index route")
+            .json()
+            .await
+            .expect("json");
+        assert_eq!(miss["status"], "unavailable", "{instrument}");
+        assert!(miss["data"].is_null(), "{instrument}");
+        assert!(
+            !miss.to_string().contains("27670.21666667"),
+            "{instrument} must not pick up the planted S"
+        );
+    }
+
+    let spot: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/index?book=binance-com-spot&instrument=BTCUSDT"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("spot index")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(spot["status"], "unavailable");
+    assert!(spot["data"].is_null());
+
+    let nfo: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/index?book=kotak-nse-nfo&instrument=NIFTY"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo index")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(nfo["status"], "unavailable");
+    assert!(nfo["data"].is_null());
+
+    handle.abort();
+}
+
+/// Index without a catalog row stays dark — do not invent BTCUSDT from typing BTC.
+#[tokio::test]
+async fn planted_index_without_catalog_stays_unavailable() {
+    const PORT: u16 = 19_546;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_index: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+
+    let body: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/index?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("index route")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert!(body["data"].is_null());
+    assert!(!body.to_string().contains("27670.21666667"));
+
+    handle.abort();
+}
