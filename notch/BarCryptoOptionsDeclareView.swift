@@ -141,11 +141,75 @@ struct BarCryptoOptionsDeclareView: View {
         case .empty:
             emptyBlock(title: "No contracts", body: "Expiry list is empty — not a guessed strike grid.")
         case .lit:
-            emptyBlock(
-                title: "chain snapshot live · no strike grid (raw strike/expiry)",
-                body: "Rows come from the Binance options catalog. A missing row means that contract is absent.",
-            )
+            if viewModel.deskChainRows.isEmpty {
+                emptyBlock(
+                    title: "chain snapshot live · no strike grid (raw strike/expiry)",
+                    body: "Rows come from the Binance options catalog. A missing row means that contract is absent.",
+                )
+            } else {
+                chainCatalog
+            }
         }
+    }
+
+    /// Catalog list from `optionSymbols`. Click binds the mixed-case id (same as paste).
+    /// Not a CE/PE/IV/OI strike grid. `showsStrikeGrid` stays false.
+    private var chainCatalog: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                catalogHead("symbol")
+                catalogHead("strike")
+                catalogHead("side")
+                catalogHead("expiry")
+                catalogHead("last")
+            }
+            .padding(.bottom, 4)
+            ForEach(viewModel.deskChainRows) { row in
+                Button {
+                    viewModel.bindChainCatalogSymbol(row.symbol)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        catalogCell(row.symbol, emphasis: row.symbol == viewModel.deskSelectedInstrumentId)
+                        catalogCell(row.strikeRaw)
+                        catalogCell(row.side)
+                        catalogCell(row.expiryRaw)
+                        catalogCell(row.last)
+                    }
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Text("optionSymbols for this underlying + expiry. Click binds. No IV column. Not `/eapi/v1/optionChain`.")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
+    }
+
+    private func catalogHead(_ title: String) -> some View {
+        Text(title)
+            .font(BarDS.monoFont(9.5, weight: .regular))
+            .foregroundColor(BarDS.Text.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func catalogCell(_ value: String?, emphasis: Bool = false) -> some View {
+        Text(value ?? "")
+            .font(BarDS.monoFont(11, weight: emphasis ? .medium : .regular))
+            .foregroundColor(emphasis ? BarDS.Accent.teal : BarDS.Text.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var oiTrailing: String {

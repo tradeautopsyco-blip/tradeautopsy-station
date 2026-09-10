@@ -977,8 +977,22 @@ struct BarOptionsDeclareTests {
                 "timestamp": "1597026383085",
             ],
         ])
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "row_count": 1,
+                "rows": [[
+                    "instrument_id": "BTC-200730-9000-C",
+                    "trading_symbol": "BTC-200730-9000-C",
+                    "option_type": "CALL",
+                    "strike_raw": "9000.000",
+                    "expiry_raw": "1596067200000",
+                ]],
+            ],
+        ])
         #expect(vm.deskGreeksDelta != nil)
         #expect(vm.deskOiSumOpenInterest == "12.5")
+        #expect(vm.deskChainRows.count == 1)
         let before = vm.deskExtractGeneration
 
         let after = vm.invalidateDeskMarketExtracts(reason: "select-symbol")
@@ -996,6 +1010,7 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskOiStatus == "unavailable")
         #expect(vm.deskOiSumOpenInterest == nil)
         #expect(vm.deskOiRows.isEmpty)
+        #expect(vm.deskChainRows.isEmpty)
     }
 
     @Test func contractSwitchWipesGreeksSynchronously() {
@@ -1189,6 +1204,168 @@ struct BarOptionsDeclareTests {
         #expect(!BarOptionsDeclareSurface.usesCryptoOptions(
             for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
         ))
+    }
+
+    // MARK: - Chain catalog paint (optionSymbols list, crypto Options desk)
+
+    @Test func chainCatalogPaintsVenueRowsVerbatim() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "row_count": 2,
+                "rows": [
+                    [
+                        "instrument_id": "BTC-200730-9000-C",
+                        "trading_symbol": "BTC-200730-9000-C",
+                        "option_type": "CALL",
+                        "strike_raw": "9000.000",
+                        "expiry_raw": "1596067200000",
+                    ],
+                    [
+                        "instrument_id": "BTC-200730-9000-P",
+                        "trading_symbol": "BTC-200730-9000-P",
+                        "option_type": "PUT",
+                        "strike_raw": "9000.000",
+                        "expiry_raw": "1596067200000",
+                        "last": "12.50",
+                    ],
+                ],
+            ],
+        ])
+        #expect(vm.deskChainStatus == "success")
+        #expect(vm.deskChainRows.count == 2)
+        #expect(vm.deskChainRows[0].symbol == "BTC-200730-9000-C")
+        #expect(vm.deskChainRows[0].strikeRaw == "9000.000")
+        #expect(vm.deskChainRows[0].side == "CALL")
+        #expect(vm.deskChainRows[0].expiryRaw == "1596067200000")
+        #expect(vm.deskChainRows[0].last == nil)
+        #expect(vm.deskChainRows[1].symbol == "BTC-200730-9000-P")
+        #expect(vm.deskChainRows[1].last == "12.50")
+        // Catalog is not a Sensibull strike grid.
+        #expect(BarOptionsChainPresentation.from(
+            underlying: "BTC", chainStatus: vm.deskChainStatus
+        ).showsStrikeGrid == false)
+        #expect(vm.deskChainRows[0].strikeRaw != "57500")
+    }
+
+    @Test func chainLastOverlayAbsentWhenEmptyNeverZero() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "rows": [[
+                    "instrument_id": "BTC-200730-9000-C",
+                    "trading_symbol": "BTC-200730-9000-C",
+                    "option_type": "CALL",
+                    "strike_raw": "9000.000",
+                    "expiry_raw": "1596067200000",
+                    "last": "0",
+                ]],
+            ],
+        ])
+        #expect(vm.deskChainRows.count == 1)
+        #expect(vm.deskChainRows[0].last == nil)
+        #expect(vm.deskChainRows[0].last != "0")
+    }
+
+    @Test func chainNumericLastIsNotTheStringContract() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "rows": [[
+                    "instrument_id": "BTC-200730-9000-C",
+                    "trading_symbol": "BTC-200730-9000-C",
+                    "option_type": "CALL",
+                    "strike_raw": "9000.000",
+                    "expiry_raw": "1596067200000",
+                    "last": 12.5,
+                ]],
+            ],
+        ])
+        #expect(vm.deskChainRows[0].last == nil)
+    }
+
+    @Test func chainEmptyStatusStaysNoContracts() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.barDeclarationSymbol = "BTC"
+        vm.applyStationChainEnvelope([
+            "status": "empty",
+            "data": NSNull(),
+        ])
+        #expect(vm.deskChainRows.isEmpty)
+        #expect(BarOptionsChainPresentation.from(
+            underlying: "BTC", chainStatus: vm.deskChainStatus
+        ) == .empty)
+        #expect(BarOptionsChainPresentation.from(
+            underlying: "BTC", chainStatus: "empty"
+        ).showsStrikeGrid == false)
+    }
+
+    @Test func chainCatalogClickBindsMixedCaseId() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.barDeclarationSymbol = "BTC"
+        vm.declOptionExpiry = "200730"
+        vm.declOptionStrike = "9000"
+
+        vm.bindChainCatalogSymbol("BTC-200730-9000-P")
+
+        #expect(vm.deskSelectedInstrumentId == "BTC-200730-9000-P")
+        #expect(vm.barDeclarationSymbol == "BTC")
+        #expect(vm.declOptionExpiry == "200730")
+        #expect(vm.declOptionStrike == "9000")
+        #expect(vm.declOptionRight == "PE")
+        #expect(vm.deskExtractInvalidationReason == "commit-symbol")
+        #expect(BarOptionsDeclareSurface.usesCryptoOptions(
+            for: .options, slug: "binance_com", instrumentId: vm.deskSelectedInstrumentId
+        ))
+    }
+
+    @Test func chainCatalogIgnoresNfoTokenClick() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        vm.bindChainCatalogSymbol("nse_fo|56526")
+        #expect(vm.deskSelectedInstrumentId == "BTC-200730-9000-C")
+    }
+
+    @Test func nfoChainEnvelopeDoesNotInventAStrikeGrid() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "row_count": 1,
+                "rows": [[
+                    "instrument_id": "nse_fo|56526",
+                    "trading_symbol": "NIFTY2692221000PE",
+                    "lot": 65,
+                    "option_type": "PE",
+                    "strike_raw": "2.1e+06",
+                    "expiry_raw": "1474554600",
+                ]],
+            ],
+        ])
+        #expect(vm.deskChainStatus == "success")
+        #expect(vm.deskChainRows.count == 1)
+        #expect(vm.deskChainRows[0].strikeRaw == "2.1e+06")
+        #expect(vm.deskChainRows[0].strikeRaw != "57500")
+        #expect(BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345"
+        ))
+        #expect(BarOptionsChainPresentation.from(
+            underlying: "BANKNIFTY", chainStatus: "success"
+        ).showsStrikeGrid == false)
     }
 }
 

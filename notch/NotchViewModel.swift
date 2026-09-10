@@ -39,6 +39,18 @@ struct DeskOiExpiryRow: Identifiable, Equatable {
     let timestamp: String?
 }
 
+/// One `optionSymbols` catalog row. Not a strike grid: symbol / strike_raw /
+/// side / expiry_raw as published. `last` is TickBook overlay only — missing
+/// means absent, never `"0"`.
+struct DeskChainCatalogRow: Identifiable, Equatable {
+    var id: String { symbol }
+    let symbol: String
+    let strikeRaw: String?
+    let side: String?
+    let expiryRaw: String?
+    let last: String?
+}
+
 struct SignalBreakdown {
     var lossChasingScore: Double = 0
     var revengeScore: Double = 0
@@ -486,6 +498,9 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskYahooHistoryStatus: String = "unavailable"
     @Published var deskYahooHistoryIneligible: [String] = []
     @Published var deskChainStatus: String = "unavailable"
+    /// `optionSymbols` catalog rows for the bound underlying+expiry. Empty is a
+    /// hole, not a guessed strike list.
+    @Published var deskChainRows: [DeskChainCatalogRow] = []
     @Published var deskOiStatus: String = "unavailable"
     /// Exact-match `GET /eapi/v1/openInterest` fields. Venue strings, never a summed total.
     @Published var deskOiSumOpenInterest: String? = nil
@@ -1393,6 +1408,15 @@ public final class NotchViewModel: ObservableObject {
         refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
     }
 
+    /// Catalog row click — same path as paste. A leftover NFO token is not a
+    /// dated contract, so it does not bind.
+    func bindChainCatalogSymbol(_ symbol: String) {
+        let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard InstrumentTickBookId.isDatedOptionContract(trimmed) else { return }
+        barDeclarationSymbol = trimmed
+        commitDeskSymbol()
+    }
+
     /// Hint for an instrument the active desk cannot serve.
     private var deskInstrumentHint: String {
         DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
@@ -1695,6 +1719,7 @@ public final class NotchViewModel: ObservableObject {
         deskExtractGeneration &+= 1
         deskExtractInvalidationReason = reason
         deskChainStatus = "unavailable"
+        clearDeskChainRows()
         deskOiStatus = "unavailable"
         clearDeskOiNumbers()
         clearDeskGreeks()
@@ -1770,6 +1795,48 @@ public final class NotchViewModel: ObservableObject {
             return BarDeskTemplate.binanceComOptionsBookId
         }
         return BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+    }
+
+    /// Apply one `/api/station/option_chain` envelope. Pure state, no HTTP —
+    /// the parse is the seam under test.
+    ///
+    /// Success with `rows` keeps mixed-case `instrument_id` / `trading_symbol`,
+    /// `strike_raw`, `option_type` (side), `expiry_raw`. Last overlays only when
+    /// the venue string is present and not `"0"`. Numeric JSON does not paint.
+    func applyStationChainEnvelope(_ json: [String: Any]) {
+        let rawStatus = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        clearDeskChainRows()
+        deskChainStatus = rawStatus.isEmpty ? "unavailable" : rawStatus
+
+        guard rawStatus.lowercased() == "success" else { return }
+        guard let data = json["data"] as? [String: Any],
+              let rawRows = data["rows"] as? [Any]
+        else { return }
+        let parsed = rawRows.compactMap(Self.deskChainRow(from:))
+        if !parsed.isEmpty {
+            deskChainRows = parsed
+        }
+    }
+
+    private static func deskChainRow(from raw: Any) -> DeskChainCatalogRow? {
+        guard let obj = raw as? [String: Any] else { return nil }
+        let symbol = publishedVenueString(obj["trading_symbol"])
+            ?? publishedVenueString(obj["instrument_id"])
+            ?? publishedVenueString(obj["symbol"])
+        guard let symbol else { return nil }
+        let last = publishedVenueString(obj["last"])
+        return DeskChainCatalogRow(
+            symbol: symbol,
+            strikeRaw: publishedVenueString(obj["strike_raw"]),
+            side: publishedVenueString(obj["option_type"]) ?? publishedVenueString(obj["side"]),
+            expiryRaw: publishedVenueString(obj["expiry_raw"]),
+            last: (last == "0") ? nil : last
+        )
+    }
+
+    private func clearDeskChainRows() {
+        deskChainRows = []
     }
 
     /// Apply one `/api/station/open_interest` envelope. Pure state, no HTTP —
@@ -1938,6 +2005,7 @@ public final class NotchViewModel: ObservableObject {
                 // A skipped glance writes nothing: the hole keeps what invalidate set.
                 guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
+                self.applyStationChainEnvelope(chainJSON ?? [:])
                 self.deskOiStatus = oiJSON?["status"] as? String ?? "unavailable"
                 self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
