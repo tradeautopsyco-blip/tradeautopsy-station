@@ -14,6 +14,7 @@ mod binance_options_mark;
 mod binance_options_oi;
 mod binance_options_private;
 mod binance_options_public;
+mod binance_options_ticker;
 mod binance_public;
 mod binance_spot_private;
 mod binance_spot_ticker;
@@ -109,6 +110,7 @@ pub use binance_options_public::{
     options_ticker_query, quote_tick_from_options_ticker_json,
     quote_tick_from_options_ticker_json_for_symbol, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH,
 };
+pub use binance_options_ticker::{await_binance_options_ticker, binance_options_ticker_call};
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
     spawn_binance_com_trade_loop,

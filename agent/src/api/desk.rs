@@ -299,8 +299,9 @@ impl AppState {
 
     /// Warm options last at bind time. One GET, gated on `eapi_public_fetch`
     /// and on the id actually being a dated contract; quote bind awaits the
-    /// same ensure so Last lands before extract, and obtain kicks again when
-    /// TickBook is still empty.
+    /// same ensure so Last lands before extract. Skip + inflight live inside
+    /// `ensure_options_ticker` so this kick joins an in-flight prime instead of
+    /// firing a second eapi call. Obtain kicks again only when TickBook is still empty.
     ///
     /// This does **not** open `nbstream…/eoptions` — WS last is NOT SPECIFIED.
     /// REST `lastPrice` only, mixed-case `?symbol=`, no HMAC, never the
@@ -451,7 +452,9 @@ impl AppState {
     /// Options last has no specified WS field, so REST is the only last —
     /// unlike spot, this must land *instead of* a trade-stream subscribe.
     ///
-    /// Gated inside `ensure_options_ticker`: tests stay fixture-only, and a
+    /// Skips when TickBook already has a last for the mixed-case id. A concurrent
+    /// `kick_options_rest_ticker` joins `com_ticker_inflight` instead of a second
+    /// GET. Gated inside `ensure_options_ticker`: tests stay fixture-only, and a
     /// leftover `BTC` / `BTCUSDT` never reaches eapi.
     pub async fn prime_binance_options_ticker(&self, instrument: &str) {
         super::glance::ensure_options_ticker(self, instrument).await;

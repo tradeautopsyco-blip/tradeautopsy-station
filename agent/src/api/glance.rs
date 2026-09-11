@@ -3,14 +3,14 @@
 
 use crate::api::AppState;
 use crate::data::{
-    apply_history_series, apply_quote, chain_input_honesty, chain_rows_for_contract,
-    depth_snapshot_from_eapi_json, expiration_from_dated_contract, extract_chain_from,
-    extract_greeks_from_mark, extract_index, extract_open_interest, extract_open_interest_for_book,
-    extract_open_interest_from, index_price_from_json_for_underlying,
-    index_underlying_for_contract, is_dated_option_contract, mark_row_for_symbol,
-    normalize_options_instrument, oi_rows_from_json, option_symbols_from_exchange_info_json,
-    options_depth_query, options_index_query, options_klines_query, options_ticker_query,
-    parse_nfo_instrument_id, quote_tick_from_options_ticker_json_for_symbol,
+    apply_history_series, await_binance_options_ticker, chain_input_honesty,
+    chain_rows_for_contract, depth_snapshot_from_eapi_json, expiration_from_dated_contract,
+    extract_chain_from, extract_greeks_from_mark, extract_index, extract_open_interest,
+    extract_open_interest_for_book, extract_open_interest_from,
+    index_price_from_json_for_underlying, index_underlying_for_contract, is_dated_option_contract,
+    mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
+    option_symbols_from_exchange_info_json, options_depth_query, options_index_query,
+    options_klines_query, options_ticker_query, parse_nfo_instrument_id,
     series_from_eapi_klines_json, underlying_asset_from_dated_contract,
     validate_options_kline_request, CachedIndex, CachedMark, ChainRow, GlanceEnvelope,
     GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
@@ -35,10 +35,6 @@ const OPTIONS_MARK_MAX_AGE_MS: i64 = 5_000;
 /// A book moves fast, so the coalesce window is short — it exists so two obtain
 /// calls in the same tick are one GET, not so a stale ladder is served.
 const OPTIONS_DEPTH_MAX_AGE_MS: i64 = 1_000;
-/// Same short window as depth / spot `ticker/price`: two quote GETs in one tick
-/// share one last. REST.md publishes no ticker weight, so this is coalesce only,
-/// not a budget. Never the unfiltered list.
-const OPTIONS_TICKER_MAX_AGE_MS: i64 = 1_000;
 /// Same coalesce window as COM klines. Weight 1; not a budget.
 const OPTIONS_KLINES_MAX_AGE_MS: i64 = 2_000;
 /// Same coalesce window as OI: one index call serves every panel asking for this underlying.
@@ -308,41 +304,23 @@ fn ticker_dial_symbol(eapi_public_fetch: bool, instrument: &str) -> Option<Strin
 
 /// One `GET /eapi/v1/ticker?symbol=` last into TickBook's **options** slot.
 ///
-/// Never fabricates: a non-success HTTP or a body whose `symbol` is not this
-/// contract leaves the book untouched, so quote/obtain stay Unavailable rather
-/// than serving `last=0`. No HMAC. Does not subscribe TickBook (REST stays
-/// open — this book has no specified WS last). Does not open
-/// `nbstream…/eoptions`.
+/// Skip when a last is already resident. Concurrent prime + kick share
+/// `com_ticker_inflight`. Non-success HTTP lands on `quote_fetch_error` so Last
+/// is a typed hole, not a silent one. Never fabricates `last=0`. No HMAC. Does
+/// not subscribe TickBook (REST stays open — this book has no specified WS
+/// last). Does not open `nbstream…/eoptions`.
 pub(crate) async fn ensure_options_ticker(state: &AppState, instrument: &str) {
     let Some(dial) = ticker_dial_symbol(state.eapi_public_fetch, instrument) else {
         return;
     };
-    // The engine runs `authorize_book_call` itself; no HMAC is attached here —
-    // a private credential on this public path is a refusal, not an upgrade.
-    let call = EgressCall::get(
-        BINANCE_COM_OPTIONS_BOOK_ID,
-        OPTIONS_EAPI_HOST,
-        OPTIONS_TICKER_PATH,
-        Lane::MarketData,
+    await_binance_options_ticker(
+        state.quote_registry.clone(),
+        state.tickbook.clone(),
+        state.com_ticker_inflight.clone(),
+        state.quote_fetch_error.clone(),
+        &dial,
     )
-    .with_query(options_ticker_query(&dial))
-    .with_max_age_ms(OPTIONS_TICKER_MAX_AGE_MS)
-    .with_timeout(Duration::from_secs(15));
-    let Ok(resp) = crate::egress::shared().send(&call).await else {
-        return;
-    };
-    if !resp.is_success() {
-        return;
-    }
-    let Some(tick) =
-        quote_tick_from_options_ticker_json_for_symbol(&resp.body, &dial, chrono::Utc::now())
-    else {
-        return;
-    };
-    let mut book = state.tickbook.lock().expect("tickbook mutex poisoned");
-    if let Err(err) = apply_quote(state.quote_registry.as_ref(), &mut book, tick) {
-        tracing::warn!(error = %err, "options ticker: apply refused");
-    }
+    .await;
 }
 
 /// One `GET /eapi/v1/depth` bounded snapshot into the DepthBook's **options** slot.
