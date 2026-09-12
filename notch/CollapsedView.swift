@@ -18,8 +18,8 @@ struct CollapsedNotchView: View {
             switch p.layout {
             case .intervention(let keyword, _, _):
                 interventionStrip(keyword: keyword)
-            case .impact(let impact):
-                impactStrip(impact)
+            case .impact:
+                impactStrip()
             }
         }
         .padding(.horizontal, viewModel.hasPhysicalNotch ? 0 : 10)
@@ -53,20 +53,17 @@ struct CollapsedNotchView: View {
         .accessibilityLabel("Agent connection: \(viewModel.daemonConnectionLabel). \(keyword)")
     }
 
-    private func impactStrip(_ impact: AccountImpact) -> some View {
-        let tone = impactTone(impact)
+    private func impactStrip() -> some View {
+        let pnl = presentation.pnlText
         let row = HStack(alignment: .center, spacing: 8) {
-            Circle()
-                .fill(tone)
-                .frame(width: 6, height: 6)
-                .shadow(color: tone.opacity(0.7), radius: 3, x: 0, y: 0)
-                .accessibilityHidden(true)
-            centerZeroTrack(impact, tone: tone)
-            Text(impact.chipLabel)
-                .font(BarDS.monoFont(12, weight: .semibold))
+            collapsedLogo
+            Spacer(minLength: 4)
+            Text(pnl)
+                .font(BarDS.monoFont(11, weight: .semibold))
                 .monospacedDigit()
-                .foregroundColor(.white)
-                .frame(width: 34, alignment: .trailing)
+                .foregroundColor(sessionPnLColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
         }
         return Group {
             if viewModel.hasPhysicalNotch {
@@ -77,8 +74,24 @@ struct CollapsedNotchView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), account impact \(impact.chipLabel)"
+            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), P&L \(pnl)"
         )
+    }
+
+    /// Left ear — same slot as the Music app mark on Dynamic Island.
+    private var collapsedLogo: some View {
+        Text("T")
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color.white.opacity(0.14)))
+            .accessibilityHidden(true)
+    }
+
+    private var sessionPnLColor: Color {
+        if viewModel.sessionPnL > 0 { return BarDS.Accent.green }
+        if viewModel.sessionPnL < 0 { return BarDS.Accent.red }
+        return .white
     }
 
     /// Camera spacer on top; one centered row in the visible hang strip.
@@ -89,7 +102,7 @@ struct CollapsedNotchView: View {
                 .frame(height: viewModel.notchTopInset)
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 10)
                 .padding(.bottom, 4)
         }
     }
@@ -105,36 +118,6 @@ struct CollapsedNotchView: View {
         }
     }
 
-    private func centerZeroTrack(_ impact: AccountImpact, tone: Color) -> some View {
-        GeometryReader { geo in
-            let mid = geo.size.width / 2
-            let fill = CGFloat(impact.trackFill) * mid
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.28))
-                Capsule()
-                    .fill(Color.white.opacity(0.55))
-                    .frame(width: 1.5, height: 5)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                if case .known(_, .down) = impact, fill > 0 {
-                    Capsule()
-                        .fill(tone)
-                        .frame(width: fill)
-                        .offset(x: mid - fill)
-                }
-                if case .known(_, .up) = impact, fill > 0 {
-                    Capsule()
-                        .fill(tone)
-                        .frame(width: fill)
-                        .offset(x: mid)
-                }
-            }
-        }
-        .frame(minWidth: 48, maxWidth: .infinity)
-        .frame(height: 5)
-        .accessibilityHidden(true)
-    }
-
     private func pillDot(_ color: Color) -> some View {
         Circle()
             .fill(color)
@@ -147,8 +130,8 @@ struct CollapsedNotchView: View {
         switch p.layout {
         case .intervention(let keyword, _, _):
             return "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), \(keyword)"
-        case .impact(let impact):
-            return "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), account impact \(impact.chipLabel)"
+        case .impact:
+            return "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), P&L \(p.pnlText)"
         }
     }
 

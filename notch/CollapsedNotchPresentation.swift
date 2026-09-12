@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - #36 — collapsed chip is account impact; intervention still wins
+// MARK: - Collapsed chip is logo + session P&L; intervention still wins
 
 enum CollapsedNotchLayout: Equatable {
     case intervention(keyword: String, chromeBackgroundHex: String, chromeBorderHex: String)
@@ -11,11 +11,14 @@ struct CollapsedNotchPresentation: Equatable {
     var layout: CollapsedNotchLayout
     /// Intervention chrome may still pulse; impact chip does not.
     var pillPulseAmber: Bool
+    /// Right ear — Dynamic Island waveform slot. Desk-signed session P&L, not a second writer.
+    var pnlText: String
 
-    /// Intervention replaces the strip. Otherwise the closed chip is account impact (#36).
+    /// Intervention replaces the strip. Otherwise logo + P&L in the hardware-notch ears.
     static func build(
         notch: BarLiveStateResponse?,
         impact: AccountImpact,
+        pnlText: String,
     ) -> CollapsedNotchPresentation {
         if let notch, let primary = BarInterventionCardSpec.sortedInterventions(notch.activeInterventions).first {
             let kw = collapsedInterventionKeyword(interventionType: primary.interventionType)
@@ -27,9 +30,14 @@ struct CollapsedNotchPresentation: Equatable {
                     chromeBorderHex: chrome.borderColorHex,
                 ),
                 pillPulseAmber: false,
+                pnlText: pnlText,
             )
         }
-        return CollapsedNotchPresentation(layout: .impact(impact), pillPulseAmber: false)
+        return CollapsedNotchPresentation(
+            layout: .impact(impact),
+            pillPulseAmber: false,
+            pnlText: pnlText,
+        )
     }
 
     static func collapsedInterventionKeyword(interventionType: String) -> String {

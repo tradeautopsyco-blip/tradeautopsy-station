@@ -1,10 +1,11 @@
 import CoreGraphics
 
 /// Closed-chip slot on a notched Mac.
-/// The camera has no pixels. Volume-style chrome hangs **under** the housing,
-/// same width as the cutout, one row (dot · track · label) on a shared axis.
+/// The camera has no pixels. Chrome is the same width as the cutout so it does
+/// not cover Integrate / Window; the live row (logo · P&L) hangs **under** it.
 enum BarNotchVolumeSlot {
     /// BoringNotch closed chin (`cornerRadiusInsets.closed.bottom`).
+    /// Drawn *inside* the housing width — adding it to the window covers the Window menu.
     static let chin: CGFloat = 14
     /// Visible strip below the housing — same idea as their sneak/HUD drop.
     static let hang: CGFloat = 22
@@ -24,7 +25,8 @@ enum BarNotchVolumeSlot {
         return CGRect(x: leftEdge - housingFudge / 2, y: 0, width: width, height: 0)
     }
 
-    /// Island flush to the physical top; meter sits in `hang` below the camera.
+    /// Island flush to the physical top, **exactly** the cutout width.
+    /// P&L sits in `hang` below the camera — the Dynamic Island waveform slot.
     static func collapsedFrame(
         screenFrame: CGRect,
         visibleFrame: CGRect,
@@ -36,13 +38,11 @@ enum BarNotchVolumeSlot {
         let menuBarH = max(24, screenFrame.maxY - visibleFrame.maxY)
         let housingH = max(menuBarH, notchInset)
         let housingW = notchWidth > 0 ? notchWidth : fallbackWidth
-        let w = housingW + chin * 2
         let h = housingH + hang
-        let housingMid = notchLeft + housingW / 2
         return CGRect(
-            x: housingMid - w / 2,
+            x: notchLeft,
             y: screenFrame.maxY - h,
-            width: w,
+            width: housingW,
             height: h,
         )
     }

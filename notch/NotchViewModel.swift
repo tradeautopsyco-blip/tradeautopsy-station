@@ -654,11 +654,12 @@ public final class NotchViewModel: ObservableObject {
         )
     }
 
-    /// Collapsed macOS strip (#36) — intervention wins; else account impact.
+    /// Collapsed macOS strip — intervention wins; else logo + session P&L in the notch ears.
     var collapsedNotchPresentation: CollapsedNotchPresentation {
         CollapsedNotchPresentation.build(
             notch: barLiveState,
             impact: accountImpact,
+            pnlText: formattedSessionPnL,
         )
     }
 

@@ -21,18 +21,25 @@ struct CollapsedNotchPresentationTests {
         let p = CollapsedNotchPresentation.build(
             notch: notch,
             impact: .known(percent: 32, sign: .down),
+            pnlText: "+₹1,250",
         )
         guard case .intervention(let keyword, _, _) = p.layout else {
             Issue.record("expected intervention")
             return
         }
         #expect(keyword == "LIMIT")
+        #expect(p.pnlText == "+₹1,250")
     }
 
-    @Test func noInterventionShowsImpactForAnyArchetype() {
+    @Test func noInterventionShowsImpactAndPnLForAnyArchetype() {
         let impact = AccountImpact.known(percent: 32, sign: .up)
-        let p = CollapsedNotchPresentation.build(notch: nil, impact: impact)
+        let p = CollapsedNotchPresentation.build(
+            notch: nil,
+            impact: impact,
+            pnlText: "+₹1,250",
+        )
         #expect(p.layout == .impact(impact))
         #expect(p.pillPulseAmber == false)
+        #expect(p.pnlText == "+₹1,250")
     }
 }

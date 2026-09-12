@@ -8,7 +8,8 @@ import SwiftUI
 enum BarNotchChrome {
     /// HTML `.pill` height (32px).
     static let collapsedStripHeight: CGFloat = 32
-    /// Hug `dot + track + 32↓` inside the hardware notch.
+    /// Fallback floating-pill width on non-notched displays.
+    /// Notched Macs use the hardware cutout width — extra chin overflow covered Window.
     static let collapsedPillWidth: CGFloat = 176
 
     /// Escrow fidelity / match status ring (diameter in points @1x design baseline).
