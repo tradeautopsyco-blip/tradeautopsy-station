@@ -9,6 +9,7 @@ public final class StationAppCoordinator: ObservableObject {
     public let marketDataKeysViewModel: MarketDataKeysViewModel
     public let aiWorkflowKeysViewModel: AIWorkflowKeysViewModel
     public let todayViewModel: TodayViewModel
+    public let journalViewModel: JournalViewModel
     public let deviceLoginViewModel: DeviceLoginViewModel
     @Published public private(set) var inputMonitoringWarning: InputMonitoringWarning?
     @Published public private(set) var inputMonitoringRestartReminder: String?
@@ -68,6 +69,7 @@ public final class StationAppCoordinator: ObservableObject {
         inputMonitoringChecker: InputMonitoringChecking = DefaultInputMonitoringChecker(),
         brokerControl: BrokerControlling? = nil,
         todayClient: TodayAgentClient? = nil,
+        journalClient: JournalAgentClient? = nil,
         daemonSecret: String? = nil,
         deviceLoginClient: (any DeviceLoginClient)? = nil,
         floatingNotch: FloatingNotchHosting
@@ -124,6 +126,15 @@ public final class StationAppCoordinator: ObservableObject {
             agentHealthy: { agentSupervisor.isHealthy },
             isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror },
             configuredSlugs: { brokers.configuredBrokerSlugs }
+        )
+        let resolvedJournalClient = journalClient ?? LocalJournalAgentClient(
+            daemonSecret: resolvedDaemonSecret,
+            isAgentHealthy: { agentSupervisor.isHealthy }
+        )
+        self.journalViewModel = JournalViewModel(
+            client: resolvedJournalClient,
+            sessionModel: session,
+            agentHealthy: { agentSupervisor.isHealthy }
         )
         let resolvedDeviceLoginClient = deviceLoginClient ?? LocalDeviceLoginAgentClient(
             daemonSecret: resolvedDaemonSecret,
@@ -298,6 +309,7 @@ public final class StationAppCoordinator: ObservableObject {
         notchAndPollingStarted = true
         pollingStoppedForUnhealthyAgent = false
         await todayViewModel.load()
+        await journalViewModel.load()
         todayViewModel.startSessionMirrorPolling()
     }
 
@@ -310,6 +322,7 @@ public final class StationAppCoordinator: ObservableObject {
         syncAgentHealthFromSupervisor()
         Task { await brokersViewModel.load() }
         Task { await todayViewModel.load() }
+        Task { await journalViewModel.load() }
 
         if isHealthy {
             if !notchAndPollingStarted {

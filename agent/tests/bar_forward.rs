@@ -3,7 +3,7 @@
 mod common;
 
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{patch, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use common::{
     apply_wire_v1, client, spawn_test_agent_with_options, TestAgentOptions, WireHeaderOverrides,
@@ -359,6 +359,129 @@ async fn bar_post_trade_debrief_proxies_patch_to_upstream() {
     .expect("agent");
 
     assert_eq!(resp.status(), 200);
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bar_declarations_week_proxies_get_query_to_upstream() {
+    const AGENT_PORT: u16 = 39_620;
+    let captured = Arc::new(Mutex::new(None::<String>));
+    let captured_clone = Arc::clone(&captured);
+    let upstream = Router::new().route(
+        "/api/bar/v1/declarations",
+        get(move |req: axum::http::Request<axum::body::Body>| async move {
+            *captured_clone.lock().expect("lock") =
+                Some(req.uri().path_and_query().map(|pq| pq.to_string()).unwrap_or_default());
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "ok": true,
+                    "scope": "week",
+                    "timezone": "Asia/Kolkata",
+                    "items": [],
+                    "days": []
+                })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/declarations";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}?scope=week");
+    let resp = apply_wire_v1(
+        client().get(&url),
+        "GET",
+        path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 200);
+    let out: Value = resp.json().await.expect("json");
+    assert_eq!(out["ok"], true);
+    assert_eq!(out["scope"], "week");
+    assert_eq!(out["items"].as_array().map(|a| a.len()), Some(0));
+    let upstream_path = captured.lock().expect("lock").clone().expect("captured");
+    assert!(
+        upstream_path.contains("scope=week"),
+        "upstream path {upstream_path}"
+    );
+
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bar_declarations_week_forwards_station_bearer() {
+    const AGENT_PORT: u16 = 39_621;
+    let captured = Arc::new(Mutex::new(None::<HeaderMap>));
+    let captured_clone = Arc::clone(&captured);
+    let upstream = Router::new().route(
+        "/api/bar/v1/declarations",
+        get(move |headers: HeaderMap| async move {
+            *captured_clone.lock().expect("lock") = Some(headers);
+            (
+                StatusCode::OK,
+                Json(json!({ "ok": true, "scope": "week", "items": [] })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/declarations";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}?scope=week");
+    let resp = apply_wire_v1(
+        client().get(&url),
+        "GET",
+        path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 200);
+    let headers = captured.lock().expect("lock").take().expect("headers");
+    let auth = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        auth.starts_with("Bearer "),
+        "Station Bearer must be forwarded"
+    );
 
     handle.abort();
 }

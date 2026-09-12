@@ -71,6 +71,8 @@ public struct StationShellView: View {
             AIWorkflowKeysView(viewModel: coordinator.aiWorkflowKeysViewModel)
         case .today:
             TodayView(viewModel: coordinator.todayViewModel, onOpenNotch: { coordinator.toggleNotch() })
+        case .journal:
+            JournalView(viewModel: coordinator.journalViewModel, onOpenNotch: { coordinator.toggleNotch() })
         case .settings:
             SettingsView(coordinator: coordinator)
         default:

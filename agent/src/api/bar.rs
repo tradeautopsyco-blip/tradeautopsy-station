@@ -2,11 +2,12 @@
 
 use crate::api::capture::{forward_daemon_json_with_optional_429_retry, upstream_json_response};
 use crate::api::AppState;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 fn livebook_json(source: &'static str, book: Value) -> Response {
     (
@@ -46,6 +47,61 @@ pub async fn live_state_handler(State(state): State<AppState>, headers: HeaderMa
             }
             upstream_json_response(st, text)
         }
+        Err(msg) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({
+                "error_class": "SERVER_DOWN",
+                "message": msg,
+                "retry_after_ms": Value::Null,
+                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
+            })),
+        )
+            .into_response(),
+    }
+}
+
+fn declarations_upstream_path(params: &HashMap<String, String>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(scope) = params.get("scope") {
+        if matches!(scope.as_str(), "week" | "pending" | "recent") {
+            parts.push(format!("scope={scope}"));
+        }
+    }
+    if let Some(limit) = params.get("limit") {
+        if !limit.is_empty()
+            && limit.len() <= 4
+            && limit.chars().all(|c| c.is_ascii_digit())
+        {
+            parts.push(format!("limit={limit}"));
+        }
+    }
+    if parts.is_empty() {
+        "/api/bar/v1/declarations".to_string()
+    } else {
+        format!("/api/bar/v1/declarations?{}", parts.join("&"))
+    }
+}
+
+/// GET week/pending/recent declarations — Journal consume-only (no declare POST).
+pub async fn declarations_list_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+    let upstream_path = declarations_upstream_path(&params);
+
+    match forward_daemon_json_with_optional_429_retry(
+        &state.upstream,
+        reqwest::Method::GET,
+        &upstream_path,
+        request_id,
+        None,
+        false,
+    )
+    .await
+    {
+        Ok((st, text)) => upstream_json_response(st, text),
         Err(msg) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({

@@ -35,7 +35,8 @@
         "protective": { "method": "POST", "path": "/api/daemon/bar/protective" },
         "live_interference": { "method": "POST", "path": "/api/daemon/bar/live-interference" },
         "swing_check_in": { "method": "POST", "path": "/api/daemon/bar/swing-check-in" },
-        "post_trade_debrief": { "method": "PATCH", "path": "/api/daemon/bar/post-trade-debrief" }
+        "post_trade_debrief": { "method": "PATCH", "path": "/api/daemon/bar/post-trade-debrief" },
+        "declarations_week": { "method": "GET", "path": "/api/daemon/bar/declarations" }
       },
       "agent_to_brain_bar": {
         "live_state": { "method": "GET", "path": "/api/bar/v1/live-state" },
@@ -47,7 +48,8 @@
         "live_interference": { "method": "POST", "path": "/api/bar/v1/notch/live-interference" },
         "swing_check_in": { "method": "POST", "path": "/api/bar/v1/notch/swing-check-in" },
         "post_trade_debrief": { "method": "PATCH", "path": "/api/bar/v1/post-trade-debrief" },
-        "loss_limits": { "method": "GET", "path": "/api/bar/v1/profile/loss-limits" }
+        "loss_limits": { "method": "GET", "path": "/api/bar/v1/profile/loss-limits" },
+        "declarations_week": { "method": "GET", "path": "/api/bar/v1/declarations" }
       },
       "agent_to_brain_fill_ingress": {
         "path": "/api/internal/bar/v1/broker-ingest/fill",

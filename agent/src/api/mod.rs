@@ -225,6 +225,7 @@ pub fn router(state: AppState) -> Router {
             get(capture::pending_get_handler).patch(capture::pending_patch_handler),
         )
         .route("/api/daemon/bar/live-state", get(bar::live_state_handler))
+        .route("/api/daemon/bar/declarations", get(bar::declarations_list_handler))
         .route("/api/daemon/bar/declare", post(bar::declare_handler))
         .route("/api/daemon/bar/stop-me", post(bar::stop_me_handler))
         .route(
