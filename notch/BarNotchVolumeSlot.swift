@@ -1,8 +1,7 @@
 import CoreGraphics
 
 /// Closed-chip slot on a notched Mac.
-/// BoringNotch `getClosedNotchSize` with **Match menu bar height**: width is the
-/// aux-area gap, height is the menu bar — no hang under the camera.
+/// Height matches the menu bar. Width is the housing plus BoringNotch sound ears.
 enum BarNotchVolumeSlot {
     /// BoringNotch `cornerRadiusInsets.closed.bottom` — drawn inside the window.
     static let chin: CGFloat = 14
@@ -27,8 +26,14 @@ enum BarNotchVolumeSlot {
         max(24, screenFrame.maxY - visibleFrame.maxY)
     }
 
-    /// Island flush to the physical top, cutout width × menu-bar height.
-    /// Logo and P&L sit in the ears inside that strip — not a second blob below.
+    /// Extra width BoringNotch adds for closed music live activity
+    /// (`chinWidth += 2 * (effectiveClosedNotchHeight - 12) + 20`).
+    static func soundEarExtra(menuBarHeight: CGFloat) -> CGFloat {
+        2 * max(0, menuBarHeight - 12) + 20
+    }
+
+    /// Island flush to the physical top, elongated like BoringNotch sound:
+    /// housing width plus left/right ears for logo and P&L.
     static func collapsedFrame(
         screenFrame: CGRect,
         visibleFrame: CGRect,
@@ -39,10 +44,12 @@ enum BarNotchVolumeSlot {
     ) -> CGRect {
         let housingW = notchWidth > 0 ? notchWidth : fallbackWidth
         let h = menuBarHeight(screenFrame: screenFrame, visibleFrame: visibleFrame)
+        let extra = soundEarExtra(menuBarHeight: h)
+        let w = housingW + extra
         return CGRect(
-            x: notchLeft,
+            x: notchLeft - extra / 2,
             y: screenFrame.maxY - h,
-            width: housingW,
+            width: w,
             height: h,
         )
     }

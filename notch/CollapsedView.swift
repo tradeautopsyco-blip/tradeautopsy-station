@@ -64,6 +64,7 @@ struct CollapsedNotchView: View {
                 .foregroundColor(sessionPnLColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
+            collapsedSoundBars
         }
         return Group {
             if viewModel.hasPhysicalNotch {
@@ -88,6 +89,24 @@ struct CollapsedNotchView: View {
             .accessibilityHidden(true)
     }
 
+    /// Right ear — BoringNotch spectrogram slot, next to P&L.
+    private var collapsedSoundBars: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                Capsule(style: .continuous)
+                    .fill(sessionPnLColor.opacity(0.85))
+                    .frame(width: 2, height: collapsedBarHeight(i))
+            }
+        }
+        .frame(width: 16, height: 12)
+        .accessibilityHidden(true)
+    }
+
+    private func collapsedBarHeight(_ index: Int) -> CGFloat {
+        let levels: [CGFloat] = [5, 10, 7, 12, 6]
+        return levels[index]
+    }
+
     private var sessionPnLColor: Color {
         if viewModel.sessionPnL > 0 { return BarDS.Accent.green }
         if viewModel.sessionPnL < 0 { return BarDS.Accent.red }
@@ -99,7 +118,7 @@ struct CollapsedNotchView: View {
     private func islandRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 10)
     }
 
     private func impactTone(_ impact: AccountImpact) -> Color {

@@ -26,12 +26,11 @@ struct BarNotchVolumeSlotTests {
         )
         #expect(rect.maxY == screen.maxY)
         #expect(rect.height == 44)
-        #expect(rect.width == 200)
-        #expect(rect.minX == housing!.minX)
+        #expect(rect.width == 200 + BarNotchVolumeSlot.soundEarExtra(menuBarHeight: 44))
         #expect(abs(rect.midX - housing!.midX) < 0.5)
     }
 
-    @Test func closedWidthDoesNotGrowPastHousing() {
+    @Test func closedWidthAddsSoundEarsCenteredOnHousing() {
         let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
         let visible = CGRect(x: 0, y: 0, width: 1512, height: 938)
         let rect = BarNotchVolumeSlot.collapsedFrame(
@@ -42,9 +41,11 @@ struct BarNotchVolumeSlotTests {
             notchInset: 38,
             fallbackWidth: 176,
         )
-        #expect(rect.width == 196)
-        #expect(rect.minX == 656)
-        #expect(rect.maxX == 852)
+        let extra = BarNotchVolumeSlot.soundEarExtra(menuBarHeight: 44)
+        #expect(extra == 84)
+        #expect(rect.width == 196 + extra)
+        #expect(rect.minX == 656 - extra / 2)
+        #expect(rect.maxX == 656 + 196 + extra / 2)
         #expect(rect.height == 44)
     }
 
@@ -61,6 +62,7 @@ struct BarNotchVolumeSlotTests {
         )
         #expect(rect.height == 24)
         #expect(rect.maxY == screen.maxY)
+        #expect(rect.width == 196 + BarNotchVolumeSlot.soundEarExtra(menuBarHeight: 24))
     }
 
     @Test func fullWidthGapIsNotANotch() {
