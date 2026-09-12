@@ -17,6 +17,8 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
     public let lastPillText: String?
     public let fillIsLoss: Bool?
     public let showsNseSessionTicks: Bool
+    /// Unit Y of PnL = 0. Area fill meets this line, not the chart bottom.
+    public let zeroY: Double
 
     private static let nseLabels = ["09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:30"]
     private static let sessionStartMinutes = 9 * 60 + 15
@@ -36,7 +38,10 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
             quoteCurrency: quoteCurrency,
             brokerSlug: brokerSlug
         )
-        let yScale = YScale(points: points, floor: floor)
+        // Settings floor is a positive loss budget. Closed-PnL axis draws it as −floor
+        // (kotak-nse-bse-cash lock). A +12,000 floor must not squash the series to the bottom.
+        let closedPnlFloor = floor.map { -$0 }
+        let yScale = YScale(points: points, floor: closedPnlFloor)
         let plotPoints: [PlotPoint]
         if showsNse {
             plotPoints = points.compactMap { point in
@@ -50,15 +55,16 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
         } else {
             plotPoints = spanMappedPlotPoints(points, yScale: yScale)
         }
-        let last = points.last?.cumulativeClosedPnL
+        let last = plotPoints.last?.cumulativeClosedPnL
         return TodayClosedFloorChartLayout(
             plotPoints: plotPoints,
-            floorY: floor.map { yScale.y($0) },
+            floorY: closedPnlFloor.map { yScale.y($0) },
             tickLabels: showsNse ? nseLabels : [],
             tickXs: showsNse ? nseTickXs() : [],
             lastPillText: last.map { compactWholePill($0, quoteCurrency: quoteCurrency) },
             fillIsLoss: last.map { $0 < 0 },
-            showsNseSessionTicks: showsNse
+            showsNseSessionTicks: showsNse,
+            zeroY: yScale.y(0)
         )
     }
 

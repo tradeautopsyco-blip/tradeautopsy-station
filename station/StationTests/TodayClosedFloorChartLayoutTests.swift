@@ -104,6 +104,50 @@ struct TodayClosedFloorChartLayoutTests {
         #expect(layout.fillIsLoss == nil)
     }
 
+    @Test func settingsFloorPlotsOnClosedPnlAxisSoSeriesStaysVisible() throws {
+        // Lock: kotak-nse-bse-cash.md. Settings floor is a positive loss budget.
+        // Closed chart axis is PnL, so the dashed floor is −floor, not +12,000 above the series.
+        let layout = layout(
+            points: [
+                TodayClosedChartPoint(
+                    closedAt: "2026-09-12T04:11:00.000Z",
+                    cumulativeClosedPnL: -5_800
+                ),
+            ],
+            floor: 12_000,
+            quoteCurrency: "INR",
+            brokerSlug: "kotak_neo"
+        )
+        try #require(layout.plotPoints.count == 1)
+        try #require(layout.floorY != nil)
+        #expect(layout.floorY! < layout.plotPoints[0].y)
+        #expect(layout.plotPoints[0].y > 0.2)
+        #expect(layout.zeroY > layout.plotPoints[0].y)
+    }
+
+    @Test func demoRelianceClosedAtMapsOntoNseSession() throws {
+        let calendar = StationDemoDesk.istCalendar()
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 12, hour: 12))!
+        let fixture = StationDemoDesk.build(
+            now: now,
+            calendar: calendar
+        )
+        let points = TodayDeskPresentation.closedChartPoints(from: fixture.payload.trades)
+        #expect(points.count == 3)
+        let layout = TodayClosedFloorChartLayout.build(
+            points: points,
+            floor: nil,
+            quoteCurrency: "INR",
+            brokerSlug: "kotak_neo",
+            now: Date(),
+            calendar: StationDemoDesk.istCalendar()
+        )
+        #expect(layout.plotPoints.count == 3)
+        #expect(layout.showsNseSessionTicks)
+        #expect(layout.plotPoints.allSatisfy { $0.x > 0 && $0.x < 1 })
+        #expect(layout.lastPillText != nil)
+    }
+
     private func kotakTwoPointLayout() -> TodayClosedFloorChartLayout {
         layout(
             points: [

@@ -153,6 +153,9 @@ public final class TodayViewModel: ObservableObject {
     }
 
     private func showsActiveMoney() -> Bool {
+        if demoDeskStore.demoEnabled {
+            return true
+        }
         let configured = configuredSlugs()
         switch DeskHonesty.resolve(activeSlugs: configured) {
         case .dualNoBlend:

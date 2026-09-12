@@ -120,12 +120,12 @@ public struct TodayView: View {
         VStack(alignment: .leading, spacing: 20) {
             remainingHeadline
             clockTiles
-            heroGrid
-            signalsSection
             closedFloorChart(mini: false)
             detectSection
             openBookForMode
             tradesSection
+            heroGrid
+            signalsSection
         }
     }
 
@@ -263,7 +263,8 @@ public struct TodayView: View {
                 quoteCurrency: viewModel.desk.quoteCurrency,
                 brokerSlug: viewModel.desk.brokerSlug
             )
-            .frame(height: mini ? 72 : 160)
+            .frame(maxWidth: .infinity)
+            .frame(height: mini ? 88 : 156)
             Text(viewModel.desk.chartReadout)
                 .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
@@ -889,10 +890,18 @@ struct TodayClosedFloorChart: View {
                 floorLine.addLine(to: CGPoint(x: size.width, y: y(floorY)))
                 context.stroke(
                     floorLine,
-                    with: .color(StationDS.Text.muted.opacity(0.45)),
+                    with: .color(Color(hex: TodayPalette.loss).opacity(0.55)),
                     style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                 )
             }
+            var zeroLine = Path()
+            zeroLine.move(to: CGPoint(x: 0, y: y(layout.zeroY)))
+            zeroLine.addLine(to: CGPoint(x: size.width, y: y(layout.zeroY)))
+            context.stroke(
+                zeroLine,
+                with: .color(StationDS.Text.muted.opacity(0.25)),
+                style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+            )
 
             if layout.plotPoints.isEmpty {
                 drawTicks(context: context, layout: layout, size: size, plotHeight: plotHeight)
@@ -910,12 +919,13 @@ struct TodayClosedFloorChart: View {
 
             var area = Path()
             let first = layout.plotPoints[0]
-            area.move(to: CGPoint(x: x(first.x), y: plotHeight))
+            let zero = y(layout.zeroY)
+            area.move(to: CGPoint(x: x(first.x), y: zero))
             for point in layout.plotPoints {
                 area.addLine(to: CGPoint(x: x(point.x), y: y(point.y)))
             }
             if let last = layout.plotPoints.last {
-                area.addLine(to: CGPoint(x: x(last.x), y: plotHeight))
+                area.addLine(to: CGPoint(x: x(last.x), y: zero))
             }
             area.closeSubpath()
             context.fill(area, with: .color(fillColor.opacity(0.18)))

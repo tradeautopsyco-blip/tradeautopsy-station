@@ -130,7 +130,7 @@ struct TodayViewModelDemoTests {
         #expect(viewModel.showCircuitBreakerBanner == true)
     }
 
-    @Test func demoDualNoBlendDashesWhenBothBooksHaveNoActiveDesk() async {
+    @Test func demoOnPaintsRelianceFixtureEvenWhenBothLiveBooksAreConfigured() async {
         let viewModel = TodayViewModel(
             client: FakeTodayAgentClient(payload: livePayload()),
             sessionModel: SessionModel(),
@@ -139,7 +139,26 @@ struct TodayViewModelDemoTests {
             demoDeskStore: makeDemoStore(enabled: true)
         )
         await viewModel.load()
+        let pnl = viewModel.presentation.heroTiles.first { $0.id == "pnl" }
+        #expect(pnl?.value.contains("2,400") == true || pnl?.value.contains("2400") == true)
+        #expect(viewModel.presentation.trades.map(\.symbol) == ["RELIANCE", "RELIANCE", "RELIANCE"])
+        #expect(viewModel.desk.chartPoints.count == 3)
+        #expect(viewModel.presentation.subtitle.contains("Demo · not live"))
+        #expect(!viewModel.presentation.trades.isEmpty)
+        #expect(viewModel.desk.quoteCurrency == "INR")
+    }
+
+    @Test func liveDualNoBlendStillDashesWhenDemoOffAndBothBooksHaveNoActiveDesk() async {
+        let viewModel = TodayViewModel(
+            client: FakeTodayAgentClient(payload: livePayload()),
+            sessionModel: SessionModel(),
+            agentHealthy: { true },
+            configuredSlugs: { ["binance_com", "kotak_neo"] },
+            demoDeskStore: makeDemoStore(enabled: false)
+        )
+        await viewModel.load()
         #expect(viewModel.presentation.heroTiles.allSatisfy { $0.value == TodayScreenPresentation.emDash })
+        #expect(viewModel.desk.chartPoints.isEmpty)
         #expect(viewModel.desk.remainingText == TodayScreenPresentation.emDash)
     }
 
