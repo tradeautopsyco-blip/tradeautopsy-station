@@ -3,13 +3,20 @@ import Notch
 
 public struct TodayView: View {
     @ObservedObject private var viewModel: TodayViewModel
+    @ObservedObject private var journalViewModel: JournalViewModel
     @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
+    @ObservedObject private var layoutStore = TodayLayoutModeStore.shared
     private let onOpenNotch: (() -> Void)?
     @State private var inspector: ThisTradeInspectorModel?
     @State private var dismissDetect = false
 
-    public init(viewModel: TodayViewModel, onOpenNotch: (() -> Void)? = nil) {
+    public init(
+        viewModel: TodayViewModel,
+        journalViewModel: JournalViewModel,
+        onOpenNotch: (() -> Void)? = nil
+    ) {
         self.viewModel = viewModel
+        self.journalViewModel = journalViewModel
         self.onOpenNotch = onOpenNotch
     }
 
@@ -28,17 +35,12 @@ public struct TodayView: View {
                     if viewModel.showCircuitBreakerBanner {
                         circuitBreakerBanner
                     }
-                    heroGrid
-                    signalsSection
-                    if let detect = viewModel.detectCardInput(), !dismissDetect {
-                        DetectCardView(
-                            result: DetectCard.evaluate(detect),
-                            onPlanInNotch: { onOpenNotch?() },
-                            onNotNow: { dismissDetect = true }
-                        )
+                    switch layoutStore.mode {
+                    case .daySpine:
+                        daySpine
+                    case .splitClocks:
+                        splitClocks
                     }
-                    openBookForMode
-                    tradesSection
                     Text(viewModel.presentation.caption)
                         .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                         .foregroundStyle(StationDS.Text.muted)
@@ -49,9 +51,11 @@ public struct TodayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.load()
+            await journalViewModel.load()
         }
         .refreshable {
             await viewModel.load()
+            await journalViewModel.load()
         }
         .sheet(item: inspectorBinding) { model in
             ThisTradeInspectorSheet(model: model) { inspector = nil }
@@ -66,7 +70,7 @@ public struct TodayView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 12) {
             Text("Today")
                 .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
                 .foregroundStyle(StationDS.Text.primary)
@@ -74,12 +78,183 @@ public struct TodayView: View {
                 .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
             Spacer()
+            Picker("Layout", selection: layoutBinding) {
+                Text(TodayLayoutMode.daySpine.title).tag(TodayLayoutMode.daySpine)
+                Text(TodayLayoutMode.splitClocks.title).tag(TodayLayoutMode.splitClocks)
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 280)
+            .accessibilityLabel("Today layout")
+            Button("Open Notch") { onOpenNotch?() }
+                .buttonStyle(.borderedProminent)
+                .tint(StationDS.Accent.teal)
+                .controlSize(.small)
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
         .overlay(alignment: .bottom) {
             Rectangle().fill(StationDS.Border.divider).frame(height: StationDS.borderThin)
         }
+    }
+
+    private var layoutBinding: Binding<TodayLayoutMode> {
+        Binding(
+            get: { layoutStore.mode },
+            set: { layoutStore.setMode($0) }
+        )
+    }
+
+    private var daySpine: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            remainingHeadline
+            clockTiles
+            heroGrid
+            signalsSection
+            closedFloorChart(mini: false)
+            detectSection
+            openBookForMode
+            tradesSection
+        }
+    }
+
+    private var splitClocks: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Happened · this day")
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.muted)
+                Text(viewModel.presentation.subtitle)
+                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                happenedTile
+                closedFloorChart(mini: false)
+                tradesSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Now · still on")
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                    .foregroundStyle(StationDS.Text.muted)
+                nowTile
+                detectSection
+                openBookForMode
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var remainingHeadline: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(viewModel.desk.remainingText)
+                        .font(StationDS.bodyFont(28, weight: .bold))
+                        .foregroundStyle(StationDS.Text.primary)
+                    Text("remaining")
+                        .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
+                        .foregroundStyle(StationDS.Text.secondary)
+                }
+                Text("Settings floor minus closed used. Open MTM is not in this number.")
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
+            }
+            Spacer()
+            Text(viewModel.desk.remainingBadge)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                .foregroundStyle(StationDS.Text.muted)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(StationDS.Border.divider, lineWidth: 1)
+                )
+        }
+    }
+
+    private var clockTiles: some View {
+        HStack(spacing: 10) {
+            happenedTile
+            nowTile
+        }
+    }
+
+    private var happenedTile: some View {
+        let pnl = viewModel.presentation.heroTiles.first { $0.id == "pnl" }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("HAPPENED")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                .foregroundStyle(StationDS.Text.muted)
+            Text("Closed round trips")
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.secondary)
+            Text(pnl?.value ?? TodayScreenPresentation.emDash)
+                .font(StationDS.bodyFont(22, weight: .bold))
+                .foregroundStyle(color(for: pnl?.tone ?? .empty))
+            Text("\(viewModel.desk.happenedClosedCount) RTs · hero is closed only")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(StationDS.Fill.input)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StationDS.Border.divider, lineWidth: 1))
+    }
+
+    private var nowTile: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NOW")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                .foregroundStyle(StationDS.Text.muted)
+            Text("Open book")
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.secondary)
+            Text("\(viewModel.desk.nowOpenCount)")
+                .font(StationDS.bodyFont(22, weight: .bold))
+                .foregroundStyle(StationDS.Text.primary)
+            Text("MTM stays on the row. DualNoBlend.")
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(StationDS.Fill.input)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StationDS.Border.divider, lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private var detectSection: some View {
+        if let detect = viewModel.detectCardInput(declarations: journalViewModel.weekDeclarations),
+           !dismissDetect {
+            DetectCardView(
+                result: DetectCard.evaluate(detect),
+                onPlanInNotch: { onOpenNotch?() },
+                onNotNow: { dismissDetect = true }
+            )
+        }
+    }
+
+    private func closedFloorChart(mini: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("This day only — closed P&L vs floor")
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                .foregroundStyle(StationDS.Text.secondary)
+            TodayClosedFloorChart(
+                points: viewModel.desk.chartPoints,
+                floor: viewModel.desk.floorLine
+            )
+            .frame(height: mini ? 72 : 140)
+            Text(chartReadout)
+                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                .foregroundStyle(StationDS.Text.muted)
+        }
+    }
+
+    private var chartReadout: String {
+        let closed = viewModel.presentation.heroTiles.first { $0.id == "pnl" }?.value
+            ?? TodayScreenPresentation.emDash
+        let remaining = viewModel.desk.remainingText
+        return "\(closed) closed · \(remaining) to floor · T8 preview · open MTM not on this line"
     }
 
     private var heroGrid: some View {
@@ -412,8 +587,10 @@ public struct TodayView: View {
     }
 
     private func openInspector(_ row: TodayOpenRowPresentation) {
+        let joined = viewModel.detectCardInput(declarations: journalViewModel.weekDeclarations)
+        let quote = viewModel.lastDeskQuoteCurrency ?? ""
         let detect = DetectCard.evaluate(
-            viewModel.detectCardInput()
+            joined
                 ?? DetectCardInput(
                     qty: Double(row.qtyText) ?? 0,
                     entry: nil,
@@ -421,8 +598,8 @@ public struct TodayView: View {
                     liveStop: nil,
                     sideBuy: !row.sideText.uppercased().contains("SELL"),
                     accountEquity: nil,
-                    tradeCurrency: viewModel.lastDeskQuoteCurrency ?? "INR",
-                    accountCurrency: viewModel.lastDeskQuoteCurrency ?? "INR"
+                    tradeCurrency: quote,
+                    accountCurrency: quote
                 )
         )
         inspector = ThisTradeInspectorModel.fromOpenRow(
@@ -659,6 +836,54 @@ public struct TodayView: View {
         case .watch: return Color(hex: TodayPalette.watch).opacity(0.12)
         default: return StationDS.Fill.appPanel
         }
+    }
+}
+
+/// Closed P&L series vs Settings floor. Open MTM is not drawn. Not TradingView.
+struct TodayClosedFloorChart: View {
+    let points: [TodayClosedChartPoint]
+    let floor: Double?
+
+    var body: some View {
+        Canvas { context, size in
+            let ys = points.map(\.cumulativeClosedPnL) + (floor.map { [$0] } ?? [])
+            let minY = min(ys.min() ?? 0, 0)
+            let maxY = max(ys.max() ?? 1, minY + 1)
+            let span = maxY - minY
+            func y(_ value: Double) -> CGFloat {
+                let t = (value - minY) / span
+                return size.height - (CGFloat(t) * size.height)
+            }
+            if let floor {
+                var floorLine = Path()
+                floorLine.move(to: CGPoint(x: 0, y: y(floor)))
+                floorLine.addLine(to: CGPoint(x: size.width, y: y(floor)))
+                context.stroke(
+                    floorLine,
+                    with: .color(StationDS.Text.muted.opacity(0.45)),
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                )
+            }
+            guard points.count >= 1 else { return }
+            var line = Path()
+            for (index, point) in points.enumerated() {
+                let x = points.count == 1
+                    ? size.width / 2
+                    : CGFloat(index) / CGFloat(points.count - 1) * size.width
+                let pt = CGPoint(x: x, y: y(point.cumulativeClosedPnL))
+                if index == 0 {
+                    line.move(to: pt)
+                } else {
+                    line.addLine(to: pt)
+                }
+            }
+            context.stroke(line, with: .color(Color(hex: TodayPalette.loss)), lineWidth: 1.5)
+        }
+        .padding(10)
+        .background(StationDS.Fill.input)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(StationDS.Border.divider, lineWidth: 1))
+        .accessibilityLabel("Closed P and L versus floor")
     }
 }
 

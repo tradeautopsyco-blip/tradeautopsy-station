@@ -40,6 +40,11 @@ public final class JournalViewModel: ObservableObject {
 
     public var sidebarDue: Bool { week.sidebarDue }
 
+    /// Pending/matched plus unmatched — Detect join applies the Journal impulsive coverage rule.
+    public var weekDeclarations: [JournalDeclarationCard] {
+        lastPayload?.items ?? []
+    }
+
     public var selectedCard: JournalDeclarationCard? {
         guard let selectedCardId else { return nil }
         return week.declarations.first { $0.id == selectedCardId }

@@ -59,6 +59,36 @@ struct SessionModelTests {
         #expect(decoded.positions[0].qty == 0.01)
         #expect(decoded.positions[0].unrealizedPnL == nil)
         #expect(decoded.positions[0].direction == "LONG")
+        #expect(decoded.positions[0].firstFilledAt == nil)
+    }
+
+    @Test func positionsDecodeMapsFirstFilledAtAndDoesNotInventADate() throws {
+        let json = """
+        {
+          "kill_switch_active": false,
+          "open_orders": 0,
+          "positions": [
+            {
+              "symbol": "RELIANCE",
+              "qty": 50,
+              "side": "LONG",
+              "firstFilledAt": "2026-09-11T09:50:00.000Z"
+            },
+            {
+              "symbol": "TCS",
+              "qty": 10,
+              "side": "LONG"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try SessionPositionsDecoder.decode(json)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(secondsFromGMT: 0)!
+        let expected = utc.date(from: DateComponents(year: 2026, month: 9, day: 11, hour: 9, minute: 50))
+        #expect(decoded.positions[0].firstFilledAt == expected)
+        #expect(decoded.positions[1].firstFilledAt == nil)
     }
 
     @Test func totalUnrealizedSumsPositions() {

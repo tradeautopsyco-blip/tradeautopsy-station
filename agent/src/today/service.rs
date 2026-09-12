@@ -9,7 +9,7 @@ use crate::round_trip_engine::{
 };
 use crate::today::signals::{analyze_signals, BehaviorSignal, SignalAnalysis};
 use crate::today::store::{DailySnapshot, TodayStore};
-use chrono::{Local, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -435,13 +435,6 @@ pub(crate) fn data_quality_flags(rt: &RoundTrip) -> Vec<String> {
     flags
 }
 
-#[derive(Debug, Clone)]
-struct SideFill {
-    symbol: String,
-    side: String,
-    qty: f64,
-}
-
 fn is_stub_fill_adapter(label: Option<&str>) -> bool {
     matches!(label, Some("counting_poll"))
 }
@@ -451,26 +444,48 @@ pub struct OpenInventoryRow {
     pub symbol: String,
     pub qty: f64,
     pub side: &'static str,
+    pub first_filled_at: Option<DateTime<Utc>>,
 }
 
 pub fn open_inventory_from_fills(fills: &[crate::broker::BrokerFill]) -> Vec<OpenInventoryRow> {
     use std::collections::BTreeMap;
-    let mut qty_by_symbol: BTreeMap<String, f64> = BTreeMap::new();
+    let mut fills_by_symbol: BTreeMap<String, Vec<&crate::broker::BrokerFill>> = BTreeMap::new();
     for fill in fills {
-        let entry = qty_by_symbol.entry(fill.symbol.clone()).or_insert(0.0);
-        if fill.side.eq_ignore_ascii_case("BUY") {
-            *entry += fill.qty;
-        } else if fill.side.eq_ignore_ascii_case("SELL") {
-            *entry -= fill.qty;
-        }
+        fills_by_symbol
+            .entry(fill.symbol.clone())
+            .or_default()
+            .push(fill);
     }
-    qty_by_symbol
+    fills_by_symbol
         .into_iter()
-        .filter(|(_, q)| q.abs() > 1e-12)
-        .map(|(symbol, qty)| OpenInventoryRow {
-            side: if qty > 0.0 { "LONG" } else { "SHORT" },
-            symbol,
-            qty: qty.abs(),
+        .filter_map(|(symbol, mut symbol_fills)| {
+            symbol_fills.sort_by(|a, b| {
+                a.filled_at
+                    .cmp(&b.filled_at)
+                    .then_with(|| a.fill_id.cmp(&b.fill_id))
+            });
+            let mut qty: f64 = 0.0;
+            let mut first_filled_at: Option<DateTime<Utc>> = None;
+            for fill in symbol_fills {
+                let was_flat = qty.abs() <= 1e-12;
+                if fill.side.eq_ignore_ascii_case("BUY") {
+                    qty += fill.qty;
+                } else if fill.side.eq_ignore_ascii_case("SELL") {
+                    qty -= fill.qty;
+                }
+                let is_flat = qty.abs() <= 1e-12;
+                if was_flat && !is_flat {
+                    first_filled_at = Some(fill.filled_at);
+                } else if is_flat {
+                    first_filled_at = None;
+                }
+            }
+            (qty.abs() > 1e-12).then_some(OpenInventoryRow {
+                side: if qty > 0.0 { "LONG" } else { "SHORT" },
+                symbol,
+                qty: qty.abs(),
+                first_filled_at,
+            })
         })
         .collect()
 }

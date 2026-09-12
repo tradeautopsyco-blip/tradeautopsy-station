@@ -129,7 +129,9 @@ public final class StationAppCoordinator: ObservableObject {
             sessionModel: session,
             agentHealthy: { agentSupervisor.isHealthy },
             isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror },
-            configuredSlugs: { brokers.configuredBrokerSlugs }
+            configuredSlugs: { brokers.configuredBrokerSlugs },
+            dailyFloor: { [deskRules = self.deskRulesStore] in deskRules.dailyFloor },
+            deskRulesStore: self.deskRulesStore
         )
         let resolvedJournalClient = journalClient ?? LocalJournalAgentClient(
             daemonSecret: resolvedDaemonSecret,

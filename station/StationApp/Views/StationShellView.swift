@@ -70,7 +70,11 @@ public struct StationShellView: View {
         case .aiWorkflow:
             AIWorkflowKeysView(viewModel: coordinator.aiWorkflowKeysViewModel)
         case .today:
-            TodayView(viewModel: coordinator.todayViewModel, onOpenNotch: { coordinator.toggleNotch() })
+            TodayView(
+                viewModel: coordinator.todayViewModel,
+                journalViewModel: coordinator.journalViewModel,
+                onOpenNotch: { coordinator.toggleNotch() }
+            )
         case .journal:
             JournalView(viewModel: coordinator.journalViewModel, onOpenNotch: { coordinator.toggleNotch() })
         case .settings:

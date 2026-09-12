@@ -307,9 +307,7 @@ public struct JournalWeek: Equatable, Sendable {
         let sheet = days.first { $0.localDate == dayId }?.sheet
         let dayItems = citedItems.filter { $0.localDate == dayId }
 
-        let coveredSymbols = Set(
-            citedItems.filter { $0.isPending || $0.isMatched }.map { $0.symbol.uppercased() }
-        )
+        let coveredSymbols = TodayDetectJoin.coveredSymbols(from: citedItems)
         let impulsiveAll = inventory
             .filter { !coveredSymbols.contains($0.symbol.uppercased()) }
             .map { JournalImpulsiveRow(symbol: $0.symbol, qty: $0.qty, direction: $0.direction) }

@@ -123,18 +123,34 @@ Out of this wave: M1 Kotak cash WAC rewrite, M3 flatten / max-loss kill, FO mone
 
 ### Acceptance criteria
 
-- [ ] A and C switch over the same payload. B not shipped.
-- [ ] Hero closed-only. Open MTM never folded in. DualNoBlend.
-- [ ] Overnight requires session date. Missing date → no overnight claim.
-- [ ] Chart is this local day closed vs floor. Remaining on A is Settings floor minus closed used, labeled T8 preview.
-- [ ] Detect uses real entry / planned SL / live SL / `declarationId`. No form = Journal impulsive.
-- [ ] Deeper does not paint remaining-risk. Kill banner is projection. Limits still do not fire Kill.
-- [ ] Quote is venue or labeled empty/—. No Yahoo × 0.99.
-- [ ] Shipping paint: Kotak cash INR and Binance.com spot. Proto NIFTY/BANKNIFTY/FUT not claimed live.
-- [ ] Open Notch CTA identical to Journal / Settings.
+- [x] A and C switch over the same payload. B not shipped.
+- [x] Hero closed-only. Open MTM never folded in. DualNoBlend.
+- [x] Overnight requires session date. Missing date → no overnight claim.
+- [x] Chart is this local day closed vs floor. Remaining on A is Settings floor minus closed used, labeled T8 preview.
+- [x] Detect uses real entry / planned SL / live SL / `declarationId`. No form = Journal impulsive.
+- [x] Deeper does not paint remaining-risk. Kill banner is projection. Limits still do not fire Kill.
+- [x] Quote is venue or labeled empty/—. No Yahoo × 0.99.
+- [x] Shipping paint: Kotak cash INR and Binance.com spot. Proto NIFTY/BANKNIFTY/FUT not claimed live.
+- [x] Open Notch CTA identical to Journal / Settings.
 
 ## Wave S landing (2026-09-12)
 
 Station Settings is the grouped proto form on this Mac. Floor / mean loss / max round trips live in `DeskRulesStore` (UserDefaults, same pattern as `RiskDeskModeStore`) so Notch Desk tab can read them. They do not POST `/api/daemon/bar/profile/loss-limits` and they do not fire Kill. Used-today on Daily floor is `max(0, −closed hero P&L)` from the existing Today payload when healthy; DualNoBlend dashes when there is no single quote. Hide Notch persists and calls pill `hide()`; hosted ⌥Space `toggle()` still expands PLAN and `show()`s if the panel was ordered out. Open Notch is `coordinator.toggleNotch()` (same as Journal / Today). API keys navigate to `.brokers`. Device login stays in General. Appearance is the System label only.
 
-Files: `DeskRulesStore` / `BarDeskRulesReadout` (Notch, shared UserDefaults), `DeskRulesPresentation` + `SettingsView` + hide/show on `FloatingNotchHosting` (Station). Console untouched. Wave T not started.
+Files: `DeskRulesStore` / `BarDeskRulesReadout` (Notch, shared UserDefaults), `DeskRulesPresentation` + `SettingsView` + hide/show on `FloatingNotchHosting` (Station). Console untouched. Wave T follows.
+
+## Wave T landing (2026-09-12)
+
+One Today payload, two hierarchies. `TodayLayoutMode` (`daySpine` A · `splitClocks` C) persists like `RiskDeskModeStore` and does not replace blotter / Notch-flip / tape. Both layouts read `TodayDeskPresentation.build`: remaining = `DeskRulesPresentation.remainingPreview(floor, usedTodayAmount(closedHero, healthy))`, badge `T8 preview · floor not live`, missing floor stays —, chart is this local day's cumulative closed `trades[]` vs the floor line, open MTM never on that line or in the hero. DualNoBlend dashes remaining and the blended hero when there is no single quote — missing quote is not defaulted to INR.
+
+Overnight is `Overnight` only when `firstFilledAt` local date is before Today `localDate`. Fill inventory leftover lots now carry `firstFilledAt` from the current lot's opening fill (`GET /api/daemon/positions`); no timestamp → `Still open`. Detect join matches Journal impulsive: pending/matched symbols are covered; uncovered is `noForm`; plan SL comes from the declaration snapshot when present; entry and live SL are never invented.
+
+Deeper stays the Station inspector. Kill banner stays `SessionModel` projection. Desk rules still do not fire Kill. Shipping paint is Kotak cash INR and Binance.com spot. B is not shipped. Console untouched. M1 / M3 / FO money / Yahoo LTP out of this wave.
+
+## D3 — money change
+
+- Lock: `issues/compliance/locks/binance-com-spot.md` (fetch 2026-08-22 IST) + `issues/compliance/locks/kotak-nse-bse-cash.md` (fetch 2026-08-22 IST)
+- Single owner file: Station Today engine / payload (`agent/src/today/service.rs` open inventory + `TodayDeskPresentation`)
+- Invariant tests kept/added: DualNoBlend · INR on IND (no INR default on missing quote) · refuse FO/NRML on cash book (untouched) · official rate (untouched) · OPTIONS qty>1 (no new OPTIONS owner)
+
+Files: `TodayDeskPresentation` / `TodayLayoutMode` / `TodayDetectJoin` + `TodayView` A/C + `TodayViewModel` detect join + `DeskPosition.firstFilledAt` + agent `open_inventory_from_fills` / `GET /api/daemon/positions`.

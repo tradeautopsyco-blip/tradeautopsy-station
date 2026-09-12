@@ -8,12 +8,21 @@ public struct DeskPosition: Identifiable, Equatable {
     public var qty: Double
     public var unrealizedPnL: Double?
     public var direction: String
+    /// Earliest fill of the current leftover lot. Nil means no overnight claim.
+    public var firstFilledAt: Date?
 
-    public init(symbol: String, qty: Double, unrealizedPnL: Double?, direction: String) {
+    public init(
+        symbol: String,
+        qty: Double,
+        unrealizedPnL: Double?,
+        direction: String,
+        firstFilledAt: Date? = nil
+    ) {
         self.symbol = symbol
         self.qty = qty
         self.unrealizedPnL = unrealizedPnL
         self.direction = direction
+        self.firstFilledAt = firstFilledAt
     }
 
     public init(symbol: String, qty: Int, unrealizedPnL: Double, direction: String) {

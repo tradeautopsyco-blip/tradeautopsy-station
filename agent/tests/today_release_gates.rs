@@ -3,7 +3,13 @@
 use chrono::{TimeZone, Utc};
 use tradeautopsy_agent::{aggregate_known_pnl, is_aggregate_eligible, BrokerFill, RoundTripEngine};
 
-fn fill(id: &str, side: &str, qty: f64, price: f64) -> BrokerFill {
+fn fill_at(
+    id: &str,
+    side: &str,
+    qty: f64,
+    price: f64,
+    filled_at: chrono::DateTime<Utc>,
+) -> BrokerFill {
     BrokerFill {
         fill_id: id.to_string(),
         trade_id: format!("t-{id}"),
@@ -11,12 +17,22 @@ fn fill(id: &str, side: &str, qty: f64, price: f64) -> BrokerFill {
         side: side.to_string(),
         qty,
         price,
-        filled_at: Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap(),
+        filled_at,
         broker: "binance_us".to_string(),
         fee_amount: Some(0.5),
         fee_asset: Some("USDT".to_string()),
         ..Default::default()
     }
+}
+
+fn fill(id: &str, side: &str, qty: f64, price: f64) -> BrokerFill {
+    fill_at(
+        id,
+        side,
+        qty,
+        price,
+        Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap(),
+    )
 }
 
 #[test]
@@ -123,12 +139,42 @@ fn today_exchange_filters_not_ready_serializes_snake_case() {
 
 #[test]
 fn open_inventory_keeps_leftover_buy_qty() {
+    let open_at = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
+    let sell_at = Utc.with_ymd_and_hms(2026, 7, 4, 13, 0, 0).unwrap();
     let leftover = tradeautopsy_agent::open_inventory_from_fills(&[
-        fill("b1", "BUY", 0.02, 60_000.0),
-        fill("s1", "SELL", 0.01, 61_000.0),
+        fill_at("b1", "BUY", 0.02, 60_000.0, open_at),
+        fill_at("s1", "SELL", 0.01, 61_000.0, sell_at),
     ]);
     assert_eq!(leftover.len(), 1);
     assert_eq!(leftover[0].symbol, "BTCUSDT");
     assert!((leftover[0].qty - 0.01).abs() < 1e-12);
     assert_eq!(leftover[0].side, "LONG");
+    assert_eq!(leftover[0].first_filled_at, Some(open_at));
+}
+
+#[test]
+fn open_inventory_omits_fully_closed_symbol() {
+    let closed = tradeautopsy_agent::open_inventory_from_fills(&[
+        fill("b1", "BUY", 0.01, 60_000.0),
+        fill("s1", "SELL", 0.01, 61_000.0),
+    ]);
+    assert!(closed.is_empty());
+}
+
+#[test]
+fn open_inventory_reopen_uses_reopen_filled_at() {
+    let first_open = Utc.with_ymd_and_hms(2026, 7, 4, 10, 0, 0).unwrap();
+    let close = Utc.with_ymd_and_hms(2026, 7, 4, 11, 0, 0).unwrap();
+    let reopen = Utc.with_ymd_and_hms(2026, 7, 4, 14, 0, 0).unwrap();
+    // Input is reverse chronological so a missing sort would keep the closed lot's time.
+    let rows = tradeautopsy_agent::open_inventory_from_fills(&[
+        fill_at("b2", "BUY", 0.01, 62_000.0, reopen),
+        fill_at("s1", "SELL", 0.01, 61_000.0, close),
+        fill_at("b1", "BUY", 0.01, 60_000.0, first_open),
+    ]);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].symbol, "BTCUSDT");
+    assert!((rows[0].qty - 0.01).abs() < 1e-12);
+    assert_eq!(rows[0].side, "LONG");
+    assert_eq!(rows[0].first_filled_at, Some(reopen));
 }

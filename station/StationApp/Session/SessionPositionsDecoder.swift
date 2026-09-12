@@ -40,7 +40,16 @@ public enum SessionPositionsDecoder {
                     pnl = nil
                 }
                 let dir = (p["direction"] as? String) ?? (p["side"] as? String) ?? ""
-                out.append(DeskPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))
+                let firstFilledAt = parseFirstFilledAt(from: p)
+                out.append(
+                    DeskPosition(
+                        symbol: sym,
+                        qty: qty,
+                        unrealizedPnL: pnl,
+                        direction: dir,
+                        firstFilledAt: firstFilledAt
+                    )
+                )
             }
         }
         return Result(positions: out, killSwitchActive: killSwitch, openOrders: openOrders)
@@ -52,5 +61,23 @@ public enum SessionPositionsDecoder {
         if let n = p["qty"] as? Int { return Double(n) }
         if let n = p["quantity"] as? Int { return Double(n) }
         return 0
+    }
+
+    static func parseFirstFilledAt(from p: [String: Any]) -> Date? {
+        let raw = p["firstFilledAt"] ?? p["first_filled_at"]
+        if raw is NSNull { return nil }
+        if let text = raw as? String, !text.isEmpty {
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: text) { return date }
+            return ISO8601DateFormatter().date(from: text)
+        }
+        if let ms = raw as? Int {
+            return Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+        }
+        if let ms = raw as? Double {
+            return Date(timeIntervalSince1970: ms / 1000)
+        }
+        return nil
     }
 }

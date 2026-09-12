@@ -99,7 +99,8 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         now: Date = Date(),
         positions: [DeskPosition] = [],
         showShallowImpact: Bool = false,
-        showActiveMoney: Bool = true
+        showActiveMoney: Bool = true,
+        calendar: Calendar = .current
     ) -> TodayScreenPresentation {
         if !agentHealthy || payload == nil {
             return degraded(agentHealthy: false, reason: "unavailable")
@@ -124,7 +125,8 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             payload: payload,
             now: now,
             positions: positions,
-            showShallowImpact: showShallowImpact
+            showShallowImpact: showShallowImpact,
+            calendar: calendar
         )
     }
 
@@ -245,7 +247,8 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         payload: TodayAgentPayload,
         now: Date,
         positions: [DeskPosition],
-        showShallowImpact: Bool
+        showShallowImpact: Bool,
+        calendar: Calendar
     ) -> TodayScreenPresentation {
         let flagged = payload.trades.filter { $0.flagSeverity == "firing" || $0.flagSeverity == "watch" }.count
         let quote = payload.deskQuoteCurrency ?? "USD"
@@ -289,7 +292,9 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             showEmptyTable: payload.trades.isEmpty,
             learningBaseline: payload.learningBaseline,
             showSignalsUnavailableMessage: false,
-            openRows: positions.map { openRow($0, quoteCurrency: quote) },
+            openRows: positions.map {
+                openRow($0, quoteCurrency: quote, localDate: payload.localDate, calendar: calendar)
+            },
             showEmptyOpenBook: positions.isEmpty,
             showShallowImpact: showShallowImpact,
             shallowImpactCaption: shallowCaption,
@@ -372,7 +377,9 @@ public struct TodayScreenPresentation: Equatable, Sendable {
 
     private static func openRow(
         _ position: DeskPosition,
-        quoteCurrency: String
+        quoteCurrency: String,
+        localDate: String,
+        calendar: Calendar
     ) -> TodayOpenRowPresentation {
         return TodayOpenRowPresentation(
             id: position.id,
@@ -383,8 +390,30 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             mtmTone: toneForPnL(position.unrealizedPnL),
             accountShareText: emDash,
             goalText: emDash,
-            behaviorText: "Still open"
+            behaviorText: overnightBehavior(firstFilledAt: position.firstFilledAt, localDate: localDate, calendar: calendar)
         )
+    }
+
+    /// Overnight only when the leftover lot's first fill local date is before today. No date → Still open.
+    public static func overnightBehavior(
+        firstFilledAt: Date?,
+        localDate: String,
+        calendar: Calendar
+    ) -> String {
+        guard let firstFilledAt else { return "Still open" }
+        let fillDay = localDayString(firstFilledAt, calendar: calendar)
+        if fillDay < localDate {
+            return "Overnight"
+        }
+        return "Still open"
+    }
+
+    private static func localDayString(_ date: Date, calendar: Calendar) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else {
+            return ""
+        }
+        return String(format: "%04d-%02d-%02d", year, month, day)
     }
 
     public static func formatUSD(_ value: Double?) -> String {
