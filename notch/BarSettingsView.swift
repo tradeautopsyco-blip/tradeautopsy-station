@@ -763,6 +763,7 @@ struct BarSettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
+            BarDeskRulesReadout(store: DeskRulesStore.shared)
         }
     }
 

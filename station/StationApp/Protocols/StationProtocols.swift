@@ -40,6 +40,8 @@ public protocol FloatingNotchHosting: AnyObject {
     func start()
     func dismiss()
     func toggle()
+    func hide()
+    func show()
     func setBrokerBridge(onConnect: @escaping (String) -> Void, onReauth: @escaping (String) -> Void)
     func setDeviceLoginBridge(onOpen: @escaping () -> Void)
     func reportBrokerBridgeOutcome(result: String?, error: String?)

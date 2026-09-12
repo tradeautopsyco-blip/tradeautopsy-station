@@ -27,6 +27,14 @@ public final class FloatingNotchHost: FloatingNotchHosting {
         launcher.toggle()
     }
 
+    public func hide() {
+        launcher.hide()
+    }
+
+    public func show() {
+        launcher.show()
+    }
+
     public func setBrokerBridge(onConnect: @escaping (String) -> Void, onReauth: @escaping (String) -> Void) {
         launcher.viewModel.onRequestOpenBrokerConnect = onConnect
         launcher.viewModel.onRequestOpenBrokerReauth = onReauth

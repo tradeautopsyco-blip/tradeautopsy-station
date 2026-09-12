@@ -7,6 +7,8 @@ final class FakeFloatingNotchHost: FloatingNotchHosting {
     private(set) var startCallCount = 0
     private(set) var dismissCallCount = 0
     private(set) var toggleCallCount = 0
+    private(set) var hideCallCount = 0
+    private(set) var showCallCount = 0
     private(set) var lastSecret: String?
     private(set) var lastPort: UInt16?
     private(set) var lastWebBase: String?
@@ -35,6 +37,14 @@ final class FakeFloatingNotchHost: FloatingNotchHosting {
 
     func toggle() {
         toggleCallCount += 1
+    }
+
+    func hide() {
+        hideCallCount += 1
+    }
+
+    func show() {
+        showCallCount += 1
     }
 
     func setBrokerBridge(onConnect: @escaping (String) -> Void, onReauth: @escaping (String) -> Void) {

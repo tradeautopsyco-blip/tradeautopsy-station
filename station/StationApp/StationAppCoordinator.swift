@@ -1,4 +1,5 @@
 import Foundation
+import Notch
 
 @MainActor
 public final class StationAppCoordinator: ObservableObject {
@@ -44,6 +45,7 @@ public final class StationAppCoordinator: ObservableObject {
     private let loginItemService: LoginItemServicing
     private let phaseProvider: SessionSurfacePhaseProviding
     private let deskRouteStore: DeskRouteStoring
+    public let deskRulesStore: DeskRulesStore
     private let dateProvider: () -> Date
 
     private var manualSessionPickAt: Date?
@@ -72,6 +74,7 @@ public final class StationAppCoordinator: ObservableObject {
         journalClient: JournalAgentClient? = nil,
         daemonSecret: String? = nil,
         deviceLoginClient: (any DeviceLoginClient)? = nil,
+        deskRulesStore: DeskRulesStore? = nil,
         floatingNotch: FloatingNotchHosting
     ) {
         let resolvedDaemonSecret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
@@ -88,6 +91,7 @@ public final class StationAppCoordinator: ObservableObject {
         self.loginItemService = loginItemService
         self.phaseProvider = phaseProvider
         self.deskRouteStore = deskRouteStore
+        self.deskRulesStore = deskRulesStore ?? .shared
         self.dateProvider = dateProvider
 
         let resolvedCredentialStore = KeychainBrokerCredentialStore()
@@ -261,6 +265,15 @@ public final class StationAppCoordinator: ObservableObject {
         floatingNotch.toggle()
     }
 
+    public func setHideNotch(_ hidden: Bool) {
+        deskRulesStore.setHideNotch(hidden)
+        if hidden {
+            floatingNotch.hide()
+        } else {
+            floatingNotch.show()
+        }
+    }
+
     public func closeWindow() {
         windowController.hide()
         launchStore.setWasWindowVisibleBeforeQuit(false)
@@ -304,6 +317,9 @@ public final class StationAppCoordinator: ObservableObject {
         guard !notchAndPollingStarted else { return }
         await sessionHost.start()
         floatingNotch.start()
+        if deskRulesStore.hideNotch {
+            floatingNotch.hide()
+        }
         sessionPolling.startPolling()
         sessionModel.startPolling()
         notchAndPollingStarted = true

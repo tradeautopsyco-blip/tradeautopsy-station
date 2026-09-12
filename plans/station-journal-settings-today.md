@@ -86,14 +86,14 @@ One Station desk-rules store. Notch reads the same three numbers for display onl
 
 ### Acceptance criteria
 
-- [ ] Launch at login unchanged.
-- [ ] Appearance follows system. No third theme engine.
-- [ ] Daily floor / mean loss / max round trips persist on this Mac and appear on Notch.
-- [ ] Foot copy is law: these numbers do not fire Kill. Stop is Backend Box. Kill is Notch overlay.
-- [ ] Hide Notch toggle matches existing HUD hide; ⌥Space still summons.
-- [ ] Open Notch row opens the live circuit / declare / kill path.
-- [ ] API keys row navigates to Backend Box broker card. No secrets in Settings.
-- [ ] Patterns / escrow / fidelity stay Console — not added here.
+- [x] Launch at login unchanged.
+- [x] Appearance follows system. No third theme engine.
+- [x] Daily floor / mean loss / max round trips persist on this Mac and appear on Notch.
+- [x] Foot copy is law: these numbers do not fire Kill. Stop is Backend Box. Kill is Notch overlay.
+- [x] Hide Notch toggle matches existing HUD hide; ⌥Space still summons.
+- [x] Open Notch row opens the live circuit / declare / kill path.
+- [x] API keys row navigates to Backend Box broker card. No secrets in Settings.
+- [x] Patterns / escrow / fidelity stay Console — not added here.
 
 ---
 
@@ -132,3 +132,9 @@ Out of this wave: M1 Kotak cash WAC rewrite, M3 flatten / max-loss kill, FO mone
 - [ ] Quote is venue or labeled empty/—. No Yahoo × 0.99.
 - [ ] Shipping paint: Kotak cash INR and Binance.com spot. Proto NIFTY/BANKNIFTY/FUT not claimed live.
 - [ ] Open Notch CTA identical to Journal / Settings.
+
+## Wave S landing (2026-09-12)
+
+Station Settings is the grouped proto form on this Mac. Floor / mean loss / max round trips live in `DeskRulesStore` (UserDefaults, same pattern as `RiskDeskModeStore`) so Notch Desk tab can read them. They do not POST `/api/daemon/bar/profile/loss-limits` and they do not fire Kill. Used-today on Daily floor is `max(0, −closed hero P&L)` from the existing Today payload when healthy; DualNoBlend dashes when there is no single quote. Hide Notch persists and calls pill `hide()`; hosted ⌥Space `toggle()` still expands PLAN and `show()`s if the panel was ordered out. Open Notch is `coordinator.toggleNotch()` (same as Journal / Today). API keys navigate to `.brokers`. Device login stays in General. Appearance is the System label only.
+
+Files: `DeskRulesStore` / `BarDeskRulesReadout` (Notch, shared UserDefaults), `DeskRulesPresentation` + `SettingsView` + hide/show on `FloatingNotchHosting` (Station). Console untouched. Wave T not started.

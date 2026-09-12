@@ -63,6 +63,16 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         }
     }
 
+    /// Collapse + hide the floating pill. Does not tear down the controller (`dismiss()` does).
+    public func hide() {
+        viewModel.requestHidePill()
+    }
+
+    /// Order the pill back in. Hosted ⌥Space `toggle()` also `show()`s if the panel was hidden.
+    public func show() {
+        panelController?.show()
+    }
+
     public func setHostedExpandedContent(_ content: @escaping () -> AnyView) {
         hostedExpandedContent = content
     }
