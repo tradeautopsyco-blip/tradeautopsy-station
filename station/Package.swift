@@ -22,7 +22,7 @@ let package = Package(
                 .product(name: "Notch", package: "notch"),
             ],
             path: "StationApp",
-            exclude: ["StationApp.swift", "Info.plist"],
+            exclude: ["StationApp.swift", "Info.plist", "AppIcon.icon"],
             resources: [
                 .process("Resources"),
             ],

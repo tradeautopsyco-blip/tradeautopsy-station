@@ -8,6 +8,10 @@
     <string>TradeAutopsy Station</string>
     <key>CFBundleExecutable</key>
     <string>TradeAutopsy Station</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>in.tradeautopsy.station</string>
     <key>CFBundleInfoDictionaryVersion</key>

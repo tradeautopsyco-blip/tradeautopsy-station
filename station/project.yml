@@ -23,12 +23,17 @@ targets:
     platform: macOS
     sources:
       - path: StationApp/StationApp.swift
+      - path: StationApp/AppIcon.icon
+        type: file
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: in.tradeautopsy.station
         PRODUCT_NAME: TradeAutopsy Station
         INFOPLIST_FILE: StationApp/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: NO
     dependencies:
       - package: Notch
         product: Notch

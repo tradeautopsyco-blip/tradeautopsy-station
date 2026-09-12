@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7C1A9E2B4F6D80A1B3C5D7E9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 6B0F8D1A3E5C79B0A2C4D6E8 /* AppIcon.icon */; };
 		843663B76BDCAB6619BB3EB6 /* Notch in Frameworks */ = {isa = PBXBuildFile; productRef = AFC60E701A4B6530969C3463 /* Notch */; };
 		BB8F410CCE2DDA704C491339 /* StationApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D125B05DB7B3FC956851D8 /* StationApp.swift */; };
 		E0D51A50A15E61020F99B357 /* Station in Frameworks */ = {isa = PBXBuildFile; productRef = 98424BC17ADC2F719A3E09C1 /* Station */; };
@@ -15,6 +16,7 @@
 /* Begin PBXFileReference section */
 		00D125B05DB7B3FC956851D8 /* StationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationApp.swift; sourceTree = "<group>"; };
 		1803F1DBF941BC1F4C99ED51 /* station */ = {isa = PBXFileReference; lastKnownFileType = folder; name = station; path = .; sourceTree = SOURCE_ROOT; };
+		6B0F8D1A3E5C79B0A2C4D6E8 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer; path = AppIcon.icon; sourceTree = "<group>"; };
 		1EB9CF8CF2D1E2AD2C16483D /* TradeAutopsy Station.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TradeAutopsy Station.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		391874E7615D745CD1E239EE /* notch */ = {isa = PBXFileReference; lastKnownFileType = folder; name = notch; path = ../notch; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -61,6 +63,7 @@
 		DC97A23CCFBE071347808BA1 /* StationApp */ = {
 			isa = PBXGroup;
 			children = (
+				6B0F8D1A3E5C79B0A2C4D6E8 /* AppIcon.icon */,
 				00D125B05DB7B3FC956851D8 /* StationApp.swift */,
 			);
 			path = StationApp;
@@ -75,6 +78,7 @@
 			buildPhases = (
 				82A71B735EA93247F921B214 /* Sources */,
 				84AFB1D13F2F8313F7BF819E /* Frameworks */,
+				5A9E7C4B2D1F80A6C3E5B7D9 /* Resources */,
 				1D449A1042D36A3F90901D33 /* Copy Agent Binary */,
 			);
 			buildRules = (
@@ -127,6 +131,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5A9E7C4B2D1F80A6C3E5B7D9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C1A9E2B4F6D80A1B3C5D7E9 /* AppIcon.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		1D449A1042D36A3F90901D33 /* Copy Agent Binary */ = {
