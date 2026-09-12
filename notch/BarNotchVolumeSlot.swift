@@ -1,15 +1,12 @@
 import CoreGraphics
 
 /// Closed-chip slot on a notched Mac.
-/// The camera has no pixels. Chrome is the same width as the cutout so it does
-/// not cover Integrate / Window; the live row (logo · P&L) hangs **under** it.
+/// BoringNotch `getClosedNotchSize` with **Match menu bar height**: width is the
+/// aux-area gap, height is the menu bar — no hang under the camera.
 enum BarNotchVolumeSlot {
-    /// BoringNotch closed chin (`cornerRadiusInsets.closed.bottom`).
-    /// Drawn *inside* the housing width — adding it to the window covers the Window menu.
+    /// BoringNotch `cornerRadiusInsets.closed.bottom` — drawn inside the window.
     static let chin: CGFloat = 14
-    /// Visible strip below the housing — same idea as their sneak/HUD drop.
-    static let hang: CGFloat = 22
-    /// `getClosedNotchSize` adds 4pt to the aux-area gap.
+    /// BoringNotch `getClosedNotchSize` width fudge (`+ 4`).
     static let housingFudge: CGFloat = 4
 
     /// Gap between the left and right menu-bar auxiliary areas *is* the housing.
@@ -25,20 +22,23 @@ enum BarNotchVolumeSlot {
         return CGRect(x: leftEdge - housingFudge / 2, y: 0, width: width, height: 0)
     }
 
-    /// Island flush to the physical top, **exactly** the cutout width.
-    /// P&L sits in `hang` below the camera — the Dynamic Island waveform slot.
+    /// Menu-bar height — same as BoringNotch `WindowHeightMode.matchMenuBar`.
+    static func menuBarHeight(screenFrame: CGRect, visibleFrame: CGRect) -> CGFloat {
+        max(24, screenFrame.maxY - visibleFrame.maxY)
+    }
+
+    /// Island flush to the physical top, cutout width × menu-bar height.
+    /// Logo and P&L sit in the ears inside that strip — not a second blob below.
     static func collapsedFrame(
         screenFrame: CGRect,
         visibleFrame: CGRect,
         notchLeft: CGFloat,
         notchWidth: CGFloat,
-        notchInset: CGFloat,
+        notchInset _: CGFloat,
         fallbackWidth: CGFloat,
     ) -> CGRect {
-        let menuBarH = max(24, screenFrame.maxY - visibleFrame.maxY)
-        let housingH = max(menuBarH, notchInset)
         let housingW = notchWidth > 0 ? notchWidth : fallbackWidth
-        let h = housingH + hang
+        let h = menuBarHeight(screenFrame: screenFrame, visibleFrame: visibleFrame)
         return CGRect(
             x: notchLeft,
             y: screenFrame.maxY - h,

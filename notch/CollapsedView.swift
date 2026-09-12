@@ -37,7 +37,7 @@ struct CollapsedNotchView: View {
         }
         return Group {
             if viewModel.hasPhysicalNotch {
-                hangRow { row }
+                islandRow { row }
             } else {
                 HStack(spacing: 12) {
                     Text(keyword)
@@ -67,7 +67,7 @@ struct CollapsedNotchView: View {
         }
         return Group {
             if viewModel.hasPhysicalNotch {
-                hangRow { row }
+                islandRow { row }
             } else {
                 row
             }
@@ -81,9 +81,9 @@ struct CollapsedNotchView: View {
     /// Left ear — same slot as the Music app mark on Dynamic Island.
     private var collapsedLogo: some View {
         Text("T")
-            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .font(.system(size: 9, weight: .bold, design: .rounded))
             .foregroundColor(.white)
-            .frame(width: 16, height: 16)
+            .frame(width: 14, height: 14)
             .background(Circle().fill(Color.white.opacity(0.14)))
             .accessibilityHidden(true)
     }
@@ -94,17 +94,12 @@ struct CollapsedNotchView: View {
         return .white
     }
 
-    /// Camera spacer on top; one centered row in the visible hang strip.
+    /// One row in the menu-bar-height island (BoringNotch closed orientation).
     @ViewBuilder
-    private func hangRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            Color.clear
-                .frame(height: viewModel.notchTopInset)
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 4)
-        }
+    private func islandRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.horizontal, 8)
     }
 
     private func impactTone(_ impact: AccountImpact) -> Color {

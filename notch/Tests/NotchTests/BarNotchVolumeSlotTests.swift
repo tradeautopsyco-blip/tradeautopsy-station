@@ -3,7 +3,7 @@ import Testing
 @testable import Notch
 
 struct BarNotchVolumeSlotTests {
-    @Test func islandCentersOnHousingAndHangsBelowCamera() {
+    @Test func islandMatchesMenuBarHeightAndHousingWidth() {
         let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
         let visible = CGRect(x: 0, y: 0, width: 1512, height: 938)
         let left = CGRect(x: 0, y: 950, width: 658, height: 32)
@@ -25,7 +25,7 @@ struct BarNotchVolumeSlotTests {
             fallbackWidth: 176,
         )
         #expect(rect.maxY == screen.maxY)
-        #expect(rect.height == 44 + BarNotchVolumeSlot.hang)
+        #expect(rect.height == 44)
         #expect(rect.width == 200)
         #expect(rect.minX == housing!.minX)
         #expect(abs(rect.midX - housing!.midX) < 0.5)
@@ -45,6 +45,22 @@ struct BarNotchVolumeSlotTests {
         #expect(rect.width == 196)
         #expect(rect.minX == 656)
         #expect(rect.maxX == 852)
+        #expect(rect.height == 44)
+    }
+
+    @Test func closedHeightMatchesMenuBarNotRealNotchInset() {
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let visible = CGRect(x: 0, y: 0, width: 1512, height: 958)
+        let rect = BarNotchVolumeSlot.collapsedFrame(
+            screenFrame: screen,
+            visibleFrame: visible,
+            notchLeft: 656,
+            notchWidth: 196,
+            notchInset: 38,
+            fallbackWidth: 176,
+        )
+        #expect(rect.height == 24)
+        #expect(rect.maxY == screen.maxY)
     }
 
     @Test func fullWidthGapIsNotANotch() {
