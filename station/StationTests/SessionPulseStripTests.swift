@@ -143,7 +143,7 @@ struct SessionPulseStripTests {
         #expect(presentation.unrealizedPnLText == SessionPulseStripPresentation.degradedPlaceholder)
     }
 
-    // T_pulse_tap: tap strip → coordinator.navigateTo(.liveTrade) called
+    // T_pulse_tap: tap strip → coordinator.navigateTo(.today) called
     @Test func pulseStripTapNavigatesToLiveTradeAndActivatesWindow() {
         let windowController = FakeStationWindowController()
         let coordinator = StationAppCoordinator(
@@ -160,7 +160,7 @@ struct SessionPulseStripTests {
 
         coordinator.openLiveTradeFromPulseStrip()
 
-        #expect(coordinator.activeRoute == .liveTrade)
+        #expect(coordinator.activeRoute == .today)
         #expect(windowController.showAndActivateCallCount == 1)
     }
 }

@@ -69,11 +69,11 @@ struct StationAppCoordinatorTests {
     // T4: Phase transition, no manual pick → activeRoute updates
     @Test func phaseTransitionWithoutManualPickUpdatesActiveRoute() {
         let harness = makeHarness()
-        #expect(harness.coordinator.activeRoute == .preTrade)
+        #expect(harness.coordinator.activeRoute == .today)
 
         harness.phaseProvider.setPhase(.armed)
 
-        #expect(harness.coordinator.activeRoute == .liveTrade)
+        #expect(harness.coordinator.activeRoute == .today)
     }
 
     // T5: Manual Session pick → no auto-follow for 60s
@@ -92,7 +92,7 @@ struct StationAppCoordinatorTests {
 
         now = now.addingTimeInterval(31)
         harness.phaseProvider.setPhase(.debrief)
-        #expect(harness.coordinator.activeRoute == .postTrade)
+        #expect(harness.coordinator.activeRoute == .today)
     }
 
     // T6: Desk route persistence → save/load round-trip
@@ -139,19 +139,24 @@ struct StationAppCoordinatorTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = UserDefaultsDeskRouteStore(defaults: defaults)
-        store.saveDeskRoute(.escrowMatch)
+        store.saveDeskRoute(.journal)
 
         let loaded = UserDefaultsDeskRouteStore(defaults: defaults)
-        #expect(loaded.savedDeskRoute == .escrowMatch)
+        #expect(loaded.savedDeskRoute == .journal)
+
+        defaults.set("Escrow match", forKey: UserDefaultsDeskRouteStore.userDefaultsKey)
+        let leftover = UserDefaultsDeskRouteStore(defaults: defaults)
+        #expect(leftover.savedDeskRoute == nil)
+        #expect(NavigationPolicy.launchRoute(saved: leftover.savedDeskRoute, phase: .declaration) == .today)
     }
 
     // T7: Launch route → saved Desk restored; Session from phase (not saved Session)
     @Test func launchRouteRestoresDeskAndIgnoresSavedSession() {
         let deskRouteStore = FakeDeskRouteStore()
-        deskRouteStore.saveDeskRoute(.patterns)
+        deskRouteStore.saveDeskRoute(.journal)
 
         let deskHarness = makeHarness(deskRouteStore: deskRouteStore)
-        #expect(deskHarness.coordinator.activeRoute == .patterns)
+        #expect(deskHarness.coordinator.activeRoute == .journal)
 
         deskRouteStore.saveDeskRoute(.today)
         let sessionHarness = makeHarness(deskRouteStore: deskRouteStore)
@@ -168,7 +173,7 @@ struct StationAppCoordinatorTests {
             deskRouteStore: deskRouteStore,
             floatingNotch: FakeFloatingNotchHost()
         )
-        #expect(relaunched.activeRoute == .liveTrade)
+        #expect(relaunched.activeRoute == .today)
     }
 
     @Test func deskRouteNeverAutoFollowsPhase() {
@@ -221,8 +226,8 @@ struct StationAppCoordinatorTests {
         #expect(coordinator.activeRoute == .brokers)
         #expect(coordinator.sessionModel === sessionModel)
 
-        coordinator.navigateTo(.liveTrade)
-        #expect(coordinator.activeRoute == .liveTrade)
+        coordinator.navigateTo(.today)
+        #expect(coordinator.activeRoute == .today)
         #expect(coordinator.sessionModel === sessionModel)
     }
 
@@ -242,11 +247,11 @@ struct StationAppCoordinatorTests {
             deskRouteStore: FakeDeskRouteStore(),
             floatingNotch: FakeFloatingNotchHost()
         )
-        #expect(coordinator.activeRoute == .preTrade)
+        #expect(coordinator.activeRoute == .today)
 
         phaseProvider.setPhase(.armed)
 
-        #expect(coordinator.activeRoute == .liveTrade)
+        #expect(coordinator.activeRoute == .today)
         #expect(coordinator.sessionModel === sessionModel)
     }
 

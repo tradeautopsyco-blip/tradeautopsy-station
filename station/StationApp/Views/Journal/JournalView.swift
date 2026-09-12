@@ -70,7 +70,6 @@ public struct JournalView: View {
                 Text("Matched").tag(JournalFacet.matched)
                 Text("Pending").tag(JournalFacet.pending)
                 Text("Unmatched").tag(JournalFacet.unmatched)
-                Text("Post due").tag(JournalFacet.postDue)
                 Text("Impulsive").tag(JournalFacet.impulsive)
             }
             .pickerStyle(.segmented)
@@ -150,12 +149,10 @@ public struct JournalView: View {
     }
 
     private var takeaway: some View {
-        let due = viewModel.week.declarations.filter(\.isPostDue).count
         let unmatched = viewModel.week.declarations.filter(\.isUnmatched).count
         let pending = viewModel.week.declarations.filter(\.isPending).count
         return Text(
-            "Capture is still Notch. This page is the frozen plan — matched, pending, expired, cancelled — plus pre / live / post. "
-            + (due > 0 ? "\(due) post due. " : "Posts saved. ")
+            "Capture is still Notch. This page is the frozen plan — matched, pending, expired, cancelled. "
             + (unmatched > 0 ? "\(unmatched) never filled. " : "")
             + (pending > 0 ? "\(pending) still pending." : "")
         )
@@ -218,17 +215,17 @@ public struct JournalView: View {
 
     private func declarationRow(_ card: JournalDeclarationCard) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(metaLine(card))
+            Text("\(JournalCardPaint.kindLabel(card.declarationKind)) · calm \(JournalCardPaint.calmLine(card.snapshot.calmScale)) · conf \(JournalCardPaint.confLine(card.snapshot.confidenceScale))")
                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
             HStack(spacing: 6) {
                 Text(card.symbol)
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
-                Text("\(card.side) \(qtyText(card.quantity))")
+                Text("\(card.side) \(JournalCardPaint.qtyText(card.quantity))")
                     .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                     .foregroundStyle(StationDS.Text.secondary)
             }
-            Text(snapLine(card))
+            Text(JournalCardPaint.snapLine(card))
                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
             chips(card)
@@ -262,7 +259,7 @@ public struct JournalView: View {
                 .background(StationDS.Fill.card)
                 .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.card))
             }
-            Text("No frozen plan → no fidelity. Plan in Notch.")
+            Text("Plan in Notch.")
                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
         }
@@ -284,34 +281,9 @@ public struct JournalView: View {
                     Text(card.symbol)
                         .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
                     chips(card)
-                    labeled("Kind", kindLabel(card.declarationKind))
-                    labeled("Setup", card.snapshot.setupLabel ?? "—")
-                    labeled("Calm", calmLine(card.snapshot.calmScale))
-                    labeled("Confidence", confLine(card.snapshot.confidenceScale))
-                    labeled("SL", numberText(card.snapshot.stopLoss))
-                    labeled("Target", numberText(card.snapshot.target))
-                    labeled("Invalidation", card.snapshot.invalidationLine ?? "—")
-                    labeled("SL consent", card.protectiveSlConsent ? "Yes" : "No")
-                    labeled("Qty declared", qtyText(card.quantity))
-                    labeled("Qty filled", card.quantityFilled.map(qtyText) ?? "—")
-                    if let net = card.citedNet, let ccy = card.citedCurrency {
-                        labeled("Matched net", "\(net) \(ccy)")
+                    ForEach(JournalCardPaint.drawerRows(card), id: \.label) { row in
+                        labeled(row.label, row.value)
                     }
-                    if let dims = card.fidelity.dimensions {
-                        Text("Fidelity")
-                            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
-                            .foregroundStyle(StationDS.Text.muted)
-                        HStack {
-                            fidChip("Entry", dims.entry)
-                            fidChip("Stop", dims.stop)
-                            fidChip("Target", dims.target)
-                            fidChip("Size", dims.size)
-                            fidChip("Inv", dims.inv)
-                        }
-                    }
-                    labeled("Pre", card.notes.pre.isEmpty ? "—" : card.notes.pre)
-                    labeled("Live", card.notes.live.isEmpty ? "—" : card.notes.live)
-                    labeled("Post", card.notes.post.isEmpty ? "Due" : card.notes.post)
                 }
                 Button("Close") {
                     viewModel.selectedCardId = nil
@@ -327,17 +299,8 @@ public struct JournalView: View {
 
     private func chips(_ card: JournalDeclarationCard) -> some View {
         HStack(spacing: 6) {
-            pill(statusLabel(card.status), tone: statusTone(card.status))
-            if card.isMatched {
-                pill("Pre", tone: card.notes.pre.isEmpty ? .due : .ok)
-                pill("Live", tone: card.notes.live.isEmpty ? .due : .ok)
-                pill("Post", tone: card.notes.postIsEmpty ? .due : .ok)
-            }
-            if card.attachments.shots > 0 {
-                pill("\(card.attachments.shots) shot\(card.attachments.shots == 1 ? "" : "s")", tone: .ok)
-            }
-            if card.attachments.voice {
-                pill("Voice", tone: .ok)
+            ForEach(JournalCardPaint.statusChips(card), id: \.self) { text in
+                pill(text, tone: statusTone(card.status))
             }
         }
     }
@@ -362,50 +325,10 @@ public struct JournalView: View {
             .clipShape(Capsule())
     }
 
-    private func fidChip(_ label: String, _ ok: Bool) -> some View {
-        pill(label, tone: ok ? .ok : .bad)
-    }
-
     private func labeled(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(k).font(StationDS.bodyFont(StationDS.FontSize.bodyXS)).foregroundStyle(StationDS.Text.muted)
             Text(v).font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
-        }
-    }
-
-    private func metaLine(_ card: JournalDeclarationCard) -> String {
-        "\(kindLabel(card.declarationKind)) · calm \(calmLine(card.snapshot.calmScale)) · conf \(confLine(card.snapshot.confidenceScale))"
-    }
-
-    private func snapLine(_ card: JournalDeclarationCard) -> String {
-        let setup = card.snapshot.setupLabel ?? "—"
-        let sl = numberText(card.snapshot.stopLoss)
-        let inv = card.snapshot.invalidationKind ?? "—"
-        var s = "\(setup) · SL \(sl) · invalidation \(inv)"
-        if let score = card.fidelity.score {
-            s += " · fidelity \(Int(score.rounded()))"
-        }
-        return s
-    }
-
-    private func kindLabel(_ k: String) -> String {
-        switch k {
-        case "intraday": return "Intraday"
-        case "swing": return "Swing"
-        case "positional": return "Positional"
-        case "scalper_session": return "Scalper"
-        case "pre_market": return "Pre-market"
-        default: return k
-        }
-    }
-
-    private func statusLabel(_ s: String) -> String {
-        switch s {
-        case "matched": return "Matched"
-        case "pending": return "Pending"
-        case "expired": return "Expired"
-        case "cancelled": return "Cancelled"
-        default: return s
         }
     }
 
@@ -417,27 +340,6 @@ public struct JournalView: View {
         }
     }
 
-    private func calmLine(_ n: Double?) -> String {
-        guard let n else { return "—" }
-        let i = Int(n.rounded())
-        let word = ["", "Calm", "Focused", "Tense", "Anxious", "Angry"][safe: i] ?? ""
-        return word.isEmpty ? "\(i)" : "\(i) \(word)"
-    }
-
-    private func confLine(_ n: Double?) -> String {
-        guard let n else { return "—" }
-        return "\(Int(n.rounded()))"
-    }
-
-    private func numberText(_ n: Double?) -> String {
-        guard let n else { return "—" }
-        return String(format: n == n.rounded() ? "%.0f" : "%.2f", n)
-    }
-
-    private func qtyText(_ n: Double) -> String {
-        n == n.rounded() ? String(Int(n)) : String(n)
-    }
-
     private func dayTitle(_ iso: String) -> String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
@@ -447,11 +349,5 @@ public struct JournalView: View {
         guard let d = f.date(from: iso) else { return iso }
         f.dateFormat = "EEE d MMM"
         return f.string(from: d)
-    }
-}
-
-private extension Array where Element == String {
-    subscript(safe index: Int) -> String? {
-        indices.contains(index) ? self[index] : nil
     }
 }

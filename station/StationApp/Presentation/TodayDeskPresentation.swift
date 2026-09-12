@@ -55,7 +55,8 @@ public struct TodayDeskPresentation: Equatable, Sendable {
         now: Date = Date(),
         showShallowImpact: Bool = false,
         showActiveMoney: Bool = true,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        demoLabeled: Bool = false
     ) -> TodayDeskPresentation {
         let screen = TodayScreenPresentation.build(
             payload: payload,
@@ -65,7 +66,7 @@ public struct TodayDeskPresentation: Equatable, Sendable {
             showShallowImpact: showShallowImpact,
             showActiveMoney: showActiveMoney,
             calendar: calendar
-        )
+        ).applyingDemoLabel(demoLabeled)
         let quote = payload?.deskQuoteCurrency
         let hasQuote = quote.map { !$0.isEmpty } ?? false
         let moneyHealthy =

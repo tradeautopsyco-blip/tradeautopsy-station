@@ -5,7 +5,6 @@ public enum JournalFacet: String, CaseIterable, Sendable {
     case matched
     case pending
     case unmatched
-    case postDue
     case impulsive
 }
 
@@ -312,7 +311,7 @@ public struct JournalWeek: Equatable, Sendable {
             .filter { !coveredSymbols.contains($0.symbol.uppercased()) }
             .map { JournalImpulsiveRow(symbol: $0.symbol, qty: $0.qty, direction: $0.direction) }
 
-        let sidebarDue = citedItems.contains { $0.isPostDue }
+        let sidebarDue = false
 
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let emotionHit = {
@@ -328,9 +327,6 @@ public struct JournalWeek: Equatable, Sendable {
                 item.snapshot.setupLabel,
                 item.snapshot.invalidationLine,
                 item.snapshot.invalidationKind,
-                item.notes.pre,
-                item.notes.live,
-                item.notes.post,
                 item.status,
             ]
             return parts.compactMap { $0 }.joined(separator: " ").lowercased().contains(q)
@@ -359,9 +355,6 @@ public struct JournalWeek: Equatable, Sendable {
             filteredImpulsive = []
         case .unmatched:
             filteredDecls = dayItems.filter { $0.isUnmatched && matchesSearch($0) }
-            filteredImpulsive = []
-        case .postDue:
-            filteredDecls = dayItems.filter { $0.isPostDue && matchesSearch($0) }
             filteredImpulsive = []
         }
 

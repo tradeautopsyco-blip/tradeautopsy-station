@@ -20,21 +20,34 @@ public final class JournalViewModel: ObservableObject {
     private let client: JournalAgentClient
     private let sessionModel: SessionModel
     private let agentHealthy: () -> Bool
+    private let demoDeskStore: DemoDeskStore
     private var lastPayload: JournalWeekPayload?
     private var positionsCancellable: AnyCancellable?
+    private var demoCancellable: AnyCancellable?
+    private var demoPositions: [DeskPosition] = []
 
     public init(
         client: JournalAgentClient,
         sessionModel: SessionModel,
-        agentHealthy: @escaping () -> Bool
+        agentHealthy: @escaping () -> Bool,
+        demoDeskStore: DemoDeskStore? = nil
     ) {
         self.client = client
         self.sessionModel = sessionModel
         self.agentHealthy = agentHealthy
+        let demo = demoDeskStore ?? .shared
+        self.demoDeskStore = demo
         positionsCancellable = sessionModel.$positions
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.rebuild()
+                guard let self, !self.demoDeskStore.demoEnabled else { return }
+                self.rebuild()
+            }
+        demoCancellable = demo.$demoEnabled
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { await self?.load() }
             }
     }
 
@@ -60,6 +73,15 @@ public final class JournalViewModel: ObservableObject {
     public func load() async {
         isLoading = true
         defer { isLoading = false }
+        if demoDeskStore.demoEnabled {
+            let fixture = StationDemoDesk.build()
+            lastPayload = fixture.journalPayload
+            demoPositions = fixture.positions
+            selectedDay = lastPayload?.days.last?.localDate ?? lastPayload?.items.last?.localDate
+            rebuild()
+            return
+        }
+        demoPositions = []
         if !agentHealthy() {
             lastPayload = nil
             rebuild()
@@ -75,7 +97,7 @@ public final class JournalViewModel: ObservableObject {
     private func rebuild() {
         week = JournalWeek.build(
             payload: lastPayload,
-            inventory: sessionModel.positions,
+            inventory: demoDeskStore.demoEnabled ? demoPositions : sessionModel.positions,
             citedTrips: [],
             selectedDay: selectedDay,
             facet: facet,

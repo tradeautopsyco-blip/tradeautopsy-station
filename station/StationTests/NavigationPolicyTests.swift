@@ -5,22 +5,32 @@ import Testing
 struct NavigationPolicyTests {
     private let stickinessWindow: TimeInterval = 60
 
+    // MARK: - chrome lists
+
+    @Test func sessionRoutesAreTodayOnly() {
+        #expect(StationRoute.sessionRoutes == [.today])
+    }
+
+    @Test func deskRoutesAreJournalAndSettings() {
+        #expect(StationRoute.deskRoutes == [.journal, .settings])
+    }
+
     // MARK: - routeForPhase
 
-    @Test func routeForPhaseDeclarationMapsToPreTrade() {
-        #expect(NavigationPolicy.routeForPhase(.declaration) == .preTrade)
+    @Test func routeForPhaseDeclarationMapsToToday() {
+        #expect(NavigationPolicy.routeForPhase(.declaration) == .today)
     }
 
-    @Test func routeForPhaseArmedMapsToLiveTrade() {
-        #expect(NavigationPolicy.routeForPhase(.armed) == .liveTrade)
+    @Test func routeForPhaseArmedMapsToToday() {
+        #expect(NavigationPolicy.routeForPhase(.armed) == .today)
     }
 
-    @Test func routeForPhaseLivePlanMapsToLiveTrade() {
-        #expect(NavigationPolicy.routeForPhase(.livePlan) == .liveTrade)
+    @Test func routeForPhaseLivePlanMapsToToday() {
+        #expect(NavigationPolicy.routeForPhase(.livePlan) == .today)
     }
 
-    @Test func routeForPhaseDebriefMapsToPostTrade() {
-        #expect(NavigationPolicy.routeForPhase(.debrief) == .postTrade)
+    @Test func routeForPhaseDebriefMapsToToday() {
+        #expect(NavigationPolicy.routeForPhase(.debrief) == .today)
     }
 
     // MARK: - launchRoute
@@ -32,19 +42,26 @@ struct NavigationPolicyTests {
 
     @Test func launchRouteIgnoresSavedSessionRoute() {
         let route = NavigationPolicy.launchRoute(saved: .today, phase: .armed)
-        #expect(route == .liveTrade)
+        #expect(route == .today)
     }
 
     @Test func launchRouteUsesPhaseWhenSavedIsNil() {
         let route = NavigationPolicy.launchRoute(saved: nil, phase: .debrief)
-        #expect(route == .postTrade)
+        #expect(route == .today)
+    }
+
+    @Test func leftoverRemovedDeskRawValuesFailClosedToToday() {
+        for raw in ["Escrow match", "Patterns", "Fidelity score"] {
+            #expect(StationRoute(rawValue: raw) == nil)
+            #expect(NavigationPolicy.launchRoute(saved: StationRoute(rawValue: raw), phase: .armed) == .today)
+        }
     }
 
     // MARK: - shouldAutoFollowPhase
 
     @Test func shouldAutoFollowPhaseDeskActiveReturnsNil() {
         let result = NavigationPolicy.shouldAutoFollowPhase(
-            active: .patterns,
+            active: .settings,
             phase: .armed,
             manualSessionPickAt: nil,
             now: Date()
@@ -52,14 +69,14 @@ struct NavigationPolicyTests {
         #expect(result == nil)
     }
 
-    @Test func shouldAutoFollowPhaseSessionActiveNoManualPickReturnsPhaseRoute() {
+    @Test func shouldAutoFollowPhaseSessionActiveStaysOnToday() {
         let result = NavigationPolicy.shouldAutoFollowPhase(
-            active: .preTrade,
+            active: .today,
             phase: .armed,
             manualSessionPickAt: nil,
             now: Date()
         )
-        #expect(result == .liveTrade)
+        #expect(result == nil)
     }
 
     @Test func shouldAutoFollowPhaseManualPickWithin60sReturnsNil() {
@@ -74,7 +91,7 @@ struct NavigationPolicyTests {
         #expect(result == nil)
     }
 
-    @Test func shouldAutoFollowPhaseManualPickAfter60sReturnsPhaseRoute() {
+    @Test func shouldAutoFollowPhaseManualPickAfter60sStaysOnToday() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let pick = now.addingTimeInterval(-(stickinessWindow + 0.001))
         let result = NavigationPolicy.shouldAutoFollowPhase(
@@ -83,14 +100,14 @@ struct NavigationPolicyTests {
             manualSessionPickAt: pick,
             now: now
         )
-        #expect(result == .liveTrade)
+        #expect(result == nil)
     }
 
     @Test func shouldAutoFollowPhaseExactly60sRemainsSticky() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let pick = now.addingTimeInterval(-stickinessWindow)
         let result = NavigationPolicy.shouldAutoFollowPhase(
-            active: .preTrade,
+            active: .today,
             phase: .livePlan,
             manualSessionPickAt: pick,
             now: now
@@ -100,7 +117,7 @@ struct NavigationPolicyTests {
 
     @Test func shouldAutoFollowPhaseSamePhaseRouteReturnsNil() {
         let result = NavigationPolicy.shouldAutoFollowPhase(
-            active: .liveTrade,
+            active: .today,
             phase: .armed,
             manualSessionPickAt: nil,
             now: Date()

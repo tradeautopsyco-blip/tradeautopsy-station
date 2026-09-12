@@ -2,11 +2,9 @@ import SwiftUI
 
 public struct StationSidebarList: View {
     @ObservedObject private var coordinator: StationAppCoordinator
-    @ObservedObject private var journalViewModel: JournalViewModel
 
     public init(coordinator: StationAppCoordinator) {
         self.coordinator = coordinator
-        self.journalViewModel = coordinator.journalViewModel
     }
 
     // Local to this view rather than on StationAppCoordinator: the coordinator has no
@@ -42,22 +40,7 @@ public struct StationSidebarList: View {
 
             Section("Desk") {
                 ForEach(StationRoute.deskRoutes, id: \.self) { route in
-                    if route == .journal && journalViewModel.sidebarDue {
-                        Label {
-                            HStack {
-                                Text(route.rawValue)
-                                Spacer()
-                                Text("Due")
-                                    .font(StationDS.bodyFont(StationDS.FontSize.chrome, weight: .semibold))
-                                    .foregroundStyle(StationDS.Accent.amber)
-                            }
-                        } icon: {
-                            Image(systemName: route.sfSymbol)
-                        }
-                        .tag(route)
-                    } else {
-                        Label(route.rawValue, systemImage: route.sfSymbol).tag(route)
-                    }
+                    Label(route.rawValue, systemImage: route.sfSymbol).tag(route)
                 }
             }
             .collapsible(false)

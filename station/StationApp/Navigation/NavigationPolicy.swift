@@ -6,9 +6,8 @@ public enum NavigationPolicy {
     /// Map `SessionSurfacePhase` → default Session route.
     public static func routeForPhase(_ phase: SessionSurfacePhase) -> StationRoute {
         switch phase {
-        case .declaration: return .preTrade
-        case .armed, .livePlan: return .liveTrade
-        case .debrief: return .postTrade
+        case .declaration, .armed, .livePlan, .debrief:
+            return .today
         }
     }
 

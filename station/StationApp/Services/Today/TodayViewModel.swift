@@ -23,10 +23,14 @@ public final class TodayViewModel: ObservableObject {
     private let sessionModel: SessionModel
     private let sessionMirrorPollIntervalSeconds: TimeInterval
     private let dailyFloor: () -> Double?
+    private let demoDeskStore: DemoDeskStore
     private var sessionMirrorPollTask: Task<Void, Never>?
     private var positionsCancellable: AnyCancellable?
     private var deskHonestyCancellable: AnyCancellable?
     private var deskRulesCancellable: AnyCancellable?
+    private var demoCancellable: AnyCancellable?
+    private var lastPayload: TodayAgentPayload?
+    private var demoFixture: StationDemoDesk.Fixture?
 
     public init(
         client: TodayAgentClient,
@@ -36,7 +40,8 @@ public final class TodayViewModel: ObservableObject {
         configuredSlugs: @escaping () -> [String] = { [] },
         sessionMirrorPollIntervalSeconds: TimeInterval = 15,
         dailyFloor: @escaping () -> Double? = { DeskRulesStore.shared.dailyFloor },
-        deskRulesStore: DeskRulesStore? = nil
+        deskRulesStore: DeskRulesStore? = nil,
+        demoDeskStore: DemoDeskStore? = nil
     ) {
         self.client = client
         self.sessionModel = sessionModel
@@ -46,6 +51,8 @@ public final class TodayViewModel: ObservableObject {
         self.sessionMirrorPollIntervalSeconds = sessionMirrorPollIntervalSeconds
         self.dailyFloor = dailyFloor
         let rules = deskRulesStore ?? .shared
+        let demo = demoDeskStore ?? .shared
+        self.demoDeskStore = demo
         deskRulesCancellable = rules.$dailyFloor
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -55,6 +62,7 @@ public final class TodayViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self, self.lastPayload != nil else { return }
+                guard !self.demoDeskStore.demoEnabled else { return }
                 self.rebuildPresentation()
             }
         deskHonestyCancellable = sessionModel.$activeBrokerSlug
@@ -62,6 +70,12 @@ public final class TodayViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self, self.lastPayload != nil else { return }
                 self.rebuildPresentation()
+            }
+        demoCancellable = demo.$demoEnabled
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { await self?.load() }
             }
     }
 
@@ -94,13 +108,18 @@ public final class TodayViewModel: ObservableObject {
         lastPayload?.deskQuoteCurrency
     }
 
-    private var lastPayload: TodayAgentPayload?
-
     public func load() async {
         isLoading = true
         defer { isLoading = false }
-        let payload = await client.fetchToday()
-        lastPayload = payload
+        if demoDeskStore.demoEnabled {
+            let fixture = StationDemoDesk.build()
+            demoFixture = fixture
+            lastPayload = fixture.payload
+            rebuildPresentation()
+            return
+        }
+        demoFixture = nil
+        lastPayload = await client.fetchToday()
         rebuildPresentation()
     }
 
@@ -116,13 +135,21 @@ public final class TodayViewModel: ObservableObject {
     private func rebuildPresentation() {
         desk = TodayDeskPresentation.build(
             payload: lastPayload,
-            agentHealthy: agentHealthy(),
-            positions: sessionModel.positions,
+            agentHealthy: demoDeskStore.demoEnabled || agentHealthy(),
+            positions: presentationPositions(),
             dailyFloor: dailyFloor(),
             showShallowImpact: showShallowImpact,
-            showActiveMoney: showsActiveMoney()
+            showActiveMoney: showsActiveMoney(),
+            demoLabeled: demoDeskStore.demoEnabled
         )
         presentation = desk.screen
+    }
+
+    private func presentationPositions() -> [DeskPosition] {
+        if demoDeskStore.demoEnabled {
+            return demoFixture?.positions ?? []
+        }
+        return sessionModel.positions
     }
 
     private func showsActiveMoney() -> Bool {
@@ -150,9 +177,12 @@ public final class TodayViewModel: ObservableObject {
     }
 
     public func detectCardInput(declarations: [JournalDeclarationCard] = []) -> DetectCardInput? {
-        TodayDetectJoin.input(
-            position: sessionModel.positions.first,
-            declarations: declarations,
+        let decls = demoDeskStore.demoEnabled
+            ? (demoFixture?.journalPayload.items ?? declarations)
+            : declarations
+        return TodayDetectJoin.input(
+            position: presentationPositions().first,
+            declarations: decls,
             quoteCurrency: lastPayload?.deskQuoteCurrency
         )
     }

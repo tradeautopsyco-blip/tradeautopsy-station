@@ -93,6 +93,39 @@ public struct TodayScreenPresentation: Equatable, Sendable {
     public let takeaway: String
     public let caption: String
 
+    public func applyingDemoLabel(_ on: Bool) -> TodayScreenPresentation {
+        guard on else { return self }
+        let labeledSubtitle = subtitle.contains("Demo · not live")
+            ? subtitle
+            : "Demo · not live · \(subtitle)"
+        let labeledBanner: String
+        if let degradedBannerText, !degradedBannerText.contains("Demo · not live") {
+            labeledBanner = "Demo · not live. \(degradedBannerText)"
+        } else {
+            labeledBanner = degradedBannerText ?? "Demo · not live"
+        }
+        return TodayScreenPresentation(
+            state: state,
+            subtitle: labeledSubtitle,
+            showDegradedBanner: true,
+            degradedBannerText: labeledBanner,
+            heroTiles: heroTiles,
+            signalsMeta: signalsMeta,
+            signals: signals,
+            tradesMeta: tradesMeta,
+            trades: trades,
+            showEmptyTable: showEmptyTable,
+            learningBaseline: learningBaseline,
+            showSignalsUnavailableMessage: showSignalsUnavailableMessage,
+            openRows: openRows,
+            showEmptyOpenBook: showEmptyOpenBook,
+            showShallowImpact: showShallowImpact,
+            shallowImpactCaption: shallowImpactCaption,
+            takeaway: takeaway,
+            caption: caption
+        )
+    }
+
     public static func build(
         payload: TodayAgentPayload?,
         agentHealthy: Bool,

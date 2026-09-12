@@ -79,8 +79,6 @@ public struct StationShellView: View {
             JournalView(viewModel: coordinator.journalViewModel, onOpenNotch: { coordinator.toggleNotch() })
         case .settings:
             SettingsView(coordinator: coordinator)
-        default:
-            StationPlaceholderView(route: coordinator.activeRoute)
         }
     }
 }

@@ -73,7 +73,7 @@ struct JournalWeekProjectionTests {
         #expect(unmatched.declarations.map(\.id).sorted() == ["c", "e"])
     }
 
-    @Test func postDueAndSidebarDueUseEmptyPostOnMatched() {
+    @Test func emptyPostOnMatchedDoesNotSetSidebarDue() {
         let payload = JournalWeekPayload(
             timezone: "Asia/Kolkata",
             weekStart: "2026-09-06T18:30:00.000Z",
@@ -85,9 +85,26 @@ struct JournalWeekProjectionTests {
             days: []
         )
         let all = JournalWeek.build(payload: payload, inventory: [], citedTrips: [], selectedDay: "2026-09-11", facet: .all, query: "")
-        #expect(all.sidebarDue == true)
-        let due = JournalWeek.build(payload: payload, inventory: [], citedTrips: [], selectedDay: "2026-09-11", facet: .postDue, query: "")
-        #expect(due.declarations.map(\.id) == ["due"])
+        #expect(all.sidebarDue == false)
+        #expect(all.declarations.map(\.id).sorted() == ["done", "due"])
+        #expect(JournalFacet.allCases == [.all, .matched, .pending, .unmatched, .impulsive])
+    }
+
+    @Test func paintedCardKeepsSnapshotAndStripsProcessFidelity() {
+        let painted = card(id: "due", status: "matched", symbol: "RELIANCE", post: "")
+        let line = JournalCardPaint.snapLine(painted)
+        #expect(line.contains("Pullback"))
+        #expect(line.contains("SL 1260"))
+        #expect(!line.lowercased().contains("fidelity"))
+        #expect(JournalCardPaint.statusChips(painted) == ["Matched"])
+        let labels = JournalCardPaint.drawerRows(painted).map(\.label)
+        #expect(labels.contains("SL"))
+        #expect(labels.contains("Target"))
+        #expect(labels.contains("Setup"))
+        #expect(!labels.contains("Pre"))
+        #expect(!labels.contains("Live"))
+        #expect(!labels.contains("Post"))
+        #expect(!labels.contains("Fidelity"))
     }
 
     @Test func impulsiveIsInventoryWithoutDeclarationIdAndHasNoFidelity() {

@@ -46,6 +46,7 @@ public final class StationAppCoordinator: ObservableObject {
     private let phaseProvider: SessionSurfacePhaseProviding
     private let deskRouteStore: DeskRouteStoring
     public let deskRulesStore: DeskRulesStore
+    public let demoDeskStore: DemoDeskStore
     private let dateProvider: () -> Date
 
     private var manualSessionPickAt: Date?
@@ -75,6 +76,7 @@ public final class StationAppCoordinator: ObservableObject {
         daemonSecret: String? = nil,
         deviceLoginClient: (any DeviceLoginClient)? = nil,
         deskRulesStore: DeskRulesStore? = nil,
+        demoDeskStore: DemoDeskStore? = nil,
         floatingNotch: FloatingNotchHosting
     ) {
         let resolvedDaemonSecret = daemonSecret ?? AgentDaemonSecret.resolveForSession()
@@ -92,6 +94,7 @@ public final class StationAppCoordinator: ObservableObject {
         self.phaseProvider = phaseProvider
         self.deskRouteStore = deskRouteStore
         self.deskRulesStore = deskRulesStore ?? .shared
+        self.demoDeskStore = demoDeskStore ?? .shared
         self.dateProvider = dateProvider
 
         let resolvedCredentialStore = KeychainBrokerCredentialStore()
@@ -131,7 +134,8 @@ public final class StationAppCoordinator: ObservableObject {
             isBrokerSyncActive: { session.isBrokerSyncActiveForTodayMirror },
             configuredSlugs: { brokers.configuredBrokerSlugs },
             dailyFloor: { [deskRules = self.deskRulesStore] in deskRules.dailyFloor },
-            deskRulesStore: self.deskRulesStore
+            deskRulesStore: self.deskRulesStore,
+            demoDeskStore: self.demoDeskStore
         )
         let resolvedJournalClient = journalClient ?? LocalJournalAgentClient(
             daemonSecret: resolvedDaemonSecret,
@@ -140,7 +144,8 @@ public final class StationAppCoordinator: ObservableObject {
         self.journalViewModel = JournalViewModel(
             client: resolvedJournalClient,
             sessionModel: session,
-            agentHealthy: { agentSupervisor.isHealthy }
+            agentHealthy: { agentSupervisor.isHealthy },
+            demoDeskStore: self.demoDeskStore
         )
         let resolvedDeviceLoginClient = deviceLoginClient ?? LocalDeviceLoginAgentClient(
             daemonSecret: resolvedDaemonSecret,
@@ -175,7 +180,7 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func openLiveTradeFromPulseStrip() {
-        navigateTo(.liveTrade)
+        navigateTo(.today)
         windowController.showAndActivate()
     }
 
@@ -273,6 +278,14 @@ public final class StationAppCoordinator: ObservableObject {
             floatingNotch.hide()
         } else {
             floatingNotch.show()
+        }
+    }
+
+    public func setDemoEnabled(_ enabled: Bool) {
+        demoDeskStore.setEnabled(enabled)
+        Task {
+            await todayViewModel.load()
+            await journalViewModel.load()
         }
     }
 

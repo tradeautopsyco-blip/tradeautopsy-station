@@ -4,6 +4,7 @@ import SwiftUI
 public struct SettingsView: View {
     @ObservedObject private var coordinator: StationAppCoordinator
     @ObservedObject private var deskRules: DeskRulesStore
+    @ObservedObject private var demoDesk: DemoDeskStore
     @State private var floorText = ""
     @State private var meanText = ""
     @State private var tripsText = ""
@@ -16,6 +17,7 @@ public struct SettingsView: View {
     public init(coordinator: StationAppCoordinator) {
         self.coordinator = coordinator
         self.deskRules = coordinator.deskRulesStore
+        self.demoDesk = coordinator.demoDeskStore
     }
 
     public var body: some View {
@@ -59,6 +61,14 @@ public struct SettingsView: View {
                     )
                 )
                 appearanceRow
+                toggleRow(
+                    title: "Demo data",
+                    caption: "Paints Today from a labeled first-pair fixture. Not live. Does not fire Kill.",
+                    isOn: Binding(
+                        get: { demoDesk.demoEnabled },
+                        set: { coordinator.setDemoEnabled($0) }
+                    )
+                )
             }
             DeviceLoginView(viewModel: coordinator.deviceLoginViewModel)
                 .padding(.top, 8)
