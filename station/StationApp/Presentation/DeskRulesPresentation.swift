@@ -33,6 +33,12 @@ public enum DeskRulesPresentation {
         return floor - used
     }
 
+    /// Whole percent of floor used. Both must exist and floor > 0.
+    public static func floorUsedWholePercent(floor: Double?, used: Double?) -> Int? {
+        guard let floor, let used, floor > 0 else { return nil }
+        return Int((used / floor * 100).rounded())
+    }
+
     /// Desk rules never encode `/api/daemon/bar/profile/loss-limits`.
     public static func lossLimitsRequest(
         dailyFloor: Double?,

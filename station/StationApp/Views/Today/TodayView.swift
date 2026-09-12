@@ -74,7 +74,7 @@ public struct TodayView: View {
             Text("Today")
                 .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
                 .foregroundStyle(StationDS.Text.primary)
-            Text(viewModel.presentation.subtitle)
+            Text(layoutHeaderSubtitle)
                 .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
             Spacer()
@@ -85,7 +85,7 @@ public struct TodayView: View {
             .pickerStyle(.segmented)
             .frame(maxWidth: 280)
             .accessibilityLabel("Today layout")
-            Button("Open Notch") { onOpenNotch?() }
+            Button("Open Notch · Live") { onOpenNotch?() }
                 .buttonStyle(.borderedProminent)
                 .tint(StationDS.Accent.teal)
                 .controlSize(.small)
@@ -104,6 +104,18 @@ public struct TodayView: View {
         )
     }
 
+    /// Proto copy in the 44pt header. Demo · not live stays a prefix, not a second money owner.
+    private var layoutHeaderSubtitle: String {
+        let proto = layoutStore.mode == .daySpine
+            ? viewModel.desk.daySpineSubtitle
+            : TodayDeskPresentation.splitClocksSubtitle
+        if viewModel.presentation.subtitle.contains("Demo · not live"),
+           !proto.contains("Demo · not live") {
+            return "Demo · not live · \(proto)"
+        }
+        return proto
+    }
+
     private var daySpine: some View {
         VStack(alignment: .leading, spacing: 20) {
             remainingHeadline
@@ -120,11 +132,14 @@ public struct TodayView: View {
     private var splitClocks: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Happened · this day")
+                Text("HAPPENED · THIS DAY")
                     .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
                     .foregroundStyle(StationDS.Text.muted)
-                Text(viewModel.presentation.subtitle)
+                Text(viewModel.desk.dateHeadline)
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .semibold))
+                Text("Closed P&L · not mixed with open MTM")
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
                 happenedTile
                 closedFloorChart(mini: false)
                 tradesSection
@@ -153,6 +168,9 @@ public struct TodayView: View {
                         .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
                         .foregroundStyle(StationDS.Text.secondary)
                 }
+                Text(remainingUsedLine)
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
+                    .foregroundStyle(StationDS.Text.muted)
                 Text("Settings floor minus closed used. Open MTM is not in this number.")
                     .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                     .foregroundStyle(StationDS.Text.muted)
@@ -241,20 +259,24 @@ public struct TodayView: View {
                 .foregroundStyle(StationDS.Text.secondary)
             TodayClosedFloorChart(
                 points: viewModel.desk.chartPoints,
-                floor: viewModel.desk.floorLine
+                floor: viewModel.desk.floorLine,
+                quoteCurrency: viewModel.desk.quoteCurrency,
+                brokerSlug: viewModel.desk.brokerSlug
             )
-            .frame(height: mini ? 72 : 140)
-            Text(chartReadout)
+            .frame(height: mini ? 72 : 160)
+            Text(viewModel.desk.chartReadout)
                 .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
         }
     }
 
-    private var chartReadout: String {
-        let closed = viewModel.presentation.heroTiles.first { $0.id == "pnl" }?.value
-            ?? TodayScreenPresentation.emDash
-        let remaining = viewModel.desk.remainingText
-        return "\(closed) closed · \(remaining) to floor · T8 preview · open MTM not on this line"
+    private var remainingUsedLine: String {
+        let used = viewModel.desk.usedCaption
+        let percent = viewModel.desk.floorUsedPercentText
+        if used == TodayScreenPresentation.emDash || percent == TodayScreenPresentation.emDash {
+            return TodayScreenPresentation.emDash
+        }
+        return "\(used) · \(percent)"
     }
 
     private var heroGrid: some View {
@@ -671,9 +693,9 @@ public struct TodayView: View {
         HStack {
             cell("Time", width: 52, header: true)
             cell("Symbol", flex: true, header: true)
-            cell("Entry", width: 76, header: true, align: .trailing)
-            cell("Exit", width: 76, header: true, align: .trailing)
-            cell("Net P&L", width: 88, header: true, align: .trailing)
+            cell("Side", width: 56, header: true)
+            cell("Hold", width: 56, header: true)
+            cell("Net", width: 88, header: true, align: .trailing)
             cell("Flag", width: 92, header: true, align: .trailing)
             if viewModel.presentation.showShallowImpact {
                 cell("Account", width: 64, header: true, align: .trailing)
@@ -689,8 +711,8 @@ public struct TodayView: View {
         HStack {
             cell(row.timeText, width: 52)
             cell(row.symbol, flex: true, mono: true)
-            cell(row.avgEntryText, width: 76, align: .trailing, mono: true)
-            cell(row.avgExitText, width: 76, align: .trailing, mono: true)
+            cell(row.sideText, width: 56, mono: true)
+            cell(row.holdText, width: 56, mono: true)
             cell(row.pnlText, width: 88, align: .trailing, mono: true, tone: row.pnlTone)
             cell(row.flagText, width: 92, align: .trailing, tone: row.isFlagged ? .loss : .neutral)
             if viewModel.presentation.showShallowImpact {
@@ -843,47 +865,105 @@ public struct TodayView: View {
 struct TodayClosedFloorChart: View {
     let points: [TodayClosedChartPoint]
     let floor: Double?
+    let quoteCurrency: String?
+    let brokerSlug: String?
 
     var body: some View {
+        let layout = TodayClosedFloorChartLayout.build(
+            points: points,
+            floor: floor,
+            quoteCurrency: quoteCurrency,
+            brokerSlug: brokerSlug,
+            now: Date(),
+            calendar: .current
+        )
         Canvas { context, size in
-            let ys = points.map(\.cumulativeClosedPnL) + (floor.map { [$0] } ?? [])
-            let minY = min(ys.min() ?? 0, 0)
-            let maxY = max(ys.max() ?? 1, minY + 1)
-            let span = maxY - minY
-            func y(_ value: Double) -> CGFloat {
-                let t = (value - minY) / span
-                return size.height - (CGFloat(t) * size.height)
-            }
-            if let floor {
+            let tickBand: CGFloat = layout.showsNseSessionTicks ? 18 : 0
+            let plotHeight = max(size.height - tickBand, 1)
+            func x(_ unit: Double) -> CGFloat { CGFloat(unit) * size.width }
+            func y(_ unit: Double) -> CGFloat { plotHeight - CGFloat(unit) * plotHeight }
+
+            if let floorY = layout.floorY {
                 var floorLine = Path()
-                floorLine.move(to: CGPoint(x: 0, y: y(floor)))
-                floorLine.addLine(to: CGPoint(x: size.width, y: y(floor)))
+                floorLine.move(to: CGPoint(x: 0, y: y(floorY)))
+                floorLine.addLine(to: CGPoint(x: size.width, y: y(floorY)))
                 context.stroke(
                     floorLine,
                     with: .color(StationDS.Text.muted.opacity(0.45)),
                     style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                 )
             }
-            guard points.count >= 1 else { return }
+
+            if layout.plotPoints.isEmpty {
+                drawTicks(context: context, layout: layout, size: size, plotHeight: plotHeight)
+                return
+            }
+
+            let fillColor: Color
+            if layout.fillIsLoss == true {
+                fillColor = Color(hex: TodayPalette.loss)
+            } else if layout.fillIsLoss == false {
+                fillColor = Color(hex: TodayPalette.profit)
+            } else {
+                fillColor = StationDS.Text.muted
+            }
+
+            var area = Path()
+            let first = layout.plotPoints[0]
+            area.move(to: CGPoint(x: x(first.x), y: plotHeight))
+            for point in layout.plotPoints {
+                area.addLine(to: CGPoint(x: x(point.x), y: y(point.y)))
+            }
+            if let last = layout.plotPoints.last {
+                area.addLine(to: CGPoint(x: x(last.x), y: plotHeight))
+            }
+            area.closeSubpath()
+            context.fill(area, with: .color(fillColor.opacity(0.18)))
+
             var line = Path()
-            for (index, point) in points.enumerated() {
-                let x = points.count == 1
-                    ? size.width / 2
-                    : CGFloat(index) / CGFloat(points.count - 1) * size.width
-                let pt = CGPoint(x: x, y: y(point.cumulativeClosedPnL))
+            for (index, point) in layout.plotPoints.enumerated() {
+                let pt = CGPoint(x: x(point.x), y: y(point.y))
                 if index == 0 {
                     line.move(to: pt)
                 } else {
                     line.addLine(to: pt)
                 }
             }
-            context.stroke(line, with: .color(Color(hex: TodayPalette.loss)), lineWidth: 1.5)
+            context.stroke(line, with: .color(fillColor), lineWidth: 1.5)
+
+            if let last = layout.plotPoints.last, let pill = layout.lastPillText {
+                let pt = CGPoint(x: x(last.x), y: y(last.y))
+                let label = Text(pill)
+                    .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                    .foregroundColor(fillColor)
+                context.draw(label, at: CGPoint(x: min(max(pt.x, 28), size.width - 28), y: max(pt.y - 10, 8)))
+            }
+
+            drawTicks(context: context, layout: layout, size: size, plotHeight: plotHeight)
         }
         .padding(10)
         .background(StationDS.Fill.input)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(StationDS.Border.divider, lineWidth: 1))
         .accessibilityLabel("Closed P and L versus floor")
+    }
+
+    private func drawTicks(
+        context: GraphicsContext,
+        layout: TodayClosedFloorChartLayout,
+        size: CGSize,
+        plotHeight: CGFloat
+    ) {
+        guard layout.showsNseSessionTicks else { return }
+        for (label, unitX) in zip(layout.tickLabels, layout.tickXs) {
+            let tick = Text(label)
+                .font(StationDS.monoFont(9))
+                .foregroundColor(StationDS.Text.muted)
+            context.draw(
+                tick,
+                at: CGPoint(x: CGFloat(unitX) * size.width, y: min(plotHeight + 10, size.height - 2))
+            )
+        }
     }
 }
 

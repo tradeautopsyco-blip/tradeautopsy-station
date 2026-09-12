@@ -47,6 +47,12 @@ struct DeskRulesPresentationTests {
         )
     }
 
+    @Test func floorUsedWholePercentIsFortyEightForFiveThousandEightHundredOfTwelveThousand() {
+        #expect(DeskRulesPresentation.floorUsedWholePercent(floor: 12_000, used: 5_800) == 48)
+        #expect(DeskRulesPresentation.floorUsedWholePercent(floor: nil, used: 5_800) == nil)
+        #expect(DeskRulesPresentation.floorUsedWholePercent(floor: 12_000, used: nil) == nil)
+    }
+
     @Test func remainingPreviewIsFloorMinusUsedWhenBothExist() {
         #expect(DeskRulesPresentation.remainingPreview(floor: 12_000, used: 5_800) == 6_200)
         #expect(DeskRulesPresentation.remainingPreview(floor: 12_000, used: nil) == nil)

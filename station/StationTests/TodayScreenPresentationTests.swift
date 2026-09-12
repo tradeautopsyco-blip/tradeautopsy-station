@@ -273,4 +273,133 @@ struct TodayScreenPresentationTests {
         #expect(presentation.openRows.first?.mtmText == TodayScreenPresentation.emDash)
         #expect(presentation.openRows.first?.qtyText == "0.01")
     }
+
+    @Test func tradeRowSideAndHoldAreEmDash() {
+        let payload = TodayAgentPayload(
+            localDate: "2026-08-21",
+            performanceBasisNotTax: true,
+            degradedReason: nil,
+            learningBaseline: false,
+            hero: TodayHeroPayload(pnlTodayUsd: -1250, tradesToday: 1, winRate: 0),
+            topSignals: [],
+            trades: [
+                TodayTradeRowPayload(
+                    closedAt: "2026-08-21T10:15:00.000Z",
+                    symbol: "RELIANCE",
+                    avgEntry: 1400,
+                    avgExit: 1380,
+                    qty: 1,
+                    netPnlUsd: -1250,
+                    primaryFlag: "Clean",
+                    flagSeverity: "clean",
+                    dataQualityFlags: []
+                ),
+            ],
+            openPositionCount: 0,
+            brokerSlug: "kotak_neo",
+            quoteCurrency: "INR"
+        )
+        let presentation = TodayScreenPresentation.build(payload: payload, agentHealthy: true)
+        let row = presentation.trades.first
+        #expect(row?.sideText == TodayScreenPresentation.emDash)
+        #expect(row?.holdText == TodayScreenPresentation.emDash)
+        #expect(row?.pnlText.contains("1,250") == true || row?.pnlText.contains("1250") == true)
+        #expect(row?.flagText == "Clean")
+        #expect(row?.avgEntryText.isEmpty == false)
+        #expect(row?.avgExitText.isEmpty == false)
+    }
+
+    /// Cash lock refuses FO; flag is not side. Do not infer CE/PE/CNC/NRML from symbol or primaryFlag.
+    @Test func tradeRowDoesNotInferSideFromOptionsLookingSymbol() {
+        let forbidden = ["CE", "PE", "CNC", "NRML", "BUY", "SELL"]
+        let payload = TodayAgentPayload(
+            localDate: "2026-08-21",
+            performanceBasisNotTax: true,
+            degradedReason: nil,
+            learningBaseline: false,
+            hero: TodayHeroPayload(pnlTodayUsd: 0, tradesToday: 3, winRate: 0),
+            topSignals: [],
+            trades: [
+                TodayTradeRowPayload(
+                    closedAt: "2026-08-21T10:15:00.000Z",
+                    symbol: "NIFTY25SEPCE",
+                    avgEntry: 100,
+                    avgExit: 101,
+                    qty: 1,
+                    netPnlUsd: 1,
+                    primaryFlag: "Clean",
+                    flagSeverity: "clean",
+                    dataQualityFlags: []
+                ),
+                TodayTradeRowPayload(
+                    closedAt: "2026-08-21T10:16:00.000Z",
+                    symbol: "BANKNIFTY",
+                    avgEntry: 100,
+                    avgExit: 101,
+                    qty: 1,
+                    netPnlUsd: 1,
+                    primaryFlag: "Clean",
+                    flagSeverity: "clean",
+                    dataQualityFlags: []
+                ),
+                TodayTradeRowPayload(
+                    closedAt: "2026-08-21T10:17:00.000Z",
+                    symbol: "RELIANCE CE",
+                    avgEntry: 100,
+                    avgExit: 101,
+                    qty: 1,
+                    netPnlUsd: 1,
+                    primaryFlag: "Clean",
+                    flagSeverity: "clean",
+                    dataQualityFlags: []
+                ),
+            ],
+            openPositionCount: 0,
+            brokerSlug: "kotak_neo",
+            quoteCurrency: "INR"
+        )
+        let presentation = TodayScreenPresentation.build(payload: payload, agentHealthy: true)
+        #expect(presentation.trades.count == 3)
+        for row in presentation.trades {
+            #expect(row.sideText == TodayScreenPresentation.emDash)
+            #expect(row.holdText == TodayScreenPresentation.emDash)
+            #expect(!forbidden.contains(row.sideText))
+            #expect(!forbidden.contains(row.holdText))
+        }
+    }
+
+    @Test func tradeRowNetIsPayloadNotRecomputedOptionsPnl() {
+        let payload = TodayAgentPayload(
+            localDate: "2026-08-21",
+            performanceBasisNotTax: true,
+            degradedReason: nil,
+            learningBaseline: false,
+            hero: TodayHeroPayload(pnlTodayUsd: -5800, tradesToday: 1, winRate: 0),
+            topSignals: [],
+            trades: [
+                TodayTradeRowPayload(
+                    closedAt: "2026-08-21T10:15:00.000Z",
+                    symbol: "RELIANCE",
+                    avgEntry: 10,
+                    avgExit: 11,
+                    qty: 2,
+                    netPnlUsd: -5800,
+                    primaryFlag: "Clean",
+                    flagSeverity: "clean",
+                    dataQualityFlags: []
+                ),
+            ],
+            openPositionCount: 0,
+            brokerSlug: "kotak_neo",
+            quoteCurrency: "INR"
+        )
+        let presentation = TodayScreenPresentation.build(payload: payload, agentHealthy: true)
+        let row = presentation.trades.first
+        let pnl = row?.pnlText ?? ""
+        #expect(pnl.contains("5,800") || pnl.contains("5800"))
+        #expect(pnl != "100")
+        #expect(pnl != "2")
+        #expect(row?.sideText == TodayScreenPresentation.emDash)
+        #expect(row?.holdText == TodayScreenPresentation.emDash)
+    }
 }

@@ -57,6 +57,8 @@ public struct TodayTradeRowPresentation: Equatable, Identifiable, Sendable {
     public let isFlagged: Bool
     public let accountShareText: String
     public let goalText: String
+    public let sideText: String
+    public let holdText: String
 }
 
 public struct TodayOpenRowPresentation: Equatable, Identifiable, Sendable {
@@ -404,7 +406,9 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             flagTone: flagTone,
             isFlagged: row.flagSeverity == "firing",
             accountShareText: emDash,
-            goalText: emDash
+            goalText: emDash,
+            sideText: emDash,
+            holdText: emDash
         )
     }
 
