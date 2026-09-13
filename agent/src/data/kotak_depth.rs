@@ -8,8 +8,9 @@
 //! never `synced`, never HSM `isDepth=true`. Cash `nse_cm` / `bse_cm` and named
 //! NFO `nse_fo` on REST `quote_type=depth`. Depth JSON is not a TickBook last.
 
-use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_NFO_BOOK_ID};
+use super::descriptor::KOTAK_NEO_ADAPTER_ID;
 use super::identity::{CapabilityId, Family, Identity, Physics};
+use super::rights::Rights;
 use super::kotak_quotes::{
     depth_book_and_instrument_from_quote_object, json_string, quote_objects,
 };
@@ -58,6 +59,8 @@ pub struct DepthEnvelope {
     pub status: DepthStatus,
     pub data: Option<DepthData>,
     pub provenance: DepthProvenance,
+    /// S3 desk grant. Depth extracts always carry `desk_display` on shipping books.
+    pub rights: Rights,
 }
 
 /// Stored REST/stream ladder. Completeness/bounds are metadata, not a delta replica.
@@ -246,6 +249,7 @@ fn extract_depth_from_slot(
                 adapter_id: wanted.to_string(),
                 transport: None,
             },
+            rights: Rights::desk_display(),
         };
     };
     if !row.completeness || (row.bids.is_empty() && row.asks.is_empty()) {
@@ -258,6 +262,7 @@ fn extract_depth_from_slot(
                 adapter_id: row.adapter_id.clone(),
                 transport: Some(row.transport),
             },
+            rights: Rights::desk_display(),
         };
     }
     DepthEnvelope {
@@ -275,6 +280,7 @@ fn extract_depth_from_slot(
             adapter_id: row.adapter_id.clone(),
             transport: Some(row.transport),
         },
+        rights: Rights::desk_display(),
     }
 }
 
@@ -304,6 +310,7 @@ mod tests {
     use super::*;
     use crate::data::depthbook::DepthBook;
     use crate::data::kotak_quotes::quote_tick_from_kotak_json;
+    use crate::data::KOTAK_NSE_NFO_BOOK_ID;
     use chrono::TimeZone;
 
     fn received() -> DateTime<Utc> {

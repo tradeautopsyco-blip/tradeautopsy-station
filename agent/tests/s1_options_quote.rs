@@ -200,8 +200,15 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     assert_ne!(depth_bind["physics"], "ordered_state");
     assert_eq!(depth_bind["auth_mode"], "public");
     assert_eq!(depth_bind["transports"], serde_json::json!(["rest"]));
-    // Depth stays research-only; `optiongreeks` is the one display grant here.
-    assert_eq!(depth_bind["rights"]["display"], false);
+    // S3 product: depth/chain/OI may desk_display. Quotes stay research-only.
+    assert_eq!(depth_bind["rights"]["display"], true);
+    let quotes_bind = options["bindings"]
+        .as_array()
+        .expect("options bindings")
+        .iter()
+        .find(|b| b["operation"] == "quotes")
+        .expect("options quotes binding");
+    assert_eq!(quotes_bind["rights"]["display"], false);
 
     // Depth is claimed on both the options book and the named Kotak NFO book.
     let nfo = list
@@ -225,6 +232,7 @@ async fn options_obtain_empty_tickbook_is_unavailable_not_last_zero() {
     assert_eq!(nfo_depth["physics"], "bounded_snapshot");
     assert_eq!(nfo_depth["auth_mode"], "private_read");
     assert_eq!(nfo_depth["transports"], serde_json::json!(["rest"]));
+    assert_eq!(nfo_depth["rights"]["display"], true);
 
     handle.abort();
 }
@@ -1182,6 +1190,23 @@ async fn planted_options_depth_serves_a_bounded_snapshot_on_the_options_book() {
     assert!(!wire.contains("btcusdt"));
     assert!(!wire.contains("binance-com-spot"));
     assert!(!wire.contains("INR"));
+
+    let glance: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("options depth glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(glance["status"], "success");
+    assert_eq!(glance["identity"]["physics"], "bounded_snapshot");
+    assert_eq!(glance["data"]["bids"][0]["price"], "1000.000");
+    assert!(glance["data"]["bids"][0].get("orders").is_none());
+    assert_eq!(glance["rights"]["display"], true);
 
     // Same slug, spot book: the options ladder must not be reachable there.
     let spot: serde_json::Value = client

@@ -364,6 +364,8 @@ pub struct AgentConfig {
     pub plant_binance_options_fills: bool,
     /// Options index S CI: plant committed `/eapi/v1/index` JSON. No live eapi.
     pub plant_binance_options_index: bool,
+    /// COM depth gap CI: stamp spot DepthBook Unusable (no live WS).
+    pub plant_binance_spot_depth_unusable: bool,
     /// Prod may GET eapi ticker / exchangeInfo / openInterest / mark / depth / klines / index.
     /// Tests stay false.
     pub eapi_public_fetch: bool,
@@ -503,6 +505,7 @@ impl AgentConfig {
             plant_binance_options_history: false,
             plant_binance_options_fills: false,
             plant_binance_options_index: false,
+            plant_binance_spot_depth_unusable: false,
             eapi_public_fetch: true,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
@@ -579,6 +582,7 @@ impl AgentConfig {
             plant_binance_options_history: false,
             plant_binance_options_fills: false,
             plant_binance_options_index: false,
+            plant_binance_spot_depth_unusable: false,
             eapi_public_fetch: false,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
@@ -950,6 +954,14 @@ fn plant_binance_options_depth(depthbook: &Arc<Mutex<crate::data::DepthBook>>) {
         .upsert(snapshot);
 }
 
+/// COM gap path: placeholder Unusable row so glance is unusable, not unavailable.
+fn plant_binance_spot_depth_unusable(depthbook: &Arc<Mutex<crate::data::DepthBook>>) {
+    depthbook
+        .lock()
+        .expect("depthbook mutex poisoned")
+        .invalidate("btcusdt", crate::data::BINANCE_COM_SPOT_BOOK_ID);
+}
+
 fn plant_options_mark_json(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>, json: &str) {
     let Some(row) = crate::data::mark_rows_from_json(json).into_iter().next() else {
         tracing::warn!("options fixture: mark plant refused, no complete row");
@@ -1259,6 +1271,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
     if config.plant_binance_options_depth {
         plant_binance_options_depth(&depthbook);
+    }
+    if config.plant_binance_spot_depth_unusable {
+        plant_binance_spot_depth_unusable(&depthbook);
     }
 
     let injected_station_tokens = config.station_token_store.is_some();

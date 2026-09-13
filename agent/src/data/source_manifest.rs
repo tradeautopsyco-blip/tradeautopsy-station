@@ -191,6 +191,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
     }
 }
 
+#[cfg(test)]
 pub fn is_empty_success(envelope: &ObtainEnvelope) -> bool {
     envelope.status == ObtainStatus::Success && envelope.data.is_none()
 }
@@ -246,7 +247,7 @@ fn optionchain_binding(
         physics: Physics::BoundedSnapshot,
         auth_mode,
         transports: vec![TransportKind::Rest],
-        rights: Rights::research_fetch_only(),
+        rights: Rights::desk_display(),
         limits: Limits::default(),
         coverage,
         delay_class: DelayClass::Realtime,
@@ -269,7 +270,7 @@ fn open_interest_binding(
         physics: Physics::LatestState,
         auth_mode,
         transports: vec![TransportKind::Rest],
-        rights: Rights::research_fetch_only(),
+        rights: Rights::desk_display(),
         limits: Limits::default(),
         coverage,
         delay_class: DelayClass::Realtime,
@@ -280,11 +281,10 @@ fn open_interest_binding(
 /// `GET /eapi/v1/mark`. Clones [`open_interest_binding`]'s shape but is its own
 /// binding: greeks never ride the OI binding.
 ///
-/// **This binding is the display grant, and it is the ONLY one that gets it.**
-/// Every other binding Station ships is `research_fetch_only`. The reason it may
-/// display is narrow: the venue computed these numbers and published them, so
-/// Station is copying a licensed figure rather than pricing the book itself. Do
-/// not copy `Rights::desk_display()` onto another binding to make a chip light up.
+/// Display grant: Station copies licensed venue figures. S3 also grants
+/// `desk_display` on `depth` (all four shipping books) and on `optionchain` /
+/// `open_interest` (NFO + options). Do not copy this onto quotes / history /
+/// tradebook / funds.
 fn optiongreeks_binding(
     adapter_id: &str,
     coverage: Coverage,
@@ -371,7 +371,7 @@ fn depth_binding(
         physics: Physics::BoundedSnapshot,
         auth_mode,
         transports,
-        rights: Rights::research_fetch_only(),
+        rights: Rights::desk_display(),
         limits: Limits::default(),
         coverage,
         delay_class: DelayClass::Realtime,
@@ -1006,10 +1006,10 @@ mod tests {
         );
     }
 
-    /// The optiongreeks binding is the ONLY display grant Station ships. Every
-    /// other binding stays research-fetch-only, and this test is the tripwire.
+    /// S3 desk-display allowlist. optiongreeks stays; depth is granted on every
+    /// shipping book that binds it; chain/OI only on NFO + options.
     #[test]
-    fn optiongreeks_is_the_only_binding_that_may_display() {
+    fn shipping_display_grant_is_an_allowlist() {
         let options = binance_com_options_manifest();
         let greeks = options
             .bindings
@@ -1024,17 +1024,25 @@ mod tests {
         assert_eq!(greeks.rights, Rights::desk_display());
         assert!(greeks.rights.display);
 
-        // Nothing else, on any shipping manifest, carries a display grant.
+        fn may_display(book_id: &str, operation: &str) -> bool {
+            matches!(operation, "optiongreeks" | "depth")
+                || (matches!(operation, "optionchain" | "open_interest")
+                    && matches!(book_id, "binance-com-options" | "kotak-nse-nfo"))
+        }
+
         for manifest in first_party_s0_manifests() {
             for binding in &manifest.bindings {
-                if binding.operation == "optiongreeks" {
-                    continue;
-                }
-                assert!(
-                    !binding.rights.display,
-                    "{} / {} must stay research_fetch_only",
+                let allowed = may_display(&manifest.book_id, &binding.operation);
+                assert_eq!(
+                    binding.rights.display, allowed,
+                    "{} / {} display grant mismatch",
                     manifest.book_id, binding.operation
                 );
+                if allowed {
+                    assert_eq!(binding.rights, Rights::desk_display());
+                } else {
+                    assert_eq!(binding.rights, Rights::research_fetch_only());
+                }
             }
         }
     }
@@ -1139,9 +1147,8 @@ mod tests {
         // reconstruction loop on a host that never serves it.
         assert_eq!(depth_bind.transports, vec![TransportKind::Rest]);
         assert!(!depth_bind.transports.contains(&TransportKind::Stream));
-        // `optiongreeks` is the only binding on this book with a display grant.
-        assert_eq!(depth_bind.rights, Rights::research_fetch_only());
-        assert_ne!(depth_bind.rights, Rights::desk_display());
+        assert_eq!(depth_bind.rights, Rights::desk_display());
+        assert_ne!(depth_bind.rights, Rights::research_fetch_only());
         assert_eq!(depth_bind.coverage.asset_classes, vec!["crypto_options"]);
         let history_bind = options
             .bindings
@@ -1260,8 +1267,8 @@ mod tests {
         assert_ne!(nfo_oi.physics, Physics::BoundedSnapshot);
         // Kotak quotes are session-attached, never public.
         assert_eq!(nfo_oi.auth_mode, AuthMode::PrivateRead);
-        assert_eq!(nfo_oi.rights, Rights::research_fetch_only());
-        assert_ne!(nfo_oi.rights, Rights::desk_display());
+        assert_eq!(nfo_oi.rights, Rights::desk_display());
+        assert_ne!(nfo_oi.rights, Rights::research_fetch_only());
         // NFO depth is claimed on the named book — REST bounded snapshot only.
         assert!(nfo.implemented.iter().any(|op| op == "depth"));
         assert_eq!(obtain(&nfo, "depth").status, ObtainStatus::Unavailable);
@@ -1275,7 +1282,7 @@ mod tests {
         assert_eq!(nfo_depth.physics, Physics::BoundedSnapshot);
         assert_eq!(nfo_depth.auth_mode, AuthMode::PrivateRead);
         assert_eq!(nfo_depth.transports, vec![TransportKind::Rest]);
-        assert_eq!(nfo_depth.rights, Rights::research_fetch_only());
+        assert_eq!(nfo_depth.rights, Rights::desk_display());
         assert_eq!(
             obtain(&nfo, "optionchain").status,
             ObtainStatus::Unavailable

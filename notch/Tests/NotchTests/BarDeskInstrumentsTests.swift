@@ -4,14 +4,49 @@ import Testing
 
 struct BarDeskInstrumentsTests {
     @Test func spotAndEquityDoNotShowChain() {
-        #expect(BarDeskTemplate.glanceKinds(for: .spot) == [.last, .history])
-        #expect(BarDeskTemplate.glanceKinds(for: .equity) == [.last, .history])
+        #expect(BarDeskTemplate.glanceKinds(for: .spot) == [.last, .history, .depth])
+        #expect(BarDeskTemplate.glanceKinds(for: .equity) == [.last, .history, .depth])
     }
 
     @Test func optionsShellIncludesRedChainAndOi() {
         #expect(BarDeskTemplate.glanceKinds(for: .options) == [
-            .last, .history, .chain, .openInterest,
+            .last, .history, .chain, .openInterest, .depth,
         ])
+    }
+
+    @Test func depthPhysicsNotesNeverClaimSynced() {
+        let spot = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.binanceComSpotBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(spot.contains("Unusable"))
+        #expect(spot.contains("never synced"))
+        #expect(!spot.contains("ordered_state"))
+
+        let cash = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.kotakCashBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(cash.contains("Never synced"))
+        #expect(cash.contains("Never ordered_state"))
+
+        let options = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.binanceComOptionsBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(options.contains("limit=50"))
+        #expect(options.contains("[price, quantity]"))
+        #expect(options.contains("Not COM @depth"))
+        #expect(options.contains("Never synced"))
+
+        let nfo = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.kotakNfoBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(nfo.contains("depth.buy"))
+        #expect(nfo.contains("depth.sell"))
+        #expect(nfo.contains("Never synced"))
+        #expect(nfo.contains("Not a strike grid"))
     }
 
     @Test func yahooHistoryDetailIsRightsForbid() {

@@ -79,6 +79,8 @@ pub struct TestAgentOptions {
     pub plant_binance_options_fills: bool,
     /// Options index S — plant the committed `/eapi/v1/index` JSON (no live eapi).
     pub plant_binance_options_index: bool,
+    /// COM depth gap — stamp spot DepthBook Unusable.
+    pub plant_binance_spot_depth_unusable: bool,
     /// Spot private reads — point `BinanceComSpotClient` at wiremock (not `api.binance.com`).
     pub binance_spot_base_url: Option<String>,
     /// Kotak private reads — Direct HTTP to wiremock (not `cis.kotaksecurities.com`).
@@ -132,6 +134,7 @@ impl Default for TestAgentOptions {
             plant_binance_options_history: false,
             plant_binance_options_fills: false,
             plant_binance_options_index: false,
+            plant_binance_spot_depth_unusable: false,
             binance_spot_base_url: None,
             kotak_private_base_url: None,
             gap_vendor_enabled: false,
@@ -194,6 +197,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_options_history = opts.plant_binance_options_history;
     cfg.plant_binance_options_fills = opts.plant_binance_options_fills;
     cfg.plant_binance_options_index = opts.plant_binance_options_index;
+    cfg.plant_binance_spot_depth_unusable = opts.plant_binance_spot_depth_unusable;
     cfg.binance_spot_base_url = opts.binance_spot_base_url.clone();
     cfg.kotak_private_base_url = opts.kotak_private_base_url.clone();
     cfg.gap_vendor_enabled = opts.gap_vendor_enabled;

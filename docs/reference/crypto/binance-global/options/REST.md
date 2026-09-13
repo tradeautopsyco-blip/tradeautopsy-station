@@ -253,10 +253,10 @@ plants AccountBook fills on the options book; **not** merge_poll. PnL owner rema
 
 Slice 3: **venue-published greeks** on `binance-com-options` — `GET /eapi/v1/mark?symbol=`
 (public, weight 5 IP) → `delta` / `gamma` / `theta` / `vega` copied as the venue's own
-strings, served on `GET /api/station/greeks` and `obtain operation=optiongreeks`. The
-`optiongreeks` binding is the **only** binding carrying `display: true`; every other one
-stays `research_fetch_only`. Four greeks, no rho. No IV `<= 0`. `/eapi/v1/depth` is
-allowlisted by the same lock but its parser is **not** this slice.
+strings, served on `GET /api/station/greeks` and `obtain operation=optiongreeks`.
+S3 grants `desk_display` on `optiongreeks`, `depth`, `optionchain`, and `open_interest`.
+Quotes / history / tradebook stay `research_fetch_only`. Four greeks, no rho. No IV `<= 0`. `/eapi/v1/depth` is
+allowlisted by the same lock (REST bounded snapshot, not COM `@depth`).
 
 #70 / session series: public `GET /eapi/v1/klines?symbol=<mixed-case>&interval=<ENUM>`
 on `eapi.binance.com` (weight 1, no HMAC). Official HTML Response Example names object

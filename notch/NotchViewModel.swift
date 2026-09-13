@@ -521,6 +521,15 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskOiSymbol: String? = nil
     /// Expiry row list when there is no exact symbol match. Do not sum these.
     @Published var deskOiRows: [DeskOiExpiryRow] = []
+    /// NFO `open_int` string. Never copied into `deskOiSumOpenInterest` (eapi).
+    @Published var deskOiOpenInt: String? = nil
+    @Published var deskOiField: String? = nil
+    /// Depth glance. Unusable keeps an empty ladder — never last-good levels.
+    @Published var deskDepthStatus: String = "unavailable"
+    @Published var deskDepthDisplay: Bool = false
+    @Published var deskDepthBids: [DeskDepthLevel] = []
+    @Published var deskDepthAsks: [DeskDepthLevel] = []
+    @Published var deskDepthPhysics: String = "bounded_snapshot"
     /// `GET /api/station/greeks` — the venue's own mark table, passed through. Never a pricer.
     @Published var deskGreeksStatus: String = "unavailable"
     /// The venue's published text for each greek. String, never Double: reparsing a
@@ -1826,6 +1835,7 @@ public final class NotchViewModel: ObservableObject {
         clearDeskChainRows()
         deskOiStatus = "unavailable"
         clearDeskOiNumbers()
+        clearDeskDepth()
         clearDeskGreeks()
         clearDeskIndex()
         deskHistoryStatus = "unavailable"
@@ -1874,6 +1884,22 @@ public final class NotchViewModel: ObservableObject {
         )
     }
 
+    func deskDepthExtractPath(symbol: String) -> String {
+        DeskChainExtractQuery.depthPath(
+            bookId: depthBookId(symbol: symbol),
+            instrument: depthInstrument(symbol: symbol)
+        )
+    }
+
+    /// Book-specific ladder copy. The envelope physics word is never rewritten to `synced`.
+    var deskDepthPhysicsNote: String {
+        let symbol = deskSelectedInstrumentId.isEmpty ? barDeclarationSymbol : deskSelectedInstrumentId
+        return BarDeskTemplate.depthPhysicsNote(
+            bookId: depthBookId(symbol: symbol),
+            physics: deskDepthPhysics
+        )
+    }
+
     /// Same `book=` + instrument as chain and OI. Greeks are per contract, so a leftover
     /// typed `BTC` must never replace the selected dated contract here either.
     func deskGreeksExtractPath(symbol: String) -> String {
@@ -1914,6 +1940,41 @@ public final class NotchViewModel: ObservableObject {
             instrumentId: instrument
         ) {
             return BarDeskTemplate.binanceComOptionsBookId
+        }
+        return BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+    }
+
+    private func depthInstrument(symbol: String) -> String {
+        let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
+        let trimmed = selected.trimmingCharacters(in: .whitespacesAndNewlines)
+        if BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: declareAssetClass,
+            instrumentId: trimmed
+        ) {
+            return trimmed
+        }
+        if trimmed.contains("|") {
+            return trimmed
+        }
+        if declareAssetClass == .spot {
+            return trimmed
+        }
+        return ""
+    }
+
+    private func depthBookId(symbol: String) -> String? {
+        let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
+        if BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: declareAssetClass,
+            instrumentId: instrument
+        ) {
+            return BarDeskTemplate.binanceComOptionsBookId
+        }
+        if let market = BarDeskTemplate.marketBook(for: instrument) {
+            return market
+        }
+        if declareAssetClass == .spot {
+            return BarDeskTemplate.binanceComSpotBookId
         }
         return BarDeskTemplate.deskBookId(slug: resolvedDeskSlug, assetClass: declareAssetClass)
     }
@@ -1977,6 +2038,14 @@ public final class NotchViewModel: ObservableObject {
         guard rawStatus.lowercased() == "success" else { return }
         guard let data = json["data"] as? [String: Any] else { return }
 
+        if let field = Self.publishedVenueString(data["field"]), field == "open_int",
+           let openInt = Self.publishedVenueString(data["open_interest"])
+        {
+            deskOiOpenInt = openInt
+            deskOiField = field
+            return
+        }
+
         if let rawRows = data["rows"] as? [Any] {
             let parsed = rawRows.compactMap(Self.deskOiRow(from:))
             if !parsed.isEmpty {
@@ -2018,6 +2087,57 @@ public final class NotchViewModel: ObservableObject {
         deskOiTimestamp = nil
         deskOiSymbol = nil
         deskOiRows = []
+        deskOiOpenInt = nil
+        deskOiField = nil
+    }
+
+    /// Apply one `/api/station/depth` envelope. Unusable keeps an empty ladder.
+    func applyStationDepthEnvelope(_ json: [String: Any]) {
+        let rawStatus = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let display = (json["rights"] as? [String: Any])?["display"] as? Bool ?? false
+        clearDeskDepthLadder()
+        deskDepthStatus = rawStatus.isEmpty ? "unavailable" : rawStatus
+        deskDepthDisplay = display
+        if let identity = json["identity"] as? [String: Any],
+           let physics = identity["physics"] as? String
+        {
+            let trimmed = physics.trimmingCharacters(in: .whitespacesAndNewlines)
+            deskDepthPhysics = trimmed.isEmpty ? "bounded_snapshot" : trimmed
+        }
+        guard display else { return }
+        guard rawStatus.lowercased() == "success" else { return }
+        guard let data = json["data"] as? [String: Any] else { return }
+        deskDepthBids = Self.deskDepthLevels(from: data["bids"], side: "bid")
+        deskDepthAsks = Self.deskDepthLevels(from: data["asks"], side: "ask")
+    }
+
+    private static func deskDepthLevels(from raw: Any?, side: String) -> [DeskDepthLevel] {
+        guard let rows = raw as? [Any] else { return [] }
+        return rows.compactMap { row in
+            guard let obj = row as? [String: Any],
+                  let price = publishedVenueString(obj["price"]),
+                  let quantity = publishedVenueString(obj["quantity"])
+            else { return nil }
+            return DeskDepthLevel(
+                side: side,
+                price: price,
+                quantity: quantity,
+                orders: publishedVenueString(obj["orders"])
+            )
+        }
+    }
+
+    private func clearDeskDepthLadder() {
+        deskDepthBids = []
+        deskDepthAsks = []
+        deskDepthPhysics = "bounded_snapshot"
+    }
+
+    private func clearDeskDepth() {
+        deskDepthStatus = "unavailable"
+        deskDepthDisplay = false
+        clearDeskDepthLadder()
     }
 
     /// Apply one `/api/station/greeks` envelope. Pure state, no HTTP — the parse is the
@@ -2126,6 +2246,7 @@ public final class NotchViewModel: ObservableObject {
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
         let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
         let indexPath = plan.fetchesGlance ? deskIndexExtractPath(symbol: symbol) : nil
+        let depthPath = plan.fetchesGlance ? deskDepthExtractPath(symbol: symbol) : nil
         let historyPath: String?
         if plan.usesKotakHistoryObtain {
             historyPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
@@ -2143,11 +2264,13 @@ public final class NotchViewModel: ObservableObject {
             async let oi = self.getExtractJSON(optional: oiPath)
             async let greeks = self.getExtractJSON(optional: greeksPath)
             async let index = self.getExtractJSON(optional: indexPath)
+            async let depth = self.getExtractJSON(optional: depthPath)
             let licensedJSON = await self.getExtractJSON(optional: historyPath)
             let chainJSON = await chain
             let oiJSON = await oi
             let greeksJSON = await greeks
             let indexJSON = await index
+            let depthJSON = await depth
             await MainActor.run {
                 // The desk rebound while this was in flight — these rows are for an
                 // instrument/book that is no longer selected. Leave the holes dark.
@@ -2161,6 +2284,7 @@ public final class NotchViewModel: ObservableObject {
                 self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
                 self.applyStationIndexEnvelope(indexJSON ?? [:])
+                self.applyStationDepthEnvelope(depthJSON ?? [:])
             }
         }
     }

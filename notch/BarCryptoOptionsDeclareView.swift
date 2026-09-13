@@ -30,7 +30,7 @@ struct BarCryptoOptionsDeclareView: View {
     private var analyticsZone: some View {
         optionsZone(
             title: "Analytics",
-            note: "market/quote · market/option_chain · market/ohlcv",
+            note: "market/quote · market/option_chain · market/open_interest · market/order_book · market/ohlcv",
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 panelHead("Session", trailing: sessionTrailing)
@@ -45,6 +45,14 @@ struct BarCryptoOptionsDeclareView: View {
                 chainHost
                 panelHead("Open interest", trailing: oiTrailing)
                 oiHost
+                panelHead("Depth", trailing: depthTrailing)
+                BarDeskDepthLadder(
+                    status: viewModel.deskDepthStatus,
+                    display: viewModel.deskDepthDisplay,
+                    bids: viewModel.deskDepthBids,
+                    asks: viewModel.deskDepthAsks,
+                    physicsNote: viewModel.deskDepthPhysicsNote,
+                )
             }
         }
     }
@@ -224,6 +232,12 @@ struct BarCryptoOptionsDeclareView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var depthTrailing: String {
+        if !viewModel.deskDepthDisplay { return "unavailable" }
+        let wire = viewModel.deskDepthStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+        return wire.isEmpty ? "unavailable" : wire
     }
 
     private var oiTrailing: String {

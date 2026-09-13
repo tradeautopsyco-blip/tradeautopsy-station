@@ -263,6 +263,13 @@ struct BarDeclarationFlowView: View {
                     .foregroundColor(BarDS.Accent.amber)
             }
             deskGlanceStrip
+            BarDeskDepthLadder(
+                status: viewModel.deskDepthStatus,
+                display: viewModel.deskDepthDisplay,
+                bids: viewModel.deskDepthBids,
+                asks: viewModel.deskDepthAsks,
+                physicsNote: viewModel.deskDepthPhysicsNote,
+            )
             BarInputField(placeholder: "Stop loss — exact price", text: $stopLossText)
             BarInputField(placeholder: "Target price", text: $targetPriceText)
             symbolAutocompleteField
@@ -722,6 +729,11 @@ struct BarDeclarationFlowView: View {
             return HonestyStatus.fromWire(viewModel.deskChainStatus)
         case .openInterest:
             return HonestyStatus.fromWire(viewModel.deskOiStatus)
+        case .depth:
+            if !viewModel.deskDepthDisplay {
+                return HonestyStatus.fromWire(viewModel.deskDepthStatus) ?? .unavailable
+            }
+            return HonestyStatus.fromWire(viewModel.deskDepthStatus)
         case .last, .history:
             return nil
         }
@@ -743,6 +755,8 @@ struct BarDeclarationFlowView: View {
             return viewModel.deskChainStatus
         case .openInterest:
             return viewModel.deskOiStatus
+        case .depth:
+            return viewModel.deskDepthStatus
         }
     }
 

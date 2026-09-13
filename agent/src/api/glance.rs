@@ -6,18 +6,18 @@ use crate::data::{
     apply_history_series, await_binance_options_ticker, chain_input_honesty,
     chain_rows_for_contract, depth_snapshot_from_eapi_json, expiration_from_dated_contract,
     extract_chain_from, extract_greeks_from_mark, extract_index, extract_open_interest,
-    extract_open_interest_for_book, extract_open_interest_from,
+    extract_open_interest_for_book, extract_open_interest_from, extract_depth_on_book,
     index_price_from_json_for_underlying, index_underlying_for_contract, is_dated_option_contract,
     mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
     option_symbols_from_exchange_info_json, options_depth_query, options_index_query,
-    options_klines_query, options_ticker_query, parse_nfo_instrument_id,
+    options_klines_query, options_mark_query, parse_nfo_instrument_id,
     series_from_eapi_klines_json, underlying_asset_from_dated_contract,
-    validate_options_kline_request, CachedIndex, CachedMark, ChainRow, GlanceEnvelope,
+    validate_options_kline_request, CachedIndex, CachedMark, ChainRow, DepthEnvelope, GlanceEnvelope,
     GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
-    BINANCE_COM_OPTIONS_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_EAPI_HOST,
-    OPTIONS_INDEX_HOST, OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
-    OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH, OPTIONS_TICKER_PATH,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_INDEX_HOST,
+    OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH, OPTIONS_KLINE_LIMIT_DEFAULT,
+    OPTIONS_MARK_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -221,13 +221,15 @@ pub(crate) async fn fetch_options_mark(state: &AppState, instrument: &str) -> Op
         }
         mark_dial_symbol(state.eapi_public_fetch, instrument)?
     };
+    let mark_qs = options_mark_query(&dial);
+    let (path, query) = mark_qs.split_once('?').unwrap_or((OPTIONS_MARK_PATH, ""));
     let call = EgressCall::get(
         BINANCE_COM_OPTIONS_BOOK_ID,
         "eapi.binance.com",
-        OPTIONS_MARK_PATH,
+        path,
         Lane::MarketData,
     )
-    .with_query(format!("symbol={dial}"))
+    .with_query(query)
     .with_max_age_ms(OPTIONS_MARK_MAX_AGE_MS)
     .with_timeout(Duration::from_secs(15));
     let Ok(resp) = crate::egress::shared().send(&call).await else {
@@ -641,6 +643,39 @@ pub async fn oi_handler(
     }
 }
 
+/// Book-keyed depth glance. Empty DepthBook → Unavailable. Gap / incomplete →
+/// Unusable with `data: null`. REST books never claim `synced`.
+pub async fn depth_handler(
+    State(state): State<AppState>,
+    Query(query): Query<GlanceQuery>,
+) -> Json<DepthEnvelope> {
+    let book = query_book(&query);
+    let instrument = query_instrument(&query);
+    match book.as_deref() {
+        Some(id) if id == BINANCE_COM_OPTIONS_BOOK_ID => {
+            ensure_options_depth(&state, &instrument).await;
+        }
+        Some(id) if id == KOTAK_NSE_NFO_BOOK_ID || id == KOTAK_NSE_BSE_CASH_BOOK_ID => {
+            if !instrument.is_empty() {
+                crate::kotak_rest_quotes::await_kotak_rest_depth(
+                    state.depthbook.clone(),
+                    state.broker_sync_control.credential_vault(),
+                    state.kotak_session_locator.clone(),
+                    &instrument,
+                )
+                .await;
+            }
+        }
+        Some(id) if id == BINANCE_COM_SPOT_BOOK_ID => {
+            // COM `@depth` is kicked on bind. Glance only extracts.
+        }
+        _ => {}
+    }
+    let depthbook = state.depthbook.lock().expect("depthbook mutex poisoned");
+    let book_id = book.as_deref().unwrap_or("");
+    Json(extract_depth_on_book(&depthbook, &instrument, book_id))
+}
+
 /// Venue-published option greeks. `book` is required — this route never falls back
 /// to `s1_desk_symbol`, because a spot id is not a contract and spot is not greeks.
 pub async fn greeks_handler(
@@ -730,7 +765,9 @@ pub async fn index_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::{mark_row_for_symbol, CachedMark};
+    use crate::data::{
+        options_ticker_query, mark_row_for_symbol, CachedMark, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH,
+    };
 
     const OFFICIAL_EXAMPLE: &str = r#"[ { "symbol": "BTC-200730-9000-C", "markPrice": "1343.2883", "bidIV": "1.40000077", "askIV": "1.50000153", "markIV": "1.45000000", "delta": "0.55937056", "theta": "3739.82509871", "gamma": "0.00010969", "vega": "978.58874732", "highPriceLimit": "1618.241", "lowPriceLimit": "1068.3356", "riskFreeInterest": "0.1" } ]"#;
 

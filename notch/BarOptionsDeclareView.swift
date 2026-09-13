@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Three-zone Options Pre-trade (HTML `notch-options-declare`). Stacked for real Notch width.
-/// Chain / Greeks / σ stay honest-dark. Rung 1 runs on typed numbers.
+/// Chain catalog and `open_int` paint from glance. Greeks / σ stay honest-dark. Rung 1 runs on typed numbers.
 struct BarOptionsDeclareView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
@@ -25,7 +25,7 @@ struct BarOptionsDeclareView: View {
     private var analyticsZone: some View {
         optionsZone(
             title: "Analytics",
-            note: "market/option_chain · market/open_interest · derived/ohlcv",
+            note: "market/option_chain · market/open_interest · market/order_book · derived/ohlcv",
         ) {
             VStack(alignment: .leading, spacing: 12) {
                 panelHead("Session", trailing: sessionTrailing)
@@ -37,6 +37,16 @@ struct BarOptionsDeclareView: View {
 
                 panelHead("Chain · around your strike", trailing: chainTrailing)
                 chainHost
+                panelHead("Open interest", trailing: oiTrailing)
+                oiHost
+                panelHead("Depth", trailing: depthTrailing)
+                BarDeskDepthLadder(
+                    status: viewModel.deskDepthStatus,
+                    display: viewModel.deskDepthDisplay,
+                    bids: viewModel.deskDepthBids,
+                    asks: viewModel.deskDepthAsks,
+                    physicsNote: viewModel.deskDepthPhysicsNote,
+                )
             }
         }
     }
@@ -98,11 +108,130 @@ struct BarOptionsDeclareView: View {
         case .empty:
             emptyBlock(title: "No contracts", body: "Expiry list is empty — not a guessed strike grid.")
         case .lit:
-            emptyBlock(
-                title: "chain snapshot live · no strike grid (raw strike/expiry)",
-                body: "Rows come from the NFO master. A missing master row means that strike is absent.",
-            )
+            if viewModel.deskChainRows.isEmpty {
+                emptyBlock(
+                    title: "chain snapshot live · no strike grid (raw strike/expiry)",
+                    body: "Rows come from the NFO master. A missing master row means that strike is absent.",
+                )
+            } else {
+                chainCatalog
+            }
         }
+    }
+
+    /// Catalog list from the NFO scrip-master BoundedSnapshot. Display only —
+    /// click-to-bind is dated-contract shape, not `nse_fo|token`. Not a strike grid.
+    private var chainCatalog: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                catalogHead("symbol")
+                catalogHead("strike")
+                catalogHead("side")
+                catalogHead("expiry")
+                catalogHead("last")
+            }
+            .padding(.bottom, 4)
+            ForEach(viewModel.deskChainRows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    catalogCell(row.symbol)
+                    catalogCell(row.strikeRaw)
+                    catalogCell(row.side)
+                    catalogCell(row.expiryRaw)
+                    catalogCell(row.last)
+                }
+                .padding(.vertical, 5)
+            }
+            Text("NFO master rows for this underlying. Raw strike/expiry. No IV column. Not a strike grid.")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
+    }
+
+    private func catalogHead(_ title: String) -> some View {
+        Text(title)
+            .font(BarDS.monoFont(9.5, weight: .regular))
+            .foregroundColor(BarDS.Text.muted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func catalogCell(_ value: String?, emphasis: Bool = false) -> some View {
+        Text(value ?? "")
+            .font(BarDS.monoFont(11, weight: emphasis ? .medium : .regular))
+            .foregroundColor(emphasis ? BarDS.Accent.teal : BarDS.Text.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var oiTrailing: String {
+        let wire = viewModel.deskOiStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if wire.isEmpty || wire == "unavailable" { return "unavailable" }
+        return viewModel.deskOiStatus
+    }
+
+    private var depthTrailing: String {
+        if !viewModel.deskDepthDisplay { return "unavailable" }
+        let wire = viewModel.deskDepthStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+        return wire.isEmpty ? "unavailable" : wire
+    }
+
+    @ViewBuilder
+    private var oiHost: some View {
+        if let openInt = viewModel.deskOiOpenInt {
+            nfoOiExact(openInt)
+        } else if let honesty = HonestyStatus.fromWire(viewModel.deskOiStatus) {
+            VStack(alignment: .leading, spacing: 8) {
+                HonestyChip(status: honesty)
+                Text("market/open_interest · quote field open_int. oi_las* stay dark. Not eapi sumOpenInterest.")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HonestyChip(status: .unavailable)
+                Text("market/open_interest · quote field open_int. oi_las* stay dark. Not eapi sumOpenInterest.")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Venue `open_int` string, digit for digit. `"0"` is a real reading.
+    private func nfoOiExact(_ openInt: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(openInt)
+                .font(BarDS.monoFont(15, weight: .medium))
+                .foregroundColor(BarDS.Text.primary)
+            if let field = viewModel.deskOiField {
+                Text(field)
+                    .font(BarDS.monoFont(11, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+            }
+            Text("LatestState · quote field open_int. \"0\" is a real reading. oi_las* stay dark. Not eapi sumOpenInterest.")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
     }
 
     // MARK: Zone B

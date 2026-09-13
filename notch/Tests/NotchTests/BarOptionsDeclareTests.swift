@@ -1328,6 +1328,8 @@ struct BarOptionsDeclareTests {
         ])
         // Wire status stays the NFO glance word — the crypto number fields stay empty.
         #expect(vm.deskOiStatus == "success")
+        #expect(vm.deskOiOpenInt == "480750")
+        #expect(vm.deskOiField == "open_int")
         #expect(vm.deskOiSumOpenInterest == nil)
         #expect(vm.deskOiRows.isEmpty)
         #expect(BarOptionsDeclareSurface.usesThreeZone(
@@ -1516,6 +1518,129 @@ struct BarOptionsDeclareTests {
         #expect(BarOptionsChainPresentation.from(
             underlying: "BANKNIFTY", chainStatus: "success"
         ).showsStrikeGrid == false)
+    }
+
+    @Test func nfoOpenIntZeroIsARealReading() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.applyStationOiEnvelope([
+            "status": "success",
+            "data": [
+                "open_interest": "0",
+                "field": "open_int",
+            ],
+        ])
+        #expect(vm.deskOiOpenInt == "0")
+        #expect(vm.deskOiSumOpenInterest == nil)
+        #expect(vm.deskOiSumOpenInterest != "0")
+    }
+
+    @Test func applyStationDepthEnvelopePaintsSuccessLadder() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationDepthEnvelope([
+            "status": "success",
+            "rights": ["display": true],
+            "identity": ["physics": "bounded_snapshot"],
+            "data": [
+                "bids": [["price": "1400.00", "quantity": "10", "orders": "3"]],
+                "asks": [["price": "1400.50", "quantity": "8", "orders": "2"]],
+            ],
+        ])
+        #expect(vm.deskDepthStatus == "success")
+        #expect(vm.deskDepthDisplay)
+        #expect(vm.deskDepthPhysics == "bounded_snapshot")
+        #expect(vm.deskDepthBids.count == 1)
+        #expect(vm.deskDepthBids[0].price == "1400.00")
+        #expect(vm.deskDepthBids[0].quantity == "10")
+        #expect(vm.deskDepthBids[0].orders == "3")
+        #expect(vm.deskDepthAsks[0].orders == "2")
+    }
+
+    @Test func applyStationDepthEnvelopeUnusableClearsTheLadder() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationDepthEnvelope([
+            "status": "success",
+            "rights": ["display": true],
+            "data": [
+                "bids": [["price": "1400.00", "quantity": "10"]],
+                "asks": [["price": "1400.50", "quantity": "8"]],
+            ],
+        ])
+        #expect(!vm.deskDepthBids.isEmpty)
+
+        vm.applyStationDepthEnvelope([
+            "status": "unusable",
+            "rights": ["display": true],
+            "identity": ["physics": "bounded_snapshot"],
+            "data": NSNull(),
+        ])
+        #expect(vm.deskDepthStatus == "unusable")
+        #expect(HonestyStatus.fromWire(vm.deskDepthStatus) == .unusable)
+        #expect(vm.deskDepthBids.isEmpty)
+        #expect(vm.deskDepthAsks.isEmpty)
+    }
+
+    @Test func applyStationDepthEnvelopeDisplayFalseDoesNotPaintLevels() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationDepthEnvelope([
+            "status": "success",
+            "rights": ["display": false],
+            "identity": ["physics": "bounded_snapshot"],
+            "data": [
+                "bids": [["price": "65000.00", "quantity": "1.2"]],
+                "asks": [["price": "65001.00", "quantity": "0.8"]],
+            ],
+        ])
+        #expect(vm.deskDepthStatus == "success")
+        #expect(!vm.deskDepthDisplay)
+        #expect(vm.deskDepthBids.isEmpty)
+        #expect(vm.deskDepthAsks.isEmpty)
+    }
+
+    @Test func deskDepthExtractPathNamesTheMarketBook() {
+        let spot = NotchViewModel(planSurfaceOnly: true)
+        spot.activeBrokerSlug = "binance_com"
+        spot.declareAssetClass = .spot
+        spot.deskSelectedInstrumentId = "BTCUSDT"
+        #expect(spot.deskDepthExtractPath(symbol: "BTCUSDT").contains("book=binance-com-spot"))
+        #expect(spot.deskDepthExtractPath(symbol: "BTCUSDT").contains("instrument=BTCUSDT"))
+        #expect(!spot.deskDepthExtractPath(symbol: "BTCUSDT").contains("book=binance-com-options"))
+        #expect(spot.deskDepthPhysicsNote.contains("never synced"))
+
+        let cash = NotchViewModel(planSurfaceOnly: true)
+        cash.activeBrokerSlug = "kotak_neo"
+        cash.declareAssetClass = .equity
+        cash.deskSelectedInstrumentId = "nse_cm|2885"
+        #expect(cash.deskDepthExtractPath(symbol: "nse_cm|2885").contains("book=kotak-nse-bse-cash"))
+        #expect(cash.deskDepthExtractPath(symbol: "nse_cm|2885").contains("nse_cm%7C2885"))
+        #expect(cash.deskDepthPhysicsNote.contains("Never synced"))
+
+        let nfo = NotchViewModel(planSurfaceOnly: true)
+        nfo.activeBrokerSlug = "kotak_neo"
+        nfo.declareAssetClass = .options
+        nfo.deskSelectedInstrumentId = "nse_fo|12345"
+        #expect(nfo.deskDepthExtractPath(symbol: "nse_fo|12345").contains("book=kotak-nse-nfo"))
+        #expect(nfo.deskDepthExtractPath(symbol: "nse_fo|12345").contains("nse_fo%7C12345"))
+        #expect(nfo.deskDepthPhysicsNote.contains("depth.buy"))
+
+        let dated = NotchViewModel(planSurfaceOnly: true)
+        dated.activeBrokerSlug = "binance_com"
+        dated.declareAssetClass = .options
+        dated.deskSelectedInstrumentId = "BTC-200730-9000-C"
+        #expect(dated.deskDepthExtractPath(symbol: "BTC-200730-9000-C").contains("book=binance-com-options"))
+        #expect(dated.deskDepthExtractPath(symbol: "BTC-200730-9000-C").contains("instrument=BTC-200730-9000-C"))
+        #expect(dated.deskDepthPhysicsNote.contains("limit=50"))
+        #expect(!dated.deskDepthPhysicsNote.contains("synced badge"))
+    }
+
+    @Test func leftoverSpotPairOnOptionsIssuesNoDepthGlance() {
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .options,
+            instrumentId: "BTCUSDT"
+        )
+        #expect(!plan.fetchesGlance)
     }
 }
 

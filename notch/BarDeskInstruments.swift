@@ -23,6 +23,7 @@ enum BarDeskInstrumentKind: String, Equatable {
     case history
     case chain
     case openInterest
+    case depth
 
     var title: String {
         switch self {
@@ -30,6 +31,7 @@ enum BarDeskInstrumentKind: String, Equatable {
         case .history: return "History"
         case .chain: return "Chain"
         case .openInterest: return "OI"
+        case .depth: return "Depth"
         }
     }
 }
@@ -261,9 +263,9 @@ enum BarDeskTemplate {
     static func glanceKinds(for asset: BarDeclareAssetClass) -> [BarDeskInstrumentKind] {
         switch asset {
         case .spot, .equity:
-            return [.last, .history]
+            return [.last, .history, .depth]
         case .options:
-            return [.last, .history, .chain, .openInterest]
+            return [.last, .history, .chain, .openInterest, .depth]
         }
     }
 
@@ -309,6 +311,26 @@ enum BarDeskTemplate {
     static let kotakNfoBookId = "kotak-nse-nfo"
     /// Public eapi book for dated contracts — execution stays on the active broker slug.
     static let binanceComOptionsBookId = "binance-com-options"
+    /// COM spot book — depth glance names this even when bind `bookId` is nil.
+    static let binanceComSpotBookId = "binance-com-spot"
+
+    /// Desk copy under the ladder. Never claims `synced` / `ordered_state`.
+    static func depthPhysicsNote(bookId: String?, physics: String) -> String {
+        let phys = physics.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = phys.isEmpty ? "bounded_snapshot" : phys
+        switch bookId {
+        case binanceComSpotBookId:
+            return "COM REST snapshot plus @depth deltas. Physics \(label). Sequence gap stamps Unusable — never last-good, never synced."
+        case kotakCashBookId:
+            return "REST \(label). Never synced. Never ordered_state."
+        case binanceComOptionsBookId:
+            return "REST GET /eapi/v1/depth?limit=50. Levels are [price, quantity]. No orders count. Not COM @depth. Physics \(label). Never synced."
+        case kotakNfoBookId:
+            return "REST \(label) from observed depth.buy / depth.sell {price, quantity, orders}. Never synced. Not a strike grid."
+        default:
+            return "\(label). Never synced."
+        }
+    }
 
     /// Market book implied by instrument shape alone — independent of execution desk slug.
     static func marketBook(for instrumentId: String) -> String? {
@@ -557,6 +579,10 @@ struct DeskInstrumentBind: Equatable {
 enum DeskChainExtractQuery {
     static func path(bookId: String?, underlying: String) -> String {
         glancePath(operation: "chain", bookId: bookId, underlying: underlying)
+    }
+
+    static func depthPath(bookId: String?, instrument: String) -> String {
+        glancePath(operation: "depth", bookId: bookId, underlying: instrument)
     }
 
     static func oiPath(bookId: String?, underlying: String) -> String {

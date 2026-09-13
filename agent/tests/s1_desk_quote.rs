@@ -1064,7 +1064,10 @@ async fn planted_nfo_oi_session_adds_supplementary_fields_without_overwriting_op
         .ends_with("/oi"));
     let wire = oi.to_string();
     for unbound in ["oi_las", "oi_high", "oi_low", "dOpenInterest"] {
-        assert!(!wire.contains(unbound), "{unbound} must stay unbound on the wire");
+        assert!(
+            !wire.contains(unbound),
+            "{unbound} must stay unbound on the wire"
+        );
     }
 
     handle.abort();
@@ -1263,11 +1266,176 @@ async fn obtain_search_nfo_master_returns_prefix_hits() {
         .await
         .expect("json");
     assert_eq!(hits["status"], "success");
-    assert_eq!(hits["data"]["identity"]["capability_id"], "instrument_search");
+    assert_eq!(
+        hits["data"]["identity"]["capability_id"],
+        "instrument_search"
+    );
     assert_eq!(hits["data"]["identity"]["physics"], "bounded_snapshot");
     assert!(hits["data"]["row_count"].as_u64().unwrap_or(0) > 0);
     let first = &hits["data"]["rows"][0];
     assert_eq!(first["segment"], "nse_fo");
 
+    handle.abort();
+}
+
+/// Glance depth with an empty DepthBook is Unavailable — never empty Success.
+#[tokio::test]
+async fn depth_glance_empty_book_is_unavailable() {
+    const PORT: u16 = 19_560;
+    let handle = spawn_test_agent(PORT);
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+    let body: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=binance-com-spot&instrument=BTCUSDT"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("depth glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert!(body["data"].is_null());
+    assert_eq!(body["rights"]["display"], true);
+    assert_ne!(body["status"], "success");
+    handle.abort();
+}
+
+/// Planted NFO depth is Success on the named book via glance.
+#[tokio::test]
+#[serial]
+async fn planted_nfo_depth_glance_is_a_bounded_snapshot() {
+    const PORT: u16 = 19_561;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_sync_opts(TestAgentOptions {
+            plant_kotak_nfo_depth: true,
+            ..TestAgentOptions::default()
+        }),
+    );
+    wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
+    let client = reqwest::Client::new();
+    let _bind: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=nse_fo%7C56526&book=kotak-nse-nfo"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind")
+        .json()
+        .await
+        .expect("json");
+    let body: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=kotak-nse-nfo&instrument=nse_fo%7C56526"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("nfo depth glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "success");
+    assert_eq!(body["identity"]["physics"], "bounded_snapshot");
+    assert_ne!(body["identity"]["physics"], "ordered_state");
+    assert!(!body["data"]["bids"].as_array().unwrap().is_empty());
+    assert_eq!(body["data"]["bids"][0]["orders"], "3");
+    assert_eq!(body["rights"]["display"], true);
+    handle.abort();
+}
+
+/// Cash s1k fixture plants REST depth — glance must not say synced.
+#[tokio::test]
+#[serial]
+async fn planted_cash_depth_glance_is_rest_not_synced() {
+    const PORT: u16 = 19_562;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        kotak_sync_opts(TestAgentOptions {
+            plant_kotak_s1k_fixtures: true,
+            ..TestAgentOptions::default()
+        }),
+    );
+    wait_for_quote_route(PORT).await;
+    post_kotak_sync_start(PORT).await;
+    let client = reqwest::Client::new();
+    let body: Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=kotak-nse-bse-cash&instrument=nse_cm%7C2885"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("cash depth glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "success");
+    assert_eq!(body["identity"]["physics"], "bounded_snapshot");
+    assert_ne!(body["identity"]["physics"], "synced");
+    assert_eq!(body["data"]["bids"][0]["price"], "1400.00");
+    handle.abort();
+}
+
+/// COM gap stamps Unusable, not Unavailable and not last-good Success.
+#[tokio::test]
+async fn spot_depth_glance_after_gap_is_unusable_not_unavailable() {
+    const PORT: u16 = 19_563;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_spot_depth_unusable: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let body: Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=binance-com-spot&instrument=BTCUSDT"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("spot gap glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unusable");
+    assert_ne!(body["status"], "unavailable");
+    assert_ne!(body["status"], "success");
+    assert!(body["data"].is_null());
+    handle.abort();
+}
+
+/// Options slot must not serve a spot ladder.
+#[tokio::test]
+async fn options_depth_glance_does_not_leak_spot() {
+    const PORT: u16 = 19_564;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_spot_depth_unusable: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let body: Value = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/depth?book=binance-com-options&instrument=BTCUSDT"
+        ))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("leak glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(body["status"], "unavailable");
+    assert!(body["data"].is_null());
     handle.abort();
 }

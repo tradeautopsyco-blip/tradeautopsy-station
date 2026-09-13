@@ -301,6 +301,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/station/history", get(history::handler))
         .route("/api/station/chain", get(glance::chain_handler))
         .route("/api/station/oi", get(glance::oi_handler))
+        .route("/api/station/depth", get(glance::depth_handler))
         .route("/api/station/greeks", get(glance::greeks_handler))
         .route("/api/station/index", get(glance::index_handler))
         .route("/api/station/manifest", get(manifest::manifest_handler))
