@@ -3,7 +3,7 @@
 
 use crate::api::AppState;
 use crate::data::{
-    apply_history_series, await_binance_options_ticker, chain_input_honesty,
+    apply_history_series, await_binance_options_ticker, await_bound_com_depth_row, chain_input_honesty,
     chain_rows_for_contract, depth_snapshot_from_eapi_json, expiration_from_dated_contract,
     extract_chain_from, extract_greeks_from_mark, extract_index, extract_open_interest,
     extract_open_interest_for_book, extract_open_interest_from, extract_depth_on_book,
@@ -667,7 +667,17 @@ pub async fn depth_handler(
             }
         }
         Some(id) if id == BINANCE_COM_SPOT_BOOK_ID => {
-            // COM `@depth` is kicked on bind. Glance only extracts.
+            // COM `@depth` is kicked on quote bind. Last can land from the
+            // ticker while reconstruction (WS + limit=5000 snapshot) is still
+            // in flight — wait for a bound row, never REST-heal. Unbound
+            // (CI empty-book) returns immediately.
+            await_bound_com_depth_row(
+                &state.com_depth,
+                &state.depthbook,
+                &instrument,
+                Duration::from_secs(15),
+            )
+            .await;
         }
         _ => {}
     }

@@ -92,6 +92,7 @@ pub fn binance_public_depth_stream_url(instrument: &str) -> String {
     )
 }
 
+#[cfg(test)]
 pub fn depth_snapshot_url(symbol: &str) -> String {
     format!(
         "https://api.binance.com/api/v3/depth?symbol={}&limit={DEPTH_SNAPSHOT_LIMIT}",
@@ -381,6 +382,49 @@ fn is_egress_refusal(err: &anyhow::Error) -> bool {
             Some(EgressError::Refused(_))
         )
     })
+}
+
+/// Glance waits for the bind-kicked `@depth` loop to land a row.
+///
+/// Unbound / other-symbol → return immediately (extract stays Unavailable).
+/// A resident Success **or** Unusable row → return immediately. Never REST-heal
+/// a gap. Empty + bound to this id → poll until a row or `timeout`.
+pub async fn await_bound_com_depth_row(
+    bind: &MarketBind,
+    book: &Arc<Mutex<DepthBook>>,
+    instrument: &str,
+    timeout: Duration,
+) {
+    let id = normalize_quote_instrument(instrument);
+    if id.is_empty() || is_dated_option_contract(&id) {
+        return;
+    }
+    {
+        let guard = book.lock().expect("depthbook mutex poisoned");
+        if guard.get(BINANCE_COM_SPOT_BOOK_ID, &id).is_some() {
+            return;
+        }
+    }
+    let bound = bind
+        .current()
+        .map(|raw| normalize_quote_instrument(&raw))
+        .unwrap_or_default();
+    if bound != id {
+        return;
+    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        {
+            let guard = book.lock().expect("depthbook mutex poisoned");
+            if guard.get(BINANCE_COM_SPOT_BOOK_ID, &id).is_some() {
+                return;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 pub fn spawn_binance_com_depth_loop(
@@ -1013,6 +1057,10 @@ mod tests {
             binance_public_depth_stream_url("BTCUSDT"),
             "wss://stream.binance.com:9443/ws/btcusdt@depth"
         );
+        assert_eq!(
+            depth_snapshot_url("btcusdt"),
+            "https://api.binance.com/api/v3/depth?symbol=BTCUSDT&limit=5000"
+        );
     }
 
     #[test]
@@ -1024,5 +1072,63 @@ mod tests {
         assert_eq!(envelope.status, DepthStatus::Success);
         assert_eq!(envelope.provenance.transport, Some(Transport::Rest));
         assert_eq!(envelope.provenance.adapter_id, BINANCE_COM_ADAPTER_ID);
+    }
+
+    #[tokio::test]
+    async fn glance_does_not_wait_when_com_depth_is_unbound() {
+        let bind = MarketBind::new();
+        let book = Arc::new(Mutex::new(DepthBook::new()));
+        let start = std::time::Instant::now();
+        await_bound_com_depth_row(&bind, &book, "BTCUSDT", Duration::from_secs(2)).await;
+        assert!(
+            start.elapsed() < Duration::from_millis(400),
+            "unbound glance must not sit on the snapshot timeout"
+        );
+        let env = crate::data::extract_depth_on_book(
+            &book.lock().expect("lock"),
+            "BTCUSDT",
+            BINANCE_COM_SPOT_BOOK_ID,
+        );
+        assert_eq!(env.status, DepthStatus::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn glance_waits_for_bound_com_depth_row() {
+        let bind = MarketBind::new();
+        bind.bind(Some("btcusdt".into()));
+        let book = Arc::new(Mutex::new(DepthBook::new()));
+        let late = book.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            late.lock().expect("lock").upsert(rest_snapshot(1027024));
+        });
+        await_bound_com_depth_row(&bind, &book, "BTCUSDT", Duration::from_millis(500)).await;
+        let env = crate::data::extract_depth_on_book(
+            &book.lock().expect("lock"),
+            "BTCUSDT",
+            BINANCE_COM_SPOT_BOOK_ID,
+        );
+        assert_eq!(env.status, DepthStatus::Success);
+        assert_ne!(env.status, DepthStatus::Unavailable);
+    }
+
+    #[tokio::test]
+    async fn glance_does_not_wait_on_a_resident_unusable_gap() {
+        let bind = MarketBind::new();
+        bind.bind(Some("btcusdt".into()));
+        let book = Arc::new(Mutex::new(DepthBook::new()));
+        book.lock()
+            .expect("lock")
+            .invalidate("btcusdt", BINANCE_COM_SPOT_BOOK_ID);
+        let start = std::time::Instant::now();
+        await_bound_com_depth_row(&bind, &book, "BTCUSDT", Duration::from_secs(2)).await;
+        assert!(start.elapsed() < Duration::from_millis(400));
+        let env = crate::data::extract_depth_on_book(
+            &book.lock().expect("lock"),
+            "BTCUSDT",
+            BINANCE_COM_SPOT_BOOK_ID,
+        );
+        assert_eq!(env.status, DepthStatus::Unusable);
+        assert!(env.data.is_none());
     }
 }

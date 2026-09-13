@@ -1641,6 +1641,61 @@ struct BarOptionsDeclareTests {
             instrumentId: "BTCUSDT"
         )
         #expect(!plan.fetchesGlance)
+        #expect(!plan.defersComSpotDepth)
+    }
+
+    @Test func comSpotDepthGlanceWaitsForQuoteBind() {
+        let spot = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .spot,
+            instrumentId: "BTCUSDT"
+        )
+        #expect(spot.fetchesGlance)
+        #expect(spot.defersComSpotDepth)
+        #expect(!DeskExtractPlan.resolve(
+            slug: "kotak_neo",
+            assetClass: .equity,
+            instrumentId: "nse_cm|2885"
+        ).defersComSpotDepth)
+        #expect(!DeskExtractPlan.resolve(
+            slug: "kotak_neo",
+            assetClass: .options,
+            instrumentId: "nse_fo|12345"
+        ).defersComSpotDepth)
+        #expect(!DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .options,
+            instrumentId: "BTC-200730-9000-C"
+        ).defersComSpotDepth)
+    }
+
+    @Test func lateUnavailableDepthGlanceDoesNotClobberSuccess() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyStationDepthEnvelope([
+            "status": "success",
+            "rights": ["display": true],
+            "data": [
+                "bids": [["price": "77131.37", "quantity": "1"]],
+                "asks": [["price": "77131.38", "quantity": "1"]],
+            ],
+        ])
+        #expect(vm.deskDepthStatus == "success")
+        #expect(!vm.deskDepthBids.isEmpty)
+
+        vm.applyStationDepthEnvelope([
+            "status": "unavailable",
+            "rights": ["display": true],
+            "data": NSNull(),
+        ])
+        #expect(vm.deskDepthStatus == "success")
+        #expect(vm.deskDepthBids[0].price == "77131.37")
+    }
+
+    @Test func comSpotDepthRetriesUnavailableButNotAGap() {
+        #expect(NotchViewModel.shouldRetryComSpotDepthGlance(status: "unavailable"))
+        #expect(NotchViewModel.shouldRetryComSpotDepthGlance(status: ""))
+        #expect(!NotchViewModel.shouldRetryComSpotDepthGlance(status: "success"))
+        #expect(!NotchViewModel.shouldRetryComSpotDepthGlance(status: "unusable"))
     }
 }
 

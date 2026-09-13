@@ -1560,11 +1560,54 @@ public final class NotchViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     applyStationQuoteEnvelope(json)
+                    // COM `@depth` bind happens on this quote. Glance after
+                    // apply — not in parallel with it — so DepthBook wait can see the bind.
+                    scheduleDeferredComSpotDepthGlance()
                 }
             } catch {
                 // silent — quote failure must not block declaration
             }
         }
+    }
+
+    /// COM spot depth after quote bind. `refreshDeskExtracts` does not issue this
+    /// glance: it races the ticker and reads an empty DepthBook as Unavailable.
+    /// Reconstruction (WS + limit=5000) can land after Last is already Fresh —
+    /// keep asking until Success, Unusable, or the 15s budget.
+    func scheduleDeferredComSpotDepthGlance() {
+        let plan = DeskExtractPlan.resolve(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: deskSelectedInstrumentId
+        )
+        guard plan.defersComSpotDepth else { return }
+        let generation = deskExtractGeneration
+        let symbol = deskSelectedInstrumentId.isEmpty ? barDeclarationSymbol : deskSelectedInstrumentId
+        let path = deskDepthExtractPath(symbol: symbol)
+        Task { [weak self] in
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline {
+                guard let self else { return }
+                guard generation == self.deskExtractGeneration else { return }
+                let json = await self.getExtractJSON(path)
+                guard generation == self.deskExtractGeneration else { return }
+                let status = (json?["status"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() ?? "unavailable"
+                self.applyStationDepthEnvelope(json ?? [:])
+                if !Self.shouldRetryComSpotDepthGlance(status: status) {
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
+        }
+    }
+
+    /// Keep polling only while the book has not spoken. Unusable is a gap —
+    /// do not wait it into last-good.
+    static func shouldRetryComSpotDepthGlance(status: String) -> Bool {
+        let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return trimmed != "success" && trimmed != "unusable"
     }
 
     /// Bind Last from a Station quote extract (testable without network).
@@ -1672,6 +1715,9 @@ public final class NotchViewModel: ObservableObject {
         if InstrumentTickBookId.isNfoIdentity(deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
+        }
+        if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
+            fetchStationQuote(instrument: deskSelectedInstrumentId)
         }
         refreshDeskExtracts(symbol: barDeclarationSymbol, instrumentId: deskSelectedInstrumentId)
     }
@@ -2095,9 +2141,17 @@ public final class NotchViewModel: ObservableObject {
     func applyStationDepthEnvelope(_ json: [String: Any]) {
         let rawStatus = (json["status"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let incoming = rawStatus.isEmpty ? "unavailable" : rawStatus
+        // Same generation: a late unbound glance must not wipe a ladder that
+        // already landed. Unusable still replaces Success — that is a COM gap.
+        if deskDepthStatus.lowercased() == "success",
+           incoming.lowercased() == "unavailable"
+        {
+            return
+        }
         let display = (json["rights"] as? [String: Any])?["display"] as? Bool ?? false
         clearDeskDepthLadder()
-        deskDepthStatus = rawStatus.isEmpty ? "unavailable" : rawStatus
+        deskDepthStatus = incoming
         deskDepthDisplay = display
         if let identity = json["identity"] as? [String: Any],
            let physics = identity["physics"] as? String
@@ -2246,7 +2300,9 @@ public final class NotchViewModel: ObservableObject {
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
         let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
         let indexPath = plan.fetchesGlance ? deskIndexExtractPath(symbol: symbol) : nil
-        let depthPath = plan.fetchesGlance ? deskDepthExtractPath(symbol: symbol) : nil
+        let depthPath = plan.fetchesGlance && !plan.defersComSpotDepth
+            ? deskDepthExtractPath(symbol: symbol)
+            : nil
         let historyPath: String?
         if plan.usesKotakHistoryObtain {
             historyPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
@@ -2284,7 +2340,9 @@ public final class NotchViewModel: ObservableObject {
                 self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
                 self.applyStationIndexEnvelope(indexJSON ?? [:])
-                self.applyStationDepthEnvelope(depthJSON ?? [:])
+                if !plan.defersComSpotDepth {
+                    self.applyStationDepthEnvelope(depthJSON ?? [:])
+                }
             }
         }
     }

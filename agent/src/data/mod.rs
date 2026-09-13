@@ -68,7 +68,7 @@ pub use account_split::{
 pub use apply::{apply_quote, ApplyError};
 #[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_depth::{
-    depth_snapshot_from_binance_json, ensure_binance_com_depth_stream,
+    await_bound_com_depth_row, depth_snapshot_from_binance_json, ensure_binance_com_depth_stream,
     spawn_binance_com_depth_loop, validate_depth_delta, DepthDelta, DepthDeltaDecision,
     DepthSyncPhase, DEPTH_COM_HOST, DEPTH_PATH,
 };
