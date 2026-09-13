@@ -99,28 +99,33 @@ impl ExchangeInfoSymbolCache {
     }
 
     /// Prefix search on TRADING symbols and base assets. Shortest symbol first.
+    /// Caps work at `limit` — a `BT` prefix must not clone every BT* pair.
     pub fn search_trading(&self, q: &str, limit: usize) -> Vec<InstrumentSearchHit> {
         let q = q.trim().to_ascii_uppercase();
-        if q.len() < 2 {
+        if q.len() < 2 || limit == 0 {
             return Vec::new();
         }
-        let mut hits: Vec<InstrumentSearchHit> = self
-            .by_symbol
-            .iter()
-            .filter(|(symbol, assets)| symbol.starts_with(&q) || assets.base_asset.starts_with(&q))
-            .map(|(symbol, assets)| InstrumentSearchHit {
+        let mut hits: Vec<InstrumentSearchHit> = Vec::with_capacity(limit);
+        for (symbol, assets) in &self.by_symbol {
+            if !(symbol.starts_with(&q) || assets.base_asset.starts_with(&q)) {
+                continue;
+            }
+            let hit = InstrumentSearchHit {
                 symbol: symbol.clone(),
                 base_asset: assets.base_asset.clone(),
                 quote_asset: assets.quote_asset.clone(),
-            })
-            .collect();
-        hits.sort_by(|a, b| {
-            a.symbol
-                .len()
-                .cmp(&b.symbol.len())
-                .then_with(|| a.symbol.cmp(&b.symbol))
-        });
-        hits.truncate(limit);
+            };
+            let pos = hits.partition_point(|h| {
+                (h.symbol.len(), h.symbol.as_str()) <= (hit.symbol.len(), hit.symbol.as_str())
+            });
+            if pos >= limit {
+                continue;
+            }
+            hits.insert(pos, hit);
+            if hits.len() > limit {
+                hits.pop();
+            }
+        }
         hits
     }
 
@@ -379,6 +384,25 @@ mod tests {
         assert_eq!(hits[0].symbol, "BTCUSDT");
         assert_eq!(hits[0].base_asset, "BTC");
         assert!(cache.contains_symbol("btcusdt"));
+    }
+
+    #[test]
+    fn search_trading_caps_at_limit_without_materializing_every_prefix() {
+        let json = r#"{
+            "symbols": [
+                { "symbol": "BT", "baseAsset": "BT", "quoteAsset": "USDT", "status": "TRADING" },
+                { "symbol": "BTC", "baseAsset": "BTC", "quoteAsset": "USDT", "status": "TRADING" },
+                { "symbol": "BTCEUR", "baseAsset": "BTC", "quoteAsset": "EUR", "status": "TRADING" },
+                { "symbol": "BTCUSDT", "baseAsset": "BTC", "quoteAsset": "USDT", "status": "TRADING" },
+                { "symbol": "BTTUSDT", "baseAsset": "BTT", "quoteAsset": "USDT", "status": "TRADING" }
+            ]
+        }"#;
+        let cache = ExchangeInfoSymbolCache::from_exchange_info_json(json).expect("parse");
+        let hits = cache.search_trading("BT", 2);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].symbol, "BT");
+        assert_eq!(hits[1].symbol, "BTC");
+        assert_ne!(hits.len(), cache.len());
     }
 
     #[test]

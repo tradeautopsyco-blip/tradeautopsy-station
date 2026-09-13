@@ -63,6 +63,12 @@ impl DepthBook {
         self.rows.get(&depth_key(book_id, instrument_id))
     }
 
+    /// Live `@depth` apply must mutate in place. Cloning a 5000-level COM book
+    /// on every event pegs a core the moment BTCUSDT binds.
+    pub fn get_mut(&mut self, book_id: &str, instrument_id: &str) -> Option<&mut DepthSnapshot> {
+        self.rows.get_mut(&depth_key(book_id, instrument_id))
+    }
+
     /// Always replace the stored row. An incomplete/gapped snapshot must not leave
     /// a stale complete Success in place — `extract_depth` returns Unusable when
     /// `!row.completeness`.

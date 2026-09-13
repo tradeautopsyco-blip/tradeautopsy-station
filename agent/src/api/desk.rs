@@ -958,7 +958,13 @@ pub fn try_load_binance_cache(
         return;
     }
     let n = cache.len();
-    *master.lock().expect("instrument master mutex poisoned") = cache;
+    {
+        let mut guard = master.lock().expect("instrument master mutex poisoned");
+        if !guard.is_empty() {
+            return;
+        }
+        *guard = cache;
+    }
     status
         .lock()
         .expect("instrument master status poisoned")

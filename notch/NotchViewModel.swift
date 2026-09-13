@@ -1247,7 +1247,9 @@ public final class NotchViewModel: ObservableObject {
         }
         symbolSearchTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: 80_000_000)
+            // 80ms retriggered search on every letter of BTCUSDT and kept the
+            // form dirty. Wait for a pause; cancel still drops in-flight keys.
+            try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
             guard
                 let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -1261,7 +1263,9 @@ public final class NotchViewModel: ObservableObject {
                     resp.symbols,
                     deskSlug: self.resolvedDeskSlug
                 )
-                self.symbolSuggestions = filtered
+                if self.symbolSuggestions != filtered {
+                    self.symbolSuggestions = filtered
+                }
                 self.showSymbolSuggestions = !filtered.isEmpty
                 if filtered.isEmpty {
                     let master = (resp.master_status?.isEmpty == false)

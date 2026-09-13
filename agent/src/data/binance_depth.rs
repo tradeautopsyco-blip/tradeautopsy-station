@@ -651,11 +651,9 @@ async fn run_one_depth_connection(
             DepthDeltaDecision::Discard => {}
             DepthDeltaDecision::Accept => {
                 let mut guard = book.lock().expect("depthbook mutex poisoned");
-                if let Some(row) = guard.get(BINANCE_COM_SPOT_BOOK_ID, symbol).cloned() {
-                    let mut next = row;
-                    apply_accepted_delta(&mut next, &update);
+                if let Some(row) = guard.get_mut(BINANCE_COM_SPOT_BOOK_ID, symbol) {
+                    apply_accepted_delta(row, &update);
                     local = update.final_update_id;
-                    guard.upsert(next);
                 }
             }
             DepthDeltaDecision::Gap => {
@@ -1130,5 +1128,59 @@ mod tests {
         );
         assert_eq!(env.status, DepthStatus::Unusable);
         assert!(env.data.is_none());
+    }
+
+    #[test]
+    fn live_depth_apply_mutates_in_place_without_cloning_the_book() {
+        let n = 4_000usize;
+        let bids: Vec<DepthLevel> = (0..n)
+            .map(|i| DepthLevel {
+                price: format!("{}.00", 10_000 - i),
+                quantity: "1".into(),
+                orders: None,
+            })
+            .collect();
+        let mut book = DepthBook::new();
+        book.upsert(DepthSnapshot {
+            instrument_id: "btcusdt".into(),
+            adapter_id: BINANCE_COM_ADAPTER_ID.into(),
+            book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
+            bids,
+            asks: vec![DepthLevel {
+                price: "10001.00".into(),
+                quantity: "1".into(),
+                orders: None,
+            }],
+            completeness: true,
+            bound_levels: n,
+            as_of: received(),
+            transport: Transport::Stream,
+            sequence: Some(1),
+        });
+        let start = std::time::Instant::now();
+        for i in 0..1_000u64 {
+            let update = DepthUpdate {
+                instrument_id: "btcusdt".into(),
+                first_update_id: 2 + i,
+                final_update_id: 2 + i,
+                bids: vec![DepthLevelChange {
+                    price: "10000.00".into(),
+                    quantity: format!("{}", i + 2),
+                }],
+                asks: Vec::new(),
+            };
+            let row = book
+                .get_mut(BINANCE_COM_SPOT_BOOK_ID, "btcusdt")
+                .expect("row");
+            apply_accepted_delta(row, &update);
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(200),
+            "in-place apply of 1000 BTCUSDT-shaped deltas on a 4000-level book must stay cheap, got {:?}",
+            start.elapsed()
+        );
+        let row = book.get(BINANCE_COM_SPOT_BOOK_ID, "btcusdt").expect("row");
+        assert_eq!(row.bids.len(), n);
+        assert_eq!(row.bids[0].quantity, "1001");
     }
 }

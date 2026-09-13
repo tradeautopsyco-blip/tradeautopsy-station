@@ -22,7 +22,12 @@ impl MarketBind {
     }
 
     /// REPLACE never insert. `send_replace` so it works with zero receivers.
+    /// Same id is a no-op — notifying would cancel a live `@trade`/`@depth`
+    /// connection and redo the 5000-level snapshot.
     pub fn bind(&self, id: Option<String>) {
+        if self.tx.borrow().as_ref() == id.as_ref() {
+            return;
+        }
         let _ = self.tx.send_replace(id);
     }
 
@@ -165,6 +170,22 @@ mod tests {
         bind.bind(Some("btcusdt".into()));
         bind.bind(None);
         assert!(bind.current().is_none());
+    }
+
+    #[test]
+    fn bind_same_id_does_not_notify_the_receiver() {
+        let bind = MarketBind::new();
+        bind.bind(Some("btcusdt".into()));
+        let mut rx = bind.subscribe();
+        let _ = rx.borrow_and_update();
+        bind.bind(Some("btcusdt".into()));
+        assert!(
+            !rx.has_changed().expect("receiver open"),
+            "re-bind of the live id must not cancel @trade/@depth"
+        );
+        bind.bind(Some("ethusdt".into()));
+        assert!(rx.has_changed().expect("receiver open"));
+        assert_eq!(rx.borrow().as_deref(), Some("ethusdt"));
     }
 
     #[test]

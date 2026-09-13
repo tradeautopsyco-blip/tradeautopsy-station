@@ -63,7 +63,7 @@ struct BarDeskDepthLadder: View {
             Text(title)
                 .font(BarDS.monoFont(9.5, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
-            ForEach(rows) { row in
+            ForEach(rows.prefix(20)) { row in
                 HStack(spacing: 6) {
                     Text(row.price)
                         .font(BarDS.monoFont(11, weight: .medium))

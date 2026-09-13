@@ -91,6 +91,36 @@ pub fn order_book_bounded_snapshot() -> Identity {
     )
 }
 
+/// Desk glance paints top-of-book only. The stored COM snapshot stays at
+/// `bound_levels` (5000). Shipping that whole ladder over glance makes Notch
+/// mount thousands of rows and Xcode fail with `ipc/send msg too large`.
+pub const DEPTH_DISPLAY_LEVELS: usize = 20;
+
+enum DepthSide {
+    Bid,
+    Ask,
+}
+
+fn display_depth_side(levels: &[DepthLevel], side: DepthSide, cap: usize) -> Vec<DepthLevel> {
+    if levels.len() <= cap {
+        return levels.to_vec();
+    }
+    let mut ranked: Vec<(usize, f64)> = levels
+        .iter()
+        .enumerate()
+        .filter_map(|(i, level)| level.price.parse::<f64>().ok().map(|px| (i, px)))
+        .collect();
+    match side {
+        DepthSide::Bid => ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)),
+        DepthSide::Ask => ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)),
+    }
+    ranked
+        .into_iter()
+        .take(cap)
+        .map(|(i, _)| levels[i].clone())
+        .collect()
+}
+
 /// First usable cash depth snapshot from a REST `quote_type=depth` body.
 /// Empty / F&O / no valid levels → `None` (unusable, not an empty success).
 pub fn depth_snapshot_from_kotak_json(
@@ -270,8 +300,8 @@ fn extract_depth_from_slot(
         instrument_id: instrument_id.to_string(),
         status: DepthStatus::Success,
         data: Some(DepthData {
-            bids: row.bids.clone(),
-            asks: row.asks.clone(),
+            bids: display_depth_side(&row.bids, DepthSide::Bid, DEPTH_DISPLAY_LEVELS),
+            asks: display_depth_side(&row.asks, DepthSide::Ask, DEPTH_DISPLAY_LEVELS),
             completeness: true,
             bound_levels: row.bound_levels,
             as_of: row.as_of.to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -518,5 +548,41 @@ mod tests {
         assert_eq!(envelope.status, DepthStatus::Success);
         assert_ne!(envelope.status, DepthStatus::Unusable);
         assert!(envelope.data.is_some());
+    }
+
+    #[test]
+    fn glance_depth_paints_top_of_book_not_the_full_bound() {
+        use crate::data::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
+        let n = DEPTH_DISPLAY_LEVELS + 15;
+        let bids: Vec<DepthLevel> = (0..n)
+            .map(|i| DepthLevel {
+                price: format!("{}.00", 50_000 - i),
+                quantity: "1".into(),
+                orders: None,
+            })
+            .collect();
+        let mut book = DepthBook::new();
+        book.upsert(DepthSnapshot {
+            instrument_id: "btcusdt".into(),
+            adapter_id: BINANCE_COM_ADAPTER_ID.into(),
+            book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
+            bids,
+            asks: vec![DepthLevel {
+                price: "50001.00".into(),
+                quantity: "1".into(),
+                orders: None,
+            }],
+            completeness: true,
+            bound_levels: n,
+            as_of: received(),
+            transport: Transport::Stream,
+            sequence: Some(1),
+        });
+        let envelope = extract_depth_on_book(&book, "btcusdt", BINANCE_COM_SPOT_BOOK_ID);
+        let data = envelope.data.expect("success ladder");
+        assert_eq!(data.bids.len(), DEPTH_DISPLAY_LEVELS);
+        assert_eq!(data.bound_levels, n);
+        assert_ne!(data.bids.len(), n);
+        assert_eq!(data.bids[0].price, "50000.00");
     }
 }
