@@ -5,7 +5,8 @@ import Foundation
 public final class AgentSupervisor: AgentSupervising {
     nonisolated public static let defaultPort: UInt16 = 9137
     nonisolated public static let healthPath = "/api/daemon/health"
-    nonisolated public static let launchTimeout: TimeInterval = 10
+    /// Agent HTTP bind is after ~10s of boot (DBs, adapters). 10s raced and killed a live child.
+    nonisolated public static let launchTimeout: TimeInterval = 30
     nonisolated public static let runtimePollInterval: TimeInterval = 2
 
     public var onHealthChange: ((Bool) -> Void)?
@@ -22,19 +23,26 @@ public final class AgentSupervisor: AgentSupervising {
     private let port: UInt16
     private let session: URLSession
     private let daemonSecret: String
+    private let healthLaunchTimeout: TimeInterval
+    private let attachOnly: Bool
 
     public init(
         port: UInt16 = AgentSupervisor.defaultPort,
         session: URLSession = .shared,
-        daemonSecret: String
+        daemonSecret: String,
+        launchTimeout: TimeInterval = AgentSupervisor.launchTimeout,
+        attachOnly: Bool? = nil
     ) {
         self.port = port
         self.session = session
         self.daemonSecret = daemonSecret
+        self.healthLaunchTimeout = launchTimeout
+        self.attachOnly = attachOnly
+            ?? (ProcessInfo.processInfo.environment["STATION_DEV_ATTACH"] == "1")
     }
 
     public func start() async {
-        if ProcessInfo.processInfo.environment["STATION_DEV_ATTACH"] == "1" {
+        if attachOnly {
             await attachIfVerified()
             return
         }
@@ -66,7 +74,7 @@ public final class AgentSupervisor: AgentSupervising {
         }
 
         // Reap orphans from this app bundle (attach / unclean Stop). Skip in DEV attach mode.
-        if ProcessInfo.processInfo.environment["STATION_DEV_ATTACH"] != "1" {
+        if !attachOnly {
             killBundledAgentOrphans()
         }
         isHealthy = false
@@ -153,7 +161,7 @@ public final class AgentSupervisor: AgentSupervising {
             if spawnedProcess != nil || spawnedPID != nil {
                 await shutdown()
             }
-            await handleFailure(message: "Agent did not respond on loopback within \(Int(Self.launchTimeout)) seconds.")
+            await handleFailure(message: "Agent did not respond on loopback within \(Int(healthLaunchTimeout)) seconds.")
         }
     }
 
@@ -251,7 +259,7 @@ public final class AgentSupervisor: AgentSupervising {
 
     @discardableResult
     private func probeHealthUntilReady() async -> Bool {
-        let deadline = Date().addingTimeInterval(Self.launchTimeout)
+        let deadline = Date().addingTimeInterval(healthLaunchTimeout)
         var delay: UInt64 = 200_000_000
 
         while Date() < deadline {

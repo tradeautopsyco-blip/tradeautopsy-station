@@ -79,7 +79,7 @@ final class FakeAgentSupervisor: AgentSupervising {
             ownsSpawnedAgent = false
             currentWarning = AgentHealthWarning(
                 reason: .launchTimeout,
-                message: "Agent did not respond within 10 seconds.",
+                message: "Agent did not respond within 30 seconds.",
                 logPath: nil,
                 canRetry: true
             )

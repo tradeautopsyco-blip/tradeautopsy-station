@@ -93,11 +93,45 @@ struct AgentSupervisorTests {
         #expect(supervisor.currentWarning == nil)
     }
 
-    private func makeSupervisor() -> AgentSupervisor {
+    /// Independent measurement 2026-09-10: bundled agent accepted 9137 at 10.05s.
+    @Test func launchWaitExceedsMeasuredAgentHttpBind() {
+        #expect(AgentSupervisor.launchTimeout > 10)
+        #expect(AgentSupervisor.launchTimeout >= 25)
+    }
+
+    @Test func slowLoopbackHealthWithinLaunchWaitIsHealthy() async {
+        MockLoopbackURLProtocol.reset(defaultResponse: .healthyAgent)
+        MockLoopbackURLProtocol.refuseUntil = Date().addingTimeInterval(0.35)
+        let supervisor = makeSupervisor(launchTimeout: 1.0, attachOnly: true)
+        await supervisor.start()
+        #expect(supervisor.isHealthy)
+        #expect(supervisor.currentWarning == nil)
+        await supervisor.shutdown()
+    }
+
+    @Test func slowLoopbackHealthPastLaunchWaitStaysOffline() async {
+        MockLoopbackURLProtocol.reset(defaultResponse: .healthyAgent)
+        MockLoopbackURLProtocol.refuseUntil = Date().addingTimeInterval(2.0)
+        let supervisor = makeSupervisor(launchTimeout: 0.4, attachOnly: true)
+        await supervisor.start()
+        #expect(supervisor.isHealthy == false)
+        #expect(supervisor.currentWarning?.reason == .launchTimeout)
+        await supervisor.shutdown()
+    }
+
+    private func makeSupervisor(
+        launchTimeout: TimeInterval = AgentSupervisor.launchTimeout,
+        attachOnly: Bool? = nil
+    ) -> AgentSupervisor {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockLoopbackURLProtocol.self]
         let session = URLSession(configuration: config)
-        return AgentSupervisor(session: session, daemonSecret: "test-secret")
+        return AgentSupervisor(
+            session: session,
+            daemonSecret: "test-secret",
+            launchTimeout: launchTimeout,
+            attachOnly: attachOnly
+        )
     }
 }
 
@@ -111,11 +145,13 @@ private final class MockLoopbackURLProtocol: URLProtocol {
     nonisolated(unsafe) static var responses: [MockLoopbackResponse] = []
     nonisolated(unsafe) static var defaultResponse: MockLoopbackResponse = .foreignProcess
     nonisolated(unsafe) static var requestCount = 0
+    nonisolated(unsafe) static var refuseUntil: Date?
 
     nonisolated static func reset(defaultResponse: MockLoopbackResponse = .foreignProcess) {
         responses = []
         self.defaultResponse = defaultResponse
         requestCount = 0
+        refuseUntil = nil
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -128,6 +164,10 @@ private final class MockLoopbackURLProtocol: URLProtocol {
 
     override func startLoading() {
         MockLoopbackURLProtocol.requestCount += 1
+        if let until = MockLoopbackURLProtocol.refuseUntil, Date() < until {
+            client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+            return
+        }
         let responseKind = MockLoopbackURLProtocol.responses.isEmpty
             ? MockLoopbackURLProtocol.defaultResponse
             : MockLoopbackURLProtocol.responses.removeFirst()
