@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: Notch as Apple HIG once EVERY production surface is on the desk.
+  Catalog first (NOTES + this page). Chrome variants A/B/C. Content is the catalog.
+  Open: open station/prototypes/PROTOTYPE-notch-hig.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch catalog · Apple HIG</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --secondary: rgba(245,245,247,.58); --tertiary: rgba(245,245,247,.32);
+      --bg: #050505; --grouped: #1c1c1e; --fill: rgba(120,120,128,.22); --sep: rgba(84,84,88,.55);
+      --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --teal: #64d2ff;
+      --glass: rgba(22,22,24,.72); --sidebar: rgba(18,18,20,.82);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 400 13px/1.4 var(--sans); letter-spacing: -.006em; font-optical-sizing: auto;
+      background: #1a1a1c; color: var(--label); -webkit-font-smoothing: antialiased;
+      padding: 18px 16px 100px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+    .press { transition: transform 100ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+
+    .wrap { width: min(1120px, 100%); margin: 0 auto; }
+    .q { font-size: 11px; letter-spacing: .012em; color: var(--tertiary); margin-bottom: 10px; }
+    .q b { color: var(--secondary); font-weight: 600; letter-spacing: -.006em; font-size: 13px; }
+    .catalog {
+      background: #0a0a0a; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;
+      border: .5px solid rgba(255,255,255,.08); color: var(--secondary); font-size: 12px;
+    }
+    .catalog summary { font-weight: 600; color: var(--label); font-size: 13px; cursor: pointer; letter-spacing: -.006em; }
+    .catalog ul { margin: 10px 0 0 18px; columns: 2; gap: 24px; }
+    .catalog li { break-inside: avoid; margin-bottom: 4px; }
+    .catalog strong { color: var(--label); font-weight: 600; }
+
+    .desktop {
+      height: 780px; border-radius: 12px; overflow: hidden; position: relative; background: #0c0c0e;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .menubar {
+      height: 28px; display: flex; align-items: center; justify-content: center;
+      background: rgba(22,22,24,.88); backdrop-filter: blur(28px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.06); font-size: 12px; color: var(--secondary);
+    }
+    .menubar .apple { position: absolute; left: 12px; display: flex; align-items: center; gap: 6px; }
+    .menubar .clock { position: absolute; right: 12px; font-family: var(--mono); font-size: 11px; }
+    .chart {
+      position: absolute; inset: 28px 0 0;
+      background: linear-gradient(180deg, rgba(5,5,5,.15), rgba(5,5,5,.5)),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.025) 47px 48px), #08080a;
+    }
+    .candles { position: absolute; left: 8%; right: 8%; bottom: 16%; height: 44%; display: flex; align-items: flex-end; gap: 6px; opacity: .45; }
+    .cndl { width: 5px; border-radius: 1px; position: relative; }
+    .cndl::before { content: ""; position: absolute; left: 50%; width: 1px; transform: translateX(-50%); background: inherit; top: -16px; bottom: -10px; opacity: .7; }
+    .cndl.up { background: var(--green); } .cndl.dn { background: var(--red); }
+    .chart-label { position: absolute; left: 16px; bottom: 12px; font-size: 11px; color: var(--tertiary); }
+
+    .pill {
+      position: absolute; top: 36px; left: 50%; transform: translateX(-50%);
+      height: 32px; min-width: 176px; padding: 0 12px; z-index: 8;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--glass); backdrop-filter: blur(40px) saturate(180%);
+      border-radius: 999px; border: .5px solid rgba(255,255,255,.12);
+      box-shadow: 0 8px 28px rgba(0,0,0,.4); font-size: 12px; font-weight: 600;
+    }
+    .pill .d { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+    .pill .track { width: 28px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.12); position: relative; }
+    .pill .track i { position: absolute; left: 2px; top: 0; bottom: 0; width: 40%; border-radius: 999px; background: var(--red); }
+    .pill.hot { border-color: rgba(255,69,58,.4); }
+    .pill .ico { width: 14px; height: 14px; }
+
+    .sheet {
+      position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
+      width: min(980px, 95%); height: 640px; z-index: 7;
+      background: var(--glass); backdrop-filter: blur(48px) saturate(180%);
+      border-radius: 16px; border: .5px solid rgba(255,255,255,.1);
+      box-shadow: 0 28px 80px rgba(0,0,0,.55);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sheet.hidden { display: none; }
+    .grip { height: 18px; flex-shrink: 0; display: grid; place-items: center; }
+    .grip i { width: 36px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.22); }
+
+    .sb { width: 176px; flex-shrink: 0; background: var(--sidebar); border-right: .5px solid rgba(255,255,255,.06); padding: 8px; display: flex; flex-direction: column; }
+    .rail { width: 56px; flex-shrink: 0; background: var(--sidebar); border-right: .5px solid rgba(255,255,255,.06); padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .sb-sec { padding: 10px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--tertiary); }
+    .nav { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 7px; color: var(--secondary); font-size: 13px; }
+    .nav:hover { background: var(--fill); color: var(--label); }
+    .nav.on { background: rgba(10,132,255,.28); color: var(--label); font-weight: 600; }
+    .nav .ico, .rail .ico { width: 17px; height: 17px; flex-shrink: 0; opacity: .72; }
+    .nav.on .ico, .rbtn.on .ico { opacity: 1; color: var(--blue); }
+    .badge { margin-left: auto; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(255,159,10,.2); color: var(--orange); }
+    .badge.hot { background: rgba(255,69,58,.2); color: var(--red); }
+    .rbtn { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--secondary); }
+    .rbtn.on { background: rgba(10,132,255,.28); color: var(--label); }
+    .hide { margin-top: auto; padding: 8px; font-size: 11px; color: var(--tertiary); display: flex; align-items: center; gap: 8px; }
+    .arch { display: flex; align-items: center; gap: 7px; padding: 8px; font-size: 11px; color: var(--tertiary); }
+    .arch .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: rgba(0,0,0,.28); }
+    .top { display: flex; align-items: center; gap: 8px; padding: 8px 14px; flex-wrap: wrap; background: linear-gradient(to bottom, rgba(0,0,0,.35), transparent); }
+    .large { font-size: 20px; font-weight: 700; letter-spacing: -.026em; }
+    .chip { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: var(--fill); color: var(--secondary); display: inline-flex; align-items: center; gap: 5px; }
+    .chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .chip.ok { color: var(--green); } .chip.warn { color: var(--orange); } .chip.bad { color: var(--red); }
+    .chip.ok .d { background: var(--green); } .chip.warn .d { background: var(--orange); } .chip.bad .d { background: var(--red); }
+    .seg { display: inline-flex; padding: 3px; border-radius: 9px; background: rgba(255,255,255,.06); flex-wrap: wrap; }
+    .seg button { padding: 5px 9px; border-radius: 7px; font-size: 12px; color: var(--secondary); }
+    .seg button.on { background: rgba(255,255,255,.12); color: var(--label); font-weight: 600; }
+    .strip { padding: 6px 14px; font-size: 11px; color: var(--red); }
+    .strip a { color: var(--teal); }
+    .scroll { flex: 1; overflow: auto; padding: 8px 16px 22px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #2c2c2e; border-radius: 4px; }
+
+    .group { margin-bottom: 16px; }
+    .group > h2 { font-size: 13px; color: var(--secondary); padding: 0 4px 6px; font-weight: 400; }
+    .group > .foot { font-size: 12px; color: var(--tertiary); padding: 6px 4px 0; }
+    .inset { background: var(--grouped); border-radius: 10px; overflow: hidden; }
+    .card { background: var(--grouped); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+    .hole { border: .5px dashed var(--sep); border-radius: 10px; padding: 14px; text-align: center; color: var(--tertiary); margin-bottom: 10px; }
+    .hole b { display: block; color: var(--red); font-weight: 500; margin-bottom: 4px; }
+    .row { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 8px 14px; width: 100%; text-align: left; position: relative; }
+    .row + .row::before { content: ""; position: absolute; left: 14px; right: 0; top: 0; height: .5px; background: var(--sep); }
+    .row .lab { flex: 1; }
+    .row .lab b { display: block; font-weight: 400; font-size: 15px; letter-spacing: -.016em; }
+    .row .lab span { display: block; font-size: 12px; color: var(--secondary); }
+    .idx { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .n { font-size: 11px; color: var(--tertiary); }
+    .v { font-size: 18px; font-weight: 600; letter-spacing: -.022em; margin-top: 2px; }
+    .gain { color: var(--green); } .loss { color: var(--red); } .caut { color: var(--orange); }
+    .hint { font-size: 13px; color: var(--secondary); }
+    .cta { padding: 10px 16px; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 600; width: 100%; margin-top: 8px; }
+    .cta.kill { background: var(--red); } .cta.quiet { background: var(--fill); color: var(--label); }
+    .feel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .feel button { flex: 1; min-width: 52px; padding: 7px 4px; border-radius: 8px; background: var(--fill); font-size: 11px; color: var(--secondary); }
+    .feel button.on { background: rgba(10,132,255,.28); color: var(--label); font-weight: 600; }
+    .feel button strong { display: block; font-size: 14px; }
+    .fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .fld span { font-size: 11px; color: var(--tertiary); letter-spacing: .04em; text-transform: uppercase; }
+    .fld input, .fld textarea { background: rgba(0,0,0,.35); border: .5px solid var(--sep); color: var(--label); border-radius: 8px; padding: 8px 10px; font-family: var(--mono); font-size: 13px; }
+    .side { display: flex; gap: 6px; margin-bottom: 8px; }
+    .side button { flex: 1; padding: 8px; border-radius: 8px; background: var(--fill); font-weight: 600; }
+    .side button.on.buy { background: rgba(48,209,88,.22); color: var(--green); }
+    .side button.on.sell { background: rgba(255,69,58,.22); color: var(--red); }
+    .sw { width: 51px; height: 31px; border-radius: 999px; background: #2c2c2e; position: relative; flex-shrink: 0; }
+    .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.28); }
+    .sw.on { background: var(--green); } .sw.on::after { transform: translateX(20px); }
+    .live-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: .5px solid var(--sep); font-size: 13px; }
+    .zones { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .ledger { display: grid; gap: 4px; }
+    .ledger .slot { display: grid; grid-template-columns: 1fr 16px 1fr; gap: 8px; padding: 8px; background: rgba(0,0,0,.25); border-radius: 8px; font-size: 12px; }
+    .ring { width: 60px; height: 60px; border-radius: 50%; border: 6px solid var(--green); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+    .detect { background: #141416; border-radius: 14px; padding: 14px; outline: .5px solid rgba(100,210,255,.28); margin-bottom: 10px; }
+    .detect h3 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; margin: 6px 0; }
+    .overlay {
+      position: absolute; inset: 0; z-index: 30; background: rgba(8,0,0,.88);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    }
+    .overlay h1 { font-size: 28px; font-weight: 700; letter-spacing: -.03em; color: var(--red); }
+    .overlay .count { font-family: var(--mono); font-size: 42px; font-weight: 600; }
+    .toast {
+      position: absolute; top: 44px; left: 50%; transform: translateX(-50%); z-index: 20;
+      padding: 8px 14px; border-radius: 999px; background: #2c2c2e; font-size: 13px; font-weight: 500;
+      opacity: 0; pointer-events: none;
+    }
+    .state { margin-top: 10px; background: #000; color: #8bffce; font-family: var(--mono); font-size: 10px; border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; max-height: 88px; overflow: auto; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.4); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 270px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    @media (prefers-reduced-motion: reduce) { .press { transition: none; } .press:active { transform: none; } }
+    @media (prefers-reduced-transparency: reduce) { .pill, .sheet, .menubar, .sb { background: #1c1c1e; backdrop-filter: none; } }
+    @media (max-width: 800px) { .catalog ul { columns: 1; } .zones { grid-template-columns: 1fr; } .keys { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="q">PROTOTYPE · throwaway · <b>List the Notch, then draw it.</b> Catalog is production <code>BarNotchShell</code>. A/B/C is chrome only.</div>
+    <details class="catalog" open>
+      <summary>Feature catalog — everything this prototype must show</summary>
+      <ul>
+        <li><strong>Host</strong> — pill 32×176 impact track or EXPIRED/COOLING/LIMIT · ⌥Space expand · Hide is separate · Esc/outside collapse</li>
+        <li><strong>Shell</strong> — Session 4 · More analysis · archetype+gear · score · ×mult · broker · Quote · Instruments · Account · state pill · Open Station</li>
+        <li><strong>Morning</strong> — Nifty/BNF/VIX · KEY METRICS · yesterday P&amp;L · Start trading</li>
+        <li><strong>Pre-trade</strong> — Standard · NFO three-zone · Crypto USDT · Swing 6-step</li>
+        <li><strong>Live</strong> — detect · metrics · snapshot · interference · capture · protective status · Kill overlay · exit gate · armed wait · B equity-if-SL</li>
+        <li><strong>Post</strong> — Moments A/B/C · Submit · Dismiss</li>
+        <li><strong>Analysis</strong> — Escrow 7 slots+ring · Patterns mix · Fidelity 14d · Triage empty/list</li>
+        <li><strong>Settings</strong> — Broker+ledger · Risk limits · Behavior · Desk A/B/C · Notifications</li>
+      </ul>
+    </details>
+    <div class="desktop" id="desk"></div>
+    <pre class="state" id="state"></pre>
+  </div>
+  <div class="switcher" id="switcher"></div>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "PLAN sidebar", blurb: "Production shell" },
+  { key: "B", name: "Icon rail", blurb: "HUD symbols" },
+  { key: "C", name: "Segmented", blurb: "No sidebar" },
+];
+const SESSION = ["morning","pretrade","live","posttrade"];
+const MORE = ["escrow","patterns","fidelity","triage"];
+const TITLES = {
+  morning: "Morning brief", pretrade: "Pre-trade", live: "Live trade", posttrade: "Post-trade",
+  escrow: "Escrow match", patterns: "Patterns", fidelity: "Fidelity score", triage: "Triage", settings: "Settings",
+};
+const STATEPILL = {
+  morning: ["ok","Pre-market"], pretrade: ["ok","Declaration"], live: ["warn","Intact"],
+  posttrade: ["warn","Debrief"], escrow: ["ok","Match"], patterns: ["warn","Building"],
+  fidelity: ["","0.72"], triage: ["ok","Triage"], settings: ["ok","Config"],
+};
+const GLYPH = {
+  morning: "sun", pretrade: "clip", live: "bolt", posttrade: "list",
+  escrow: "shield", patterns: "wave", fidelity: "chart", triage: "down", settings: "gear",
+};
+const ESCROW = [
+  ["NIFTY 24500 CE qty 50", "ok", "50 @ 182"],
+  ["Stop 24,520", "ok", "24,520 placed"],
+  ["Target 24,720", "warn", "not on venue"],
+  ["Side BUY", "ok", "BUY"],
+  ["Product NRML", "ok", "NRML"],
+  ["Fill price", "bad", "Notch does not invent fills"],
+  ["Charges", "warn", "No break detail"],
+];
+
+const S = {
+  variant: "A", expanded: true, screen: "live", more: true, hidden: false,
+  settingsTab: "broker", pre: "standard", swingStep: 1,
+  detect: "plan", kill: "idle", killN: 8, moment: "A",
+  interference: null, desk: "A", sl: true, calm: "1", conf: "4", side: "buy",
+  toast: "", gate: false, error: false, pillMode: "impact",
+};
+
+function ico(name, filled) {
+  const d = {
+    sun: filled ? `<circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2.8v2.1M12 19.1v2.1M4.3 4.3l1.5 1.5M18.2 18.2l1.5 1.5M2.8 12h2.1M19.1 12h2.1M4.3 19.7l1.5-1.5M18.2 5.8l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>` : `<circle cx="12" cy="12" r="3.35"/><path d="M12 3.4v1.7M12 18.9v1.7M5 5l1.2 1.2M17.8 17.8l1.2 1.2M3.4 12h1.7M18.9 12h1.7M5 19l1.2-1.2M17.8 6.2l1.2-1.2"/>`,
+    clip: filled ? `<rect x="7" y="5" width="10" height="15" rx="2.2" fill="currentColor" stroke="none"/>` : `<rect x="7.5" y="5.5" width="9" height="14" rx="2"/><path d="M9.6 11.2h4.8M9.6 14.2h3.2"/>`,
+    bolt: `<path d="M13.1 3.4 6.4 13.2h5.1L10.2 20.6l7.2-10.4h-5.2z" ${filled?`fill="currentColor" stroke="none"`:""}/>`,
+    list: filled ? `<rect x="4.5" y="5" width="15" height="14" rx="2.2" fill="currentColor" stroke="none"/>` : `<path d="M8.8 8h9M8.8 12h9M8.8 16h7"/><circle cx="5.8" cy="8" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="12" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="16" r=".7" fill="currentColor" stroke="none"/>`,
+    shield: `<path d="M12 3.6 19 6.4v5.2c0 4.4-3.1 7.4-7 8.8-3.9-1.4-7-4.4-7-8.8V6.4z" ${filled?`fill="currentColor" stroke="none"`:""}/>`,
+    wave: `<path d="M3.6 12.5c1.6-3.4 3.2-3.4 4.8 0s3.2 3.4 4.8 0 3.2-3.4 4.8 0 3.2 3.4 4.8 0"/>`,
+    chart: filled ? `<rect x="5" y="11" width="3.4" height="8" rx="1" fill="currentColor" stroke="none"/><rect x="10.3" y="6" width="3.4" height="13" rx="1" fill="currentColor" stroke="none"/><rect x="15.6" y="9.2" width="3.4" height="9.8" rx="1" fill="currentColor" stroke="none"/>` : `<path d="M6.6 18.4V11.2M12 18.4V6.8M17.4 18.4v-8"/>`,
+    down: `<circle cx="12" cy="12" r="7.4"/><path d="M12 8.4v7.2M8.8 13.2 12 16.4 15.2 13.2"/>`,
+    gear: filled ? `<path d="M10.1 3.4h3.8l.55 2.05 1.7.5 1.55-1.4 2.7 2.7-1.4 1.55.5 1.7 2.05.55v3.8l-2.05.55-.5 1.7 1.4 1.55-2.7 2.7-1.55-1.4-1.7.5-.55 2.05h-3.8l-.55-2.05-1.7-.5-1.55 1.4-2.7-2.7 1.4-1.55-.5-1.7L3.4 13.9v-3.8l2.05-.55.5-1.7-1.4-1.55 2.7-2.7 1.55 1.4 1.7-.5.55-2.05z" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2.55" fill="#161618"/>` : `<circle cx="12" cy="12" r="2.7"/><path d="M12 4.2v1.6M12 18.2v1.6M4.2 12h1.6M18.2 12h1.6M6.1 6.1l1.15 1.15M16.75 16.75l1.15 1.15M6.1 17.9l1.15-1.15M16.75 7.25l1.15-1.15"/>`,
+    eye: `<path d="M4.2 5.6 19.4 20.6M9.8 9.9c.6-.5 1.4-.8 2.2-.8 2 0 3.6 1.6 3.6 3.6"/><path d="M6.2 7.4C4.6 8.6 3.5 10.2 3 12c1.2 4 4.7 7 9 7 1.4 0 2.7-.3 3.9-.9"/>`,
+    chev: `<path d="M8 10l4 4 4-4"/>`,
+  };
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d[name]||""}</svg>`;
+}
+function say(m){ S.toast=m; paint(); clearTimeout(say.t); say.t=setTimeout(()=>{S.toast="";paint();},2200); }
+
+function navBtn(id){
+  const on = S.screen===id;
+  let b="";
+  if(id==="morning") b=`<span class="badge">1</span>`;
+  if(id==="live") b=`<span class="badge hot">!</span><span class="badge">1</span>`;
+  return `<button type="button" class="nav press ${on?"on":""}" data-act="screen" data-id="${id}">${ico(GLYPH[id],on)} ${TITLES[id].replace(" score","")} ${b}</button>`;
+}
+function railBtn(id){
+  return `<button type="button" class="rbtn press ${S.screen===id?"on":""}" data-act="screen" data-id="${id}" title="${TITLES[id]}">${ico(GLYPH[id], S.screen===id)}</button>`;
+}
+function sidebar(){
+  return `<nav class="sb">
+    <div class="sb-sec">Session</div>
+    ${SESSION.map(navBtn).join("")}
+    <button type="button" class="nav press" data-act="toggle-more">${ico("chev",false)} More · analysis</button>
+    ${S.more?MORE.map(navBtn).join(""):""}
+    <button type="button" class="hide press" data-act="hide">${ico("eye",false)} Hide notch · ⌥Space</button>
+    <div class="arch"><span class="dot"></span> Intraday · F&amp;O
+      <button class="press" style="margin-left:auto" data-act="screen" data-id="settings">${ico("gear", S.screen==="settings")}</button>
+    </div>
+  </nav>`;
+}
+function iconRail(){
+  return `<nav class="rail">${SESSION.map(railBtn).join("")}<div style="height:8px"></div>${S.more?MORE.map(railBtn).join(""):""}${railBtn("settings")}
+    <button class="rbtn press" style="margin-top:auto" data-act="hide">${ico("eye",false)}</button></nav>`;
+}
+
+function topBar(){
+  const st = STATEPILL[S.screen]||["ok","—"];
+  const pills = `<span class="chip ok"><span class="d"></span>Kotak · live</span>
+    <span class="chip ok"><span class="d"></span>Quote live</span>
+    <span class="chip ok"><span class="d"></span>Instruments</span>
+    <span class="chip warn"><span class="d"></span>Account stale</span>
+    <span class="chip ${st[0]}"><span class="d"></span>${st[1]}</span>`;
+  if(S.variant==="C"){
+    return `<header class="top">
+      <div class="seg">${SESSION.map(id=>`<button class="press ${S.screen===id?"on":""}" data-act="screen" data-id="${id}">${TITLES[id].split(" ")[0]}</button>`).join("")}</div>
+      <button class="chip press" data-act="toggle-more">More</button>
+      <span class="large" style="font-size:16px">${TITLES[S.screen]}</span>
+      <span class="chip">0.72</span><span class="chip warn">×0.85</span>
+      ${pills}
+      <button class="chip press" data-act="screen" data-id="settings">${ico("gear",false)}</button>
+    </header>`;
+  }
+  return `<header class="top">
+    <h1 class="large">${TITLES[S.screen]}</h1>
+    <span class="chip">0.72</span><span class="chip warn">×0.85</span>
+    <span style="margin-left:auto"></span>${pills}
+  </header>`;
+}
+
+function morning(){
+  return `<div class="card"><div class="idx">
+    <div><div class="n">Nifty</div><div class="v">24,812</div><div class="gain">+0.42%</div></div>
+    <div><div class="n">BNF</div><div class="v">52,140</div><div class="loss">−0.18%</div></div>
+    <div><div class="n">VIX</div><div class="v caut">14.2</div></div>
+  </div></div>
+  <div class="card"><div class="n">What matters</div>
+    <p class="hint" style="margin-top:6px">Yesterday closed −₹2,100 after two revenge-adjacent adds. Size crept 18% vs declared.</p></div>
+  <div class="card"><div class="n">KEY METRICS</div><div class="keys" style="margin-top:8px">
+    <div><div class="n">Session P&amp;L</div><div class="v loss">−₹2,100</div></div>
+    <div><div class="n">Adherence</div><div class="v">62%</div></div>
+    <div><div class="n">Win rate</div><div class="v">—</div></div>
+    <div><div class="n">Left on table</div><div class="v">—</div></div>
+  </div></div>
+  <div class="card"><p class="hint">Trade only A-setups. Cap first trade at half size until calm ≤ 2. Declare before you click buy.</p></div>
+  <button class="cta press" data-act="start">Start trading</button>`;
+}
+
+function preStandard(){
+  return `<div class="card">
+    <p class="hint">Psychological calm — 1 is best</p>
+    <div class="feel">${["Calm","Focused","Tense","Anxious","Angry"].map((l,i)=>`<button class="press ${S.calm===String(i+1)?"on":""}" data-act="calm" data-id="${i+1}"><strong>${i+1}</strong>${l}</button>`).join("")}</div>
+    <p class="hint" style="margin-top:10px">Confidence — 5 is best</p>
+    <div class="feel">${["Low","Flat","Neutral","Good","Sharp"].map((l,i)=>`<button class="press ${S.conf===String(i+1)?"on":""}" data-act="conf" data-id="${i+1}"><strong>${i+1}</strong>${l}</button>`).join("")}</div>
+  </div>
+  <div class="card">
+    <div class="fld"><span>Entry</span><input value="24,580" readonly></div>
+    <div class="fld"><span>Stop</span><input value="24,520" readonly></div>
+    <div class="fld"><span>Target</span><input value="24,720" readonly></div>
+    <div class="fld"><span>Symbol</span><input value="NIFTY 24500 CE" readonly></div>
+    <div class="side"><button class="press buy ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">BUY</button>
+      <button class="press sell ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">SELL</button></div>
+    <p class="hint">Qty 50 · max planned loss ≈ ₹3,000 · R:R 1 : 2.3</p>
+    <div class="feel" style="margin-top:10px">${["Breakout","Pullback","Reversal","Gap fill","Mean reversion","Support bounce"].map((s,i)=>`<button class="press ${i===0?"on":""}">${s}</button>`).join("")}</div>
+  </div>
+  <div class="inset"><button class="row" data-act="toggle-sl"><div class="lab"><b>Auto-place stop</b><span>Within 500ms of broker fill</span></div><span class="sw ${S.sl?"on":""}"></span></button></div>
+  <button class="cta press" data-act="declare">Confirm — enter trade</button>`;
+}
+function preNfo(){
+  return `<div class="zones">
+    <div><div class="n">Analytics</div>
+      <div class="hole"><b>no licensed series</b>session / chain / OI honest-dark until declared</div></div>
+    <div><div class="n">Consequence</div>
+      <div class="hole"><b>greeks · payoff · σ 2–5</b>rung 1 typed only · margin unavailable</div></div>
+    <div><div class="n">Plan</div>
+      <div class="card"><p class="hint">Underlying · expiry · strike · lots · CE/PE · Buy/Sell · Add leg. Lot size unavailable until NFO extract. DualNoBlend INR.</p>
+      <button class="cta press" data-act="declare">Confirm</button></div></div>
+  </div>`;
+}
+function preCrypto(){
+  return `<div class="card"><p class="hint">Binance dated European · USDT · no lots · no NRML. Bind mixed-case eapi id. Last / chain catalog / OI / klines / settlement. σ 2–5 stay dark.</p></div>
+  <div class="hole"><b>no session series</b>GET /eapi/v1/klines · unavailable — never a zero candle</div>
+  <div class="inset">
+    <div class="row"><div class="lab"><b>XRP-260911-1.36-C</b><span>strike 1.36 · CALL · 260911</span></div><span class="chip">bind</span></div>
+    <div class="row"><div class="lab"><b>XRP-260911-1.36-P</b><span>strike 1.36 · PUT</span></div></div>
+  </div>
+  <button class="cta press" data-act="declare">Confirm — enter trade</button>`;
+}
+function preSwing(){
+  const steps=["Check-in","Trade risk","Holding","Invalidation","Review","Overnight"];
+  return `<div class="seg" style="margin-bottom:10px">${steps.map((s,i)=>`<button class="press ${S.swingStep===i+1?"on":""}" data-act="swing" data-id="${i+1}">${i+1} ${s}</button>`).join("")}</div>
+  <div class="card"><p class="hint">Step ${S.swingStep} of 6 — ${steps[S.swingStep-1]}. Overnight gap toggle and daily check-in live on step 6. Submit swing declaration last.</p></div>
+  <button class="cta quiet press" data-act="swing-next">${S.swingStep<6?"Next":"Submit swing declaration"}</button>`;
+}
+function pretrade(){
+  return `<div class="seg" style="margin-bottom:10px">
+    ${[["standard","Standard"],["nfo","NFO three-zone"],["crypto","Crypto USDT"],["swing","Swing 6-step"]].map(([id,l])=>`<button class="press ${S.pre===id?"on":""}" data-act="pre" data-id="${id}">${l}</button>`).join("")}
+  </div>
+  ${S.pre==="nfo"?preNfo():S.pre==="crypto"?preCrypto():S.pre==="swing"?preSwing():preStandard()}`;
+}
+
+function live(){
+  const detect = S.detect==="plan" ? `<aside class="detect">
+    <span class="chip ok">Tighter — better</span>
+    <h3>RELIANCE fill · 1,300</h3>
+    <p class="hint">Actual SL 1,150 vs planned 1,100. DualNoBlend % of this book only.</p>
+    <div class="side" style="margin-top:8px"><button class="cta quiet press" style="margin:0" data-act="detect-off">Got it</button>
+      <button class="cta press" style="margin:0" data-act="detect-off">Deeper</button></div>
+  </aside>` : S.detect==="noform" ? `<aside class="detect">
+    <span class="chip warn">No plan</span><h3>This fill has no stop yet</h3>
+    <p class="hint">See the risk, then plan. Do not invent a number.</p>
+    <div class="side"><button class="cta press" style="margin:0" data-act="screen" data-id="pretrade">Plan in Notch</button>
+      <button class="cta quiet press" style="margin:0" data-act="detect-off">Not now</button></div>
+  </aside>` : "";
+  const eq = S.desk==="B" ? `<div class="card"><div class="n">Account · equity if SL</div>
+    <p class="hint" style="margin-top:6px">Desk B only. Scenario polyline — not remaining-risk, not broker OHLCV. Empty until units/entry/stop typed.</p></div>` : "";
+  return `${detect}${eq}
+  <div class="card"><div class="keys">
+    <div><div class="n">Unrealised</div><div class="v loss">−₹1,840</div></div>
+    <div><div class="n">Max loss declared</div><div class="v">₹3,000</div></div>
+    <div><div class="n">Risk used</div><div class="v">61%</div></div>
+    <div><div class="n">Time in trade</div><div class="v">11m</div></div>
+  </div></div>
+  <div class="card">
+    <div class="live-row"><span>Setup</span><span>Breakout</span></div>
+    <div class="live-row"><span>Stop</span><span class="gain">24,520 placed</span></div>
+    <div class="live-row"><span>Target</span><span>24,720</span></div>
+    <div class="live-row"><span>Invalidation</span><span>Close below 24520 on 5m</span></div>
+  </div>
+  <div class="card"><p class="hint">Interference?</p>
+    <div class="side">${["No","Maybe","Yes"].map(x=>`<button class="press ${S.interference===x?"on buy":""}" data-act="inter" data-id="${x}">${x}</button>`).join("")}</div></div>
+  <div class="card"><div class="n">Live capture</div>
+    <p class="hint">Voice · Screenshot · Keep on this Mac · 1 unposted. Paste/drop. One image per trade.</p>
+    <div class="side"><button class="cta quiet press" style="margin:0" data-act="toast" data-id="Voice capture on this Mac.">Voice</button>
+      <button class="cta quiet press" style="margin:0" data-act="toast" data-id="Screenshot on the tray.">Screenshot</button></div></div>
+  <div class="card"><p class="hint">Protective SL — status only. PLAN does not Set SL. Finish Cancel on web Bar.</p>
+    <div class="live-row"><span>Protective</span><span class="gain">on file</span></div></div>
+  <div class="card"><p class="hint">Declaration on file · waiting for fill · NIFTY 24500 CE · BUY · qty 50</p></div>
+  <div class="side">
+    <button class="cta quiet press" style="margin:0" data-act="toast" data-id="Exit gate: stop printed? invalidation? target?">Exit trade</button>
+    <button class="cta kill press" style="margin:0" data-act="kill">Kill</button>
+  </div>
+  ${S.kill==="warning"?`<div class="detect"><h3>Kill</h3><p class="hint">Locks the desk. Overlay stays until I'm Calm after the countdown. Broker sites may be blocked. Stop me is gone.</p>
+    <div class="side"><button class="cta quiet press" style="margin:0" data-act="kill-no">Cancel</button>
+      <button class="cta kill press" style="margin:0" data-act="kill-yes">Confirm</button></div></div>`:""}`;
+}
+
+function post(){
+  if(S.moment==="A") return `<div class="card"><div class="n">Moment A — outcome</div><p class="hint">2:00 read window. Optional note. Then Continue.</p>
+    <button class="cta press" data-act="moment" data-id="B">Continue</button></div>`;
+  if(S.moment==="B") return `<div class="card"><div class="n">Moment B — process</div>
+    ${["Stop","Size","Invalidation","Exit","No impulsive add"].map(x=>`<div class="live-row"><span>${x}</span><span class="chip ok">Yes</span></div>`).join("")}
+    <p class="hint" style="margin-top:8px">Continue only if all Yes. Badge: Good / Mixed / Broke rules.</p>
+    <button class="cta press" data-act="moment" data-id="C">Continue</button></div>`;
+  if(S.moment==="C") return `<div class="card"><div class="n">Moment C — one sentence</div>
+    <p class="hint">Cooling/scratch vs Clean win. Required note.</p>
+    <div class="fld"><span>Note</span><textarea rows="2">Size held. No add after the first red.</textarea></div>
+    <button class="cta press" data-act="moment" data-id="done">Submit debrief</button>
+    <button class="cta quiet press" data-act="toast" data-id="Dismissed. No save.">Dismiss (no save)</button></div>`;
+  return `<div class="card"><div class="ring">92%</div><p class="hint" style="margin-top:8px">Plan fidelity ring complete. Debrief saved. Card lands on Station Journal.</p></div>`;
+}
+
+function escrow(){
+  return `<div class="card" style="display:flex;gap:14px;align-items:center">
+    <div class="ring">84%</div>
+    <div><div class="n">ESCROW — declared vs actual</div><p class="hint">Seven ledger slots reserved even if a row is empty. Notch does not invent fills.</p></div>
+  </div>
+  <div class="ledger">${ESCROW.map(([d,t,a])=>`<div class="slot"><span>${d}</span><span>${t==="ok"?"→":"·"}</span><span class="${t==="ok"?"gain":t==="bad"?"loss":"caut"}">${a}</span></div>`).join("")}</div>`;
+}
+function patterns(){
+  const bars=[["Breakout",22],["Pullback",14],["Reversal",8],["Gap fill",4],["Mean rev",2]];
+  return `<div class="card"><div class="n">Setup mix · 50 trades (placeholder, not live API)</div>
+    ${bars.map(([n,v])=>`<div class="live-row"><span>${n}</span><span>${v}</span></div>`).join("")}
+    <p class="hint" style="margin-top:8px">Breakout · 22 of 50 trades</p></div>`;
+}
+function fidelity(){
+  return `<div class="card"><div class="n">Plan fidelity · 14 sessions</div>
+    <p class="hint" style="margin-top:8px">Lenses Last / Average / Best. Escrow fidelity 84% when finite.</p>
+    <div class="seg"><button class="on">Last</button><button>Average</button><button>Best</button></div></div>`;
+}
+function triage(){
+  return `<div class="card"><p class="hint">Open positions from the book — not Today inventory.</p>
+    <div class="live-row"><span>RELIANCE LONG 50</span><span class="gain">+₹900</span></div>
+    <div class="live-row"><span>BANKNIFTY 24500 CE</span><span class="loss">−₹1,290</span></div>
+    <div class="live-row"><span>NIFTY FUT</span><span class="loss">−₹4,550</span></div>
+    <p class="foot hint" style="margin-top:8px">Empty copy: “No open positions — nothing to triage.”</p></div>`;
+}
+
+function settings(){
+  const tabs=["broker","risk","behavior","desk","notifications"];
+  const labels={broker:"Broker",risk:"Risk limits",behavior:"Behavior",desk:"Desk",notifications:"Notifications"};
+  const body = {
+    broker: `<div class="card"><div class="live-row"><span>Sync</span><span class="gain">live · last poll 12:41</span></div>
+      <div class="live-row"><span>Latency / Uptime</span><span>—</span></div></div>
+      <div class="card"><div class="n">Account · shipping book of Start</div>
+        <p class="hint">Kotak cash INR · DualNoBlend. Not Today fills. Free ₹1,24,000 · holdings 4 · positions 3 · orders unavailable.</p></div>
+      <div class="side"><button class="cta quiet press" style="margin:0" data-act="toast" data-id="Opens Station Brokers.">Open Station Brokers</button>
+        <button class="cta quiet press" style="margin:0" data-act="toast" data-id="Re-auth on this card.">Re-auth</button></div>
+      <p class="hint" style="margin-top:8px">Kill-switch domains: cis / neo / mis.kotaksecurities.com — informational.</p>`,
+    risk: `<div class="card"><div class="live-row"><span>Daily floor used</span><span class="loss">₹5,800 / ₹12,000</span></div>
+      <div class="live-row"><span>Weekly</span><span>—</span></div>
+      <div class="live-row"><span>Margin util</span><span>—</span></div></div>
+      <p class="hint">Limits sync to Station Settings. They do not fire Kill.</p>`,
+    behavior: `<div class="seg">${["Intraday","Scalper","Swing","Positional"].map((x,i)=>`<button class="press ${i===0?"on":""}">${x}</button>`).join("")}</div>
+      <div class="card" style="margin-top:10px"><p class="hint">Locked signal weights. Score multipliers stay copy, not a second product.</p></div>`,
+    desk: `<div class="inset">
+      ${[["A","Blotter","Today is the desk"],["B","Notch flip","Notch is the desk · equity-if-SL"],["C","Session tape","Time is the desk"]].map(([id,n,s])=>`
+        <button class="row press" data-act="desk" data-id="${id}"><div class="lab"><b>${id} · ${n}</b><span>${s}</span></div>${S.desk===id?`<span class="chip ok">On</span>`:""}</button>`).join("")}
+      </div><p class="foot">One mode. Math, DualNoBlend, detect identical. Switching does not merge books.</p>`,
+    notifications: `<div class="inset">
+      ${["Kill switch fired","Naked window","Composite RED","Morning brief","Swing check-in","MIS auto-square","Post-loss cooling"].map((l,i)=>`
+        <div class="row"><div class="lab"><b>${l}</b></div><span class="sw ${i!==2&&i!==5?"on":""}"></span></div>`).join("")}
+      </div>`,
+  }[S.settingsTab];
+  return `<div class="seg" style="margin-bottom:12px">${tabs.map(t=>`<button class="press ${S.settingsTab===t?"on":""}" data-act="stab" data-id="${t}">${labels[t]}</button>`).join("")}</div>${body}`;
+}
+
+function screenBody(){
+  if(S.gate) return `<div class="card"><p class="hint">Bar features are off or need setup on the web app.</p></div>`;
+  switch(S.screen){
+    case "morning": return morning();
+    case "pretrade": return pretrade();
+    case "live": return live();
+    case "posttrade": return post();
+    case "escrow": return escrow();
+    case "patterns": return patterns();
+    case "fidelity": return fidelity();
+    case "triage": return triage();
+    case "settings": return settings();
+    default: return "";
+  }
+}
+
+function overlay(){
+  if(S.kill!=="overlay") return "";
+  return `<div class="overlay">
+    <h1>KILL SWITCH ACTIVE</h1>
+    <p class="hint">New entries BLOCKED · Exit existing ALLOWED · L2</p>
+    <div class="count">${S.killN}s</div>
+    <button class="cta quiet press" ${S.killN>0?"disabled":""} data-act="calm-unlock">I'm Calm</button>
+  </div>`;
+}
+
+function paint(){
+  const pillInner = S.pillMode==="limit"
+    ? `${ico("bolt",true)}<span class="d"></span><span>LIMIT</span>`
+    : `${ico("bolt",true)}<span class="d"></span><span class="track"><i></i></span><span>1.8k↓</span><span class="hint">Intraday</span>`;
+  const nav = S.variant==="A"?sidebar():S.variant==="B"?iconRail():"";
+  document.getElementById("desk").innerHTML = `
+    <div class="menubar"><span class="apple">${ico("sun",true)} TradeAutopsy</span><span>NIFTY 50 · 5m</span><span class="clock">12:41</span></div>
+    <div class="chart"><div class="candles">${[38,52,44,64,28,70,48,56,40,62,34,58,72,30,50,66,42,54].map((n,i)=>`<i class="cndl ${i%3?"up":"dn"}" style="height:${n}%"></i>`).join("")}</div>
+      <div class="chart-label">Chart stays. Notch overlays.</div></div>
+    ${S.hidden?"":`<button type="button" class="pill hot press" data-act="toggle-expand">${pillInner}</button>`}
+    <div class="toast" style="opacity:${S.toast?1:0}">${S.toast}</div>
+    <div class="sheet ${S.expanded&&!S.hidden?"":"hidden"}">
+      <div class="grip" data-act="collapse"><i></i></div>
+      <div class="body">${nav}<div class="main">
+        ${topBar()}
+        ${S.error?`<div class="strip">Agent session expired. <button class="press" data-act="toast" data-id="Opens Station device login.">Open Station</button></div>`:""}
+        ${S.variant==="C"&&S.more?`<div style="display:flex;gap:6px;padding:0 14px 8px">${MORE.map(id=>`<button class="chip press" data-act="screen" data-id="${id}">${TITLES[id]}</button>`).join("")}</div>`:""}
+        <div class="scroll">${screenBody()}</div>
+      </div></div>
+    </div>
+    ${overlay()}`;
+  document.getElementById("state").textContent = "STATE "+JSON.stringify({
+    variant:S.variant, expanded:S.expanded, hidden:S.hidden, screen:S.screen, pre:S.pre,
+    detect:S.detect, kill:S.kill, moment:S.moment, desk:S.desk, settingsTab:S.settingsTab,
+    quote:"INR", remainingRisk:"NOT LIVE — T8", dualNoBlend:true,
+  },null,2);
+  const v = VARIANTS.find(x=>x.key===S.variant);
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb} · catalog is the content</span></div>
+    <button type="button" data-act="next">→</button>`;
+}
+function setVariant(k){ S.variant=k; const u=new URL(location.href); u.searchParams.set("variant",k); history.replaceState(null,"",u); paint(); }
+function cycle(d){ const i=VARIANTS.findIndex(v=>v.key===S.variant); setVariant(VARIANTS[(i+d+3)%3].key); }
+
+document.addEventListener("click",(e)=>{
+  const t=e.target.closest("[data-act]"); if(!t) return;
+  const act=t.getAttribute("data-act"), id=t.getAttribute("data-id");
+  if(act==="prev") cycle(-1); if(act==="next") cycle(1);
+  if(act==="screen") S.screen=id;
+  if(act==="toggle-expand") S.expanded=!S.expanded;
+  if(act==="collapse") S.expanded=false;
+  if(act==="hide"){ S.hidden=true; S.expanded=false; say("Pill hidden. ⌥Space shows it again — it does not hide."); return; }
+  if(act==="toggle-more") S.more=!S.more;
+  if(act==="pre") S.pre=id;
+  if(act==="swing") S.swingStep=Number(id);
+  if(act==="swing-next") S.swingStep=Math.min(6,S.swingStep+1);
+  if(act==="start") S.screen="pretrade";
+  if(act==="calm") S.calm=id; if(act==="conf") S.conf=id; if(act==="side") S.side=id;
+  if(act==="toggle-sl") S.sl=!S.sl;
+  if(act==="declare"){ S.screen="live"; S.detect="plan"; say("Declared. Waiting for fill."); return; }
+  if(act==="detect-off") S.detect=null;
+  if(act==="inter") S.interference=id;
+  if(act==="kill") S.kill="warning";
+  if(act==="kill-no") S.kill="idle";
+  if(act==="kill-yes"){ S.kill="overlay"; S.killN=8; tickKill(); }
+  if(act==="calm-unlock"){ if(S.killN<=0){ S.kill="idle"; say("Desk unlocked."); return; } }
+  if(act==="moment") S.moment=id;
+  if(act==="stab") S.settingsTab=id;
+  if(act==="desk") S.desk=id;
+  if(act==="toast"){ say(id); return; }
+  paint();
+});
+function tickKill(){
+  paint();
+  if(S.kill!=="overlay") return;
+  if(S.killN<=0) return;
+  setTimeout(()=>{ S.killN-=1; tickKill(); },1000);
+}
+document.addEventListener("pointerdown",(e)=>{ const el=e.target.closest(".press"); if(el) el.classList.add("is-down"); },true);
+document.addEventListener("pointerup",()=>{ document.querySelectorAll(".press.is-down").forEach(el=>el.classList.remove("is-down")); },true);
+document.addEventListener("keydown",(e)=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
+  if(e.key==="Escape"){ S.expanded=false; paint(); }
+  if(e.key==="ArrowLeft") cycle(-1); if(e.key==="ArrowRight") cycle(1);
+});
+const boot=new URLSearchParams(location.search).get("variant")||"A";
+S.variant=VARIANTS.some(v=>v.key===boot)?boot:"A";
+paint();
+</script>
+</body>
+</html>

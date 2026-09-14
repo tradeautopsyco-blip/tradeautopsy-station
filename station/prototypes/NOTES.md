@@ -4,6 +4,34 @@
 [`CONSOLE-STATION-SHARE.html`](./CONSOLE-STATION-SHARE.html) + [`CONSOLE-STATION-SHARE.md`](./CONSOLE-STATION-SHARE.md)  
 Station desk · thin Console · PLAN Notch — fully clickable offline.
 
+**Notch · Apple HIG × trading desk (UI, 2026-09-12):**  
+[`PROTOTYPE-notch-desk.html`](./PROTOTYPE-notch-desk.html) — ticker, ticket, ladder, blotter on glass. Notes: [`PROTOTYPE-notch-desk.NOTES.md`](./PROTOTYPE-notch-desk.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-notch-desk.html
+```
+
+**Notch · Apple HIG catalog (UI, 2026-09-12):**  
+[`PROTOTYPE-notch-hig.html`](./PROTOTYPE-notch-hig.html) — collapsed pill + expanded PLAN, SF-style symbols. Notes: [`PROTOTYPE-notch-hig.NOTES.md`](./PROTOTYPE-notch-hig.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-notch-hig.html
+```
+
+**Today · one day + now (UI, 2026-09-12):**  
+[`PROTOTYPE-today-one-day.html`](./PROTOTYPE-today-one-day.html) — fuse of Overview (one local day) and risk-layers A (open-now blotter). Notes: [`PROTOTYPE-today-one-day.NOTES.md`](./PROTOTYPE-today-one-day.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-today-one-day.html
+```
+
+**Binance Options Pre-trade lights (logic, 2026-09-10):**  
+[`PROTOTYPE-binance-options-pretrade-light.html`](./PROTOTYPE-binance-options-pretrade-light.html) — which panels may paint venue strings vs lock-dark. Plan: [`../../plans/binance-options-pretrade-light.md`](../../plans/binance-options-pretrade-light.md). Double-click the HTML. Not the BANKNIFTY `notch-options-declare` fixture toggle.
+
+```bash
+open station/prototypes/PROTOTYPE-binance-options-pretrade-light.html
+```
+
 **Question:** What should Today v1 + Stats look like, fully interactive?
 
 **UI run:**

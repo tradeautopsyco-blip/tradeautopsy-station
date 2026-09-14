@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Logic, not UI variants.
+  Question: when a dated Binance options contract is bound, which Pre-trade
+  panels may paint venue strings, which stay provenance-only, and which stay
+  lock-dark?
+
+  Open: open station/prototypes/PROTOTYPE-binance-options-pretrade-light.html
+  Not production. No eapi. Numbers below are labels for the state machine.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Binance Options Pre-trade lights</title>
+<style>
+:root{
+  --bg:#050505; --panel:#0d0d0d; --card:#111; --elev:#1c1c1e;
+  --line:rgba(255,255,255,.08); --ink:#fff; --muted:rgba(255,255,255,.55);
+  --dim:rgba(255,255,255,.32); --accent:#63E6E2; --loss:#FF453A; --warn:#FF9F0A;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--sans); background:#1a1a1c; color:var(--ink);
+  min-height:100vh; padding:28px 24px 48px; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:17px;font-weight:600;letter-spacing:-.02em}
+.q{
+  margin:8px 0 22px; color:var(--muted); font-size:13px; max-width:720px; line-height:1.5;
+}
+.q b{color:var(--accent);font-weight:500}
+.tag{
+  display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--warn); border:1px solid rgba(255,159,10,.35);
+  padding:3px 8px; border-radius:999px; margin-bottom:10px;
+}
+.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{
+  background:var(--bg); border:1px solid var(--line); border-radius:14px; overflow:hidden;
+}
+.card h2{
+  font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
+  padding:12px 14px 0; font-weight:500;
+}
+.state{padding:10px 14px 14px; font-family:var(--mono); font-size:12px; line-height:1.55}
+.row{display:flex; gap:10px; justify-content:space-between; border-bottom:1px solid var(--line); padding:6px 0}
+.row:last-child{border:0}
+.k{color:var(--dim)}
+.v{color:var(--ink)}
+.v.dark{color:var(--loss)}
+.v.ok{color:var(--accent)}
+.v.warn{color:var(--warn)}
+.note{margin-top:10px; color:var(--muted); font-family:var(--sans); font-size:12px; line-height:1.45}
+.changed{outline:1px solid rgba(99,230,226,.35); outline-offset:2px; border-radius:4px}
+.desk{padding:14px}
+.panel{
+  border:1px solid var(--line); border-radius:10px; background:var(--card); padding:12px; margin-bottom:10px;
+}
+.panel h3{font-size:12px; color:var(--muted); font-weight:600; margin-bottom:6px}
+.hole{
+  border:1px dashed var(--line); border-radius:8px; padding:14px; text-align:center;
+  color:var(--dim); font-size:12px;
+}
+.hole b{display:block; color:var(--muted); font-weight:500; margin-bottom:4px; font-size:13px}
+.chip{font-family:var(--mono); font-size:10px; color:var(--loss)}
+.num{font-family:var(--mono); font-size:14px}
+table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:11px}
+th{text-align:left; color:var(--dim); font-weight:400; padding:4px 6px}
+td{padding:5px 6px; border-top:1px solid var(--line); color:var(--muted); cursor:pointer}
+tr.sel td{color:var(--accent); background:rgba(99,230,226,.06)}
+.btns{display:flex; flex-wrap:wrap; gap:8px; padding:0 14px 14px}
+button{
+  font:inherit; font-size:12px; color:var(--ink); background:var(--elev);
+  border:1px solid var(--line); border-radius:8px; padding:7px 11px; cursor:pointer;
+}
+button:hover{border-color:rgba(255,255,255,.18)}
+button.bad{color:var(--loss); border-color:rgba(255,69,58,.28)}
+.tabs{display:flex; gap:6px; padding:0 14px 8px; flex-wrap:wrap}
+.tabs button[aria-pressed="true"]{color:var(--accent); border-color:rgba(99,230,226,.35)}
+.walk{padding:0 14px 16px; color:var(--muted); font-size:13px; line-height:1.5}
+.walk p{margin-bottom:8px}
+.steps{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+.steps button.on{outline:1px solid var(--accent)}
+.steps button.done{opacity:.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tag">prototype · throwaway · not Station Data</div>
+  <h1>Binance Options Pre-trade — what may light</h1>
+  <p class="q">
+    Question: after you bind a dated eapi contract, which panels may paint
+    <b>venue strings</b>, which stay a <b>success hole</b>, and which stay
+    <b>lock-dark</b>? The Notch HTML “fixture live” toggle is a BANKNIFTY mock —
+    it is not an action on this machine.
+  </p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Desk · what the trader sees</h2>
+      <div class="desk" id="desk"></div>
+    </div>
+    <div class="card">
+      <h2>State · full lighting law</h2>
+      <div class="state" id="state"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Free play</h2>
+    <p class="walk" style="padding-top:8px">Any order. Illegal buttons must refuse, not paint.</p>
+    <div class="btns" id="free"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Walkthroughs</h2>
+    <div class="tabs" id="tabs"></div>
+    <div class="walk" id="walk"></div>
+  </div>
+</div>
+
+<script>
+/* ── lighting reducer (liftable) ───────────────────────────────── */
+const LOCK_DARK = {
+  session: "no klines path on binance-com-options",
+  payoff: "OPTIONS-PRICING.md — Station does not price",
+};
+
+const SAMPLE_CHAIN = [
+  {symbol:"XRP-260911-1.3-C", strike:"1.3", side:"CALL", expiry:"260911"},
+  {symbol:"XRP-260911-1.36-C", strike:"1.36", side:"CALL", expiry:"260911"},
+  {symbol:"XRP-260911-1.36-P", strike:"1.36", side:"PUT", expiry:"260911"},
+  {symbol:"XRP-260911-1.4-C", strike:"1.4", side:"CALL", expiry:"260911"},
+];
+
+const SAMPLE_OI = [
+  {symbol:"XRP-260911-1.36-C", sumOpenInterest:"1284.0", sumOpenInterestUsd:"1540.80", timestamp:"1757500000000"},
+  {symbol:"XRP-260911-1.36-P", sumOpenInterest:"910.0", sumOpenInterestUsd:"1092.00", timestamp:"1757500000000"},
+];
+
+function initialState(){
+  return {
+    bind: null,
+    fields: {underlying:"", expiry:"", strike:""},
+    legs: 0,
+    last: null,
+    lastStatus: "unbound",
+    chainStatus: "unbound",
+    chainRows: [],
+    chainPaint: "none",
+    oiStatus: "unbound",
+    oiPaint: "none",
+    oi: null,
+    oiRows: [],
+    session: "lockDark",
+    payoff: "lockDark",
+    dte: null,
+    klinesLock: false,
+    payoffLock: false,
+    greeks: null,
+    lastChange: "",
+    refusal: "",
+  };
+}
+
+function isDated(id){
+  const t = String(id||"").trim();
+  if (t.includes("|")) return false;
+  const p = t.split("-");
+  if (p.length < 3 || p.some(x => !x)) return false;
+  const r = p[p.length-1].toUpperCase();
+  return r === "C" || r === "P";
+}
+
+function parseDated(id){
+  const t = id.trim();
+  const p = t.split("-");
+  const exp = p[1];
+  const yymmdd = exp.length === 6 && /^\d+$/.test(exp);
+  return {
+    underlying: p[0],
+    expiry: yymmdd ? exp : "",
+    strike: p[2],
+    right: p[p.length-1].toUpperCase() === "P" ? "P" : "C",
+    id: t,
+  };
+}
+
+function reduce(state, action){
+  const s = {
+    ...state,
+    fields: {...state.fields},
+    chainRows: state.chainRows.slice(),
+    oiRows: state.oiRows.slice(),
+    refusal: "",
+    lastChange: action.type,
+  };
+
+  switch (action.type){
+    case "RESET":
+      return initialState();
+
+    case "TYPE_THREE_BOXES": {
+      s.fields = {underlying:"XRP", expiry:"260911", strike:"1.36"};
+      s.lastChange = "TYPE_THREE_BOXES — fields only; Last stays unbound";
+      return s;
+    }
+
+    case "PASTE_CONTRACT": {
+      const id = action.id || "XRP-260911-1.36-C";
+      if (!isDated(id)) {
+        s.refusal = "not a dated eapi id — bind refused";
+        return s;
+      }
+      const p = parseDated(id);
+      s.bind = p.id;
+      s.fields = {underlying:p.underlying, expiry:p.expiry, strike:p.strike};
+      s.last = null;
+      s.lastStatus = "unavailable";
+      s.chainStatus = "asking";
+      s.oiStatus = "asking";
+      s.chainPaint = "none";
+      s.chainRows = [];
+      s.oi = null;
+      s.oiRows = [];
+      s.oiPaint = "none";
+      s.greeks = null;
+      s.lastChange = "PASTE_CONTRACT — bound "+p.id+"; TickBook still empty";
+      return s;
+    }
+
+    case "ADD_LEG": {
+      if (!s.bind) {
+        s.refusal = "no bound contract — leg not added";
+        return s;
+      }
+      s.legs += 1;
+      s.lastChange = "ADD_LEG — rung 1 may use typed stop/entry; does not price payoff";
+      return s;
+    }
+
+    case "DIAL_TICKER": {
+      if (!s.bind) {
+        s.refusal = "no bind — ticker not dialed";
+        return s;
+      }
+      s.last = "0.0012";
+      s.lastStatus = "unknown";
+      s.lastChange = "DIAL_TICKER — lastPrice string; chip unknown, never fresh, never 0";
+      return s;
+    }
+
+    case "CHAIN_SUCCESS": {
+      if (!s.bind) {
+        s.refusal = "no bind — chain glance not issued";
+        return s;
+      }
+      s.chainStatus = "success";
+      s.chainRows = SAMPLE_CHAIN;
+      s.chainPaint = "catalog";
+      s.lastChange = "CHAIN_SUCCESS — optionSymbols catalog list (not an IV grid)";
+      return s;
+    }
+
+    case "CHAIN_EMPTY": {
+      if (!s.bind) {
+        s.refusal = "no bind — chain glance not issued";
+        return s;
+      }
+      s.chainStatus = "empty";
+      s.chainRows = [];
+      s.chainPaint = "empty";
+      s.lastChange = "CHAIN_EMPTY — no guessed strikes";
+      return s;
+    }
+
+    case "CHAIN_PROVENANCE_ONLY": {
+      if (!s.bind) {
+        s.refusal = "no bind";
+        return s;
+      }
+      s.chainStatus = "success";
+      s.chainRows = SAMPLE_CHAIN;
+      s.chainPaint = "provenance";
+      s.lastChange = "today's Notch: glance success, UI still a dashed hole";
+      return s;
+    }
+
+    case "OI_SUCCESS": {
+      if (!s.bind) {
+        s.refusal = "no bind — OI glance not issued";
+        return s;
+      }
+      s.oiStatus = "success";
+      s.oiRows = SAMPLE_OI;
+      s.oi = SAMPLE_OI.find(r => r.symbol === s.bind) || null;
+      s.oiPaint = "latest";
+      s.lastChange = "OI_SUCCESS — sumOpenInterest strings; not a strike table";
+      return s;
+    }
+
+    case "OI_PROVENANCE_ONLY": {
+      if (!s.bind) {
+        s.refusal = "no bind";
+        return s;
+      }
+      s.oiStatus = "success";
+      s.oiRows = SAMPLE_OI;
+      s.oi = SAMPLE_OI.find(r => r.symbol === s.bind) || null;
+      s.oiPaint = "provenance";
+      s.lastChange = "today's Notch: OI success, UI still a dashed hole";
+      return s;
+    }
+
+    case "MARK_GREEKS": {
+      if (!s.bind) {
+        s.refusal = "no bind — mark not copied";
+        return s;
+      }
+      s.greeks = {delta:"0.53498167", gamma:"10.679722854", theta:"-0.01027495", vega:"0.00024047"};
+      s.lastChange = "MARK_GREEKS — VenuePublished copy; not TickBook last";
+      return s;
+    }
+
+    case "CLICK_CHAIN_ROW": {
+      const row = action.row;
+      if (!row) {
+        s.refusal = "no catalog row";
+        return s;
+      }
+      return reduce(s, {type:"PASTE_CONTRACT", id: row.symbol});
+    }
+
+    case "TRY_IV_GRID": {
+      s.refusal = "illegal — Sensibull CE/PE/IV grid is not optionSymbols. showsStrikeGrid stays false.";
+      return s;
+    }
+
+    case "TRY_PAYOFF": {
+      s.refusal = "illegal — "+LOCK_DARK.payoff;
+      return s;
+    }
+
+    case "GRANT_KLINES_LOCK": {
+      s.klinesLock = true;
+      s.lastChange = "GRANT_KLINES_LOCK — official eapi klines field table is now on the book lock";
+      return s;
+    }
+
+    case "GRANT_PAYOFF_LOCK": {
+      s.payoffLock = true;
+      s.lastChange = "GRANT_PAYOFF_LOCK — settlement identity + eapi index named on the lock";
+      return s;
+    }
+
+    case "VENUE_KLINES": {
+      if (!s.bind) {
+        s.refusal = "no bind — klines not dialed";
+        return s;
+      }
+      if (!s.klinesLock) {
+        s.refusal = "needs lock — GET /eapi/v1/klines exists on eapi but this book has not named the columns yet. Do not copy spot kline order.";
+        return s;
+      }
+      s.session = "venueKlines";
+      s.lastChange = "VENUE_KLINES — market/ohlcv from eapi klines, venue interval, no resample";
+      return s;
+    }
+
+    case "SETTLEMENT_PAYOFF": {
+      if (!s.bind || s.legs < 1) {
+        s.refusal = "needs a bound contract and a leg";
+        return s;
+      }
+      if (!s.payoffLock) {
+        s.refusal = "needs lock — payoff is European cash settlement vs eapi index, not Black-76. Short call wing stays open.";
+        return s;
+      }
+      s.payoff = "settlementShape";
+      s.dte = "calendar from expiryDate";
+      s.lastChange = "SETTLEMENT_PAYOFF — shape from strike/right/side/premium; S from eapi index";
+      return s;
+    }
+
+    case "TRY_SPOT_KLINES": {
+      s.refusal = "illegal — spot XRPUSDT klines are a different book. DualNoBlend. Options session is eapi klines or dark.";
+      return s;
+    }
+
+    case "TRY_BLACK76": {
+      s.refusal = "illegal — OPTIONS-PRICING.md fences ModelComputed. Settlement shape is not Black-76.";
+      return s;
+    }
+
+    case "TRY_LAST_ZERO": {
+      s.refusal = "illegal — empty TickBook is unavailable, never last=0";
+      return s;
+    }
+
+    default:
+      s.refusal = "unknown action";
+      return s;
+  }
+}
+
+/* ── page shell ────────────────────────────────────────────────── */
+const ACTIONS = [
+  {type:"TYPE_THREE_BOXES", label:"Type XRP / 260911 / 1.36"},
+  {type:"PASTE_CONTRACT", label:"Paste XRP-260911-1.36-C"},
+  {type:"ADD_LEG", label:"Add this leg"},
+  {type:"DIAL_TICKER", label:"Dial eapi ticker last"},
+  {type:"CHAIN_SUCCESS", label:"Chain success → catalog"},
+  {type:"OI_SUCCESS", label:"OI success → strings"},
+  {type:"MARK_GREEKS", label:"Copy mark greeks"},
+  {type:"CHAIN_EMPTY", label:"Chain empty"},
+  {type:"TRY_IV_GRID", label:"Paint IV strike grid", bad:true},
+  {type:"TRY_PAYOFF", label:"Compute Black-76 payoff", bad:true},
+  {type:"TRY_SPOT_KLINES", label:"Load spot XRPUSDT klines", bad:true},
+  {type:"TRY_BLACK76", label:"Run Black-76 greeks", bad:true},
+  {type:"TRY_LAST_ZERO", label:"Show last = 0", bad:true},
+  {type:"GRANT_KLINES_LOCK", label:"Cite eapi klines on the lock"},
+  {type:"VENUE_KLINES", label:"Dial eapi klines"},
+  {type:"GRANT_PAYOFF_LOCK", label:"Cite settlement + index on the lock"},
+  {type:"SETTLEMENT_PAYOFF", label:"Draw settlement payoff"},
+  {type:"RESET", label:"Reset"},
+];
+
+const SCENARIOS = [
+  {
+    id:"today",
+    title:"1. Today’s screenshot",
+    blurb:"Three boxes filled, glance already success, Last unavailable, chain/OI dashed holes, greeks lit, session/payoff lock-dark. This is the live Notch.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Paste contract (splits the three boxes)"},
+      {type:"CHAIN_PROVENANCE_ONLY", label:"Chain glance succeeds — UI still a hole"},
+      {type:"OI_PROVENANCE_ONLY", label:"OI glance succeeds — UI still a hole"},
+      {type:"MARK_GREEKS", label:"Mark greeks copy"},
+    ],
+  },
+  {
+    id:"honest",
+    title:"2. Honest lights (this plan)",
+    blurb:"Same bind. Ticker last paints unknown lastPrice. Chain paints a catalog list. OI paints sumOpenInterest. Session and payoff stay dark.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Paste XRP-260911-1.36-C"},
+      {type:"DIAL_TICKER", label:"Dial ticker"},
+      {type:"CHAIN_SUCCESS", label:"Paint catalog"},
+      {type:"OI_SUCCESS", label:"Paint OI strings"},
+      {type:"MARK_GREEKS", label:"Greeks already shipped"},
+      {type:"ADD_LEG", label:"Add leg (rung 1 only)"},
+    ],
+  },
+  {
+    id:"illegal",
+    title:"3. Fixture-live is illegal here",
+    blurb:"The HTML mock’s BANKNIFTY IV grid / payoff / session bars must refuse on this book. Watch the refusal line — state must not change.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Bind"},
+      {type:"TRY_IV_GRID", label:"Try IV grid"},
+      {type:"TRY_PAYOFF", label:"Try Black-76 payoff"},
+      {type:"TRY_SPOT_KLINES", label:"Try spot klines"},
+      {type:"TRY_LAST_ZERO", label:"Try last=0"},
+    ],
+  },
+  {
+    id:"empty-last",
+    title:"4. Empty TickBook",
+    blurb:"Bind without dialing ticker. Last stays unavailable. Never a zero premium.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Paste"},
+      {type:"TRY_LAST_ZERO", label:"Attempt last=0"},
+    ],
+  },
+  {
+    id:"missing",
+    title:"5. Contract absent from catalog",
+    blurb:"Glance returns empty. UI says no contracts. It does not invent 1.36.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Paste"},
+      {type:"CHAIN_EMPTY", label:"Empty snapshot"},
+    ],
+  },
+  {
+    id:"all-honest",
+    title:"6. Light everything the honest way",
+    blurb:"Last, catalog, OI, greeks first (no new lock). Session and payoff only after the lock cites eapi klines and index. Spot klines and Black-76 still refuse.",
+    steps:[
+      {type:"RESET", label:"Reset"},
+      {type:"PASTE_CONTRACT", label:"Paste contract"},
+      {type:"DIAL_TICKER", label:"Ticker last"},
+      {type:"CHAIN_SUCCESS", label:"Catalog"},
+      {type:"OI_SUCCESS", label:"OI strings"},
+      {type:"MARK_GREEKS", label:"Mark greeks"},
+      {type:"ADD_LEG", label:"Add leg"},
+      {type:"GRANT_KLINES_LOCK", label:"Lock klines"},
+      {type:"VENUE_KLINES", label:"Session bars"},
+      {type:"GRANT_PAYOFF_LOCK", label:"Lock settlement"},
+      {type:"SETTLEMENT_PAYOFF", label:"Payoff shape"},
+    ],
+  },
+];
+
+let state = initialState();
+let scenario = 0;
+let step = 0;
+
+function cls(v, kind){
+  if (kind === "lock" || v === "lockDark" || v === "unavailable" || v === "unbound") return "v dark";
+  if (v === "unknown" || v === "provenance" || v === "asking") return "v warn";
+  if (v === "success" || v === "catalog" || v === "latest") return "v ok";
+  return "v";
+}
+
+function renderState(){
+  const s = state;
+  const rows = [
+    ["bind", s.bind || "—", s.bind ? "ok" : "lock"],
+    ["fields", `${s.fields.underlying||"—"} / ${s.fields.expiry||"—"} / ${s.fields.strike||"—"}`],
+    ["legs", String(s.legs)],
+    ["last", s.last == null ? "—" : s.last, s.lastStatus],
+    ["lastStatus", s.lastStatus, s.lastStatus],
+    ["chainStatus", s.chainStatus, s.chainStatus],
+    ["chainPaint", s.chainPaint, s.chainPaint],
+    ["chainRows", String(s.chainRows.length)],
+    ["oiStatus", s.oiStatus, s.oiStatus],
+    ["oiPaint", s.oiPaint, s.oiPaint],
+    ["sumOpenInterest", s.oi && s.oiPaint === "latest" ? s.oi.sumOpenInterest : "—", s.oiPaint === "latest" ? "ok" : "lock"],
+    ["session", s.session, s.session === "venueKlines" ? "ok" : "lock"],
+    ["klinesLock", s.klinesLock ? "cited" : "missing", s.klinesLock ? "ok" : "lock"],
+    ["payoff", s.payoff, s.payoff === "settlementShape" ? "ok" : "lock"],
+    ["payoffLock", s.payoffLock ? "cited" : "missing", s.payoffLock ? "ok" : "lock"],
+    ["dte", s.dte || "—", s.dte ? "ok" : "lock"],
+    ["greeks", s.greeks ? "VenuePublished" : "—", s.greeks ? "ok" : "lock"],
+  ];
+  document.getElementById("state").innerHTML = rows.map(([k,v,kind]) =>
+    `<div class="row"><span class="k">${k}</span><span class="${cls(v, kind)}">${v}</span></div>`
+  ).join("") +
+  `<div class="note"><b style="color:var(--ink);font-weight:500">Just now.</b> ${s.lastChange || "nothing yet"}` +
+  (s.refusal ? `<br><b style="color:var(--loss);font-weight:500">Refused.</b> ${s.refusal}` : "") +
+  `</div>`;
+}
+
+function renderDesk(){
+  const s = state;
+  const lastChip = s.lastStatus === "unknown" && s.last
+    ? `<div class="num">${s.last} <span style="color:var(--warn);font-size:10px">unknown</span></div>`
+    : `<div class="chip">${s.lastStatus === "unbound" ? "unbound" : "unavailable"}</div>`;
+
+  let chain;
+  if (s.chainPaint === "catalog" && s.chainRows.length){
+    chain = `<table><thead><tr><th>symbol</th><th>strike</th><th>side</th></tr></thead><tbody>` +
+      s.chainRows.map(r => `<tr class="${r.symbol===s.bind?"sel":""}" data-sym="${r.symbol}"><td>${r.symbol}</td><td>${r.strike}</td><td>${r.side}</td></tr>`).join("") +
+      `</tbody></table><div class="note">optionSymbols for this underlying+expiry. Click binds. No IV column.</div>`;
+  } else if (s.chainStatus === "empty" || s.chainPaint === "empty"){
+    chain = `<div class="hole"><b>No contracts</b>Expiry list is empty — not a guessed strike grid.</div>`;
+  } else if (s.chainStatus === "success"){
+    chain = `<div class="hole"><b>chain snapshot live · no strike grid (raw strike/expiry)</b>Today’s Notch: glance succeeded, rows were thrown away.</div>`;
+  } else {
+    chain = `<div class="hole"><b>Nothing declared yet</b>Paste a mixed-case eapi id to bind.</div>`;
+  }
+
+  let oi;
+  if (s.oiPaint === "latest" && s.oi){
+    oi = `<div class="num">${s.oi.sumOpenInterest}</div><div class="note">sumOpenInterest · ${s.oi.symbol} · not a strike grid</div>`;
+  } else if (s.oiStatus === "success"){
+    oi = `<div class="hole"><b>open interest live · sumOpenInterest from eapi</b>Today’s Notch: number is on the envelope, not painted.</div>`;
+  } else {
+    oi = `<div class="hole"><b>Open interest</b>${s.oiStatus}</div>`;
+  }
+
+  document.getElementById("desk").innerHTML = `
+    <div class="panel"><h3>Last · your entry</h3>${lastChip}</div>
+    <div class="panel"><h3>Session / OHLCV</h3>
+      ${s.session === "venueKlines"
+        ? `<div class="num">venue klines</div><div class="note">GET /eapi/v1/klines · mixed-case symbol · interval from ENUM</div>`
+        : `<div class="hole"><b>no session series</b>${s.klinesLock ? "lock cited — dial klines" : "needs lock · "+LOCK_DARK.session}</div>`}
+    </div>
+    <div class="panel"><h3>Chain · around your strike</h3>${chain}</div>
+    <div class="panel"><h3>Open interest</h3>${oi}</div>
+    <div class="panel"><h3>Payoff</h3>
+      ${s.payoff === "settlementShape"
+        ? `<div class="num">settlement shape</div><div class="note">S from eapi index · short call wing open · DTE ${s.dte}</div>`
+        : `<div class="hole"><b>payoff unavailable</b>${s.payoffLock ? "lock cited — needs a leg" : "needs lock · settlement vs index, not Black-76"}</div>`}
+    </div>
+    <div class="panel"><h3>Greeks</h3>
+      ${s.greeks
+        ? `<div class="num">Δ ${s.greeks.delta} · Γ ${s.greeks.gamma}</div><div class="note">VenuePublished mark — already shipping</div>`
+        : `<div class="chip">waiting on a declared contract</div>`}
+    </div>
+    <div class="note">legs ${s.legs} · session and payoff cannot leave lockDark in this reducer</div>
+  `;
+  document.getElementById("desk").querySelectorAll("tr[data-sym]").forEach(tr => {
+    tr.onclick = () => dispatch({type:"CLICK_CHAIN_ROW", row:{symbol: tr.getAttribute("data-sym")}});
+  });
+}
+
+function dispatch(action){
+  state = reduce(state, action);
+  renderAll();
+}
+
+function renderFree(){
+  document.getElementById("free").innerHTML = ACTIONS.map(a =>
+    `<button class="${a.bad?"bad":""}" data-t="${a.type}">${a.label}</button>`
+  ).join("");
+  document.getElementById("free").querySelectorAll("button").forEach(b => {
+    b.onclick = () => dispatch({type: b.getAttribute("data-t")});
+  });
+}
+
+function renderWalk(){
+  document.getElementById("tabs").innerHTML = SCENARIOS.map((sc,i) =>
+    `<button aria-pressed="${i===scenario}" data-i="${i}">${sc.title}</button>`
+  ).join("");
+  document.getElementById("tabs").querySelectorAll("button").forEach(b => {
+    b.onclick = () => { scenario = +b.getAttribute("data-i"); step = 0; state = initialState(); renderAll(); };
+  });
+  const sc = SCENARIOS[scenario];
+  document.getElementById("walk").innerHTML =
+    `<p>${sc.blurb}</p><div class="steps">` +
+    sc.steps.map((st,i) =>
+      `<button class="${i===step?"on":""} ${i<step?"done":""}" data-i="${i}">${i+1}. ${st.label}</button>`
+    ).join("") + `</div>`;
+  document.getElementById("walk").querySelectorAll(".steps button").forEach(b => {
+    b.onclick = () => {
+      const i = +b.getAttribute("data-i");
+      if (i === 0) state = initialState();
+      if (i !== step && i !== 0) return;
+      dispatch(sc.steps[i]);
+      step = Math.min(i+1, sc.steps.length);
+      renderAll();
+    };
+  });
+}
+
+function renderAll(){
+  renderState();
+  renderDesk();
+  renderWalk();
+}
+
+renderFree();
+renderAll();
+</script>
+</body>
+</html>

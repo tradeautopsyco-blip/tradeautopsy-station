@@ -30,4 +30,5 @@ Yes, if the card is a **gate** (stop + size as % of account) and Today stays sma
 Verify live lot sizes, margins, expiry, charges. Qty 130 @ 1300 / SL 1100 ≈ 13% on ₹2L is an illustration.
 
 **Verdict (2026-08-21):** Founder **yes** — this is the flow.
-**Verdict (2026-09-08):** Founder **perfect** again (`?variant=detect`). Path-of-a-fill stays canonical. Do **not** start this as the next code tranche — Data S7 obtain routing is first. Production UI still waits for an explicit build OK after S7. Multi-trade circle and Notch workspace stay fog.
+**Verdict (2026-09-08):** Founder **perfect** again (`?variant=detect`). Path-of-a-fill stays canonical.
+**Production (2026-09-08):** After S7 (#60), switchable A/B/C chrome landed around this path (epic #62). Circle remains last — #63. Do not delete this prototype until #62 closes.

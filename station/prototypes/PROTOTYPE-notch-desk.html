@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: Notch as Apple HIG infused with a trading desk
+  (ticker, ticket, ladder, blotter) — not Settings, not TradingView.
+  ?variant= A Ticket dock · B Account manager · C Inspector
+  Open: open station/prototypes/PROTOTYPE-notch-desk.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch · HIG × desk</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --s: rgba(245,245,247,.55); --t: rgba(245,245,247,.32);
+      --void: #050505; --pane: #0c0c0e; --elev: #161618;
+      --line: rgba(255,255,255,.08); --fill: rgba(120,120,128,.18);
+      --bid: #30d158; --ask: #ff453a; --amber: #ff9f0a; --blue: #0a84ff; --teal: #64d2ff;
+      --glass: rgba(18,18,20,.78);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 400 12px/1.35 var(--sans); letter-spacing: -.006em; font-optical-sizing: auto;
+      background: #1a1a1c; color: var(--label); -webkit-font-smoothing: antialiased;
+      padding: 16px 14px 96px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .press { transition: transform 100ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .bid { color: var(--bid); } .ask { color: var(--ask); } .amb { color: var(--amber); } .dim { color: var(--t); }
+
+    .q { width: min(1180px,100%); margin: 0 auto 10px; font-size: 11px; color: var(--t); letter-spacing: .012em; }
+    .q b { color: var(--s); font-weight: 600; letter-spacing: -.006em; font-size: 13px; }
+
+    .desktop {
+      width: min(1180px,100%); height: 800px; margin: 0 auto; border-radius: 12px; overflow: hidden;
+      position: relative; background: #08080a;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .menubar {
+      height: 24px; display: flex; align-items: center; justify-content: center;
+      background: rgba(22,22,24,.9); backdrop-filter: blur(28px) saturate(180%);
+      font-size: 11px; color: var(--s); border-bottom: .5px solid var(--line);
+    }
+    .menubar .l { position: absolute; left: 10px; display: flex; align-items: center; gap: 6px; }
+    .menubar .r { position: absolute; right: 10px; font-family: var(--mono); }
+    .bgchart { position: absolute; inset: 24px 0 0; opacity: .35;
+      background: repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.03) 47px 48px), #08080a; }
+    .candles { position: absolute; left: 6%; right: 6%; bottom: 14%; height: 48%; display: flex; align-items: flex-end; gap: 5px; }
+    .cndl { width: 4px; border-radius: 1px; }
+    .cndl.up { background: var(--bid); } .cndl.dn { background: var(--ask); }
+
+    .pill {
+      position: absolute; top: 32px; left: 50%; transform: translateX(-50%); z-index: 8;
+      height: 32px; min-width: 176px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+      background: var(--glass); backdrop-filter: blur(40px) saturate(180%);
+      border-radius: 999px; border: .5px solid rgba(255,255,255,.12);
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+    }
+    .pill .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ask); }
+    .pill .trk { width: 36px; height: 3px; border-radius: 99px; background: rgba(255,255,255,.12); position: relative; }
+    .pill .trk i { position: absolute; left: 0; top: 0; bottom: 0; width: 42%; background: var(--ask); border-radius: 99px; }
+
+    .sheet {
+      position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
+      width: min(1080px,96%); height: 680px; z-index: 7;
+      background: var(--glass); backdrop-filter: blur(48px) saturate(190%);
+      border-radius: 14px; border: .5px solid rgba(255,255,255,.1);
+      box-shadow: 0 24px 70px rgba(0,0,0,.55);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sheet.hidden { display: none; }
+    .grip { height: 14px; display: grid; place-items: center; flex-shrink: 0; }
+    .grip i { width: 32px; height: 3px; border-radius: 99px; background: rgba(255,255,255,.2); }
+
+    /* Ticker — financial identity */
+    .ticker {
+      flex-shrink: 0; display: flex; align-items: center; gap: 14px;
+      padding: 6px 12px; border-bottom: .5px solid var(--line);
+      font-family: var(--mono); font-size: 12px;
+    }
+    .ticker .sym { font-family: var(--sans); font-size: 15px; font-weight: 700; letter-spacing: -.022em; }
+    .ticker .last { font-size: 18px; font-weight: 600; letter-spacing: -.026em; }
+    .ticker .sep { width: 1px; height: 16px; background: var(--line); }
+    .caps { display: flex; gap: 6px; margin-left: auto; }
+    .dotp { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--s); }
+    .dotp i { width: 5px; height: 5px; border-radius: 50%; }
+    .dotp.ok i { background: var(--bid); } .dotp.warn i { background: var(--amber); } .dotp.bad i { background: var(--ask); }
+
+    .work { flex: 1; display: flex; min-height: 0; }
+    .rail {
+      width: 48px; flex-shrink: 0; border-right: .5px solid var(--line);
+      display: flex; flex-direction: column; align-items: center; padding: 8px 4px; gap: 2px;
+    }
+    .rbtn { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; color: var(--s); position: relative; }
+    .rbtn.on { background: rgba(10,132,255,.28); color: var(--label); }
+    .rbtn .ico { width: 16px; height: 16px; }
+    .rbtn.on .ico { color: var(--blue); }
+    .rbtn .mark { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--ask); }
+    .rbtn .mark.amb { background: var(--amber); }
+
+    .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .mid { flex: 1; display: flex; min-height: 0; }
+    .plot { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 8px 10px; }
+    .tf { display: flex; gap: 2px; margin-bottom: 6px; }
+    .tf button { padding: 3px 7px; border-radius: 5px; font-family: var(--mono); font-size: 10px; color: var(--t); }
+    .tf button.on { background: var(--fill); color: var(--label); }
+    .miniplot { flex: 1; min-height: 120px; background: rgba(0,0,0,.25); border-radius: 8px; position: relative; overflow: hidden; }
+    .miniplot svg { display: block; width: 100%; height: 100%; }
+    .metrics { display: grid; grid-template-columns: repeat(4,1fr); gap: 0; border-top: .5px solid var(--line); margin-top: 6px; }
+    .metrics div { padding: 6px 8px; }
+    .metrics .k { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--t); }
+    .metrics .n { font-family: var(--mono); font-size: 13px; font-weight: 600; margin-top: 2px; }
+
+    /* Book ladder */
+    .book { width: 168px; flex-shrink: 0; border-left: .5px solid var(--line); display: flex; flex-direction: column; font-family: var(--mono); font-size: 11px; }
+    .book h4 { font-family: var(--sans); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--t); padding: 6px 8px; font-weight: 600; }
+    .book .row { display: grid; grid-template-columns: 1fr 1fr; padding: 2px 8px; }
+    .book .midpx { text-align: center; padding: 6px 0; font-size: 13px; font-weight: 600; background: rgba(255,69,58,.08); }
+
+    /* Ticket */
+    .ticket {
+      width: 220px; flex-shrink: 0; border-left: .5px solid var(--line);
+      padding: 10px; display: flex; flex-direction: column; gap: 8px; background: rgba(0,0,0,.18);
+    }
+    .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .sides button { padding: 8px; border-radius: 8px; font-weight: 700; letter-spacing: .04em; background: var(--fill); }
+    .sides button.buy.on { background: var(--bid); color: #042; }
+    .sides button.sell.on { background: var(--ask); color: #fff; }
+    .ticket label { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--t); display: block; margin-bottom: 3px; }
+    .ticket input { width: 100%; background: rgba(0,0,0,.4); border: .5px solid var(--line); color: var(--label);
+      border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: 12px; }
+    .ticket .avail { font-size: 10px; color: var(--s); font-family: var(--mono); }
+    .go { width: 100%; padding: 9px; border-radius: 8px; font-weight: 700; background: var(--bid); color: #042; }
+    .go.sell { background: var(--ask); color: #fff; }
+    .sw { width: 40px; height: 24px; border-radius: 99px; background: #2c2c2e; position: relative; flex-shrink: 0; }
+    .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+    .sw.on { background: var(--bid); } .sw.on::after { transform: translateX(16px); }
+
+    /* Blotter — TV Account Manager */
+    .blotter { flex-shrink: 0; height: 148px; border-top: .5px solid var(--line); display: flex; flex-direction: column; background: rgba(0,0,0,.22); }
+    .btabs { display: flex; gap: 0; padding: 0 8px; border-bottom: .5px solid var(--line); }
+    .btabs button { padding: 7px 10px; font-size: 11px; color: var(--t); font-weight: 500; border-bottom: 2px solid transparent; }
+    .btabs button.on { color: var(--label); border-bottom-color: var(--label); }
+    .btable { flex: 1; overflow: auto; font-family: var(--mono); font-size: 11px; }
+    .btable .h, .btable .r { display: grid; grid-template-columns: 72px 1.4fr 56px 70px 70px 80px; padding: 4px 10px; }
+    .btable .h { color: var(--t); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .btable .r { border-top: .5px solid var(--line); }
+
+    .insp {
+      width: 280px; flex-shrink: 0; border-left: .5px solid var(--line);
+      background: rgba(22,22,24,.55); backdrop-filter: blur(24px); padding: 12px; overflow: auto;
+    }
+
+    .seg { display: flex; gap: 2px; padding: 4px 8px; }
+    .seg button { padding: 4px 8px; border-radius: 6px; font-size: 11px; color: var(--s); }
+    .seg button.on { background: var(--fill); color: var(--label); font-weight: 600; }
+
+    .detect { margin: 8px 10px; padding: 10px 12px; border-radius: 10px; background: #141416; outline: .5px solid rgba(100,210,255,.3); }
+    .detect h3 { font-size: 14px; font-weight: 700; letter-spacing: -.02em; margin: 4px 0; }
+    .overlay {
+      position: absolute; inset: 0; z-index: 40; background: rgba(10,0,0,.88);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    }
+    .overlay h1 { font-size: 26px; font-weight: 700; letter-spacing: -.03em; color: var(--ask); }
+    .overlay .count { font-family: var(--mono); font-size: 40px; }
+    .toast { position: absolute; top: 40px; left: 50%; transform: translateX(-50%); z-index: 30;
+      padding: 7px 12px; border-radius: 99px; background: #2c2c2e; font-size: 12px; opacity: 0; }
+    .state { width: min(1180px,100%); margin: 8px auto 0; background: #000; color: #8bffce;
+      font-family: var(--mono); font-size: 10px; border-radius: 8px; padding: 8px 10px; max-height: 72px; overflow: auto; white-space: pre-wrap; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 99px; box-shadow: 0 8px 32px rgba(0,0,0,.4); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 280px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    .set { padding: 10px 12px; overflow: auto; font-size: 12px; }
+    .set .g { background: #1c1c1e; border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+    .set .row { display: flex; justify-content: space-between; padding: 10px 14px; border-top: .5px solid var(--line); }
+    .set .row:first-child { border: 0; }
+    @media (prefers-reduced-motion: reduce) { .press { transition: none; } .press:active { transform: none; } }
+    @media (prefers-reduced-transparency: reduce) { .sheet, .pill, .menubar { background: #1c1c1e; backdrop-filter: none; } }
+  </style>
+</head>
+<body>
+  <div class="q">PROTOTYPE · throwaway · <b>Apple glass + trading desk.</b> Identity is the symbol. Ticket is Buy/Sell. Blotter is a table. Settings is the only grouped list. A/B/C is chrome.</div>
+  <div class="desktop" id="desk"></div>
+  <pre class="state" id="state"></pre>
+  <div class="switcher" id="switcher"></div>
+<script>
+const VARIANTS = [
+  { key:"A", name:"Ticket dock", blurb:"Binance — book + ticket, blotter under" },
+  { key:"B", name:"Account manager", blurb:"TradingView — chart owns, blotter is the desk" },
+  { key:"C", name:"Inspector", blurb:"Apple HUD — ticket as glass inspector" },
+];
+const SCREENS = [
+  ["morning","sun","Morning"],["pretrade","clip","Pre"],["live","bolt","Live"],["posttrade","list","Post"],
+  ["escrow","shield","Escrow"],["patterns","wave","Patterns"],["fidelity","chart","Fidelity"],["triage","down","Triage"],["settings","gear","Settings"],
+];
+const ASKS = [["24592","12"],["24584","8"],["24576","21"],["24568","5"],["24560","14"]];
+const BIDS = [["24552","18"],["24544","9"],["24536","22"],["24528","7"],["24520","31"]];
+const BLOTS = {
+  positions: [["12:08","NIFTY 24500 CE","BUY","50","−₹1,840","11m"]],
+  orders: [["12:08","NIFTY 24500 CE","SL","50","24,520","working"]],
+  capture: [["12:11","Live capture","PNG","—","tray","1 unposted"]],
+  history: [["10:08","BANKNIFTY PE","SELL","25","−₹8,160","closed"]],
+};
+
+const S = {
+  variant:"A", expanded:true, hidden:false, screen:"live", side:"buy", sl:true,
+  blot:"positions", detect:true, kill:"idle", killN:8, desk:"A", toast:"",
+  pre:"standard", tf:"5m",
+};
+
+function ico(name, filled){
+  const d = {
+    sun: filled?`<circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2.8v2.1M12 19.1v2.1M4.3 4.3l1.5 1.5M18.2 18.2l1.5 1.5M2.8 12h2.1M19.1 12h2.1M4.3 19.7l1.5-1.5M18.2 5.8l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>`:`<circle cx="12" cy="12" r="3.3"/><path d="M12 3.4v1.7M12 18.9v1.7M5 5l1.2 1.2M17.8 17.8l1.2 1.2M3.4 12h1.7M18.9 12h1.7M5 19l1.2-1.2M17.8 6.2l1.2-1.2"/>`,
+    clip: filled?`<rect x="7" y="5" width="10" height="15" rx="2" fill="currentColor" stroke="none"/>`:`<rect x="7.5" y="5.5" width="9" height="14" rx="2"/><path d="M9.6 11h4.8M9.6 14h3.2"/>`,
+    bolt: `<path d="M13 3.4 6.4 13.2h5L10.2 20.6l7.2-10.4h-5.2z" ${filled?`fill="currentColor" stroke="none"`:""}/>`,
+    list: filled?`<rect x="4.5" y="5" width="15" height="14" rx="2" fill="currentColor" stroke="none"/>`:`<path d="M8.8 8h9M8.8 12h9M8.8 16h7"/><circle cx="5.8" cy="8" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="12" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="16" r=".7" fill="currentColor" stroke="none"/>`,
+    shield: `<path d="M12 3.6 19 6.4v5.2c0 4.4-3.1 7.4-7 8.8-3.9-1.4-7-4.4-7-8.8V6.4z" ${filled?`fill="currentColor" stroke="none"`:""}/>`,
+    wave: `<path d="M3.6 12.5c1.6-3.4 3.2-3.4 4.8 0s3.2 3.4 4.8 0 3.2-3.4 4.8 0 3.2 3.4 4.8 0"/>`,
+    chart: filled?`<rect x="5" y="11" width="3.4" height="8" rx="1" fill="currentColor" stroke="none"/><rect x="10.3" y="6" width="3.4" height="13" rx="1" fill="currentColor" stroke="none"/><rect x="15.6" y="9.2" width="3.4" height="9.8" rx="1" fill="currentColor" stroke="none"/>`:`<path d="M6.6 18.4V11M12 18.4V6.8M17.4 18.4v-8"/>`,
+    down: `<circle cx="12" cy="12" r="7.4"/><path d="M12 8.4v7.2M8.8 13.2 12 16.4 15.2 13.2"/>`,
+    gear: filled?`<circle cx="12" cy="12" r="3.2" fill="currentColor"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2M6.2 6.2l1.4 1.4M16.4 16.4l1.4 1.4M6.2 17.8l1.4-1.4M16.4 7.6l1.4-1.4"/>`:`<circle cx="12" cy="12" r="2.7"/><path d="M12 4.2v1.6M12 18.2v1.6M4.2 12h1.6M18.2 12h1.6M6.1 6.1l1.15 1.15M16.75 16.75l1.15 1.15M6.1 17.9l1.15-1.15M16.75 7.25l1.15-1.15"/>`,
+    eye: `<path d="M4 6 19 20M6 8C4.6 9 3.5 10.4 3 12c1.2 4 4.7 7 9 7"/>`,
+  };
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d[name]||""}</svg>`;
+}
+function say(m){ S.toast=m; paint(); clearTimeout(say.t); say.t=setTimeout(()=>{S.toast="";paint();},2000); }
+
+function rail(){
+  return `<nav class="rail">${SCREENS.map(([id,g,lab])=>{
+    const on=S.screen===id;
+    const mark=id==="live"?`<span class="mark"></span>`:id==="morning"?`<span class="mark amb"></span>`:"";
+    return `<button class="rbtn press ${on?"on":""}" data-act="screen" data-id="${id}" title="${lab}">${ico(g,on)}${mark}</button>`;
+  }).join("")}
+  <button class="rbtn press" style="margin-top:auto" data-act="hide" title="Hide · ⌥Space">${ico("eye",false)}</button></nav>`;
+}
+
+function ticker(){
+  return `<div class="ticker">
+    <span class="sym">NIFTY 24500 CE</span>
+    <span class="last ask">182.40</span>
+    <span class="ask mono">−4.20 (−2.25%)</span>
+    <span class="sep"></span>
+    <span class="dim">H 196.0</span><span class="dim">L 178.5</span>
+    <span class="dim">Vol 1.2×</span>
+    <span class="sep"></span>
+    <span class="dim">0.72</span><span class="amb">×0.85</span>
+    <div class="caps">
+      <span class="dotp ok"><i></i>Kotak</span>
+      <span class="dotp ok"><i></i>Quote</span>
+      <span class="dotp ok"><i></i>Inst</span>
+      <span class="dotp warn"><i></i>Acct</span>
+    </div>
+  </div>`;
+}
+
+function miniChart(){
+  const tf=["1m","5m","15m","1h","1D"];
+  return `<div class="plot">
+    <div class="tf">${tf.map(x=>`<button class="press ${S.tf===x?"on":""}" data-act="tf" data-id="${x}">${x}</button>`).join("")}<span class="dim" style="margin-left:auto;font-size:10px">Depth · Chart · not TradingView</span></div>
+    <div class="miniplot">${spark()}</div>
+    <div class="metrics">
+      <div><div class="k">Unrealised</div><div class="n ask">−₹1,840</div></div>
+      <div><div class="k">Stop</div><div class="n">24,520</div></div>
+      <div><div class="k">Target</div><div class="n">24,720</div></div>
+      <div><div class="k">Time</div><div class="n">11m</div></div>
+    </div>
+  </div>`;
+}
+function spark(){
+  return `<svg viewBox="0 0 400 140" preserveAspectRatio="none">
+    <line x1="0" x2="400" y1="70" y2="70" stroke="rgba(255,255,255,.12)" stroke-dasharray="3 3"/>
+    <polyline fill="none" stroke="#FF453A" stroke-width="1.6" points="0,40 50,36 90,48 140,44 190,70 240,88 290,92 340,110 400,118"/>
+  </svg>`;
+}
+function book(){
+  return `<aside class="book">
+    <h4>Asks</h4>
+    ${ASKS.map(([p,s])=>`<div class="row ask"><span>${p}</span><span style="text-align:right">${s}</span></div>`).join("")}
+    <div class="midpx ask">24,552 · last</div>
+    ${BIDS.map(([p,s])=>`<div class="row bid"><span>${p}</span><span style="text-align:right">${s}</span></div>`).join("")}
+    <h4>Bids · merge 0.05</h4>
+  </aside>`;
+}
+function ticket(){
+  const sell=S.side==="sell";
+  return `<aside class="ticket">
+    <div class="sides">
+      <button class="press buy ${!sell?"on":""}" data-act="side" data-id="buy">BUY</button>
+      <button class="press sell ${sell?"on":""}" data-act="side" data-id="sell">SELL</button>
+    </div>
+    <div class="seg">${["Limit","Market","Stop"].map((x,i)=>`<button class="${i===2?"on":""}">${x}</button>`).join("")}</div>
+    <div><label>Price</label><input class="mono" value="24,520" readonly></div>
+    <div><label>Qty</label><input class="mono" value="50" readonly></div>
+    <div class="avail">Available ₹1,24,000 · DualNoBlend INR</div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span class="dim">Auto-place SL</span><button class="sw ${S.sl?"on":""}" data-act="sl"></button>
+    </div>
+    <button class="go press ${sell?"sell":""}" data-act="declare">${sell?"SELL":"BUY"} · Confirm</button>
+    <p class="dim">Max planned ≈ ₹3,000 · R:R 1:2.3 · not remaining-risk</p>
+  </aside>`;
+}
+function blotter(){
+  const tabs=["positions","orders","capture","history"];
+  const rows=BLOTS[S.blot]||[];
+  return `<div class="blotter">
+    <div class="btabs">${tabs.map(t=>`<button class="press ${S.blot===t?"on":""}" data-act="blot" data-id="${t}">${t}</button>`).join("")}
+      <span class="dim" style="margin-left:auto;padding:7px 10px">Account Manager · this book only</span></div>
+    <div class="btable">
+      <div class="h"><span>Time</span><span>Symbol</span><span>Side</span><span>Qty</span><span>Net / px</span><span>State</span></div>
+      ${rows.map(r=>`<div class="r"><span>${r[0]}</span><span>${r[1]}</span><span>${r[2]}</span><span>${r[3]}</span><span class="${String(r[4]).includes("−")?"ask":""}">${r[4]}</span><span class="dim">${r[5]}</span></div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function morning(){
+  return `<div class="plot">
+    <div class="metrics" style="border:0">
+      <div><div class="k">Nifty</div><div class="n bid">24,812 +0.42%</div></div>
+      <div><div class="k">BNF</div><div class="n ask">52,140 −0.18%</div></div>
+      <div><div class="k">VIX</div><div class="n amb">14.2</div></div>
+      <div><div class="k">Yday P&amp;L</div><div class="n ask">−₹2,100</div></div>
+    </div>
+    <div class="miniplot">${spark()}</div>
+    <p class="dim" style="margin-top:8px">Adherence 62% · win rate — · left on table —. Start trading opens the ticket.</p>
+    <button class="go press" style="margin-top:8px;max-width:220px" data-act="screen" data-id="pretrade">Start trading</button>
+  </div>`;
+}
+function preMain(){
+  return `<div class="seg">${[["standard","Standard"],["nfo","NFO"],["crypto","Crypto"],["swing","Swing"]].map(([id,l])=>`<button class="press ${S.pre===id?"on":""}" data-act="pre" data-id="${id}">${l}</button>`).join("")}</div>` +
+    (S.pre==="nfo"?`<div class="plot"><p class="dim">NFO three-zone: Analytics hole · Consequence · Plan. Session/chain/OI honest-dark until declared. Lots. DualNoBlend INR.</p>
+      <div class="metrics"><div><div class="k">Chain</div><div class="n dim">unavailable</div></div><div><div class="k">OI</div><div class="n dim">unavailable</div></div><div><div class="k">Greeks</div><div class="n dim">—</div></div><div><div class="k">σ 2–5</div><div class="n dim">dark</div></div></div></div>`:
+    S.pre==="crypto"?`<div class="plot"><p class="dim">USDT · no lots. Catalog bind. Last / klines / settlement. Never last=0.</p>
+      <div class="btable"><div class="h"><span>Symbol</span><span>Strike</span><span>Side</span><span>Expiry</span><span>Last</span><span></span></div>
+        <div class="r"><span>XRP-260911-1.36-C</span><span>1.36</span><span>C</span><span>260911</span><span class="dim">unavailable</span><span></span></div>
+        <div class="r"><span>XRP-260911-1.36-P</span><span>1.36</span><span>P</span><span>260911</span><span class="dim">unavailable</span><span></span></div>
+      </div></div>`:
+    S.pre==="swing"?`<div class="plot"><p class="dim">6-step: check-in → risk → hold → invalidation → review → overnight. Ticket still Buy/Sell + qty + stop.</p></div>`:
+    miniChart());
+}
+function liveMain(){
+  const det=S.detect?`<div class="detect"><span class="dotp ok"><i></i>Tighter</span>
+    <h3>RELIANCE 1,300 · SL 1,150 vs plan 1,100</h3>
+    <p class="dim">% of this INR book only. <button class="press" data-act="detect-off" style="color:var(--blue)">Got it</button>
+    · <button class="press" data-act="detect-off" style="color:var(--blue)">Deeper</button>
+    · <button class="press" data-act="detect-no" style="color:var(--amber)">No form</button></p></div>`:"";
+  const eq=S.desk==="B"?`<p class="dim" style="padding:6px 10px">Desk B · equity-if-SL box — not remaining-risk, not OHLCV.</p>`:"";
+  return det+eq+miniChart();
+}
+function postMain(){
+  return `<div class="plot">
+    <div class="metrics"><div><div class="k">Moment A</div><div class="n">Outcome</div></div><div><div class="k">Moment B</div><div class="n">Process</div></div><div><div class="k">Moment C</div><div class="n">Sentence</div></div><div><div class="k">Fidelity</div><div class="n">—</div></div></div>
+    <p class="dim" style="margin-top:8px">Debrief saves on Notch. Journal on Station only asks: was it saved?</p>
+    <button class="go press" style="max-width:200px;margin-top:8px" data-act="toast" data-id="Debrief submitted.">Submit debrief</button>
+  </div>`;
+}
+function escrowMain(){
+  return `<div class="plot"><p class="dim">Declared | Actual · seven slots. Notch does not invent fills.</p>
+    <div class="btable">${[["Qty 50","50"],["Stop 24520","placed"],["Target 24720","not on venue"],["Side BUY","BUY"],["NRML","NRML"],["Fill","unavailable"],["Charges","no break"]].map(([d,a])=>`<div class="r"><span></span><span>${d}</span><span>→</span><span></span><span>${a}</span><span></span></div>`).join("")}</div></div>`;
+}
+function analysis(kind){
+  if(kind==="patterns") return `<div class="plot"><p class="dim">Setup mix · placeholder, not live API. Breakout 22 / 50.</p></div>`;
+  if(kind==="fidelity") return `<div class="plot"><p class="dim">Plan fidelity · 14 sessions. Escrow 84% when finite.</p><div class="miniplot">${spark()}</div></div>`;
+  return `<div class="plot"><div class="btable">
+    <div class="r"><span></span><span>RELIANCE</span><span>LONG</span><span>50</span><span class="bid">+₹900</span><span></span></div>
+    <div class="r"><span></span><span>BANKNIFTY CE</span><span>LONG</span><span>15</span><span class="ask">−₹1,290</span><span></span></div>
+  </div><p class="dim" style="margin-top:8px">Empty: no open positions — nothing to triage.</p></div>`;
+}
+function settingsMain(){
+  return `<div class="set">
+    <p class="dim" style="margin-bottom:8px">The one grouped list. Limits sync here. They do not fire Kill.</p>
+    <div class="g">
+      <div class="row"><span>Broker</span><span class="bid">Kotak · live</span></div>
+      <div class="row"><span>Free (Start book)</span><span class="mono">₹1,24,000</span></div>
+      <div class="row"><span>Holdings / positions</span><span class="mono">4 · 3</span></div>
+    </div>
+    <div class="g">
+      <div class="row"><span>Desk mode</span><span>
+        ${["A","B","C"].map(x=>`<button class="press ${S.desk===x?"on":""}" data-act="desk" data-id="${x}" style="padding:4px 8px;border-radius:6px;background:${S.desk===x?"var(--fill)":"none"}">${x}</button>`).join("")}
+      </span></div>
+      <div class="row"><span>Daily floor</span><span class="mono">₹12,000</span></div>
+    </div>
+  </div>`;
+}
+
+function mid(){
+  const sc=S.screen;
+  let main="";
+  if(sc==="morning") main=morning();
+  else if(sc==="pretrade") main=preMain();
+  else if(sc==="live") main=liveMain();
+  else if(sc==="posttrade") main=postMain();
+  else if(sc==="escrow") main=escrowMain();
+  else if(sc==="settings") main=settingsMain();
+  else main=analysis(sc);
+
+  const showBook = S.variant==="A" && (sc==="live"||sc==="pretrade");
+  const showTicket = (S.variant==="A"||S.variant==="C") && (sc==="live"||sc==="pretrade"||sc==="morning");
+  if(S.variant==="C"){
+    return `<div class="mid">${main}${showTicket?`<aside class="insp">${ticket()}</aside>`:""}</div>`;
+  }
+  if(S.variant==="B"){
+    return `<div class="mid">${main}</div>`;
+  }
+  return `<div class="mid">${main}${showBook?book():""}${showTicket?ticket():""}</div>`;
+}
+
+function overlay(){
+  if(S.kill!=="overlay") return "";
+  return `<div class="overlay"><h1>KILL SWITCH ACTIVE</h1>
+    <p class="dim">Entries BLOCKED · exits ALLOWED</p>
+    <div class="count">${S.killN}s</div>
+    <button class="go press" style="max-width:180px;background:var(--fill);color:#fff" ${S.killN>0?"disabled":""} data-act="calm">I'm Calm</button></div>`;
+}
+
+function paint(){
+  document.getElementById("desk").innerHTML = `
+    <div class="menubar"><span class="l">${ico("sun",true)} TradeAutopsy</span><span>NIFTY 50 · ${S.tf}</span><span class="r">12:41</span></div>
+    <div class="bgchart"><div class="candles">${[40,55,42,70,30,62,48,58,36,66,44,72,28,50,60,38,54,68].map((h,i)=>`<i class="cndl ${i%3?"up":"dn"}" style="height:${h}%"></i>`).join("")}</div></div>
+    ${S.hidden?"":`<button class="pill press" data-act="toggle">${ico("bolt",true)}<span class="d"></span><span class="trk"><i></i></span><span>1.8k↓</span></button>`}
+    <div class="toast" style="opacity:${S.toast?1:0}">${S.toast}</div>
+    <div class="sheet ${S.expanded&&!S.hidden?"":"hidden"}">
+      <div class="grip" data-act="collapse"><i></i></div>
+      ${ticker()}
+      <div class="work">${rail()}<div class="stage">${mid()}${S.variant!=="C"?blotter():""}</div></div>
+    </div>${overlay()}`;
+  document.getElementById("state").textContent="STATE "+JSON.stringify({
+    variant:S.variant, screen:S.screen, side:S.side, blot:S.blot, desk:S.desk, kill:S.kill,
+    fusion:{apple:"glass+SF+press", desk:"ticker+ticket+ladder+blotter"}, dualNoBlend:true,
+  },null,2);
+  const v=VARIANTS.find(x=>x.key===S.variant);
+  document.getElementById("switcher").innerHTML=`<button data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button data-act="next">→</button>`;
+}
+function setV(k){ S.variant=k; const u=new URL(location.href); u.searchParams.set("variant",k); history.replaceState(null,"",u); paint(); }
+function cycle(d){ const i=VARIANTS.findIndex(v=>v.key===S.variant); setV(VARIANTS[(i+d+3)%3].key); }
+
+document.addEventListener("click",(e)=>{
+  const t=e.target.closest("[data-act]"); if(!t) return;
+  const a=t.getAttribute("data-act"), id=t.getAttribute("data-id");
+  if(a==="prev") cycle(-1); if(a==="next") cycle(1);
+  if(a==="screen") S.screen=id;
+  if(a==="toggle") S.expanded=!S.expanded;
+  if(a==="collapse") S.expanded=false;
+  if(a==="hide"){ S.hidden=true; S.expanded=false; say("Hidden. ⌥Space shows the pill — it does not hide."); return; }
+  if(a==="side") S.side=id;
+  if(a==="sl") S.sl=!S.sl;
+  if(a==="tf") S.tf=id;
+  if(a==="pre") S.pre=id;
+  if(a==="blot") S.blot=id;
+  if(a==="desk") S.desk=id;
+  if(a==="declare"){ S.screen="live"; say("Declared. Waiting for fill."); return; }
+  if(a==="detect-off") S.detect=false;
+  if(a==="detect-no"){ S.detect=false; say("No form — plan in Notch, don’t invent a stop."); return; }
+  if(a==="toast"){ say(id); return; }
+  if(a==="calm"){ if(S.killN<=0){ S.kill="idle"; say("Desk unlocked."); return; } }
+  paint();
+});
+document.addEventListener("pointerdown",(e)=>{ const el=e.target.closest(".press"); if(el) el.classList.add("is-down"); },true);
+document.addEventListener("pointerup",()=>{ document.querySelectorAll(".press.is-down").forEach(el=>el.classList.remove("is-down")); },true);
+document.addEventListener("keydown",(e)=>{
+  if(e.target.tagName==="INPUT") return;
+  if(e.key==="Escape"){ S.expanded=false; paint(); }
+  if(e.key==="ArrowLeft") cycle(-1); if(e.key==="ArrowRight") cycle(1);
+});
+const boot=new URLSearchParams(location.search).get("variant")||"A";
+S.variant=VARIANTS.some(v=>v.key===boot)?boot:"A";
+paint();
+</script>
+</body>
+</html>

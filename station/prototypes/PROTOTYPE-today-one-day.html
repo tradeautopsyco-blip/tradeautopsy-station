@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. Delete after a variant wins.
+  Question: Station as a Mac app — one local day (happened + now), plus Journal,
+  Backend Box, and Settings as real destinations, Apple HIG.
+  Today layouts via ?variant=  A Day spine · B Now is the desk · C Split clocks
+  Routes via ?route= today|journal|backend|settings
+  Open: open station/prototypes/PROTOTYPE-today-one-day.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Station · one day</title>
+  <style>
+    :root {
+      --label: #f5f5f7;
+      --secondary: rgba(245,245,247,.58);
+      --tertiary: rgba(245,245,247,.32);
+      --quaternary: rgba(245,245,247,.16);
+      --bg: #000;
+      --grouped: #1c1c1e;
+      --grouped-2: #2c2c2e;
+      --fill: rgba(120,120,128,.24);
+      --fill-press: rgba(120,120,128,.36);
+      --sep: rgba(84,84,88,.65);
+      --blue: #0a84ff;
+      --green: #30d158;
+      --red: #ff453a;
+      --orange: #ff9f0a;
+      --teal: #64d2ff;
+      --glass: rgba(28,28,30,.62);
+      --sidebar: rgba(22,22,24,.78);
+      --scrim: rgba(0,0,0,.42);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font: 400 13px/1.4 var(--sans);
+      letter-spacing: -.006em;
+      font-optical-sizing: auto;
+      background: #1a1a1c;
+      color: var(--label);
+      -webkit-font-smoothing: antialiased;
+      padding: 22px 16px 100px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+    .press { transition: transform 100ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+
+    .q {
+      width: min(1180px, 100%); margin: 0 auto 12px;
+      font-size: 11px; letter-spacing: .012em; color: var(--tertiary);
+    }
+    .q b { color: var(--secondary); font-weight: 600; letter-spacing: -.006em; font-size: 13px; }
+
+    /* Window — Liquid Glass chrome, thicker sidebar */
+    .mac {
+      width: min(1180px, 100%); height: 780px; margin: 0 auto;
+      background: var(--bg); border-radius: 12px; overflow: hidden; position: relative;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+      display: flex; flex-direction: column;
+    }
+    .titlebar {
+      height: 38px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+      padding: 0 14px;
+      background: var(--glass);
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.08);
+    }
+    .traffic { display: flex; gap: 7px; }
+    .traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .titlebar .app-name {
+      flex: 1; text-align: center; font-size: 13px; font-weight: 600;
+      letter-spacing: -.011em; color: var(--secondary);
+    }
+
+    .split { flex: 1; display: grid; grid-template-columns: 216px 1fr; min-height: 0; }
+    .sidebar {
+      background: var(--sidebar);
+      backdrop-filter: blur(48px) saturate(160%);
+      -webkit-backdrop-filter: blur(48px) saturate(160%);
+      border-right: .5px solid rgba(255,255,255,.06);
+      padding: 8px 10px 12px; display: flex; flex-direction: column;
+    }
+    .sb-sec {
+      padding: 14px 10px 6px; font-size: 11px; font-weight: 600;
+      letter-spacing: .006em; color: var(--tertiary);
+    }
+    .nav {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; text-align: left; padding: 6px 8px; border-radius: 7px;
+      color: var(--secondary); font-size: 13px; letter-spacing: -.006em;
+    }
+    .nav:hover { background: var(--fill); color: var(--label); }
+    .nav.on { background: rgba(10,132,255,.28); color: var(--label); font-weight: 600; }
+    .nav .ico { width: 17px; height: 17px; opacity: .72; flex-shrink: 0; color: var(--secondary); }
+    .nav:hover .ico { opacity: .92; color: var(--label); }
+    .nav.on .ico { color: var(--blue); opacity: 1; }
+    .nav .badge {
+      margin-left: auto; font-size: 11px; font-weight: 600;
+      color: var(--orange); letter-spacing: .006em;
+    }
+    .sb-foot {
+      margin-top: auto; padding: 10px 8px 4px;
+      font-family: var(--mono); font-size: 10px; letter-spacing: .012em; color: var(--tertiary);
+    }
+    .sb-foot div { display: flex; justify-content: space-between; margin-top: 5px; }
+    .ok { color: var(--green); }
+
+    .stage { min-width: 0; display: flex; flex-direction: column; background: var(--bg); position: relative; }
+    .toolbar {
+      flex-shrink: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+      padding: 10px 22px 10px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.55), rgba(0,0,0,0));
+    }
+    .large-title {
+      font-size: 28px; font-weight: 700; letter-spacing: -.026em; line-height: 1.05;
+    }
+    .sub { font-size: 13px; color: var(--secondary); letter-spacing: -.006em; margin-top: 2px; }
+    .cta {
+      flex-shrink: 0; padding: 6px 14px; border-radius: 8px;
+      background: var(--blue); color: #fff; font-size: 13px; font-weight: 600;
+      letter-spacing: -.006em;
+    }
+    .cta.quiet { background: var(--fill); color: var(--label); }
+    .scroll { flex: 1; overflow: auto; padding: 4px 22px 28px; }
+    .scroll::-webkit-scrollbar { width: 8px; }
+    .scroll::-webkit-scrollbar-thumb { background: #2c2c2e; border-radius: 4px; }
+
+    .gain { color: var(--green); } .loss { color: var(--red); } .caut { color: var(--orange); }
+    .muted { color: var(--tertiary); } .secy { color: var(--secondary); }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+    /* Grouped inset lists — HIG lists-and-tables insetGrouped */
+    .group { margin-bottom: 22px; }
+    .group > h2 {
+      font-size: 13px; font-weight: 400; color: var(--secondary);
+      letter-spacing: -.006em; padding: 0 16px 6px; text-transform: none;
+    }
+    .group > .foot {
+      font-size: 12px; line-height: 1.35; color: var(--tertiary);
+      padding: 6px 16px 0; letter-spacing: 0;
+    }
+    .inset {
+      background: var(--grouped); border-radius: 10px; overflow: hidden;
+    }
+    .row {
+      display: flex; align-items: center; gap: 12px;
+      min-height: 44px; padding: 8px 16px; width: 100%; text-align: left;
+      position: relative;
+    }
+    .row + .row::before {
+      content: ""; position: absolute; left: 16px; right: 0; top: 0; height: .5px;
+      background: var(--sep);
+    }
+    .row:active { background: var(--fill-press); }
+    .row .lab { flex: 1; min-width: 0; }
+    .row .lab b { display: block; font-weight: 400; font-size: 17px; letter-spacing: -.022em; }
+    .row .lab span { display: block; font-size: 12px; color: var(--secondary); letter-spacing: 0; margin-top: 1px; }
+    .row .val { color: var(--tertiary); font-size: 17px; letter-spacing: -.022em; }
+    .chev { width: 8px; height: 8px; border-top: 1.6px solid var(--tertiary); border-right: 1.6px solid var(--tertiary); transform: rotate(45deg); flex-shrink: 0; }
+    .sw {
+      width: 51px; height: 31px; border-radius: 999px; background: var(--grouped-2);
+      position: relative; flex-shrink: 0; transition: background 180ms ease-out;
+    }
+    .sw::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+      border-radius: 50%; background: #fff;
+      box-shadow: 0 2px 6px rgba(0,0,0,.28);
+      transition: transform 180ms ease-out;
+    }
+    .sw.on { background: var(--green); }
+    .sw.on::after { transform: translateX(20px); }
+    @media (prefers-reduced-motion: reduce) {
+      .sw, .sw::after, .press { transition: none; }
+      .press:active, .press.is-down { transform: none; }
+    }
+
+    /* Today */
+    .clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .tile {
+      background: var(--grouped); border-radius: 12px; padding: 12px 14px;
+    }
+    .tile .k { font-size: 11px; color: var(--tertiary); letter-spacing: .006em; }
+    .tile .v { font-size: 22px; font-weight: 600; letter-spacing: -.026em; margin-top: 4px; font-family: var(--sans); }
+    .tile .h { font-size: 12px; color: var(--secondary); margin-top: 4px; }
+    .clock-tag {
+      font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--teal); margin-bottom: 4px;
+    }
+    .preview {
+      font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--orange);
+    }
+    .remain { font-size: 17px; font-weight: 600; letter-spacing: -.022em; margin-top: 6px; }
+    .remain .used { font-size: 13px; font-weight: 400; color: var(--red); margin-left: 8px; }
+    .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .chart-host { width: 100%; height: 156px; }
+    .chart-host.mini { height: 88px; }
+    .chart-host svg { display: block; width: 100%; height: 100%; }
+    .ta-tick { fill: var(--tertiary); font-size: 10px; font-family: var(--sans); }
+    .readout { font-family: var(--mono); font-size: 11px; color: var(--secondary); margin-top: 6px; }
+    .sec-label {
+      font-size: 13px; font-weight: 600; letter-spacing: -.006em; margin: 18px 0 8px;
+    }
+    .hero4 { display: grid; grid-template-columns: repeat(3, 1fr) minmax(160px, 1fr); gap: 8px; margin-bottom: 12px; }
+    .split-day { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; min-height: 0; }
+    table.blot { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.blot th {
+      text-align: left; font-size: 11px; color: var(--tertiary); font-weight: 400;
+      padding: 6px 12px; border-bottom: .5px solid var(--sep);
+    }
+    table.blot td { padding: 10px 12px; border-bottom: .5px solid var(--sep); vertical-align: top; }
+    table.blot tr { cursor: pointer; }
+    table.blot tr.sel td { background: rgba(10,132,255,.12); }
+    .sym { font-weight: 600; letter-spacing: -.011em; }
+    .hint { font-size: 12px; color: var(--secondary); margin-top: 2px; }
+    .pill {
+      display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .pill.warn { background: rgba(255,159,10,.16); color: var(--orange); }
+    .pill.bad { background: rgba(255,69,58,.16); color: var(--red); }
+    .pill.ok { background: rgba(48,209,88,.16); color: var(--green); }
+    .pill.due { background: rgba(255,159,10,.16); color: var(--orange); }
+    .flag { font-size: 11px; font-weight: 600; color: var(--red); }
+    .t-row {
+      display: grid; grid-template-columns: 52px 1.2fr 40px 48px 78px 1fr;
+      align-items: center; min-height: 36px; font-size: 12px;
+      padding: 0 12px; border-bottom: .5px solid var(--sep);
+    }
+    .t-row.head { color: var(--tertiary); font-size: 11px; min-height: 28px; }
+    .row-act { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+    .btn {
+      padding: 6px 12px; border-radius: 8px; background: var(--fill);
+      font-size: 13px; font-weight: 500;
+    }
+    .btn.pri { background: var(--blue); color: #fff; font-weight: 600; }
+
+    /* Journal */
+    .j-split { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: start; }
+    .day-btn { width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; color: var(--secondary); }
+    .day-btn.on { background: rgba(10,132,255,.28); color: var(--label); }
+    .day-btn .d { font-size: 15px; font-weight: 600; letter-spacing: -.016em; }
+    .day-btn .n { font-size: 12px; margin-top: 2px; opacity: .8; }
+    .j-card { padding: 14px 16px; cursor: pointer; }
+    .j-card .when { font-family: var(--mono); font-size: 11px; color: var(--tertiary); }
+    .j-card .name { font-size: 17px; font-weight: 600; letter-spacing: -.022em; margin-top: 4px; }
+    .j-card .snap { font-size: 12px; color: var(--secondary); margin-top: 3px; }
+    .chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .j-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+    .j-search {
+      flex: 1; min-width: 180px; height: 32px; padding: 0 12px; border-radius: 8px;
+      background: var(--grouped); color: var(--label); border: 0; font: inherit;
+    }
+    .j-search::placeholder { color: var(--tertiary); }
+    .seg {
+      display: flex; background: var(--grouped); border-radius: 8px; padding: 2px; gap: 1px;
+    }
+    .seg button {
+      padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      color: var(--secondary);
+    }
+    .seg button.on { background: var(--fill-press); color: var(--label); font-weight: 600; }
+    .snap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+    .snap-grid .box { background: #000; border-radius: 10px; padding: 8px 10px; }
+    .snap-grid .k { font-size: 11px; color: var(--tertiary); }
+    .snap-grid .v { font-size: 13px; font-weight: 600; margin-top: 2px; letter-spacing: -.011em; }
+    .phase { margin-top: 10px; }
+    .phase .k { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--teal); }
+    .phase p { font-size: 13px; color: var(--secondary); margin-top: 3px; }
+    .fid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .fid i { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 6px; background: var(--grouped-2); color: var(--secondary); }
+    .fid i.ok { color: var(--green); }
+    .fid i.bad { color: var(--red); }
+    .thumbs { display: flex; gap: 6px; margin-top: 8px; }
+    .thumbs b {
+      display: block; width: 72px; height: 48px; border-radius: 6px;
+      background: linear-gradient(135deg, #1c1c1e, #2c2c2e); font-size: 10px; color: var(--tertiary);
+      display: flex; align-items: center; justify-content: center; font-weight: 500;
+    }
+    .drawer.wide { width: 400px; }
+
+    /* Backend modules */
+    .mod-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .badge { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+    .badge.live { color: var(--green); }
+    .badge.off { color: var(--tertiary); }
+    .meta-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .meta-row .k { color: var(--secondary); }
+
+    .drawer {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 360px;
+      background: var(--sidebar); backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      border-left: .5px solid rgba(255,255,255,.08); padding: 18px 16px; overflow: auto; z-index: 6;
+    }
+    .card-detect {
+      position: absolute; left: 50%; top: 72px; transform: translateX(-50%);
+      width: 400px; background: var(--grouped); border-radius: 14px; padding: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.5); z-index: 8;
+      outline: .5px solid rgba(100,210,255,.28);
+    }
+    .card-detect h2 { font-size: 20px; font-weight: 700; letter-spacing: -.026em; margin: 8px 0 4px; }
+    .delta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+    .delta .box { background: #000; border-radius: 10px; padding: 10px 12px; }
+    .delta .box.better { outline: .5px solid rgba(48,209,88,.4); }
+    .eq { height: 110px; margin-top: 8px; }
+    .toast {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 12; padding: 8px 14px; border-radius: 999px;
+      background: var(--grouped-2); font-size: 13px; font-weight: 500;
+      opacity: 0; pointer-events: none; transition: opacity 180ms ease-out;
+    }
+
+    .state {
+      width: min(1180px, 100%); margin: 10px auto 0;
+      background: #000; color: #8bffce; font-family: var(--mono); font-size: 10px;
+      border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; max-height: 100px; overflow: auto;
+    }
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 10px; z-index: 50;
+      background: #f4f4f5; color: #111; padding: 8px 10px; border-radius: 999px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; font-size: 14px; }
+    .switcher .lab { min-width: 250px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+
+    @media (prefers-reduced-transparency: reduce) {
+      .titlebar, .sidebar, .drawer { background: #1c1c1e; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    }
+    @media (prefers-contrast: more) {
+      .inset, .tile { outline: 1px solid #fff; }
+    }
+  </style>
+</head>
+<body>
+  <div class="q">PROTOTYPE · throwaway · Apple HIG · <b>Today C already holds happened + now. Journal is every declaration that went to Console — frozen plan, not only save chips.</b></div>
+  <div class="mac" id="mac"></div>
+  <pre class="state" id="state"></pre>
+  <div class="switcher" id="switcher"></div>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Day spine", blurb: "Chart first, then now" },
+  { key: "B", name: "Now is the desk", blurb: "Blotter A first" },
+  { key: "C", name: "Split clocks", blurb: "Happened | open now" },
+];
+const ROUTES = ["today", "journal", "backend", "settings"];
+
+const DAY = {
+  date: "Thursday, 20 August",
+  clock: "11:42",
+  quote: "INR",
+  account: 200000,
+  floor: 12000,
+  remaining: 6200,
+  used: 5800,
+  closedPnl: -5800,
+  closedCount: 7,
+  meanLoss: 5400,
+  times: ["09:15","10:15","11:15","12:15","13:15","14:15","15:30"],
+  pnl: [0, 800, -400, -1200, -2100, -4100, -5800],
+  closed: [
+    { t: "09:41", s: "NIFTY", side: "CE", hold: "12m", net: 3100, flag: "", pre: 1, live: 1, post: 1, decl: "d1" },
+    { t: "10:08", s: "BANKNIFTY", side: "PE", hold: "9m", net: -8160, flag: "Size +50%", pre: 1, live: 1, post: 1, decl: "d2" },
+    { t: "10:44", s: "NIFTY", side: "CE", hold: "6m", net: 1840, flag: "", pre: 1, live: 1, post: 1, decl: "d3" },
+    { t: "11:19", s: "NIFTY", side: "PE", hold: "4m", net: -7560, flag: "Re-entry", pre: 1, live: 1, post: 1, decl: "d4" },
+    { t: "12:02", s: "BANKNIFTY", side: "CE", hold: "18m", net: 2200, flag: "", pre: 1, live: 1, post: 1, decl: "d5" },
+    { t: "13:11", s: "NIFTY", side: "CE", hold: "8m", net: 1050, flag: "", pre: 1, live: 1, post: 1, decl: "d6" },
+    { t: "14:26", s: "NIFTY", side: "PE", hold: "11m", net: 1730, flag: "", pre: 1, live: 1, post: 0, decl: "d7" },
+  ],
+  open: [
+    { id: "rel", symbol: "RELIANCE", side: "LONG", qty: 50, entry: 1284, sl: 1150, plannedSl: 1100, mtmToday: 900, class: "swing", overnight: true, checkIn: "CHECK TODAY", sentence: "Gap can print through SL — best case is the stop, not the worst." },
+    { id: "bn", symbol: "BANKNIFTY 24500 CE", side: "LONG", qty: 15, entry: 182, sl: null, plannedSl: null, mtmToday: -1290, class: "intraday", overnight: true, sentence: "MIS leftover — should have been squared. Overnight is the leak." },
+    { id: "nf", symbol: "NIFTY FUT", side: "LONG", qty: 65, entry: 24110, sl: 23980, plannedSl: 23980, mtmToday: -4550, class: "futures", overnight: true, sentence: "Marked overnight. SL does not cancel MTM." },
+  ],
+  journalDays: [
+    { id: "20", d: "Thu 20 Aug", n: "11 declares · 7 trips" },
+    { id: "19", d: "Wed 19 Aug", n: "4 declares · 3 trips" },
+    { id: "18", d: "Tue 18 Aug", n: "5 declares · 5 trips" },
+    { id: "14", d: "Fri 14 Aug", n: "2 declares · 2 trips" },
+  ],
+};
+
+/* Frozen plans POSTed to Console that session — including unmatched / cancelled / still pending. */
+const JOURNAL = {
+  20: {
+    sheet: "Loss-chase after BANKNIFTY size. Cap next to half until calm ≤ 2. HDFC declare expired — that is a signal, not a miss to chase.",
+    emotion: "Tense",
+    decls: [
+      { id: "d-rel", t: "09:05", symbol: "RELIANCE", right: "", side: "BUY", kind: "swing", setup: "Pullback", qty: 50, fillQty: null, sl: 1100, entry: 1284, target: 1420, calm: 1, conf: 4, invKind: "context", inv: "Gap through 1,150 voids overnight thesis.", consent: true, status: "pending", trip: null, fid: null, shots: 1, voice: false, pre: "Swing from yesterday. Protective SL consented.", live: "Carry still on. Check-in today.", post: "", emotion: "Calm", signal: null, maxRisk: 9200 },
+      { id: "d-can", t: "09:12", symbol: "NIFTY", right: "24500 CE", side: "BUY", kind: "intraday", setup: "Breakout", qty: 50, fillQty: null, sl: 86, entry: 102, target: 128, calm: 2, conf: 3, invKind: "time", inv: "If OR not held by 09:30, cancel.", consent: true, status: "cancelled", trip: null, fid: null, shots: 0, voice: false, pre: "OR thesis gone. Cancelled before fill — itself a signal.", live: "", post: "", emotion: "Focused", signal: "Insight", maxRisk: 800 },
+      { id: "d1", t: "09:28", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Breakout", qty: 50, fillQty: 50, sl: 218, entry: 232, target: 258, calm: 2, conf: 4, invKind: "time", inv: "Out by 10:15 if VWAP not reclaimed.", consent: true, status: "matched", trip: 0, fid: 88, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 2, voice: false, pre: "OR break, first 15m. Size held.", live: "Stop stayed 218.", post: "Took 60% at +1.4R.", emotion: "Focused", signal: "Clean", maxRisk: 700 },
+      { id: "d2", t: "09:52", symbol: "BANKNIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Pullback", qty: 15, fillQty: 25, sl: 412, entry: 448, target: 490, calm: 4, conf: 5, invKind: "behaviour", inv: "If 5m structure fails, flatten — do not add.", consent: true, status: "matched", trip: 1, fid: 41, dims: { entry: 1, stop: 1, target: 0, size: 0, inv: 0 }, shots: 1, voice: true, pre: "Declared 15 lots. Felt behind.", live: "Added 10 mid-hold. Size +50%.", post: "Named the chase. Do not rewrite as a scalp.", emotion: "Anxious", signal: "Tilt", maxRisk: 540 },
+      { id: "d3", t: "10:31", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Mean reversion", qty: 50, fillQty: 50, sl: 164, entry: 178, target: 196, calm: 1, conf: 4, invKind: "behaviour", inv: "VWAP reject voids mean-revert.", consent: true, status: "matched", trip: 2, fid: 91, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Fade the spike, half size if calm > 2 — calm was 1.", live: "Stop untouched.", post: "Target hit. Clean.", emotion: "Calm", signal: "Clean", maxRisk: 700 },
+      { id: "d4", t: "11:05", symbol: "NIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Reversal", qty: 65, fillQty: 65, sl: 92, entry: 118, target: 148, calm: 5, conf: 5, invKind: "behaviour", inv: "No re-entry if first attempt fails.", consent: true, status: "matched", trip: 3, fid: 28, dims: { entry: 0, stop: 0, target: 0, size: 1, inv: 0 }, shots: 1, voice: true, pre: "Revenge after BANKNIFTY. Declared anyway — the form does not stop tilt.", live: "Moved stop. Invalidation ignored.", post: "Re-entry. Fidelity is the score, not the P&L.", emotion: "Angry", signal: "Revenge", maxRisk: 1690 },
+      { id: "d5", t: "11:48", symbol: "BANKNIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Support bounce", qty: 15, fillQty: 15, sl: 198, entry: 214, target: 236, calm: 2, conf: 3, invKind: "context", inv: "Index VWAP loss voids bounce.", consent: true, status: "matched", trip: 4, fid: 80, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Support bounce after flatten. Size back to 15.", live: "Plan intact.", post: "Took target. Process held.", emotion: "Focused", signal: "Clean", maxRisk: 240 },
+      { id: "d6", t: "12:58", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Gap fill", qty: 50, fillQty: 50, sl: 142, entry: 151, target: 168, calm: 2, conf: 3, invKind: "time", inv: "Session cut-off 14:00.", consent: true, status: "matched", trip: 5, fid: 74, dims: { entry: 1, stop: 1, target: 0, size: 1, inv: 1 }, shots: 0, voice: false, pre: "Gap fill leftover. Small.", live: "Gave back half at the clock.", post: "Time invalidation honoured.", emotion: "Focused", signal: "Insight", maxRisk: 450 },
+      { id: "d7", t: "14:08", symbol: "NIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Reversal", qty: 50, fillQty: 50, sl: 76, entry: 88, target: 102, calm: 3, conf: 3, invKind: "time", inv: "Flatten by 15:15.", consent: true, status: "matched", trip: 6, fid: null, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Last window. Declared.", live: "Stop held.", post: "", emotion: "Tense", signal: "Review", maxRisk: 600 },
+      { id: "d-hdfc", t: "13:22", symbol: "HDFCBANK", right: "", side: "BUY", kind: "intraday", setup: "Pullback", qty: 20, fillQty: null, sl: 1640, entry: 1668, target: 1710, calm: 2, conf: 4, invKind: "time", inv: "No fill by 14:30 → expire.", consent: true, status: "expired", trip: null, fid: null, shots: 1, voice: false, pre: "Declared. Never filled. Console still has the row — 15:30 IST sweep marked expired.", live: "", post: "", emotion: "Calm", signal: null, maxRisk: 560 },
+      { id: "d-nf", t: "15:18", symbol: "NIFTY FUT", right: "", side: "BUY", kind: "positional", setup: "Trend continuation", qty: 65, fillQty: 65, sl: 23980, entry: 24110, target: 24500, calm: 2, conf: 3, invKind: "context", inv: "Index regime shift voids the carry.", consent: true, status: "pending", trip: null, fid: null, shots: 0, voice: false, pre: "Overnight futures. SL on. Marked, not mixed into closed P&L.", live: "Carry.", post: "", emotion: "Focused", signal: null, maxRisk: 8450 },
+    ],
+  },
+  19: {
+    sheet: "Three matched plans. No unmatched. Size held.",
+    emotion: "Calm",
+    decls: [
+      { id: "w1", t: "09:40", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Breakout", qty: 50, fillQty: 50, sl: 210, entry: 224, target: 248, calm: 1, conf: 4, invKind: "time", inv: "Out by 11:00.", consent: true, status: "matched", trip: 0, fid: 90, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "A-setup only.", live: "Intact.", post: "Target.", emotion: "Calm", signal: "Clean", maxRisk: 700 },
+      { id: "w2", t: "11:10", symbol: "RELIANCE", right: "", side: "BUY", kind: "intraday", setup: "Pullback", qty: 50, fillQty: 50, sl: 1260, entry: 1288, target: 1320, calm: 2, conf: 3, invKind: "behaviour", inv: "VWAP loss.", consent: true, status: "matched", trip: 1, fid: 82, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Cash pullback.", live: "Stop stayed.", post: "Scaled 50%.", emotion: "Focused", signal: "Clean", maxRisk: 1400 },
+      { id: "w3", t: "13:05", symbol: "HDFCBANK", right: "", side: "BUY", kind: "intraday", setup: "Support bounce", qty: 20, fillQty: 20, sl: 1632, entry: 1654, target: 1688, calm: 2, conf: 4, invKind: "context", inv: "Bank nifty VWAP.", consent: true, status: "matched", trip: 2, fid: 77, dims: { entry: 1, stop: 1, target: 0, size: 1, inv: 1 }, shots: 0, voice: false, pre: "Support.", live: "Gave the last 30%.", post: "Time cut.", emotion: "Focused", signal: "Insight", maxRisk: 440 },
+      { id: "w4", t: "14:40", symbol: "NIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Reversal", qty: 50, fillQty: null, sl: 64, entry: 72, target: 88, calm: 3, conf: 2, invKind: "time", inv: "No chase after 14:30.", consent: true, status: "cancelled", trip: null, fid: null, shots: 0, voice: false, pre: "Almost. Cancelled. Console kept it.", live: "", post: "", emotion: "Impatient", signal: "Insight", maxRisk: 400 },
+    ],
+    trips: [
+      { t: "10:02", s: "NIFTY", side: "CE", hold: "22m", net: 2400, flag: "", pre: 1, live: 1, post: 1, decl: "w1" },
+      { t: "11:44", s: "RELIANCE", side: "EQ", hold: "38m", net: 1100, flag: "", pre: 1, live: 1, post: 1, decl: "w2" },
+      { t: "13:51", s: "HDFCBANK", side: "EQ", hold: "26m", net: -280, flag: "", pre: 1, live: 1, post: 1, decl: "w3" },
+    ],
+  },
+  18: {
+    sheet: "Five for five. Quiet Tuesday.",
+    emotion: "Calm",
+    decls: [
+      { id: "t1", t: "09:35", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Breakout", qty: 50, fillQty: 50, sl: 190, entry: 205, target: 228, calm: 1, conf: 5, invKind: "time", inv: "11:00 cut.", consent: true, status: "matched", trip: 0, fid: 92, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "A.", live: "A.", post: "A.", emotion: "Calm", signal: "Clean", maxRisk: 750 },
+      { id: "t2", t: "10:20", symbol: "BANKNIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Range break", qty: 15, fillQty: 15, sl: 220, entry: 238, target: 262, calm: 2, conf: 4, invKind: "behaviour", inv: "Range recapture.", consent: true, status: "matched", trip: 1, fid: 85, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Range.", live: "Held.", post: "Target.", emotion: "Focused", signal: "Clean", maxRisk: 270 },
+      { id: "t3", t: "11:15", symbol: "NIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Mean reversion", qty: 50, fillQty: 50, sl: 88, entry: 96, target: 112, calm: 2, conf: 3, invKind: "time", inv: "13:00.", consent: true, status: "matched", trip: 2, fid: 70, dims: { entry: 1, stop: 1, target: 0, size: 1, inv: 1 }, shots: 0, voice: false, pre: "Fade.", live: "Clock.", post: "Time.", emotion: "Focused", signal: "Insight", maxRisk: 400 },
+      { id: "t4", t: "12:40", symbol: "RELIANCE", right: "", side: "BUY", kind: "intraday", setup: "Pullback", qty: 50, fillQty: 50, sl: 1272, entry: 1290, target: 1318, calm: 1, conf: 4, invKind: "context", inv: "Index dump.", consent: true, status: "matched", trip: 3, fid: 88, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Cash.", live: "Stop.", post: "Out.", emotion: "Calm", signal: "Clean", maxRisk: 900 },
+      { id: "t5", t: "14:10", symbol: "HDFCBANK", right: "", side: "BUY", kind: "intraday", setup: "Support bounce", qty: 20, fillQty: 20, sl: 1644, entry: 1660, target: 1684, calm: 2, conf: 3, invKind: "time", inv: "15:00.", consent: true, status: "matched", trip: 4, fid: 81, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 0, voice: false, pre: "Last.", live: "Held.", post: "Small green.", emotion: "Calm", signal: "Clean", maxRisk: 320 },
+    ],
+    trips: [
+      { t: "09:58", s: "NIFTY", side: "CE", hold: "18m", net: 1100, flag: "", pre: 1, live: 1, post: 1, decl: "t1" },
+      { t: "10:41", s: "BANKNIFTY", side: "CE", hold: "14m", net: 840, flag: "", pre: 1, live: 1, post: 1, decl: "t2" },
+      { t: "11:48", s: "NIFTY", side: "PE", hold: "22m", net: -180, flag: "", pre: 1, live: 1, post: 1, decl: "t3" },
+      { t: "13:02", s: "RELIANCE", side: "EQ", hold: "31m", net: 620, flag: "", pre: 1, live: 1, post: 1, decl: "t4" },
+      { t: "14:33", s: "HDFCBANK", side: "EQ", hold: "16m", net: 280, flag: "", pre: 1, live: 1, post: 1, decl: "t5" },
+    ],
+  },
+  14: {
+    sheet: "Friday half-day. Two declares, both matched.",
+    emotion: "Calm",
+    decls: [
+      { id: "f1", t: "09:50", symbol: "NIFTY", right: "CE", side: "BUY", kind: "intraday", setup: "Breakout", qty: 50, fillQty: 50, sl: 200, entry: 214, target: 236, calm: 2, conf: 4, invKind: "time", inv: "Noon cut.", consent: true, status: "matched", trip: 0, fid: 86, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 1, voice: false, pre: "Friday OR.", live: "Held.", post: "Out.", emotion: "Focused", signal: "Clean", maxRisk: 700 },
+      { id: "f2", t: "11:20", symbol: "BANKNIFTY", right: "PE", side: "BUY", kind: "intraday", setup: "Pullback", qty: 15, fillQty: 15, sl: 188, entry: 204, target: 226, calm: 2, conf: 3, invKind: "behaviour", inv: "Structure fail.", consent: true, status: "matched", trip: 1, fid: 79, dims: { entry: 1, stop: 1, target: 1, size: 1, inv: 1 }, shots: 0, voice: false, pre: "Pullback.", live: "Stop.", post: "Green.", emotion: "Calm", signal: "Clean", maxRisk: 240 },
+    ],
+    trips: [
+      { t: "10:12", s: "NIFTY", side: "CE", hold: "16m", net: 980, flag: "", pre: 1, live: 1, post: 1, decl: "f1" },
+      { t: "11:51", s: "BANKNIFTY", side: "PE", hold: "19m", net: 410, flag: "", pre: 1, live: 1, post: 1, decl: "f2" },
+    ],
+  },
+};
+
+const S = {
+  variant: "A",
+  route: "today",
+  selected: "rel",
+  journalDay: "20",
+  journalCard: null,
+  journalPick: null,
+  journalFacet: "all",
+  journalQuery: "",
+  consoleOpen: false,
+  detection: null,
+  launchAtLogin: true,
+  hideNotch: false,
+  capture: true,
+  debrief: false,
+  toast: "",
+};
+
+function money(n) {
+  const s = n < 0 ? "−" : n > 0 ? "+" : "";
+  return s + "₹" + Math.abs(Math.round(n)).toLocaleString("en-IN");
+}
+function pct(n) { return (n * 100).toFixed(2) + "%"; }
+function accPct(rupees) { return pct(rupees / DAY.account); }
+function calmWord(n) { return ["", "Calm", "Focused", "Tense", "Anxious", "Angry"][n] || ""; }
+function kindLabel(k) {
+  return ({ intraday: "Intraday", swing: "Swing", positional: "Positional", scalper_session: "Scalper", pre_market: "Pre-market" })[k] || k;
+}
+function statusPill(st) {
+  const map = { matched: ["ok", "Matched"], pending: ["warn", "Pending"], expired: ["due", "Expired"], cancelled: ["due", "Cancelled"], impulsive: ["bad", "Impulsive"] };
+  const [cls, lab] = map[st] || ["due", st];
+  return `<span class="pill ${cls}">${lab}</span>`;
+}
+function journalPack() {
+  const pack = JOURNAL[S.journalDay] || { sheet: "", emotion: "", decls: [], trips: [] };
+  return { ...pack, trips: S.journalDay === "20" ? DAY.closed : (pack.trips || []) };
+}
+function declById(id) { return (journalPack().decls || []).find(d => d.id === id); }
+function qHit(parts, q) {
+  if (!q) return true;
+  return parts.filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase());
+}
+function plannedLoss(p) { return p.plannedSl == null ? null : p.qty * Math.abs(p.entry - p.plannedSl); }
+function actualLoss(p) { return p.sl == null ? null : p.qty * Math.abs(p.entry - p.sl); }
+
+/* SF-style: medium scale, regular weight, round caps. Filled when the row is selected. */
+function ico(name, filled) {
+  const inner = {
+    sun: filled
+      ? `<circle cx="12" cy="12" r="4.2" fill="currentColor"/>
+         <path d="M12 2.8v2.1M12 19.1v2.1M4.3 4.3l1.5 1.5M18.2 18.2l1.5 1.5M2.8 12h2.1M19.1 12h2.1M4.3 19.7l1.5-1.5M18.2 5.8l1.5-1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>`
+      : `<circle cx="12" cy="12" r="3.35"/>
+         <path d="M12 3.4v1.7M12 18.9v1.7M5 5l1.2 1.2M17.8 17.8l1.2 1.2M3.4 12h1.7M18.9 12h1.7M5 19l1.2-1.2M17.8 6.2l1.2-1.2"/>`,
+    book: filled
+      ? `<path d="M6.2 4.2h11.2a1.6 1.6 0 0 1 1.6 1.6V19.2H8.4A2.2 2.2 0 0 0 6.2 21.4V4.2z" fill="currentColor" stroke="none"/>
+         <path d="M8.6 19.2h10.4" fill="none"/>`
+      : `<path d="M6.4 5.2A2.2 2.2 0 0 1 8.6 3h10v16.4H9.2A2.8 2.8 0 0 0 6.4 22V5.2z"/>
+         <path d="M9.2 19.4h10.2"/>`,
+    link: filled
+      ? `<path d="M9.6 14.4a3.4 3.4 0 0 0 4.8.15l1.9-1.9a3.4 3.4 0 1 0-4.8-4.8l-.6.6" fill="none"/>
+         <path d="M14.4 9.6a3.4 3.4 0 0 0-4.8-.15l-1.9 1.9a3.4 3.4 0 1 0 4.8 4.8l.6-.6" fill="none"/>`
+      : `<path d="M10 13.2a3.6 3.6 0 0 0 5.1.2l1.7-1.7a3.6 3.6 0 0 0-5.1-5.1l-.8.8"/>
+         <path d="M14 10.8a3.6 3.6 0 0 0-5.1-.2L7.2 12.3a3.6 3.6 0 0 0 5.1 5.1l.8-.8"/>`,
+    gear: filled
+      ? `<path d="M10.1 3.4h3.8l.55 2.05 1.7.5 1.55-1.4 2.7 2.7-1.4 1.55.5 1.7 2.05.55v3.8l-2.05.55-.5 1.7 1.4 1.55-2.7 2.7-1.55-1.4-1.7.5-.55 2.05h-3.8l-.55-2.05-1.7-.5-1.55 1.4-2.7-2.7 1.4-1.55-.5-1.7L3.4 13.9v-3.8l2.05-.55.5-1.7-1.4-1.55 2.7-2.7 1.55 1.4 1.7-.5.55-2.05z" fill="currentColor" stroke="none"/>
+         <circle cx="12" cy="12" r="2.6" fill="#000"/>`
+      : `<circle cx="12" cy="12" r="2.7"/>
+         <path d="M12 4.2v1.6M12 18.2v1.6M4.2 12h1.6M18.2 12h1.6M6.1 6.1l1.15 1.15M16.75 16.75l1.15 1.15M6.1 17.9l1.15-1.15M16.75 7.25l1.15-1.15"/>`,
+  };
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner[name] || ""}</svg>`;
+}
+
+function say(msg) {
+  S.toast = msg;
+  paint();
+  clearTimeout(say.t);
+  say.t = setTimeout(() => { S.toast = ""; paint(); }, 2200);
+}
+
+function drawFloor(host, mini) {
+  if (!host) return;
+  const series = DAY.pnl, floorY = -DAY.floor;
+  const w = host.clientWidth || (mini ? 480 : 700), h = mini ? 88 : 156, l = 8, r = 48, t = 10, b = 22;
+  const yMin = floorY - 800, yMax = 5000;
+  const xAt = (i) => l + (i / (series.length - 1)) * (w - l - r);
+  const yAt = (v) => t + (1 - (v - yMin) / (yMax - yMin)) * (h - t - b);
+  const pts = series.map((v, i) => [xAt(i), yAt(v)]);
+  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const last = pts[pts.length - 1];
+  const fy = yAt(floorY), zy = yAt(0);
+  const area = line + " L" + last[0].toFixed(1) + " " + zy.toFixed(1) + " L" + pts[0][0].toFixed(1) + " " + zy.toFixed(1) + " Z";
+  const ticks = mini ? "" : DAY.times.map((lab, i) => `<text class="ta-tick" x="${xAt(i)}" y="${h-6}" text-anchor="middle">${lab}</text>`).join("");
+  host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="This day's closed P and L versus daily floor">
+    <line x1="${l}" x2="${w-r}" y1="${zy}" y2="${zy}" stroke="rgba(255,255,255,.2)" stroke-dasharray="3 3"/>
+    <line x1="${l}" x2="${w-r}" y1="${fy}" y2="${fy}" stroke="rgba(255,69,58,.55)" stroke-dasharray="4 4"/>
+    <path d="${area}" fill="rgba(255,69,58,.12)"/>
+    <path d="${line}" fill="none" stroke="#FF453A" stroke-width="1.8" stroke-linejoin="round"/>
+    <rect x="${last[0]+4}" y="${last[1]-9}" width="50" height="16" rx="8" fill="#FF453A"/>
+    <text x="${last[0]+29}" y="${last[1]+3}" text-anchor="middle" fill="#fff" font-size="9" font-family="ui-monospace,monospace">−₹5.8k</text>
+    ${ticks}
+  </svg>`;
+}
+
+function equitySvg() {
+  return `<svg class="eq" viewBox="0 0 320 110" width="100%" height="110">
+    <polyline fill="none" stroke="#3a3a3c" stroke-width="1" points="0,36 80,32 160,28 240,24 320,22"/>
+    <polyline fill="none" stroke="#FF453A" stroke-width="2" points="200,26 240,58 280,74 320,90"/>
+    <text x="8" y="14" fill="#888" font-size="10">equity before this hold</text>
+  </svg>`;
+}
+
+function consoleDeep(p) {
+  if (!p) return `<p class="secy">Select a row.</p>`;
+  const al = actualLoss(p), pl = plannedLoss(p);
+  return `
+    <div class="clock-tag">Console · this hold</div>
+    <h2 class="large-title" style="font-size:22px">${p.symbol}</h2>
+    <p class="hint">Pre · live · post. Equity of this hold — not a live remaining-risk tile.</p>
+    ${equitySvg()}
+    <div class="hint" style="margin-top:8px">
+      Today MTM ${money(p.mtmToday)} · ${accPct(Math.abs(p.mtmToday))} of account<br>
+      ${al != null ? `Live SL max ${money(-al)} (${accPct(al)})` : "No SL — do not invent a max"}<br>
+      ${pl != null ? `Planned SL max ${money(-pl)}` : "No form"}<br>
+      ${p.overnight ? p.sentence : ""}
+    </div>
+    <p class="hint" style="margin-top:10px">Does not fold into closed P&amp;L today.</p>
+  `;
+}
+
+function detectionCard() {
+  if (!S.detection) return "";
+  if (S.detection === "noform") {
+    return `<aside class="card-detect">
+      <span class="pill warn">No plan</span>
+      <h2>This fill has no stop yet</h2>
+      <p class="hint">Not a nag — the book just changed. See the risk, then plan.</p>
+      <p class="hint" style="margin-top:8px">BANKNIFTY 24500 CE · leftover MIS · max loss is the premium still on.</p>
+      <div class="row-act"><button class="btn pri press" data-act="open-notch">Plan in Notch</button>
+      <button class="btn press" data-act="dismiss-detect">Not now</button></div>
+    </aside>`;
+  }
+  const planned = 50 * (1300 - 1100), actual = 50 * (1300 - 1150);
+  return `<aside class="card-detect">
+    <span class="pill ok">Tighter — better</span>
+    <h2>RELIANCE fill · 1,300</h2>
+    <p class="hint">Actual SL 1,150 vs planned 1,100.</p>
+    <div class="delta">
+      <div class="box"><div class="k muted">Planned SL max</div><div class="mono">${money(-planned)} · ${accPct(planned)}</div></div>
+      <div class="box better"><div class="k muted">Live SL max</div><div class="mono">${money(-actual)} · ${accPct(actual)}</div></div>
+    </div>
+    <p class="hint caut">Overnight scenario (not T8): a gap can print through 1,150.</p>
+    <div class="row-act"><button class="btn press" data-act="dismiss-detect">Got it</button>
+    <button class="btn pri press" data-act="open-console">Deeper</button></div>
+  </aside>`;
+}
+
+function chrome() {
+  const due = DAY.closed.some(c => !c.post);
+  return `
+    <div class="titlebar">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="app-name">Station</div>
+    </div>
+    <div class="split">
+      <nav class="sidebar" aria-label="Station">
+        <div class="sb-sec">Desk</div>
+        <button type="button" class="nav press ${S.route==="today"?"on":""}" data-act="route" data-id="today">${ico("sun", S.route==="today")} Today</button>
+        <button type="button" class="nav press ${S.route==="journal"?"on":""}" data-act="route" data-id="journal">${ico("book", S.route==="journal")} Journal ${due?`<span class="badge">Due</span>`:""}</button>
+        <div class="sb-sec">This Mac</div>
+        <button type="button" class="nav press ${S.route==="backend"?"on":""}" data-act="route" data-id="backend">${ico("link", S.route==="backend")} Backend Box</button>
+        <button type="button" class="nav press ${S.route==="settings"?"on":""}" data-act="route" data-id="settings">${ico("gear", S.route==="settings")} Settings</button>
+        <div class="sb-foot">
+          <div><span>Kotak Neo</span><span class="ok">syncing</span></div>
+          <div><span>History</span><span>Console</span></div>
+        </div>
+      </nav>
+      <div class="stage">
+        <div class="toast" style="opacity:${S.toast?1:0}">${S.toast}</div>
+        ${S.route === "journal" ? journalScreen() : S.route === "backend" ? backendScreen() : S.route === "settings" ? settingsScreen() : todayScreen()}
+        ${overlays()}
+      </div>
+    </div>`;
+}
+
+function overlays() {
+  if (S.route === "journal") return journalDrawer();
+  if (S.route !== "today") return "";
+  const sel = DAY.open.find(x => x.id === S.selected);
+  return `
+    ${S.consoleOpen ? `<aside class="drawer">${consoleDeep(sel)}<button class="btn press" style="margin-top:12px" data-act="close-console">Close</button></aside>` : ""}
+    ${detectionCard()}`;
+}
+
+function fidRow(d) {
+  if (!d.dims) return "";
+  const labs = [["entry", "Entry zone"], ["stop", "Stop"], ["target", "Target"], ["size", "Size"], ["inv", "Invalidation"]];
+  return `<div class="fid">${labs.map(([k, lab]) => `<i class="${d.dims[k] ? "ok" : "bad"}">${lab}</i>`).join("")}</div>`;
+}
+
+function declSnapshot(d) {
+  const name = [d.symbol, d.right].filter(Boolean).join(" ");
+  return `
+    <div class="clock-tag">Frozen plan · Console ${d.id}</div>
+    <h2 class="large-title" style="font-size:22px">${name}</h2>
+    <p class="hint">${d.t} · ${d.side} · ${kindLabel(d.kind)} · ${d.setup}</p>
+    <div class="chips" style="margin:8px 0">${statusPill(d.status)}
+      <span class="pill ${d.consent?"ok":"due"}">${d.consent?"SL consented":"No SL consent"}</span>
+      ${d.fid != null ? `<span class="pill ${d.fid>=70?"ok":"due"}">Fidelity ${d.fid}</span>` : `<span class="pill due">Fidelity after link</span>`}
+      ${d.signal ? `<span class="pill ${d.signal==="Clean"||d.signal==="Insight"?"ok":"bad"}">${d.signal}</span>` : ""}
+    </div>
+    <div class="snap-grid">
+      <div class="box"><div class="k">Qty declared</div><div class="v">${d.qty}${d.fillQty != null && d.fillQty !== d.qty ? ` → filled ${d.fillQty}` : ""}</div></div>
+      <div class="box"><div class="k">Stop / entry</div><div class="v">${d.sl} / ${d.entry}</div></div>
+      <div class="box"><div class="k">Target</div><div class="v">${d.target ?? "—"}</div></div>
+      <div class="box"><div class="k">Max loss (plan)</div><div class="v loss">${money(-d.maxRisk)}</div></div>
+      <div class="box"><div class="k">Calm · 1 is best</div><div class="v">${d.calm} · ${calmWord(d.calm)}</div></div>
+      <div class="box"><div class="k">Confidence · 5 is best</div><div class="v">${d.conf}</div></div>
+    </div>
+    <p class="hint">Invalidation · ${d.invKind} — ${d.inv}</p>
+    ${fidRow(d)}
+    <div class="phase"><div class="k">Pre</div><p>${d.pre || "Empty — capture still happens on the Notch."}</p></div>
+    <div class="phase"><div class="k">Live</div><p>${d.live || "Empty."}</p></div>
+    <div class="phase"><div class="k">Post</div><p>${d.post || (d.status==="matched" ? "Post due — debrief on the Notch." : "No fill. No post.")}</p></div>
+    <p class="hint" style="margin-top:10px">Feeling ${d.emotion || "—"}. ${d.shots ? d.shots + " chart shot" + (d.shots>1?"s":"") : "No screenshot"}${d.voice ? " · voice note" : ""}.</p>
+    ${d.shots ? `<div class="thumbs">${Array.from({length:d.shots}, (_,i)=>`<b>chart ${i+1}</b>`).join("")}</div>` : ""}
+    ${equitySvg()}
+    <p class="hint">Equity of this hold — DualNoBlend INR. Fidelity is process vs this snapshot, not P&amp;L.</p>`;
+}
+
+function journalDrawer() {
+  const pick = S.journalPick;
+  if (!pick) return "";
+  const pack = journalPack();
+  if (pick.kind === "sheet") {
+    return `<aside class="drawer wide">
+      <div class="clock-tag">Day sheet · notebook pin</div>
+      <h2 class="large-title" style="font-size:22px">${DAY.journalDays.find(d => d.id===S.journalDay)?.d || "Day"}</h2>
+      <p class="hint" style="margin:10px 0">${pack.sheet}</p>
+      <p class="hint">Feeling ${pack.emotion}. Shadow journal and weekly review live in Console — Station keeps the local week.</p>
+      <div class="row-act">
+        <button class="btn pri press" data-act="open-console-j">Open in Console</button>
+        <button class="btn press" data-act="close-jcard">Close</button>
+      </div>
+    </aside>`;
+  }
+  if (pick.kind === "open") {
+    const p = DAY.open.find(x => x.id === pick.id);
+    if (!p) return "";
+    return `<aside class="drawer wide">
+      <div class="clock-tag">Undeclared open</div>
+      <h2 class="large-title" style="font-size:22px">${p.symbol}</h2>
+      <p class="hint">${p.sentence}</p>
+      <div class="chips" style="margin:10px 0">${statusPill("impulsive")}<span class="pill due">No declarationId</span></div>
+      <p class="hint">Fill with no frozen plan. Console cannot score fidelity. Plan in Notch — do not invent a stop here.</p>
+      <p class="hint ${p.mtmToday>=0?"gain":"loss"}" style="margin-top:8px">Today MTM ${money(p.mtmToday)} · ${accPct(Math.abs(p.mtmToday))} of account</p>
+      <div class="row-act">
+        <button class="btn pri press" data-act="open-notch">Plan in Notch</button>
+        <button class="btn press" data-act="close-jcard">Close</button>
+      </div>
+    </aside>`;
+  }
+  const d = declById(pick.id);
+  if (!d) return "";
+  const trip = d.trip != null ? pack.trips[d.trip] : null;
+  return `<aside class="drawer wide">
+    ${declSnapshot(d)}
+    ${trip ? `<p class="hint" style="margin-top:10px">Matched fill ${trip.t} · ${trip.hold} · <span class="${trip.net>=0?"gain":"loss"}">${money(trip.net)}</span>${trip.flag ? " · " + trip.flag : ""}</p>` : ""}
+    <div class="row-act">
+      <button class="btn pri press" data-act="open-console-j">Open in Console</button>
+      <button class="btn press" data-act="close-jcard">Close</button>
+    </div>
+  </aside>`;
+}
+
+function chips(c) {
+  return `
+    <span class="pill ${c.pre?"ok":"due"}">${c.pre?"Pre saved":"Pre empty"}</span>
+    <span class="pill ${c.live?"ok":"due"}">${c.live?"Live saved":"Live empty"}</span>
+    <span class="pill ${c.post?"ok":"due"}">${c.post?"Post saved":"Post due"}</span>`;
+}
+
+function chartBlock(mini) {
+  return `<div>
+    <div class="sec-label">This day only — closed P&amp;L vs floor</div>
+    <div class="inset" style="padding:10px 8px 8px">
+      <div class="chart-host${mini?" mini":""}" data-chart="${mini?"mini":"full"}"></div>
+    </div>
+    <div class="readout">${DAY.clock} · ${money(DAY.closedPnl)} closed · ${money(DAY.remaining).replace("+","")} to floor · open MTM not on this line</div>
+  </div>`;
+}
+
+function openTable() {
+  const rows = DAY.open.map(p => `
+    <tr class="${S.selected===p.id?"sel":""}" data-act="select" data-id="${p.id}">
+      <td><div class="sym">${p.symbol}</div><div class="hint">${p.side} ${p.qty} · ${p.class}</div></td>
+      <td class="${p.mtmToday>=0?"gain":"loss"}">${money(p.mtmToday)}<div class="hint">${accPct(Math.abs(p.mtmToday))} of account</div></td>
+      <td><span class="pill ${p.class==="intraday"?"bad":"warn"}">${p.checkIn || "CARRY"}</span>
+        <div class="hint">${p.sentence}</div></td>
+      <td><button class="btn press" data-act="deeper" data-id="${p.id}">Deeper</button></td>
+    </tr>`).join("");
+  return `<div class="sec-label">Open now — including overnight</div>
+    <div class="inset"><table class="blot">
+      <thead><tr><th>Position</th><th>Today MTM</th><th>Behavior</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function closedTable() {
+  return `<div class="sec-label">Happened today — closed round trips</div>
+    <div class="inset">
+      <div class="t-row head"><span>Time</span><span>Symbol</span><span>Side</span><span>Hold</span><span>Net</span><span>Flag</span></div>
+      ${DAY.closed.map(r => `<div class="t-row">
+        <span class="mono">${r.t}</span><span class="mono">${r.s}</span><span>${r.side}</span>
+        <span class="mono">${r.hold}</span>
+        <span class="mono ${r.net>=0?"gain":"loss"}">${money(r.net)}</span>
+        <span>${r.flag ? `<span class="flag">${r.flag}</span>` : "—"}</span>
+      </div>`).join("")}
+    </div>`;
+}
+
+function todayA() {
+  return `${toolbar("Today", "One local day · session open · " + DAY.clock, "Open Notch · Live", "open-notch")}
+    <div class="scroll">
+      <div class="head">
+        <div>
+          <div class="large-title">${DAY.date}</div>
+          <div class="remain">${money(DAY.remaining).replace("+","")} remaining
+            <span class="used">${money(-DAY.used)} · 48% of ${money(DAY.floor).replace("+","")} floor used</span></div>
+        </div>
+        <div class="preview">T8 preview · floor not live</div>
+      </div>
+      <p class="sub" style="margin-bottom:14px">You have ${money(DAY.remaining).replace("+","")} before the floor stops you — a little over one average loss. Open carries are a second clock.</p>
+      <div class="clocks">
+        <div class="tile"><div class="clock-tag">Happened</div><div class="k">Closed round trips</div>
+          <div class="v loss">${money(DAY.closedPnl)}</div>
+          <div class="h">${DAY.closedCount} RTs · hero is closed only</div></div>
+        <div class="tile"><div class="clock-tag">Now</div><div class="k">Open book</div>
+          <div class="v">${DAY.open.length} overnight</div>
+          <div class="h">MTM stays on the row. DualNoBlend.</div></div>
+      </div>
+      ${chartBlock(false)}
+      <div class="row-act">
+        <button class="btn pri press" data-act="detect-plan">Simulate RELIANCE fill</button>
+        <button class="btn press" data-act="detect-noform">Fill with no form</button>
+      </div>
+      ${openTable()}
+      ${closedTable()}
+    </div>`;
+}
+
+function todayB() {
+  return `${toolbar("Today", "Now is the desk · " + DAY.date, "Open Notch · Live", "open-notch")}
+    <div class="scroll">
+      <div class="hero4">
+        <div class="tile"><div class="k">Closed today</div><div class="v loss">${money(DAY.closedPnl)}</div></div>
+        <div class="tile"><div class="k">Closed RTs</div><div class="v">${DAY.closedCount}</div></div>
+        <div class="tile"><div class="k">Open now</div><div class="v">${DAY.open.length}</div></div>
+        <div class="tile"><div class="k">Hero</div><div class="h" style="margin-top:8px">Closed RTs only · WATCH</div></div>
+      </div>
+      ${chartBlock(true)}
+      <div class="row-act">
+        <button class="btn pri press" data-act="detect-plan">Simulate RELIANCE fill</button>
+        <button class="btn press" data-act="detect-noform">Fill with no form</button>
+      </div>
+      ${openTable()}
+      ${closedTable()}
+    </div>`;
+}
+
+function todayC() {
+  return `${toolbar("Today", "Two clocks · happened and now", "Open Notch · Live", "open-notch")}
+    <div class="scroll">
+      <div class="split-day">
+        <div>
+          <div class="clock-tag">Happened · this day</div>
+          <div class="large-title" style="font-size:22px">${DAY.date}</div>
+          <div class="remain">${money(DAY.closedPnl)} closed <span class="used">not mixed with open MTM</span></div>
+          ${chartBlock(false)}
+          ${closedTable()}
+        </div>
+        <div>
+          <div class="clock-tag">Now · still on</div>
+          <div class="large-title" style="font-size:22px">${DAY.open.length} overnight</div>
+          <p class="sub" style="margin:6px 0 10px">Select a row · Deeper opens Console</p>
+          <div class="row-act">
+            <button class="btn pri press" data-act="detect-plan">Simulate fill</button>
+            <button class="btn press" data-act="detect-noform">No form</button>
+          </div>
+          ${openTable()}
+        </div>
+      </div>
+    </div>`;
+}
+
+function todayScreen() {
+  return S.variant === "B" ? todayB() : S.variant === "C" ? todayC() : todayA();
+}
+
+function toolbar(title, sub, cta, act, quiet) {
+  return `<header class="toolbar">
+    <div><h1 class="large-title">${title}</h1><div class="sub">${sub}</div></div>
+    ${cta ? `<button type="button" class="cta press ${quiet?"quiet":""}" data-act="${act}">${cta}</button>` : ""}
+  </header>`;
+}
+
+function journalScreen() {
+  const pack = journalPack();
+  const q = S.journalQuery.trim();
+  const facet = S.journalFacet;
+  const decls = pack.decls.filter(d => {
+    if (!qHit([d.symbol, d.right, d.setup, d.kind, d.pre, d.live, d.post, d.emotion, d.signal, d.inv, d.status], q)) return false;
+    if (facet === "matched") return d.status === "matched";
+    if (facet === "unmatched") return d.status === "expired" || d.status === "cancelled";
+    if (facet === "pending") return d.status === "pending";
+    if (facet === "postdue") return d.status === "matched" && pack.trips[d.trip] && !pack.trips[d.trip].post;
+    if (facet === "impulsive") return false;
+    return true;
+  });
+  const undeclared = (S.journalDay === "20" && (facet === "all" || facet === "impulsive") && qHit(["BANKNIFTY", "impulsive", "MIS"], q))
+    ? DAY.open.filter(p => p.id === "bn") : [];
+  const postDue = pack.decls.filter(d => d.status === "matched" && pack.trips[d.trip] && !pack.trips[d.trip].post).length;
+  const unmatched = pack.decls.filter(d => d.status === "expired" || d.status === "cancelled").length;
+  const pending = pack.decls.filter(d => d.status === "pending").length;
+  const facets = [
+    ["all", "All"],
+    ["matched", "Matched"],
+    ["pending", "Pending"],
+    ["unmatched", "Unmatched"],
+    ["postdue", "Post due"],
+    ["impulsive", "Impulsive"],
+  ];
+  return `${toolbar("Journal", "Every declaration that hit Console · local week, then the hosted sheet", "Make another", "open-notch")}
+    <div class="scroll">
+      <p class="sub" style="margin-bottom:12px">Capture is still Notch. This page is the frozen plan — matched, pending, expired, cancelled — plus pre / live / post. ${postDue ? `<b style="color:var(--orange);font-weight:600">${postDue} post due.</b>` : "Posts saved."} ${unmatched ? `${unmatched} never filled.` : ""} ${pending ? `${pending} still pending.` : ""}</p>
+      <div class="j-tools">
+        <input class="j-search" data-act="jsearch" type="search" placeholder="Search symbol, setup, emotion…" value="${S.journalQuery.replace(/"/g, "&quot;")}" />
+        <div class="seg">${facets.map(([id, lab]) => `<button type="button" class="${facet===id?"on":""}" data-act="jfacet" data-id="${id}">${lab}</button>`).join("")}</div>
+        <button type="button" class="btn press" data-act="toast" data-id="Export is Console markdown for this day sheet.">Export</button>
+      </div>
+      <div class="j-split">
+        <div class="group" style="margin:0">
+          <h2>This week</h2>
+          <div class="inset">
+            ${DAY.journalDays.map(d => `
+              <button type="button" class="row day-btn ${S.journalDay===d.id?"on":""}" data-act="jday" data-id="${d.id}">
+                <div class="lab"><b style="font-size:15px">${d.d}</b><span>${d.n}</span></div>
+              </button>`).join("")}
+          </div>
+          <p class="foot">Older days live in Console. Query by emotion and setup is the same search.</p>
+        </div>
+        <div>
+          <div class="group" style="margin:0 0 18px">
+            <h2>Day sheet</h2>
+            <div class="inset">
+              <button type="button" class="row j-card" data-act="jsheet">
+                <div class="lab">
+                  <div class="when">Notebook pin · feeling ${pack.emotion}</div>
+                  <div class="name" style="font-size:15px;font-weight:500">${pack.sheet}</div>
+                </div>
+                <span class="chev" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="group" style="margin:0 0 18px">
+            <h2>Declarations that went to Console</h2>
+            <div class="inset">
+              ${decls.length ? decls.map(d => `
+                <button type="button" class="row j-card" data-act="jdecl" data-id="${d.id}">
+                  <div class="lab">
+                    <div class="when">${d.t} · ${kindLabel(d.kind)} · calm ${d.calm} ${calmWord(d.calm)} · conf ${d.conf}</div>
+                    <div class="name">${[d.symbol, d.right].filter(Boolean).join(" ")}
+                      <span style="font-weight:500;color:var(--secondary);font-size:13px"> ${d.side} ${d.qty}</span>
+                    </div>
+                    <div class="snap">${d.setup} · SL ${d.sl} · invalidation ${d.invKind}${d.fid != null ? ` · fidelity ${d.fid}` : ""}</div>
+                    <div class="chips">${statusPill(d.status)}
+                      ${d.signal ? `<span class="pill ${d.signal==="Clean"||d.signal==="Insight"?"ok":"bad"}">${d.signal}</span>` : ""}
+                      ${d.shots ? `<span class="pill ok">${d.shots} shot${d.shots>1?"s":""}</span>` : ""}
+                      ${d.voice ? `<span class="pill ok">Voice</span>` : ""}
+                      ${d.status==="matched" ? chips(pack.trips[d.trip] || {pre:1,live:1,post:1}) : ""}
+                    </div>
+                  </div>
+                  <span class="chev" aria-hidden="true"></span>
+                </button>`).join("") : `<div class="row"><div class="lab"><b>Nothing in this filter</b><span>Declarations still live on Console. This is the local week.</span></div></div>`}
+            </div>
+            <p class="foot">A changed plan is a new declaration. Cancelled-before-fill and expired unmatched stay on the sheet — they already went to Console.</p>
+          </div>
+          ${undeclared.length ? `<div class="group" style="margin:0">
+            <h2>Impulsive · no declaration</h2>
+            <div class="inset">
+              ${undeclared.map(p => `
+                <button type="button" class="row j-card" data-act="jopen" data-id="${p.id}">
+                  <div class="lab">
+                    <div class="when">Still open · no declarationId</div>
+                    <div class="name">${p.symbol}</div>
+                    <div class="snap">${p.sentence}</div>
+                    <div class="chips">${statusPill("impulsive")}</div>
+                  </div>
+                  <span class="chev" aria-hidden="true"></span>
+                </button>`).join("")}
+            </div>
+            <p class="foot">No frozen plan → no fidelity. Plan in Notch.</p>
+          </div>` : ""}
+        </div>
+      </div>
+    </div>`;
+}
+
+function backendScreen() {
+  return `${toolbar("Backend Box", "Brokers · feed · workflow · credentials sit next to what they affect", "Add connection", "add-broker")}
+    <div class="scroll">
+      <div class="group">
+        <h2>Brokers</h2>
+        <div class="inset">
+          <div class="row" style="align-items:flex-start;padding-top:14px;padding-bottom:14px">
+            <div class="lab">
+              <div class="mod-h"><b>Kotak Neo</b><span class="badge live">Live</span></div>
+              <span>Equities · INR · this desk’s money</span>
+              <div class="meta-row"><span class="k">Last validated</span><span>20 Aug · 09:12</span></div>
+              <div class="meta-row"><span class="k">API key</span><span class="mono">•••• 4471</span></div>
+              <div class="row-act">
+                <button class="btn press" data-act="toast" data-id="Edit stays on this card.">Edit</button>
+                <button class="btn press" data-act="toast" data-id="Stop paused sync. The venue is still on. That is not Kill.">Stop</button>
+              </div>
+            </div>
+          </div>
+          <div class="row" style="align-items:flex-start;padding-top:14px;padding-bottom:14px">
+            <div class="lab">
+              <div class="mod-h"><b>Binance.US</b><span class="badge off">Not connected</span></div>
+              <span>Crypto · USD · not blended into Kotak P&amp;L</span>
+              <div class="row-act"><button class="btn pri press" data-act="toast" data-id="Connect lives on the card. DualNoBlend.">Connect</button></div>
+            </div>
+          </div>
+        </div>
+        <p class="foot">Stop is not Kill. Each broker is a module. COM dollars stay a second desk.</p>
+      </div>
+      <div class="group">
+        <h2>Market Data</h2>
+        <div class="inset">
+          <button type="button" class="row press" data-act="toast" data-id="Primary feed picker. Notch overlays the chart.">
+            <div class="lab"><b>Primary Feed</b><span>NSE F&amp;O · last tick 14:41:08</span></div>
+            <span class="val">NSE F&amp;O</span><span class="chev"></span>
+          </button>
+          <div class="row"><div class="lab"><b>Status</b></div><span class="val" style="color:var(--green)">Live</span></div>
+        </div>
+      </div>
+      <div class="group">
+        <h2>Workflow</h2>
+        <div class="inset">
+          <button type="button" class="row" data-act="toggle" data-id="capture">
+            <div class="lab"><b>Capture Screenshots</b><span>Saves chart context with each fill</span></div>
+            <span class="sw ${S.capture?"on":""}" role="switch" aria-checked="${S.capture}"></span>
+          </button>
+          <button type="button" class="row" data-act="toggle" data-id="debrief">
+            <div class="lab"><b>Auto Debrief Draft</b><span>Writes a first pass after flatten. You still save on the Notch.</span></div>
+            <span class="sw ${S.debrief?"on":""}" role="switch" aria-checked="${S.debrief}"></span>
+          </button>
+        </div>
+        <p class="foot">No AI overview. These switches only change what gets attached to a journal card.</p>
+      </div>
+    </div>`;
+}
+
+function settingsScreen() {
+  return `${toolbar("Settings", "This Mac · limits sync to the Notch · they do not fire Kill")}
+    <div class="scroll">
+      <div class="group">
+        <h2>General</h2>
+        <div class="inset">
+          <button type="button" class="row" data-act="toggle" data-id="launch">
+            <div class="lab"><b>Launch at login</b><span>Start Station when this Mac wakes to the desk</span></div>
+            <span class="sw ${S.launchAtLogin?"on":""}" role="switch" aria-checked="${S.launchAtLogin}"></span>
+          </button>
+          <button type="button" class="row press" data-act="toast" data-id="Appearance follows the system. Dark is this prototype.">
+            <div class="lab"><b>Appearance</b></div>
+            <span class="val">System</span><span class="chev"></span>
+          </button>
+        </div>
+      </div>
+      <div class="group">
+        <h2>Risk limits</h2>
+        <div class="inset">
+          <button type="button" class="row press" data-act="toast" data-id="Daily floor is the rule you set. Remaining is a T8 preview.">
+            <div class="lab"><b>Daily floor</b><span>Used today ${money(-DAY.used)}</span></div>
+            <span class="val">${money(DAY.floor).replace("+","")}</span><span class="chev"></span>
+          </button>
+          <button type="button" class="row press" data-act="toast" data-id="Mean loss is a Settings number, not live T8 math.">
+            <div class="lab"><b>Mean loss</b></div>
+            <span class="val">${money(DAY.meanLoss).replace("+","")}</span><span class="chev"></span>
+          </button>
+          <button type="button" class="row press" data-act="toast" data-id="Max trips is the rule. Station does not invent more.">
+            <div class="lab"><b>Max round trips</b></div>
+            <span class="val">12</span><span class="chev"></span>
+          </button>
+        </div>
+        <p class="foot">These numbers sync to the Notch. They do not fire Kill. Stop pauses sync. Kill is the Notch overlay.</p>
+      </div>
+      <div class="group">
+        <h2>Notch</h2>
+        <div class="inset">
+          <button type="button" class="row" data-act="toggle" data-id="hideNotch">
+            <div class="lab"><b>Hide Notch</b><span>⌥Space still summons it when you need the hands</span></div>
+            <span class="sw ${S.hideNotch?"on":""}" role="switch" aria-checked="${S.hideNotch}"></span>
+          </button>
+          <button type="button" class="row press" data-act="open-notch">
+            <div class="lab"><b>Open Notch</b><span>Live circuit · declare · kill path</span></div>
+            <span class="chev"></span>
+          </button>
+        </div>
+      </div>
+      <div class="group">
+        <h2>Privacy</h2>
+        <div class="inset">
+          <button type="button" class="row press" data-act="toast" data-id="Keys stay on the broker card in Backend Box.">
+            <div class="lab"><b>API keys</b><span>Sit next to the broker they affect</span></div>
+            <span class="val">Backend Box</span><span class="chev"></span>
+          </button>
+        </div>
+        <p class="foot">Patterns, escrow, and fidelity stay Console — they are not Settings, and they are not Backend Box.</p>
+      </div>
+    </div>`;
+}
+
+function paintCharts() {
+  document.querySelectorAll("[data-chart]").forEach((el) => {
+    drawFloor(el, el.getAttribute("data-chart") === "mini");
+  });
+}
+
+function paint() {
+  document.getElementById("mac").innerHTML = chrome();
+  requestAnimationFrame(paintCharts);
+  document.getElementById("state").textContent = "STATE " + JSON.stringify({
+    variant: S.variant, route: S.route, selected: S.selected,
+    journalDay: S.journalDay, journalPick: S.journalPick, journalFacet: S.journalFacet,
+    journalQuery: S.journalQuery,
+    detection: S.detection, consoleOpen: S.consoleOpen,
+    launchAtLogin: S.launchAtLogin, hideNotch: S.hideNotch,
+    capture: S.capture, debrief: S.debrief, quote: DAY.quote,
+    remainingRisk: "NOT ON TODAY — T8 preview", blendClosedIntoOpen: false,
+  }, null, 2);
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  const v = VARIANTS[i];
+  const jnote = S.route === "journal" ? "Journal is declarations + day sheet — same in A/B/C" : "sidebar is Journal / Backend / Settings";
+  document.getElementById("switcher").innerHTML = `
+    <button type="button" data-act="prev" aria-label="Previous Today layout">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb} · ${jnote}</span></div>
+    <button type="button" data-act="next" aria-label="Next Today layout">→</button>`;
+}
+
+function syncUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set("variant", S.variant);
+  u.searchParams.set("route", S.route);
+  history.replaceState(null, "", u);
+}
+function setVariant(key) {
+  S.variant = key;
+  syncUrl();
+  paint();
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  setVariant(VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].key);
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) return;
+  const act = t.getAttribute("data-act");
+  const id = t.getAttribute("data-id");
+  if (act === "prev") cycle(-1);
+  if (act === "next") cycle(1);
+  if (act === "jsearch") return;
+  if (act === "route") { S.route = id; S.consoleOpen = false; S.detection = null; S.journalCard = null; S.journalPick = null; syncUrl(); }
+  if (act === "select") S.selected = id;
+  if (act === "deeper") { S.selected = id; S.consoleOpen = true; }
+  if (act === "open-console") S.consoleOpen = true;
+  if (act === "close-console") S.consoleOpen = false;
+  if (act === "detect-plan") S.detection = "plan";
+  if (act === "detect-noform") S.detection = "noform";
+  if (act === "dismiss-detect") S.detection = null;
+  if (act === "open-notch") { S.detection = null; say(S.route === "journal" ? "Opens Notch · Pre-trade. Next declaration." : "Opens Notch. Today stays the mirror."); return; }
+  if (act === "jday") { S.journalDay = id; S.journalPick = null; }
+  if (act === "jfacet") { S.journalFacet = id; S.journalPick = null; }
+  if (act === "jdecl") S.journalPick = { kind: "decl", id };
+  if (act === "jsheet") S.journalPick = { kind: "sheet" };
+  if (act === "jopen") S.journalPick = { kind: "open", id };
+  if (act === "jcard") S.journalCard = Number(id);
+  if (act === "close-jcard") { S.journalCard = null; S.journalPick = null; }
+  if (act === "open-console-j") { S.journalPick = null; S.journalCard = null; say("Opens Console journal — this declaration and the day sheet."); return; }
+  if (act === "add-broker") { say("Add broker. The box is supposed to get heavier."); return; }
+  if (act === "toast") { say(id); return; }
+  if (act === "toggle") {
+    if (id === "launch") S.launchAtLogin = !S.launchAtLogin;
+    if (id === "hideNotch") S.hideNotch = !S.hideNotch;
+    if (id === "capture") S.capture = !S.capture;
+    if (id === "debrief") S.debrief = !S.debrief;
+  }
+  paint();
+});
+
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el || el.getAttribute("data-act") !== "jsearch") return;
+  S.journalQuery = el.value;
+  const start = el.selectionStart, end = el.selectionEnd;
+  paint();
+  const inp = document.querySelector("[data-act=jsearch]");
+  if (inp) { inp.focus(); try { inp.setSelectionRange(start, end); } catch (err) {} }
+});
+
+document.addEventListener("pointerdown", (e) => {
+  const el = e.target.closest(".press");
+  if (el) el.classList.add("is-down");
+}, true);
+document.addEventListener("pointerup", () => {
+  document.querySelectorAll(".press.is-down").forEach((el) => el.classList.remove("is-down"));
+}, true);
+
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+
+window.addEventListener("resize", paintCharts);
+
+const params = new URLSearchParams(location.search);
+const bootV = params.get("variant") || "A";
+const bootR = (params.get("route") || "today").toLowerCase();
+S.variant = VARIANTS.some(v => v.key === bootV) ? bootV : "A";
+S.route = ROUTES.includes(bootR) ? bootR : "today";
+paint();
+</script>
+</body>
+</html>
