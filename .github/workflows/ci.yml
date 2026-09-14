@@ -22,6 +22,12 @@ jobs:
             ~/.cargo/git
             agent/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
+      - name: Compile agent lib unused-clean
+        working-directory: agent
+        run: cargo build --lib
+        env:
+          RUSTFLAGS: "-D unused"
+          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
       - name: Run agent tests
         working-directory: agent
         run: cargo test --all-features
@@ -109,9 +115,17 @@ jobs:
           zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
           echo "zip_path=$(pwd)/TradeAutopsyStation.zip" >> $GITHUB_ENV
 
+      - name: Pack unsigned DMG
+        run: |
+          chmod +x scripts/pack-station-dmg.sh
+          ./scripts/pack-station-dmg.sh --from-app "${{ steps.locate.outputs.app_path }}"
+          echo "dmg_path=$(ls -1 dist/TradeAutopsy-Station-*.dmg | head -1)" >> $GITHUB_ENV
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TradeAutopsy-Station-app
-          path: ${{ env.zip_path }}
+          path: |
+            ${{ env.zip_path }}
+            ${{ env.dmg_path }}
           retention-days: 7

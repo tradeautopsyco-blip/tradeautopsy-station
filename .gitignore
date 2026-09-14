@@ -11,6 +11,7 @@ notch/*.xcworkspace/
 notch/DerivedData/
 notch/.build/
 station/.build/
+station/build-dmg/
 *.app
 TradeAutopsy Station.app/
 *.ipa
@@ -40,3 +41,8 @@ TradeAutopsy Station.app/
 # Local agent tooling state — audit logs, capability cache, generated reports
 .gstack/
 .basecamp/
+.agents/
+skills-lock.json
+
+# Unsigned cofounder DMG output
+dist/

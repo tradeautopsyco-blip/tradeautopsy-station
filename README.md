@@ -32,6 +32,27 @@ cd agent && cargo run
 cd agent && cargo test
 ```
 
+## Share with a cofounder (unsigned)
+
+Apple Silicon, macOS 14+. **No Developer ID / notarization** — Gatekeeper will warn once.
+
+You (this Mac):
+
+```bash
+./scripts/pack-station-dmg.sh
+```
+
+Upload `dist/TradeAutopsy-Station-<sha>.dmg` to Drive, or download the GitHub Actions artifact `TradeAutopsy-Station-app` from a `main` run (7 days; needs repo access). `gh release create` works if they are a collaborator.
+
+They:
+
+1. Open the DMG.
+2. Drag **TradeAutopsy Station** onto **Applications**.
+3. **Right-click → Open → Open** (do not Move to Trash). Or System Settings → Privacy & Security → Open Anyway.
+4. **⌥Space** is Notch. Public Binance Options last/chain/OI/session/payoff do not need API keys.
+
+Internet downloads set quarantine; that is why they see Gatekeeper and you may not after a local pack.
+
 ## Architecture invariants (never violate)
 
 - Notch never calls tradeautopsy.in directly — all egress via agent on 9137
