@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 public struct StationWindowFramePersistence {
@@ -10,13 +11,18 @@ public struct StationWindowFramePersistence {
     }
 
     public func persist(frame: CGRect) {
-        let data = NSKeyedArchiver.archivedData(withRootObject: NSValue(rect: frame))
-        defaults.set(data, forKey: Self.userDefaultsKey)
+        let data = try? NSKeyedArchiver.archivedData(
+            withRootObject: NSValue(rect: frame),
+            requiringSecureCoding: true
+        )
+        if let data {
+            defaults.set(data, forKey: Self.userDefaultsKey)
+        }
     }
 
     public func restoreFrame() -> CGRect? {
         guard let data = defaults.data(forKey: Self.userDefaultsKey),
-              let value = NSKeyedUnarchiver.unarchiveObject(with: data) as? NSValue
+              let value = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSValue.self, from: data)
         else {
             return nil
         }

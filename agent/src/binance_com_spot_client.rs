@@ -20,6 +20,7 @@ pub enum BinanceComSpotError {
 }
 
 impl BinanceComSpotError {
+    #[cfg(test)]
     pub fn is_rate_limited(&self) -> bool {
         matches!(self, Self::Http { status: 429, .. })
     }

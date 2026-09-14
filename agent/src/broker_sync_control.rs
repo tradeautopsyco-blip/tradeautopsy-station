@@ -2,7 +2,7 @@
 //! Phase 2: Start is identity-first; credentials load from host vault (R6).
 
 use crate::bar_fill_ingress::BarBrokerFillIngressConfig;
-use crate::broker::{BrokerAdapter, CountingPollAdapter, slug_to_slot};
+use crate::broker::{slug_to_slot, BrokerAdapter, CountingPollAdapter};
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 use crate::data::AccountBook;
 use crate::event_bus::EventBus;
@@ -169,9 +169,11 @@ impl BrokerSyncController {
     ) -> anyhow::Result<()> {
         self.stop_active_sync()?;
         self.user_paused.store(false, Ordering::Relaxed);
-        let adapter_name = broker_slug
-            .map(str::to_string)
-            .unwrap_or_else(|| slug_to_slot(adapter.name()).unwrap_or(adapter.name()).to_string());
+        let adapter_name = broker_slug.map(str::to_string).unwrap_or_else(|| {
+            slug_to_slot(adapter.name())
+                .unwrap_or(adapter.name())
+                .to_string()
+        });
         self.account_book
             .lock()
             .expect("account_book mutex poisoned")
@@ -438,7 +440,9 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(None)),
             vault,
             Arc::new(Mutex::new(AccountBook::new())),
-            Arc::new(Mutex::new(crate::kotak_nfo_scrip::KotakNfoScripMaster::empty())),
+            Arc::new(Mutex::new(
+                crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+            )),
         )
     }
 
@@ -513,7 +517,9 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(None)),
             vault,
             Arc::new(Mutex::new(AccountBook::new())),
-            Arc::new(Mutex::new(crate::kotak_nfo_scrip::KotakNfoScripMaster::empty())),
+            Arc::new(Mutex::new(
+                crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+            )),
         );
         ctrl.start(&identity_request()).expect("start");
         assert_eq!(

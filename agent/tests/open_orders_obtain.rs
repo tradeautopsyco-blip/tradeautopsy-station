@@ -114,7 +114,9 @@ async fn post_start(port: u16, slug: &str) {
 
 async fn obtain(port: u16, query: &str) -> serde_json::Value {
     client()
-        .get(format!("http://127.0.0.1:{port}/api/station/obtain?{query}"))
+        .get(format!(
+            "http://127.0.0.1:{port}/api/station/obtain?{query}"
+        ))
         .timeout(Duration::from_secs(3))
         .send()
         .await
@@ -214,7 +216,11 @@ async fn obtain_spot_open_orders_via_mock_egress() {
     assert_eq!(again["status"], "success");
     assert_eq!(again["data"]["rows"][0]["order_id"], "88001");
     let received = server.received_requests().await.expect("received");
-    assert_eq!(received.len(), 1, "fresh orders slot must skip a second GET");
+    assert_eq!(
+        received.len(),
+        1,
+        "fresh orders slot must skip a second GET"
+    );
 
     handle.abort();
 }
@@ -298,7 +304,11 @@ async fn obtain_kotak_open_orders_via_mock_egress() {
     .await;
     assert_eq!(again["status"], "success");
     let received = server.received_requests().await.expect("received");
-    assert_eq!(received.len(), 1, "fresh orders slot must skip a second GET");
+    assert_eq!(
+        received.len(),
+        1,
+        "fresh orders slot must skip a second GET"
+    );
 
     handle.abort();
 }

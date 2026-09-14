@@ -31,7 +31,7 @@ pub use credentials::{
     decode_credential_blob, keychain_service_for, CredentialBlob,
     BROKER_CREDENTIAL_KEYCHAIN_SERVICE, KOTAK_SESSION_KEYCHAIN_SERVICE,
 };
-pub use desk::{desk_honesty_for_active_slugs, desk_profile_for_slug, DeskHonesty, DeskProfile};
+pub use desk::desk_profile_for_slug;
 pub use host::{
     run_describe, run_fetch_fills, run_obtain, BrokerHttpFixture, BrokerHttpMode, FillCursor,
     FillEvent, HostCredentialBlob, UbiHostConfig, UbiHostError, UbiHostState,
@@ -43,8 +43,5 @@ pub use http::{
     prepare_unsigned_request, redact_response_headers, BrokerHttpTransport, PreparedHttpRequest,
     RecordingTransport, ReqwestBrokerHttpTransport, TransportResponse, RESPONSE_HEADER_ALLOWLIST,
 };
-pub use kotak_session::{
-    mint_totp_session, KotakMintError, KotakMintErrorClass, KotakMintRequest,
-    ReqwestKotakSessionHttp,
-};
+pub use kotak_session::{mint_totp_session, KotakMintRequest, ReqwestKotakSessionHttp};
 pub use wasm_adapter::{fill_event_to_broker_fill, WasmBrokerAdapter};

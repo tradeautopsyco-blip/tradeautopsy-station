@@ -8,8 +8,8 @@ use crate::broker_data_class::BrokerDataClass;
 use crate::data::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills, AccountBook,
 };
-use crate::kotak_nfo_scrip::KotakNfoScripMaster;
 use crate::event_bus::{AgentEvent, EventBus};
+use crate::kotak_nfo_scrip::KotakNfoScripMaster;
 use crate::recent_trades::RecentTradesStore;
 use crate::UpstreamClient;
 use chrono::{DateTime, Utc};
@@ -20,10 +20,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tracing::warn;
 
-pub use crate::broker_data_class::{
-    BrokerBalancesSnapshot, BrokerDataClassCompleteness, BrokerHolding, BrokerOpenOrder,
-    BrokerOpenOrdersSnapshot, DataClassFreshness,
-};
+pub use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerDataClassCompleteness};
 
 #[derive(Clone, Debug)]
 pub struct BrokerSyncConfig {
@@ -626,43 +623,13 @@ pub fn spawn_broker_poll_loop(
     })
 }
 
-pub fn spawn_broker_stack(
-    adapter: Arc<dyn BrokerAdapter>,
-    store: RecentTradesStore,
-    since: Arc<RwLock<Option<DateTime<Utc>>>>,
-    cfg: BrokerSyncConfig,
-    bus: EventBus,
-    status_arc: Arc<std::sync::Mutex<BrokerRuntimeState>>,
-    upstream: Option<Arc<UpstreamClient>>,
-    bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
-    account_book: Arc<std::sync::Mutex<AccountBook>>,
-    nfo_master: Arc<Mutex<KotakNfoScripMaster>>,
-) -> tokio::task::JoinHandle<()> {
-    let (tx, rx) = mpsc::channel(64);
-    let _coalesce = spawn_toolbar_coalesce_task(bus.clone(), rx, cfg.coalesce_window);
-    let poll = spawn_broker_poll_loop(
-        adapter,
-        store,
-        since,
-        cfg,
-        bus,
-        status_arc,
-        tx,
-        upstream,
-        bar_fill_ingress,
-        None,
-        None,
-        account_book,
-        nfo_master,
-    );
-    poll
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::broker::BrokerError;
-    use crate::broker_data_class::{BrokerDataClass, BrokerDataClassCompleteness};
+    use crate::broker_data_class::{
+        BrokerDataClass, BrokerDataClassCompleteness, BrokerOpenOrdersSnapshot,
+    };
     use crate::event_bus::AgentEvent;
     use async_trait::async_trait;
     use std::sync::atomic::AtomicBool;

@@ -104,7 +104,11 @@ pub fn split_fills_by_book(
             out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
             out
         }
-        _ => HashMap::new(),
+        _ => {
+            let mut out = HashMap::new();
+            out.insert(slug.to_string(), fills);
+            out
+        }
     }
 }
 
@@ -184,7 +188,8 @@ pub fn split_kotak_positions_by_book(
     let mut nfo = Vec::new();
     for row in positions {
         let segment = norm_seg(&row.exchange_segment);
-        if is_kotak_nfo_segment(&segment) && kotak_nfo_row_ok(&row.trading_symbol, &row.product, master)
+        if is_kotak_nfo_segment(&segment)
+            && kotak_nfo_row_ok(&row.trading_symbol, &row.product, master)
         {
             nfo.push(row);
         } else if is_kotak_cash_segment(&segment) && kotak_cash_product_ok(&row.product) {
@@ -271,7 +276,10 @@ mod tests {
         let master = fixture_master();
         let fills = vec![kotak_fill("nse_fo", "NRML", Some(50))];
         let split = split_fills_by_book("kotak_neo", fills, Some(&master));
-        assert_eq!(split.get(KOTAK_NSE_BSE_CASH_BOOK_ID).map(|v| v.len()), Some(0));
+        assert_eq!(
+            split.get(KOTAK_NSE_BSE_CASH_BOOK_ID).map(|v| v.len()),
+            Some(0)
+        );
         assert_eq!(split.get(KOTAK_NSE_NFO_BOOK_ID).map(|v| v.len()), Some(1));
     }
 
@@ -284,9 +292,7 @@ mod tests {
             kotak_fill("nse_cm", "CNC", Some(50)),
         ];
         let split = split_fills_by_book("kotak_neo", mixed, Some(&master));
-        let cash = split
-            .get(KOTAK_NSE_BSE_CASH_BOOK_ID)
-            .expect("cash book");
+        let cash = split.get(KOTAK_NSE_BSE_CASH_BOOK_ID).expect("cash book");
         assert_eq!(cash.len(), 1);
         assert_eq!(cash[0].exchange_segment.as_deref(), Some("nse_cm"));
         assert_eq!(split.get(KOTAK_NSE_NFO_BOOK_ID).map(|v| v.len()), Some(1));
@@ -402,6 +408,18 @@ mod tests {
     fn merge_poll_book_id_returns_shipping_books() {
         assert_eq!(merge_poll_book_id("binance_com"), BINANCE_COM_SPOT_BOOK_ID);
         assert_eq!(merge_poll_book_id("kotak_neo"), KOTAK_NSE_BSE_CASH_BOOK_ID);
+    }
+
+    #[test]
+    fn unknown_adapter_keeps_fills_under_its_own_name() {
+        let fills = vec![BrokerFill {
+            symbol: "MOCK".into(),
+            ..BrokerFill::default()
+        }];
+        let split = split_fills_by_book("seq_mock", fills, None);
+        assert_eq!(split.len(), 1);
+        assert_eq!(split.get("seq_mock").map(|v| v.len()), Some(1));
+        assert_eq!(merge_poll_book_id("seq_mock"), "seq_mock");
     }
 
     #[test]

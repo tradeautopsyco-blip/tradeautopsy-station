@@ -23,17 +23,6 @@ impl DeskProfile {
     }
 }
 
-/// How the desk should present money when one or more connections are considered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeskHonesty {
-    /// Single active (or homogeneous) currency — safe to format one hero number.
-    Single(DeskProfile),
-    /// Mixed USD+INR (or other) — do **not** blend; surface per-connection honesty.
-    DualNoBlend { profiles: Vec<DeskProfile> },
-    /// No usable catalog connection.
-    None,
-}
-
 /// Resolve desk profile from a catalog slug (active sync).
 pub fn desk_profile_for_slug(slug: Option<&str>) -> Option<DeskProfile> {
     let slug = slug?.trim();
@@ -43,33 +32,19 @@ pub fn desk_profile_for_slug(slug: Option<&str>) -> Option<DeskProfile> {
     descriptor_for_slug(slug).map(|d| DeskProfile::from_descriptor(&d))
 }
 
-/// First-pair dogfood gate: COM → USD / crypto_spot_usd; Kotak → INR / equities_inr_cash.
-pub fn desk_honesty_for_active_slugs(slugs: &[&str]) -> DeskHonesty {
-    let mut profiles: Vec<DeskProfile> = slugs
-        .iter()
-        .filter_map(|s| desk_profile_for_slug(Some(s)))
-        .collect();
-    profiles.sort_by(|a, b| a.broker_slug.cmp(&b.broker_slug));
-    profiles.dedup_by(|a, b| a.broker_slug == b.broker_slug);
-
-    if profiles.is_empty() {
-        return DeskHonesty::None;
-    }
-    if profiles.len() == 1 {
-        return DeskHonesty::Single(profiles.remove(0));
-    }
-    let currencies: std::collections::BTreeSet<_> =
-        profiles.iter().map(|p| p.quote_currency.as_str()).collect();
-    if currencies.len() == 1 {
-        // Homogeneous multi-connection — still one currency; use first for formatting.
-        return DeskHonesty::Single(profiles.remove(0));
-    }
-    DeskHonesty::DualNoBlend { profiles }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DualNoBlend lives in Swift `DeskHonesty`. This crate only supplies per-slug
+    /// profiles; the test locks that mixed USD+INR slugs stay two currencies.
+    fn dual_no_blend_currencies(slugs: &[&str]) -> std::collections::BTreeSet<String> {
+        slugs
+            .iter()
+            .filter_map(|s| desk_profile_for_slug(Some(s)))
+            .map(|p| p.quote_currency)
+            .collect()
+    }
 
     #[test]
     fn binance_com_desk_is_usd_crypto_spot() {
@@ -87,23 +62,17 @@ mod tests {
 
     #[test]
     fn dual_com_plus_kotak_never_blends() {
-        match desk_honesty_for_active_slugs(&["binance_com", "kotak_neo"]) {
-            DeskHonesty::DualNoBlend { profiles } => {
-                assert_eq!(profiles.len(), 2);
-                let currencies: std::collections::BTreeSet<_> =
-                    profiles.iter().map(|p| p.quote_currency.as_str()).collect();
-                assert_eq!(currencies.len(), 2);
-            }
-            other => panic!("expected DualNoBlend, got {other:?}"),
-        }
+        let currencies = dual_no_blend_currencies(&["binance_com", "kotak_neo"]);
+        assert_eq!(currencies.len(), 2);
+        assert!(currencies.contains("USD"));
+        assert!(currencies.contains("INR"));
     }
 
     #[test]
     fn single_active_slug_is_honest_single() {
-        match desk_honesty_for_active_slugs(&["binance_com"]) {
-            DeskHonesty::Single(p) => assert_eq!(p.quote_currency, "USD"),
-            other => panic!("expected Single, got {other:?}"),
-        }
+        let currencies = dual_no_blend_currencies(&["binance_com"]);
+        assert_eq!(currencies.len(), 1);
+        assert!(currencies.contains("USD"));
     }
 
     #[test]

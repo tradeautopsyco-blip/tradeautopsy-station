@@ -23,15 +23,15 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
     ]
     .into_iter()
     .map(|book_id| {
-            let slot = book.fills_slot(book_id);
-            json!({
-                "book_id": book_id,
-                "polled": slot.is_some(),
-                "fill_count": slot.map(|s| s.value.len()),
-                "as_of_ms": slot.map(|s| s.as_of_ms),
-                "provenance_path": slot.map(|s| s.provenance_path.as_str()),
-            })
+        let slot = book.fills_slot(book_id);
+        json!({
+            "book_id": book_id,
+            "polled": slot.is_some(),
+            "fill_count": slot.map(|s| s.value.len()),
+            "as_of_ms": slot.map(|s| s.as_of_ms),
+            "provenance_path": slot.map(|s| s.provenance_path.as_str()),
         })
+    })
     .collect();
 
     Json(json!({
@@ -51,7 +51,10 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-fn sync_hint_message(snap: &crate::broker_sync::BrokerRuntimeState, slots: &[Value]) -> &'static str {
+fn sync_hint_message(
+    snap: &crate::broker_sync::BrokerRuntimeState,
+    slots: &[Value],
+) -> &'static str {
     if !snap.broker_connected {
         return "No broker sync running — Connect + Start in Station Brokers, then re-curl obtain.";
     }

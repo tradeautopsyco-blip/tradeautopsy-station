@@ -46,9 +46,9 @@ async fn wait_for_quote_route(port: u16) {
 
 fn quote_url(port: u16, instrument: &str, book: Option<&str>) -> String {
     match book {
-        Some(book) => format!(
-            "http://127.0.0.1:{port}/api/station/quote?instrument={instrument}&book={book}"
-        ),
+        Some(book) => {
+            format!("http://127.0.0.1:{port}/api/station/quote?instrument={instrument}&book={book}")
+        }
         None => format!("http://127.0.0.1:{port}/api/station/quote?instrument={instrument}"),
     }
 }
@@ -116,19 +116,13 @@ async fn post_broker_sync_stop(port: u16) -> reqwest::Response {
 }
 
 fn assert_bound(body: &Value, book_id: &str, instrument_id: &str) {
-    assert_eq!(
-        body["bind_status"], "bound",
-        "expected bound: {body}"
-    );
+    assert_eq!(body["bind_status"], "bound", "expected bound: {body}");
     assert_eq!(body["book_id"], book_id);
     assert_eq!(body["instrument_id"], instrument_id);
 }
 
 fn assert_refused(body: &Value, book_id: &str, ineligible: &str) {
-    assert_eq!(
-        body["bind_status"], "refused",
-        "expected refused: {body}"
-    );
+    assert_eq!(body["bind_status"], "refused", "expected refused: {body}");
     assert_eq!(body["book_id"], book_id);
     assert_eq!(body["instrument_id"], "");
     assert_eq!(body["status"], "unavailable");
@@ -146,10 +140,7 @@ fn assert_refused(body: &Value, book_id: &str, ineligible: &str) {
     );
 }
 
-fn kotak_runtime_opts(
-    adapter: Arc<dyn BrokerAdapter>,
-    opts: TestAgentOptions,
-) -> TestAgentOptions {
+fn kotak_runtime_opts(adapter: Arc<dyn BrokerAdapter>, opts: TestAgentOptions) -> TestAgentOptions {
     let vault = seeded_hmac_vault("kotak_neo", "TA_TEST_SYNC");
     TestAgentOptions {
         runtime_poll_adapter: Some(adapter),
@@ -268,10 +259,7 @@ async fn optionchain_reads_only_options_selection() {
     let chain = get_obtain(PORT, "binance-com-options", "optionchain").await;
     assert_eq!(chain["status"], "success");
     assert_eq!(chain["data"]["row_count"], 3);
-    assert_eq!(
-        chain["data"]["rows"][0]["instrument_id"],
-        FIXTURE_CONTRACT
-    );
+    assert_eq!(chain["data"]["rows"][0]["instrument_id"], FIXTURE_CONTRACT);
 
     // Re-bind NFO: options chain must stay on the dated contract.
     let _ = get_quote(PORT, NFO_INSTRUMENT, None).await;
@@ -341,12 +329,7 @@ async fn mismatched_book_query_is_refused() {
             "kotak-nse-nfo",
             "instrument_book_mismatch",
         ),
-        (
-            "BTCUSDT",
-            "nonsense",
-            "nonsense",
-            "unknown_book",
-        ),
+        ("BTCUSDT", "nonsense", "nonsense", "unknown_book"),
     ] {
         let body = get_quote(PORT, instrument, Some(book)).await;
         assert_refused(&body, book_id, class);
@@ -448,13 +431,11 @@ async fn invalid_binds_do_not_echo_successful_looking_instrument() {
     );
     wait_for_quote_route(PORT).await;
 
-    let nfo_on_options =
-        get_quote(PORT, NFO_INSTRUMENT, Some("binance-com-options")).await;
+    let nfo_on_options = get_quote(PORT, NFO_INSTRUMENT, Some("binance-com-options")).await;
     assert_refused(&nfo_on_options, "kotak-nse-nfo", "instrument_book_mismatch");
     assert_ne!(nfo_on_options["instrument_id"], NFO_INSTRUMENT);
 
-    let dated_on_spot =
-        get_quote(PORT, FIXTURE_CONTRACT, Some("binance-com-spot")).await;
+    let dated_on_spot = get_quote(PORT, FIXTURE_CONTRACT, Some("binance-com-spot")).await;
     assert_refused(
         &dated_on_spot,
         "binance-com-options",

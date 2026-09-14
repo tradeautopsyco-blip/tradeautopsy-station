@@ -264,6 +264,10 @@ impl KotakNfoScripMaster {
             .flexible(true)
             .from_reader(Cursor::new(bytes));
         let headers = reader.headers()?.clone();
+        let joined = headers.iter().collect::<Vec<_>>().join(",");
+        if joined != LOCK_HEADER {
+            anyhow::bail!("FO CSV header does not match LOCK_HEADER");
+        }
         let col = |name: &str| headers.iter().position(|h| h.trim() == name);
 
         let token_i = col("pSymbol");
@@ -824,7 +828,9 @@ mod tests {
     const COL_INST_TYPE: usize = 3;
     const COL_TRD_SYMBOL: usize = 5;
     const COL_OPTION_TYPE: usize = 6;
+    const COL_L_LOT: usize = 16;
     const COL_STRIKE: usize = 20;
+    const COL_I_LOT: usize = 63;
 
     #[test]
     fn futures_row_sharing_name_and_expiry_is_not_a_chain_row() {
@@ -935,14 +941,12 @@ mod tests {
     }
 
     #[test]
-    fn cash_csv_yields_empty() {
-        let master = KotakNfoScripMaster::from_csv_bytes(CASH_CSV.as_bytes()).unwrap();
+    fn cash_csv_is_refused_not_parsed_as_nfo() {
+        let err = KotakNfoScripMaster::from_csv_bytes(CASH_CSV.as_bytes()).unwrap_err();
         assert!(
-            master.is_empty(),
-            "nse_cm skipped; pToken is not the FO token"
+            err.to_string().contains("LOCK_HEADER"),
+            "cash CSV must not parse as NFO: {err}"
         );
-        assert!(!master.contains_id("nse_cm|2885"));
-        assert!(!master.contains_id("nse_fo|12345"));
     }
 
     #[test]
@@ -994,22 +998,23 @@ mod tests {
         assert!(hits.iter().all(|row| row.segment == "nse_fo"));
         assert!(hits.iter().all(|row| row.segment != "nse_cm"));
 
-        let cash_as_nfo = KotakNfoScripMaster::from_csv_bytes(CASH_CSV.as_bytes()).unwrap();
-        assert!(cash_as_nfo.search("NIFTY", 10).is_empty());
-        assert!(cash_as_nfo.search("RELIANCE", 10).is_empty());
+        let cash_err = KotakNfoScripMaster::from_csv_bytes(CASH_CSV.as_bytes()).unwrap_err();
+        assert!(cash_err.to_string().contains("LOCK_HEADER"));
     }
 
     #[test]
     fn lot_columns_must_agree_or_row_is_skipped() {
-        let disagree =
-            "pSymbol,pExchSeg,lLotSize,iLotSize,pTrdSymbol,pSymbolName,pInstType,pOptionType\n\
-56526,nse_fo,65,50,NIFTY2692221000PE,NIFTY,OPTIDX,PE\n";
+        let disagree = csv_with_rows(&[&[(COL_L_LOT, "65"), (COL_I_LOT, "50")]]);
         let master = KotakNfoScripMaster::from_csv_bytes(disagree.as_bytes()).unwrap();
         assert!(master.is_empty());
 
-        let one_col = "pSymbol,pExchSeg,lLotSize,pTrdSymbol\n56526,nse_fo,65,NIFTY2692221000PE\n";
+        let one_col = csv_with_rows(&[&[(COL_L_LOT, "65"), (COL_I_LOT, "")]]);
         let master = KotakNfoScripMaster::from_csv_bytes(one_col.as_bytes()).unwrap();
         assert_eq!(master.get(56526).map(|r| r.lot), Some(65));
+
+        let truncated = "pSymbol,pExchSeg,lLotSize,pTrdSymbol\n56526,nse_fo,65,NIFTY2692221000PE\n";
+        let err = KotakNfoScripMaster::from_csv_bytes(truncated.as_bytes()).unwrap_err();
+        assert!(err.to_string().contains("LOCK_HEADER"));
     }
 
     #[test]

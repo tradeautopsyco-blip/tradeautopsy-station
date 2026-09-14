@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use super::ban;
 use super::clock::{Clock, SystemClock};
 use super::meter::Meter;
-use super::policy::{self, MeterPolicy, SlotPolicy};
+use super::policy::{self, SlotPolicy};
 use super::types::{
     Decision, EgressRequest, Lane, Outcome, Permit, Posture, RefuseKind, RefuseReason,
 };

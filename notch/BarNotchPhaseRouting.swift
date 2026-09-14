@@ -1,6 +1,3 @@
-import Foundation
-import Notch
-
 public enum BarNotchPhaseRouting {
     public static func screen(for phase: BarSurfacePhase) -> BarNotchScreen {
         switch phase {

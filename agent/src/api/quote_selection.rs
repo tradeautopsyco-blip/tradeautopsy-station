@@ -88,7 +88,11 @@ impl QuoteBindError {
     }
 
     /// Wire `book_id` on a refused bind. Prefer the inferred target book when known.
-    pub fn book_id_for_refusal(self, requested_book: Option<&str>, inferred_book: Option<&str>) -> String {
+    pub fn book_id_for_refusal(
+        self,
+        requested_book: Option<&str>,
+        inferred_book: Option<&str>,
+    ) -> String {
         if matches!(self, Self::UnknownBook) {
             return requested_book
                 .map(str::trim)

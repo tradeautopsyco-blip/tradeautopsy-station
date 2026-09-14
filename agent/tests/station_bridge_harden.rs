@@ -196,6 +196,9 @@ async fn instruments_ltp_proxy_never_forwards_daemon_identity_upstream() {
     const AGENT_PORT: u16 = 39_703;
     const UPSTREAM_PORT: u16 = 39_704;
 
+    // Bar leftover LTP proxy — Station default is flag-off (COM+Kotak TickBook).
+    std::env::set_var("AGENT_ENABLE_ZERODHA_INSTRUMENTS", "1");
+
     let spy = HeaderSpy::default();
     let router = Router::new()
         .route("/api/bar/v1/broker/ltp", post(upstream_broker_ltp))
@@ -242,4 +245,5 @@ async fn instruments_ltp_proxy_never_forwards_daemon_identity_upstream() {
 
     agent_handle.abort();
     upstream_handle.abort();
+    std::env::remove_var("AGENT_ENABLE_ZERODHA_INSTRUMENTS");
 }

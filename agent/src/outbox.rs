@@ -70,7 +70,6 @@ pub struct CaptureOutbox {
 struct OutboxRow {
     id: i64,
     request_id: String,
-    user_id: String,
     payload_json: String,
     attempts: u32,
 }
@@ -254,7 +253,7 @@ impl CaptureOutbox {
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let candidate = {
             let mut stmt = conn.prepare(
-                "SELECT id, request_id, user_id, payload_json, attempts
+                "SELECT id, request_id, payload_json, attempts
                  FROM capture_outbox
                  WHERE id = ? AND state = ?",
             )?;
@@ -263,9 +262,8 @@ impl CaptureOutbox {
                 Some(OutboxRow {
                     id: row.get(0)?,
                     request_id: row.get(1)?,
-                    user_id: row.get(2)?,
-                    payload_json: row.get(3)?,
-                    attempts: row.get::<_, i64>(4)? as u32,
+                    payload_json: row.get(2)?,
+                    attempts: row.get::<_, i64>(3)? as u32,
                 })
             } else {
                 None

@@ -56,11 +56,11 @@ enum JournalInteractiveScreenshot {
             throw JournalInteractiveScreenshotError.failed
         }
         let still = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        let screen: NSScreen? = await MainActor.run {
-            NSScreen.main ?? NSScreen.screens.first
+        let screenFrame: NSRect? = await MainActor.run {
+            (NSScreen.main ?? NSScreen.screens.first)?.frame
         }
-        guard let screen else { throw JournalInteractiveScreenshotError.failed }
-        let cropped = try await JournalRegionPicker.crop(from: still, on: screen)
+        guard let screenFrame else { throw JournalInteractiveScreenshotError.failed }
+        let cropped = try await JournalRegionPicker.crop(from: still, screenFrame: screenFrame)
         return try writeTempPNG(cropped)
     }
 

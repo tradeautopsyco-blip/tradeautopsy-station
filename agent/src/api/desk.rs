@@ -555,7 +555,9 @@ impl AppState {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
         }
-        self.ensure_kotak_private_ready()?;
+        if !self.kotak_tick_already_on_book(KOTAK_NSE_NFO_BOOK_ID, instrument_id) {
+            self.ensure_kotak_private_ready()?;
+        }
         Ok(ValidatedQuoteBinding {
             book_id: KOTAK_NSE_NFO_BOOK_ID,
             instrument_id: instrument_id.to_string(),
@@ -590,7 +592,9 @@ impl AppState {
                 return Err(QuoteBindError::InstrumentBookMismatch);
             }
         }
-        self.ensure_kotak_private_ready()?;
+        if !self.kotak_tick_already_on_book(KOTAK_NSE_BSE_CASH_BOOK_ID, instrument_id) {
+            self.ensure_kotak_private_ready()?;
+        }
         let in_master = self
             .kotak_scrip_master
             .lock()
@@ -701,6 +705,16 @@ impl AppState {
         }
         // Public spot pairs are valid without a loaded master or active COM desk.
         id.chars().all(|c| c.is_ascii_alphanumeric())
+    }
+
+    /// Planted TickBook rows (s1k / NFO fixtures) can be extracted without a live session.
+    /// A miss still requires Connect — this is not a live fetch skip.
+    fn kotak_tick_already_on_book(&self, book_id: &str, instrument_id: &str) -> bool {
+        self.tickbook
+            .lock()
+            .expect("tickbook mutex poisoned")
+            .get(book_id, instrument_id)
+            .is_some()
     }
 
     fn ensure_kotak_private_ready(&self) -> Result<(), QuoteBindError> {

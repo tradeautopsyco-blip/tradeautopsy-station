@@ -15,11 +15,9 @@ pub mod policy;
 pub mod transport;
 pub mod types;
 
-pub use engine::{MeterPosture, VenueEgress, VenuePosture};
+pub use engine::{VenueEgress, VenuePosture};
 pub use transport::{split_url, EgressCall, EgressError, EgressResponse, EgressTransport};
-pub use types::{
-    Decision, EgressRequest, Lane, Outcome, Permit, Posture, RefuseKind, RefuseReason,
-};
+pub use types::{Decision, EgressRequest, Lane, Outcome, RefuseKind, RefuseReason};
 
 use std::sync::{Arc, OnceLock};
 

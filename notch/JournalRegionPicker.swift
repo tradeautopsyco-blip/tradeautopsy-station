@@ -4,10 +4,10 @@ import Foundation
 /// Full-screen drag-to-crop on a frozen capture. Esc or a tiny drag cancels.
 @MainActor
 enum JournalRegionPicker {
-    static func crop(from image: NSImage, on screen: NSScreen) async throws -> NSImage {
+    static func crop(from image: NSImage, screenFrame: NSRect) async throws -> NSImage {
         try await withCheckedThrowingContinuation { continuation in
             let panel = TradeAutopsyNotchPanel(
-                contentRect: screen.frame,
+                contentRect: screenFrame,
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -19,7 +19,7 @@ enum JournalRegionPicker {
             panel.ignoresMouseEvents = false
             panel.acceptsMouseMovedEvents = false
 
-            let view = RegionPickView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            let view = RegionPickView(frame: NSRect(origin: .zero, size: screenFrame.size))
             view.image = image
             var finished = false
             view.onFinish = { rect in

@@ -55,7 +55,9 @@ async fn post_kotak_start(port: u16) {
 
 async fn obtain(port: u16, query: &str) -> serde_json::Value {
     client()
-        .get(format!("http://127.0.0.1:{port}/api/station/obtain?{query}"))
+        .get(format!(
+            "http://127.0.0.1:{port}/api/station/obtain?{query}"
+        ))
         .timeout(Duration::from_secs(3))
         .send()
         .await

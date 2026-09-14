@@ -86,15 +86,16 @@ public final class KeychainKotakLoginProfileStore: KotakLoginProfileStoring, @un
     }
 
     private func authenticateDeviceOwner(reason: String) throws {
-        let context = LAContext()
-        var laError: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &laError) else {
-            throw KotakLoginProfileStoreError.biometryUnavailable
-        }
-
         let box = AuthBox()
         let sem = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
+            let context = LAContext()
+            var laError: NSError?
+            guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &laError) else {
+                box.error = .biometryUnavailable
+                sem.signal()
+                return
+            }
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
                 defer { sem.signal() }
                 guard success else {

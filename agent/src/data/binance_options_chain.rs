@@ -104,10 +104,12 @@ pub fn expiration_from_dated_contract(raw: &str) -> Option<&str> {
     None
 }
 
+#[cfg(test)]
 pub fn binance_options_exchange_info_url() -> String {
     "https://eapi.binance.com/eapi/v1/exchangeInfo".to_string()
 }
 
+#[cfg(test)]
 pub fn binance_options_open_interest_url(underlying_asset: &str, expiration: &str) -> String {
     format!(
         "https://eapi.binance.com/eapi/v1/openInterest?underlyingAsset={underlying_asset}&expiration={expiration}"

@@ -1,8 +1,8 @@
 //! Persistent connected-broker runtime (R0 contract).
 
-#![allow(dead_code)]
-
+#[cfg(test)]
 use super::host_policy::AuthMode;
+#[cfg(test)]
 use super::identity::Family;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,7 @@ pub struct BrokerConnectionRuntime {
     pub subscriptions: Vec<String>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BudgetError {
     Exhausted,
@@ -78,6 +79,7 @@ impl BrokerConnectionRuntime {
         }
     }
 
+    #[cfg(test)]
     pub fn unsubscribe(&mut self, instrument_id: &str) {
         let id = self.normalize_subscription(instrument_id);
         self.subscriptions.retain(|existing| existing != &id);
@@ -92,6 +94,7 @@ impl BrokerConnectionRuntime {
         }
     }
 
+    #[cfg(test)]
     pub fn debit(&mut self, _family: Family, cost: u32) -> Result<(), BudgetError> {
         if self.shared_budget < cost {
             return Err(BudgetError::Exhausted);
@@ -100,6 +103,7 @@ impl BrokerConnectionRuntime {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn attach_auth(&self, auth_mode: AuthMode) -> Option<&str> {
         match auth_mode {
             AuthMode::Public => None,

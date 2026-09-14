@@ -59,12 +59,8 @@ fn binance_spot_rows(state: &AppState, q: &str) -> Vec<Value> {
     hits.into_iter()
         .map(|hit| {
             let instrument_id = normalize_quote_instrument(&hit.symbol);
-            let last_price = last_price_for(
-                state,
-                &instrument_id,
-                Some(BINANCE_COM_SPOT_BOOK_ID),
-                None,
-            );
+            let last_price =
+                last_price_for(state, &instrument_id, Some(BINANCE_COM_SPOT_BOOK_ID), None);
             json!({
                 "trading_symbol": hit.symbol,
                 "name": hit.base_asset,

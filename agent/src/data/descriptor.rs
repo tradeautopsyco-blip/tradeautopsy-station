@@ -112,6 +112,7 @@ pub fn kotak_neo_quote_descriptor() -> Descriptor {
 }
 
 /// Fixture `account/funds/bounded_snapshot` with placeholder tenant + broker account.
+#[cfg(test)]
 pub fn fixture_account_descriptor() -> Descriptor {
     Descriptor {
         adapter_id: "fixture_broker_account".to_string(),

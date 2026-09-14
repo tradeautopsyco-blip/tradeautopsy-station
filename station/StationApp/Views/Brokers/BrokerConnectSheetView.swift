@@ -258,7 +258,7 @@ struct BrokerConnectSheetView: View {
 
     private func applyPastedText(from providers: [NSItemProvider], to text: Binding<String>) {
         guard let provider = providers.first else { return }
-        provider.loadObject(ofClass: String.self) { value, _ in
+        _ = provider.loadObject(ofClass: String.self) { value, _ in
             guard let value else { return }
             DispatchQueue.main.async {
                 text.wrappedValue = value

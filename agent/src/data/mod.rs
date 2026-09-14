@@ -24,6 +24,7 @@ mod contracts;
 mod depthbook;
 mod descriptor;
 mod extract;
+#[cfg(test)]
 mod force_order;
 mod glance;
 mod greeks;
@@ -58,7 +59,7 @@ mod source_route;
 mod tick;
 mod tickbook;
 
-pub use account_book::{AccountBook, BookAccount, Slot};
+pub use account_book::AccountBook;
 pub use account_capability::{
     account_capability_wire, account_capability_wire_key, ACCOUNT_CAPABILITY_OPS,
 };
@@ -66,29 +67,19 @@ pub use account_split::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };
 pub use apply::{apply_quote, ApplyError};
-#[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
 pub use binance_depth::{
-    await_bound_com_depth_row, depth_snapshot_from_binance_json, ensure_binance_com_depth_stream,
-    spawn_binance_com_depth_loop, validate_depth_delta, DepthDelta, DepthDeltaDecision,
-    DepthSyncPhase, DEPTH_COM_HOST, DEPTH_PATH,
-};
-#[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
-pub use binance_klines::{
-    candles_from_klines_json, klines_time_query, klines_url, HistoryCandle, KlineRequestRefuse,
-    KLINE_COM_HOST, KLINE_LIMIT_MAX, KLINE_PATH,
+    await_bound_com_depth_row, ensure_binance_com_depth_stream, spawn_binance_com_depth_loop,
 };
 pub use binance_klines::{
-    series_from_klines_json, validate_kline_request, HistorySeries, DEFAULT_HISTORY_INTERVAL,
-    KLINE_LIMIT_DEFAULT,
+    series_from_klines_json, validate_kline_request, HistoryCandle, HistorySeries,
+    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT,
 };
 pub use binance_options_chain::{
     chain_rows_for_contract, expiration_from_dated_contract,
     option_symbols_from_exchange_info_json, underlying_asset_from_dated_contract, OptionsSymbolRow,
 };
-#[allow(unused_imports)] // host-facing page walk; the live dial is owned by glance
 pub use binance_options_depth::{
-    depth_snapshot_from_eapi_json, options_depth_query, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_LIMIT,
-    OPTIONS_DEPTH_PATH,
+    depth_snapshot_from_eapi_json, options_depth_query, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH,
 };
 pub use binance_options_index::{
     cached_index_hit, index_price_from_json_for_underlying, index_underlying_for_contract,
@@ -100,17 +91,17 @@ pub use binance_options_klines::{
     OPTIONS_KLINE_LIMIT_DEFAULT,
 };
 pub use binance_options_mark::{
-    mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OptionsMarkRow,
-    OPTIONS_MARK_PATH,
+    mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OPTIONS_MARK_PATH,
 };
 pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
 pub use binance_options_private::ensure_options_user_trades;
 pub use binance_options_public::{
     ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
-    options_ticker_query, quote_tick_from_options_ticker_json,
-    quote_tick_from_options_ticker_json_for_symbol, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH,
+    quote_tick_from_options_ticker_json,
 };
-pub use binance_options_ticker::{await_binance_options_ticker, binance_options_ticker_call};
+#[cfg(test)]
+pub use binance_options_public::{options_ticker_query, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH};
+pub use binance_options_ticker::await_binance_options_ticker;
 pub use binance_public::{
     ensure_binance_com_trade_stream, normalize_quote_instrument, quote_tick_from_binance_json,
     spawn_binance_com_trade_loop,
@@ -130,24 +121,17 @@ pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,
     QuoteStatus,
 };
-pub use force_order::{
-    extract_force_order, reject_lossy_as_complete, ForceOrderEnvelope, LossyStatus,
-    LOSSY_CANNOT_CLAIM_COMPLETE,
-};
 pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_index, extract_open_interest,
     extract_open_interest_for_book, extract_open_interest_from, ChainRow, GlanceEnvelope,
     GlanceStatus,
 };
-pub use greeks::{
-    extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksSource, GreeksStatus,
-};
+pub use greeks::{extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksStatus};
 pub use history::{
     apply_history_series, extract_gap_vendor_history, extract_history, extract_licensed_history,
     extract_options_history, gap_history_obtain_data, history_obtain_data, HistoryEnvelope,
     HistoryStatus,
 };
-pub use history_store::HistoryStore;
 pub use historybook::HistoryBook;
 pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
@@ -164,24 +148,16 @@ pub use instrument_master_status::{
     InstrumentMasterStatus,
 };
 pub use instrument_search::{search_identity, search_rows_for_book};
-#[allow(unused_imports)] // host-facing page walk; live desk fetch is owned elsewhere
-pub use klines_pager::{
-    fetch_klines_page, next_start_time_ms, page_klines, walk_is_complete, walk_klines_page,
-    WalkedPage,
-};
 pub use kotak_depth::{
     depth_obtain_data, depth_snapshot_from_kotak_json, depth_snapshots_from_kotak_json,
     extract_depth, extract_depth_on_book, DepthEnvelope, DepthStatus,
 };
 pub use kotak_private::{
     ensure_kotak_funds, ensure_kotak_holdings, ensure_kotak_orders, ensure_kotak_positions,
-    KOTAK_CHECK_MARGIN_PATH, KOTAK_HOLDINGS_PATH, KOTAK_LIMITS_PATH, KOTAK_ORDERS_PATH,
-    KOTAK_POSITIONS_PATH,
 };
 pub use kotak_quotes::{
-    is_cash_segment, is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json,
-    nfo_open_interest_from_kotak_json, parse_nfo_instrument_id, quote_tick_from_kotak_json,
-    quote_tick_from_kotak_json_for_book, quote_ticks_from_kotak_json,
+    kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
+    parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, NfoOiSessionSlice,
     NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
@@ -194,13 +170,15 @@ pub use resample::extract_resample;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use router::RouteOutcome;
 pub use source_manifest::{
-    describe, first_party_s0_manifests, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest,
-    load_first_party_manifests, manifest_for_book_id, manifest_for_slug, obtain, shared_budget,
-    shipping_book_id_for_slug, ObtainEnvelope, ObtainStatus, SourceManifest,
+    describe, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest, load_first_party_manifests,
+    manifest_for_book_id, obtain, shared_budget, shipping_book_id_for_slug, ObtainEnvelope,
+    ObtainStatus, SourceManifest,
 };
+#[cfg(test)]
+pub use source_manifest::{first_party_s0_manifests, manifest_for_slug};
 pub use source_route::{
-    apply_kotak_source_route, decide_kotak_route, secret_looks_like_url, should_source_route,
-    GapVendorConfig, LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_BOOK_ID,
+    apply_kotak_source_route, decide_kotak_route, should_source_route, GapVendorConfig,
+    LICENSED_HISTORY_ADAPTER_ID,
 };
-pub use tick::{QuoteTick, SessionOhlc, Transport};
+pub use tick::{QuoteTick, Transport};
 pub use tickbook::TickBook;

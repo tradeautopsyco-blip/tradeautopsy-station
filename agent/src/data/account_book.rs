@@ -177,9 +177,7 @@ impl AccountBook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::broker_data_class::{
-        BrokerHolding, BrokerOpenOrder, BrokerPortfolioHolding,
-    };
+    use crate::broker_data_class::{BrokerHolding, BrokerOpenOrder, BrokerPortfolioHolding};
     use chrono::TimeZone;
     use chrono::Utc;
 
@@ -220,7 +218,9 @@ mod tests {
             "/api/v3/account",
             2_000,
         );
-        let slot = book.funds_slot(BINANCE_COM_SPOT_BOOK_ID).expect("funds slot");
+        let slot = book
+            .funds_slot(BINANCE_COM_SPOT_BOOK_ID)
+            .expect("funds slot");
         assert_eq!(slot.value, snapshot);
         assert_eq!(slot.provenance_path, "/api/v3/account");
         book.replace_funds(
@@ -276,7 +276,9 @@ mod tests {
             "/api/v3/openOrders",
             2_000,
         );
-        let slot = book.orders_slot(BINANCE_COM_SPOT_BOOK_ID).expect("orders slot");
+        let slot = book
+            .orders_slot(BINANCE_COM_SPOT_BOOK_ID)
+            .expect("orders slot");
         assert_eq!(slot.value.orders.len(), 1);
         book.replace_orders(
             KOTAK_NSE_BSE_CASH_BOOK_ID,

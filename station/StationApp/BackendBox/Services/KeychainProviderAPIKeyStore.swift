@@ -50,7 +50,7 @@ public final class KeychainProviderAPIKeyStore: ProviderAPIKeyStoring, @unchecke
     }
 
     public func listIdentities(in namespace: ProviderKeyNamespace) throws -> [ProviderAPIKeyIdentity] {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecReturnAttributes as String: true,

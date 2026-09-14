@@ -93,15 +93,11 @@ impl BrokerAdapter for ErrFillAdapter {
         Err(BrokerError::Http("poll failed".into()))
     }
 
-    async fn poll_balances_holdings(
-        &self,
-    ) -> Result<BrokerBalancesSnapshot, BrokerError> {
+    async fn poll_balances_holdings(&self) -> Result<BrokerBalancesSnapshot, BrokerError> {
         Ok(BrokerBalancesSnapshot::default())
     }
 
-    async fn poll_open_orders(
-        &self,
-    ) -> Result<BrokerOpenOrdersSnapshot, BrokerError> {
+    async fn poll_open_orders(&self) -> Result<BrokerOpenOrdersSnapshot, BrokerError> {
         Ok(BrokerOpenOrdersSnapshot::empty())
     }
 }
@@ -716,7 +712,10 @@ async fn instrument_type_never_nrml_or_optidx_on_obtain() {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         assert!(
-            !matches!(it, "NRML" | "OPTIDX" | "NSE" | "OPTSTK" | "FUTIDX" | "FUTSTK"),
+            !matches!(
+                it,
+                "NRML" | "OPTIDX" | "NSE" | "OPTSTK" | "FUTIDX" | "FUTSTK"
+            ),
             "instrument_type must be desk CE/PE/FUT only, got {it:?}"
         );
     }

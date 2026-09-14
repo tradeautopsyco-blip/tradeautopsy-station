@@ -115,10 +115,6 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
     }
 }
 
-pub fn slot_policy(slot_id: &str) -> Option<&'static SlotPolicy> {
-    SLOTS.iter().find(|s| s.slot_id == slot_id)
-}
-
 pub fn meter_policy(meter_id: &str) -> Option<&'static MeterPolicy> {
     METERS.iter().find(|m| m.meter_id == meter_id)
 }

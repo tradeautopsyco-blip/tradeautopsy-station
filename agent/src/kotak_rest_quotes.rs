@@ -6,11 +6,11 @@
 //! HSM websocket skipped (WEBSOCKET.md: `mlhsm` not HTTP-allowlisted; `hsServerId` unspecified).
 
 use crate::data::{
-    apply_quote, authorize_book_call, depth_snapshots_from_kotak_json, json_array_first_object_keys,
-    json_field_object_keys, json_first_nested_object_keys, json_object_keys,
-    kotak_quote_book_id, quote_ticks_from_kotak_json_for_book,
-    quotes_neosymbol_path, DepthBook, Registry, TickBook, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
+    apply_quote, depth_snapshots_from_kotak_json, json_array_first_object_keys,
+    json_field_object_keys, json_first_nested_object_keys, json_object_keys, kotak_quote_book_id,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, DepthBook, Registry, TickBook,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
+    QUOTE_TYPE_OI,
 };
 use crate::kotak_scrip_master::KOTAK_NEO;
 use crate::ubi::{
@@ -237,21 +237,6 @@ async fn wait_for_inflight_quote(
     }
 }
 
-pub fn apply_kotak_quote_body(
-    registry: &Registry,
-    book: &mut TickBook,
-    body: &str,
-    received_at: chrono::DateTime<Utc>,
-) -> usize {
-    apply_kotak_quote_body_for_book(
-        registry,
-        book,
-        body,
-        received_at,
-        KOTAK_NSE_BSE_CASH_BOOK_ID,
-    )
-}
-
 /// Per-instrument NFO open interest, read off the `quote_type=all` body that
 /// already feeds TickBook last. A slot beside the tick — OI is not a price and
 /// never enters `QuoteTick::last`.
@@ -322,7 +307,10 @@ pub fn ensure_kotak_rest_depth(
     }
     {
         let guard = book.lock().expect("depthbook mutex poisoned");
-        if guard.get(book_id, &instrument).is_some_and(|row| row.completeness) {
+        if guard
+            .get(book_id, &instrument)
+            .is_some_and(|row| row.completeness)
+        {
             return;
         }
     }
@@ -394,7 +382,10 @@ pub async fn await_kotak_rest_depth(
     }
     {
         let guard = book.lock().expect("depthbook mutex poisoned");
-        if guard.get(book_id, &instrument).is_some_and(|row| row.completeness) {
+        if guard
+            .get(book_id, &instrument)
+            .is_some_and(|row| row.completeness)
+        {
             return;
         }
     }
@@ -519,81 +510,8 @@ pub fn apply_nfo_oi_session_body(slot: &NfoOiSessionSlot, body: &str) -> usize {
     applied
 }
 
-/// Fetch once per instrument when the OI session slot is empty. REST only —
-/// do not poll. Rate window unspecified.
-pub fn ensure_kotak_rest_oi_session(
-    slot: NfoOiSessionSlot,
-    vault: Arc<dyn BrokerCredentialVault>,
-    locator: SessionLocator,
-    inflight: &Arc<Mutex<HashSet<String>>>,
-    instrument_id: &str,
-) {
-    let instrument = instrument_id.trim().to_ascii_lowercase();
-    if instrument.is_empty() || !instrument.contains('|') {
-        return;
-    }
-    let Some(book_id) = kotak_quote_book_id(&instrument) else {
-        return;
-    };
-    if book_id != KOTAK_NSE_NFO_BOOK_ID {
-        return;
-    }
-    {
-        let guard = slot.lock().expect("nfo oi session mutex poisoned");
-        if guard.contains_key(&instrument) {
-            return;
-        }
-    }
-    {
-        let mut guard = inflight.lock().expect("kotak oi session inflight poisoned");
-        if !guard.insert(instrument.clone()) {
-            return;
-        }
-    }
-    let loc = locator
-        .lock()
-        .expect("kotak session locator poisoned")
-        .clone();
-    let Some((environment, connection_id)) = loc else {
-        inflight
-            .lock()
-            .expect("kotak oi session inflight poisoned")
-            .remove(&instrument);
-        return;
-    };
-    let inflight = inflight.clone();
-    tokio::spawn(async move {
-        let result = fetch_and_apply_oi_session(
-            &slot,
-            vault.as_ref(),
-            &environment,
-            &connection_id,
-            &instrument,
-        )
-        .await;
-        inflight
-            .lock()
-            .expect("kotak oi session inflight poisoned")
-            .remove(&instrument);
-        match result {
-            Ok((n, _)) if n > 0 => tracing::info!(
-                instrument = %instrument,
-                rows = n,
-                "s1 desk: kotak REST oi session applied"
-            ),
-            Ok((_, body)) => log_unusable_quotes_keys(&instrument, &body, "oi"),
-            Err(err) => tracing::warn!(
-                instrument = %instrument,
-                error = %err,
-                "s1 desk: kotak REST oi session failed"
-            ),
-        }
-    });
-}
-
-/// Same REST GET as `ensure_kotak_rest_oi_session`, but the caller waits for
-/// the slot or a fetch failure. Obtain uses this so session fields are not left
-/// unavailable while a spawn from ensure is still in flight.
+/// Obtain waits for the `quote_type=oi` REST GET so session fields are not left
+/// unavailable while a fetch is still in flight.
 pub async fn await_kotak_rest_oi_session(
     slot: NfoOiSessionSlot,
     vault: Arc<dyn BrokerCredentialVault>,
@@ -676,7 +594,7 @@ pub async fn fetch_quotes_json(
             });
         }
     };
-    let host = kotak_base_host(&base_url).ok_or(QuoteFetchError {
+    kotak_base_host(&base_url).ok_or(QuoteFetchError {
         class: QuoteFetchErrorClass::QuotesHttp,
     })?;
     let path = quotes_neosymbol_path(instrument_id, quote_type);
@@ -717,11 +635,26 @@ pub async fn fetch_quotes_json(
 mod tests {
     use super::*;
     use crate::data::{
-        depth_snapshot_from_kotak_json, kotak_neo_quote_descriptor, quote_tick_from_kotak_json,
-        DepthBook, Registry, TickBook,
+        authorize_book_call, depth_snapshot_from_kotak_json, kotak_neo_quote_descriptor,
+        quote_tick_from_kotak_json, DepthBook, Registry, TickBook,
     };
     use std::collections::{HashMap, HashSet};
     use std::sync::{Arc, Mutex};
+
+    fn apply_kotak_quote_body(
+        registry: &Registry,
+        book: &mut TickBook,
+        body: &str,
+        received_at: chrono::DateTime<Utc>,
+    ) -> usize {
+        apply_kotak_quote_body_for_book(
+            registry,
+            book,
+            body,
+            received_at,
+            KOTAK_NSE_BSE_CASH_BOOK_ID,
+        )
+    }
 
     #[test]
     fn fixture_body_applies_without_network() {
@@ -1277,8 +1210,8 @@ mod fo_quotes_field_probe {
                 );
             }
         };
-        let out =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/kotak/quotes_neosymbol_nfo_depth.json");
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/kotak/quotes_neosymbol_nfo_depth.json");
         std::fs::write(&out, format!("{body}\n")).expect("write fixture");
         println!("wrote {} bytes to {}", body.len(), out.display());
         let Ok(value) = serde_json::from_str::<Value>(&body) else {

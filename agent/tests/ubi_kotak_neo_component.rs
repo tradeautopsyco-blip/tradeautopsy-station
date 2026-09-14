@@ -173,8 +173,9 @@ fn empty_day_book_null_or_empty_data_is_zero_fills() {
         r#"{"stat":"Ok","stCode":200,"data":null}"#,
         r#"{"stat":"Ok","stCode":200,"data":[]}"#,
     ] {
-        let (fills, _state) = run_fetch_fills(&wasm, fixture_state(200, body.to_string()), empty_cursor())
-            .expect("empty data is success");
+        let (fills, _state) =
+            run_fetch_fills(&wasm, fixture_state(200, body.to_string()), empty_cursor())
+                .expect("empty data is success");
         assert!(fills.is_empty(), "body={body}");
     }
 }

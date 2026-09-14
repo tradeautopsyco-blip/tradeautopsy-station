@@ -152,14 +152,14 @@ public final class BrokerConnectController {
         do {
             try loginProfileStore.save(profileSnapshot, for: identity)
         } catch let KotakLoginProfileStoreError.keychainError(status) {
-            try? await teardownCredentialsBestEffort()
+            await teardownCredentialsBestEffort()
             return .validationTransientFailure(
                 .kotakMintRejected(
                     "Session minted but login profile Keychain save failed (status \(status)). Retry Connect."
                 )
             )
         } catch {
-            try? await teardownCredentialsBestEffort()
+            await teardownCredentialsBestEffort()
             return .validationTransientFailure(
                 .kotakMintRejected(
                     "Session minted but login profile Keychain save failed. Retry Connect so Edit can be TOTP-only."
@@ -170,7 +170,7 @@ public final class BrokerConnectController {
         // Verify vault via agent (in-process cache after mint) — never Station SecItem read.
         let present = await runtimeClient.vaultCredentialsPresent(for: identity)
         guard present else {
-            try? await teardownCredentialsBestEffort()
+            await teardownCredentialsBestEffort()
             return .validationTransientFailure(
                 .kotakMintRejected(
                     "Session minted but agent vault is empty — rebuild agent with keyring apple-native."

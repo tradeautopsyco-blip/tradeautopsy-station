@@ -155,7 +155,11 @@ async fn obtain_kotak_funds_via_limits_fixture_egress() {
     let again = obtain_funds(PORT).await;
     assert_eq!(again["status"], "success");
     let received = server.received_requests().await.expect("received");
-    assert_eq!(received.len(), 1, "fresh funds slot must skip a second POST");
+    assert_eq!(
+        received.len(),
+        1,
+        "fresh funds slot must skip a second POST"
+    );
 
     handle.abort();
 }

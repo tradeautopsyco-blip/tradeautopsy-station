@@ -548,31 +548,59 @@ mod tests {
     fn a_query_value_may_never_inject_a_second_parameter() {
         // `&` and `=` are structural. A symbol carrying them would silently become
         // extra parameters on a venue call, so they are escaped, not trusted.
-        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/mark", Lane::MarketData)
-            .with_query_pairs(&[("symbol", "BTC-260925-100000&evil=1-C")]);
+        let call = EgressCall::get(
+            "binance-com-options",
+            "eapi.binance.com",
+            "/eapi/v1/mark",
+            Lane::MarketData,
+        )
+        .with_query_pairs(&[("symbol", "BTC-260925-100000&evil=1-C")]);
         let url = call.url();
         assert!(
             url.ends_with("?symbol=BTC-260925-100000%26evil%3D1-C"),
             "separators must be escaped: {url}"
         );
         assert_eq!(url.matches('&').count(), 0, "no injected parameter: {url}");
-        assert_eq!(url.matches("evil=").count(), 0, "no injected parameter: {url}");
+        assert_eq!(
+            url.matches("evil=").count(),
+            0,
+            "no injected parameter: {url}"
+        );
     }
 
     #[test]
     fn a_real_dated_contract_survives_encoding_byte_for_byte() {
         // Dashes are unreserved, so the live symbol shape is unchanged — encoding
         // must not mangle the mixed-case contract the venue matches on.
-        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/mark", Lane::MarketData)
-            .with_query_pairs(&[("symbol", "BTC-260925-100000-C")]);
-        assert!(call.url().ends_with("?symbol=BTC-260925-100000-C"), "{}", call.url());
+        let call = EgressCall::get(
+            "binance-com-options",
+            "eapi.binance.com",
+            "/eapi/v1/mark",
+            Lane::MarketData,
+        )
+        .with_query_pairs(&[("symbol", "BTC-260925-100000-C")]);
+        assert!(
+            call.url().ends_with("?symbol=BTC-260925-100000-C"),
+            "{}",
+            call.url()
+        );
     }
 
     #[test]
     fn multiple_pairs_keep_the_ampersand_as_a_separator_only() {
-        let call = EgressCall::get("binance-com-options", "eapi.binance.com", "/eapi/v1/openInterest", Lane::MarketData)
-            .with_query_pairs(&[("underlyingAsset", "BTC"), ("expiration", "260925")]);
-        assert!(call.url().ends_with("?underlyingAsset=BTC&expiration=260925"), "{}", call.url());
+        let call = EgressCall::get(
+            "binance-com-options",
+            "eapi.binance.com",
+            "/eapi/v1/openInterest",
+            Lane::MarketData,
+        )
+        .with_query_pairs(&[("underlyingAsset", "BTC"), ("expiration", "260925")]);
+        assert!(
+            call.url()
+                .ends_with("?underlyingAsset=BTC&expiration=260925"),
+            "{}",
+            call.url()
+        );
     }
 
     #[test]

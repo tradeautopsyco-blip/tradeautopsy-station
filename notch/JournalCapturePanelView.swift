@@ -22,7 +22,7 @@ struct JournalCapturePanelView: View {
             .onAppear {
                 viewModel.updateDictationReduceMotion(accessibilityReduceMotion)
             }
-            .onChange(of: accessibilityReduceMotion) { v in
+            .onChange(of: accessibilityReduceMotion) { _, v in
                 viewModel.updateDictationReduceMotion(v)
             }
     }

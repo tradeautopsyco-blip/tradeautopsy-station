@@ -2,9 +2,7 @@
 //! Pipe A: async kick fetch → AccountBook slot → obtain enricher.
 
 use crate::api::AppState;
-use crate::binance_com_spot_client::{
-    open_order_to_broker_open_order, BinanceComSpotClient,
-};
+use crate::binance_com_spot_client::{open_order_to_broker_open_order, BinanceComSpotClient};
 use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding, BrokerOpenOrdersSnapshot};
 use crate::data::{authorize_book_call, BINANCE_COM_SPOT_BOOK_ID};
 use crate::ubi::CredentialBlob;

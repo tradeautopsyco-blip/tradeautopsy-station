@@ -3,10 +3,9 @@
 use crate::api::quote_selection::QuoteBindError;
 use crate::api::AppState;
 use crate::data::{
-    extract_quote_for_book, is_dated_option_contract, kotak_quote_book_id,
-    parse_nfo_instrument_id, refused_quote_binding, QuoteEnvelope, QuoteStatus,
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID,
+    extract_quote_for_book, is_dated_option_contract, kotak_quote_book_id, parse_nfo_instrument_id,
+    refused_quote_binding, QuoteEnvelope, QuoteStatus, BINANCE_COM_OPTIONS_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -18,19 +17,6 @@ pub struct QuoteQuery {
     pub instrument: Option<String>,
     /// Named TickBook slot (`binance-com-options`, `binance-com-spot`, etc.).
     pub book: Option<String>,
-}
-
-/// Shape-based book inference for refusal envelopes and legacy unit tests.
-pub(crate) fn named_book_for(
-    instrument: &str,
-    requested_book: Option<&str>,
-) -> Option<&'static str> {
-    if requested_book.map(str::trim) == Some(BINANCE_COM_OPTIONS_BOOK_ID)
-        || is_dated_option_contract(instrument)
-    {
-        return Some(BINANCE_COM_OPTIONS_BOOK_ID);
-    }
-    parse_nfo_instrument_id(instrument).map(|_| KOTAK_NSE_NFO_BOOK_ID)
 }
 
 fn inferred_quote_book(raw: &str) -> Option<&'static str> {
@@ -173,37 +159,22 @@ mod tests {
     }
 
     #[test]
-    fn named_book_for_only_honours_the_options_book() {
+    fn inferred_quote_book_routes_options_nfo_cash_and_spot() {
         assert_eq!(
-            named_book_for("BTC-200730-9000-C", Some(BINANCE_COM_OPTIONS_BOOK_ID)),
+            inferred_quote_book("BTC-200730-9000-C"),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
         );
         assert_eq!(
-            named_book_for("nse_fo|12345", None),
+            inferred_quote_book("nse_fo|12345"),
             Some(KOTAK_NSE_NFO_BOOK_ID)
         );
-        assert_eq!(named_book_for("nse_cm|2885", None), None);
-        assert_eq!(named_book_for("btcusdt", None), None);
         assert_eq!(
-            named_book_for("BTC-200730-9000-C", None),
-            Some(BINANCE_COM_OPTIONS_BOOK_ID)
+            inferred_quote_book("nse_cm|2885"),
+            Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
         );
-        assert_eq!(
-            named_book_for("BTC-200730-9000-C", Some("binance-com-spot")),
-            Some(BINANCE_COM_OPTIONS_BOOK_ID)
-        );
-        assert_eq!(named_book_for("btcusdt", Some("binance-com-spot")), None);
-        assert_eq!(named_book_for("btcusdt", Some("kotak-nse-nfo")), None);
-        assert_eq!(named_book_for("btcusdt", Some("nonsense")), None);
-        assert_eq!(named_book_for("btcusdt", Some("")), None);
-        assert_eq!(
-            named_book_for("nse_fo|12345", Some(BINANCE_COM_OPTIONS_BOOK_ID)),
-            Some(BINANCE_COM_OPTIONS_BOOK_ID)
-        );
-        assert_eq!(
-            named_book_for("nse_fo|12345", Some("nonsense")),
-            Some(KOTAK_NSE_NFO_BOOK_ID)
-        );
+        assert_eq!(inferred_quote_book("btcusdt"), Some(BINANCE_COM_SPOT_BOOK_ID));
+        assert_eq!(inferred_quote_book(""), None);
+        assert_eq!(inferred_quote_book("  "), None);
     }
 
     use crate::data::normalize_options_instrument;
@@ -218,7 +189,7 @@ mod tests {
             crate::data::normalize_quote_instrument("BTC-200730-9000-C")
         );
         assert_eq!(
-            named_book_for(&id, Some(BINANCE_COM_OPTIONS_BOOK_ID)),
+            inferred_quote_book(&id),
             Some(BINANCE_COM_OPTIONS_BOOK_ID)
         );
     }

@@ -59,9 +59,6 @@ pub struct QuoteEnvelope {
     pub bind_status: Option<String>,
 }
 
-/// Alias used by callers/tests.
-pub type QuoteExtract = QuoteEnvelope;
-
 /// Explicit unavailable envelope when quote binding is refused. Never echoes the raw id.
 pub fn refused_quote_binding(
     registry: &Registry,

@@ -35,9 +35,7 @@ mod capture;
 pub mod daemon_commands;
 pub(crate) mod desk;
 mod quote_selection;
-pub(crate) use quote_selection::{
-    QuoteBindError, QuoteSelections, QuoteSource, ValidatedQuoteBinding,
-};
+pub(crate) use quote_selection::QuoteSelections;
 mod health;
 mod instruments;
 mod kill_switch;

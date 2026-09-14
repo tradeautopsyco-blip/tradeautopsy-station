@@ -43,10 +43,7 @@ async fn post_kotak_start(port: u16) {
     .expect("start");
     let status = resp.status();
     let body = resp.text().await.unwrap_or_default();
-    assert_eq!(
-        status, 200,
-        "identity-only Start must succeed: {body}"
-    );
+    assert_eq!(status, 200, "identity-only Start must succeed: {body}");
 }
 
 async fn obtain(port: u16, query: &str) -> serde_json::Value {

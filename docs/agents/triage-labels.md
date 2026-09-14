@@ -12,7 +12,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 ## Dispatch states
 
-Beyond triage, `.github/workflows/agent-dispatch.yml` owns these. Set them through the workflow, not by hand.
+Beyond triage, Cursor Automations (and the legacy `.github/workflows/agent-dispatch.yml`) own these. Set `agent-running` / `agent-failed` through dispatch, not by hand.
 
 | Label             | Meaning                                                              |
 | ----------------- | -------------------------------------------------------------------- |
@@ -22,4 +22,4 @@ Beyond triage, `.github/workflows/agent-dispatch.yml` owns these. Set them throu
 | `needs-macos`     | Touches Swift/Xcode. Cloud agents run Linux and cannot build it.       |
 | `needs-research`  | Requires grilling + reference research before it can spawn slices      |
 
-`ready-for-agent` is the dispatch trigger. `/to-spec` publishes its spec issue with that label, so **relabel a spec `epic`** — otherwise an agent tries to build the whole spec in one run.
+`ready-for-agent` is the dispatch trigger. `/to-spec` publishes the spec with **`epic` only** — never `ready-for-agent`. Only `/to-tickets` output keeps `ready-for-agent`. The dispatcher (Cursor Automation or Actions) must still exclude `epic` as a second line of defence.

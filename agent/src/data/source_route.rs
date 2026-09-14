@@ -4,10 +4,10 @@
 //! fill it with its own book_id. Quote never consults the gap vendor.
 //! Traders paste keys, not URLs.
 
+use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
 use super::identity::{CapabilityId, Family, Identity, Physics};
 use super::router::{pick_route, RouteCandidate, RouteDecision, RouteOutcome, SourceRole};
 use super::source_manifest::{ObtainEnvelope, ObtainStatus};
-use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
 
 /// CI / declared-gap fixture. Not a B6 product vendor. Not Yahoo.
 pub const LICENSED_HISTORY_ADAPTER_ID: &str = "licensed_history";

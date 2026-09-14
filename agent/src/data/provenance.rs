@@ -1,6 +1,5 @@
 //! Provenance line on glance / greeks / margin envelopes. Not caption chrome.
 
-use super::honesty::HonestyStatus;
 use super::identity::Identity;
 use serde::Serialize;
 

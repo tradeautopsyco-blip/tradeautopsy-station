@@ -113,7 +113,10 @@ async fn obtain_funds(port: u16) -> Value {
 
 fn assert_no_secrets(body: &Value) {
     let wire = body.to_string();
-    assert!(!wire.contains(API_KEY), "apiKey must not leak on sync-state");
+    assert!(
+        !wire.contains(API_KEY),
+        "apiKey must not leak on sync-state"
+    );
     assert!(
         !wire.contains(API_SECRET),
         "apiSecret must not leak on sync-state"

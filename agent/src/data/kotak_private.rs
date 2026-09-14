@@ -3,18 +3,26 @@
 
 use crate::egress::Lane;
 use crate::kotak_scrip_master::KOTAK_NEO;
-use crate::ubi::{prepare_request, HostCredentialBlob, BrokerCredentialVault, PreparedHttpRequest, kotak_base_host};
+use crate::ubi::{
+    kotak_base_host, prepare_request, BrokerCredentialVault, HostCredentialBlob,
+    PreparedHttpRequest,
+};
 use std::time::Duration;
 
-use super::descriptor::{KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
+use super::descriptor::KOTAK_NSE_BSE_CASH_BOOK_ID;
+#[cfg(test)]
+use super::descriptor::KOTAK_NSE_NFO_BOOK_ID;
 
 pub const KOTAK_ORDERS_PATH: &str = "/quick/user/orders";
 pub const KOTAK_POSITIONS_PATH: &str = "/quick/user/positions";
 pub const KOTAK_HOLDINGS_PATH: &str = "/portfolio/v1/holdings";
 pub const KOTAK_LIMITS_PATH: &str = "/quick/user/limits";
-pub const KOTAK_CHECK_MARGIN_PATH: &str = "/quick/user/check-margin";
 
-pub fn kotak_private_book_id(segment: &str) -> Option<&'static str> {
+#[cfg(test)]
+const KOTAK_CHECK_MARGIN_PATH: &str = "/quick/user/check-margin";
+
+#[cfg(test)]
+fn kotak_private_book_id(segment: &str) -> Option<&'static str> {
     let seg = segment.trim().to_ascii_lowercase();
     if seg == "nse_fo" {
         Some(KOTAK_NSE_NFO_BOOK_ID)
@@ -58,16 +66,7 @@ pub async fn fetch_kotak_private_json(
             "application/x-www-form-urlencoded".to_string(),
         ));
     }
-    let prepared = prepare_request(
-        method,
-        &host,
-        path,
-        &[],
-        &headers,
-        body,
-        &creds,
-        0,
-    );
+    let prepared = prepare_request(method, &host, path, &[], &headers, body, &creds, 0);
     send_private(book_id, &prepared, direct_base).await
 }
 
@@ -149,7 +148,9 @@ use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use super::account_split::{split_kotak_holdings_by_book, split_kotak_orders_by_book, split_kotak_positions_by_book};
+use super::account_split::{
+    split_kotak_holdings_by_book, split_kotak_orders_by_book, split_kotak_positions_by_book,
+};
 use super::authorize_book_call;
 
 fn slot_fresh(as_of_ms: i64, max_age_ms: i64) -> bool {
@@ -336,8 +337,8 @@ pub fn parse_kotak_limits_json(body: &str) -> Result<BrokerBalancesSnapshot, Str
         }
     }
     let free = parse_f64(root.get("Net")).ok_or_else(|| "kotak limits missing Net".to_string())?;
-    let locked =
-        parse_f64(root.get("MarginUsed")).ok_or_else(|| "kotak limits missing MarginUsed".to_string())?;
+    let locked = parse_f64(root.get("MarginUsed"))
+        .ok_or_else(|| "kotak limits missing MarginUsed".to_string())?;
     let holdings = if free + locked <= 0.0 {
         Vec::new()
     } else {
@@ -424,8 +425,7 @@ async fn fetch_and_plant_holdings(
         state.kotak_private_base_url.as_deref(),
     )
     .await?;
-    let holdings =
-        parse_kotak_holdings_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
+    let holdings = parse_kotak_holdings_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
     let split = split_kotak_holdings_by_book(holdings);
     let as_of_ms = Utc::now().timestamp_millis();
     if let Some(rows) = split.get(KOTAK_NSE_BSE_CASH_BOOK_ID) {
@@ -476,11 +476,7 @@ async fn fetch_and_plant_funds(
     Ok(())
 }
 
-fn plant_orders_split(
-    state: &AppState,
-    split: HashMap<String, Vec<BrokerOpenOrder>>,
-    path: &str,
-) {
+fn plant_orders_split(state: &AppState, split: HashMap<String, Vec<BrokerOpenOrder>>, path: &str) {
     let as_of_ms = Utc::now().timestamp_millis();
     let mut book = state
         .account_book
@@ -874,7 +870,11 @@ mod tests {
     fn fixture_orders_parses_open_rows_only() {
         let body = include_str!("../../fixtures/kotak/quick_user_orders.json");
         let orders = parse_kotak_orders_json(body).expect("orders parse");
-        assert_eq!(orders.len(), 0, "fixture day book has no open unFldSz>0 rows");
+        assert_eq!(
+            orders.len(),
+            0,
+            "fixture day book has no open unFldSz>0 rows"
+        );
     }
 
     #[test]

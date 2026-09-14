@@ -8,7 +8,7 @@
 
 use super::contracts::extract_contracts;
 use super::greeks::{dark_fence, greeks_identity, GreeksEnvelope, PRICING_MODEL_UNSPECIFIED};
-use super::honesty::{HonestyStatus, InputHonesty};
+use super::honesty::InputHonesty;
 use super::inherit::inherit;
 use super::provenance::ProvenanceLine;
 use super::KOTAK_NSE_NFO_BOOK_ID;
@@ -53,6 +53,7 @@ pub(crate) fn extract_greeks_from(chain: InputHonesty, contracts: InputHonesty) 
 mod tests {
     use super::*;
     use crate::data::greeks::{extract_greeks, greeks_may_render_number, GreeksStatus};
+    use crate::data::honesty::HonestyStatus;
     use crate::data::identity::{Family, Physics};
     use crate::data::KOTAK_NSE_NFO_BOOK_ID;
 

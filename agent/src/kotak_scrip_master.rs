@@ -80,12 +80,6 @@ impl KotakScripMaster {
         self.by_token.contains_key(&(segment, token))
     }
 
-    pub fn iter_tickers(&self) -> impl Iterator<Item = &str> {
-        self.by_token
-            .values()
-            .map(|row| row.trading_symbol.as_str())
-    }
-
     pub fn iter_instrument_ids(&self) -> impl Iterator<Item = String> + '_ {
         self.by_token
             .values()

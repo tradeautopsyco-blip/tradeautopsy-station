@@ -220,10 +220,6 @@ impl Meter {
         self.posture = next;
     }
 
-    pub fn clear_posture(&mut self) {
-        self.posture = Posture::Live;
-    }
-
     /// Mark the ledger spent for the rest of the window. Used the moment a 429
     /// lands so concurrent callers stop immediately rather than each discovering
     /// the limit for themselves.

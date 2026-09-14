@@ -47,10 +47,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         );
     }
     drop(book);
-    capabilities.insert(
-        "instruments".into(),
-        json!(state.instrument_master_wire()),
-    );
+    capabilities.insert("instruments".into(), json!(state.instrument_master_wire()));
 
     Json(json!({
         "syncState": sync_state,

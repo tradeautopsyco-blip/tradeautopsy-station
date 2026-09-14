@@ -74,7 +74,7 @@ pub async fn execute_daemon_command(
 
 async fn ingest_kill_switch_triggered(
     state: &AppState,
-    user_id: &str,
+    _user_id: &str,
     level: u64,
     trigger: Option<&str>,
 ) {

@@ -124,10 +124,9 @@ pub fn pick_route(request: &Identity, candidates: &[RouteCandidate]) -> RouteDec
         };
     }
 
-    if matching
-        .iter()
-        .any(|candidate| candidate.role == SourceRole::ExplicitGap && candidate.budget_remaining == 0)
-    {
+    if matching.iter().any(|candidate| {
+        candidate.role == SourceRole::ExplicitGap && candidate.budget_remaining == 0
+    }) {
         return RouteDecision {
             adapter_id: None,
             transport: None,

@@ -17,7 +17,9 @@ use serde_json::Value;
 
 pub const QUOTES_NEOSYMBOL_MARK: &str = "/script-details/1.0/quotes/neosymbol/";
 pub const QUOTE_TYPE_ALL: &str = "all";
+#[cfg(test)]
 pub const QUOTE_TYPE_LTP: &str = "ltp";
+#[cfg(test)]
 pub const QUOTE_TYPE_OHLC: &str = "ohlc";
 pub const QUOTE_TYPE_DEPTH: &str = "depth";
 pub const QUOTE_TYPE_OI: &str = "oi";
@@ -219,14 +221,6 @@ fn quote_segment_and_token(value: &Value) -> Option<(String, String)> {
             .or_else(|| value.get("exchange_token"))?,
     )?;
     Some((segment, token))
-}
-
-/// Cash `nse_cm|token` from a quote/depth row. v1: `exchange_segment` +
-/// `instrument_token`. Live v2 array (OpenAlgo / founder 2026-08-27): `exchange` +
-/// `exchange_token`.
-pub(crate) fn cash_instrument_id_from_quote_object(value: &Value) -> Option<String> {
-    let (segment, token) = quote_segment_and_token(value)?;
-    kotak_instrument_id(&segment, &token)
 }
 
 /// Depth row identity + DepthBook slot. Cash → shipping cash book; `nse_fo` →

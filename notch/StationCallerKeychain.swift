@@ -22,7 +22,7 @@ public enum StationCallerKeychain {
     }
 
     public static func loadTokens() -> Tokens? {
-        var query: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: accountName,

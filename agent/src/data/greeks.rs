@@ -44,6 +44,9 @@ pub const BOOK_REQUIRED: &str = "greeks_book_required";
 /// A book produced a source class it is structurally not allowed to produce.
 /// Fail closed: a greek whose origin is misfiled is not a greek we may show.
 pub const SOURCE_CLASS_MISMATCH: &str = "greeks_source_class_mismatch";
+/// `Success` + `data` that [`greeks_may_render_number`] refuses. The extract must
+/// not hand Notch a number the gate would hide.
+pub const GREEKS_NOT_RENDERABLE: &str = "greeks_not_renderable";
 
 /// Where a greek number came from. There are exactly two honest origins, and each
 /// book may produce only one of them.
@@ -190,6 +193,13 @@ fn refuse_misfiled_source(book: &str, envelope: GreeksEnvelope) -> GreeksEnvelop
     }
 }
 
+fn refuse_unrenderable(envelope: GreeksEnvelope) -> GreeksEnvelope {
+    if envelope.data.is_none() || greeks_may_render_number(&envelope) {
+        return envelope;
+    }
+    dark_fence(GREEKS_NOT_RENDERABLE)
+}
+
 /// Book-routed greeks extract with a `/eapi/v1/mark` row in hand.
 ///
 /// Only `binance-com-options` reads the row: those greeks are venue-published, and
@@ -216,7 +226,7 @@ pub fn extract_greeks_from_mark(
         _ => return dark_fence(BOOK_REQUIRED),
     };
 
-    refuse_misfiled_source(book, envelope)
+    refuse_unrenderable(refuse_misfiled_source(book, envelope))
 }
 
 /// May this envelope's number be shown to a trader?
@@ -320,7 +330,7 @@ mod tests {
 
     const OFFICIAL_EXAMPLE: &str = r#"[ { "symbol": "BTC-200730-9000-C", "markPrice": "1343.2883", "bidIV": "1.40000077", "askIV": "1.50000153", "markIV": "1.45000000", "delta": "0.55937056", "theta": "3739.82509871", "gamma": "0.00010969", "vega": "978.58874732", "highPriceLimit": "1618.241", "lowPriceLimit": "1068.3356", "riskFreeInterest": "0.1" } ]"#;
 
-    fn official_row() -> crate::data::OptionsMarkRow {
+    fn official_row() -> OptionsMarkRow {
         crate::data::mark_row_for_symbol(OFFICIAL_EXAMPLE, "BTC-200730-9000-C").expect("row")
     }
 
@@ -337,6 +347,22 @@ mod tests {
         assert_eq!(lit.data.as_ref().expect("data")["delta"], "0.55937056");
         assert!(lit.rights.display);
         assert!(greeks_may_render_number(&lit));
+    }
+
+    #[test]
+    fn extract_from_mark_does_not_leak_unrenderable_data() {
+        let envelope = extract_greeks_from_mark(
+            Some(BINANCE_COM_OPTIONS_BOOK_ID),
+            Some(&official_row()),
+            None,
+            InputHonesty::Lit,
+        );
+        assert!(envelope.data.is_none(), "unstamped mark must not carry a number");
+        assert!(envelope
+            .ineligible
+            .iter()
+            .any(|s| s == GREEKS_NOT_RENDERABLE));
+        assert!(!greeks_may_render_number(&envelope));
     }
 
     #[test]

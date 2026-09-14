@@ -10,6 +10,7 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
+#[cfg(test)]
 pub const DEFAULT_BASE_URL: &str = "https://eapi.binance.com";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub enum BinanceComOptionsError {
 }
 
 impl BinanceComOptionsError {
+    #[cfg(test)]
     pub fn is_rate_limited(&self) -> bool {
         matches!(self, Self::Http { status: 429, .. })
     }
@@ -36,6 +38,7 @@ pub struct BinanceComUserTrade {
 }
 
 pub struct BinanceComOptionsClient {
+    #[cfg(test)]
     base_url: String,
     api_key: String,
     api_secret: String,
@@ -44,12 +47,14 @@ pub struct BinanceComOptionsClient {
 
 enum OptionsTransport {
     Egress,
+    #[cfg(test)]
     Direct(reqwest::Client),
 }
 
 impl BinanceComOptionsClient {
     pub fn new(api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
         Self {
+            #[cfg(test)]
             base_url: DEFAULT_BASE_URL.trim_end_matches('/').to_string(),
             api_key: api_key.into(),
             api_secret: api_secret.into(),
@@ -57,6 +62,7 @@ impl BinanceComOptionsClient {
         }
     }
 
+    #[cfg(test)]
     pub fn with_base_url(
         base_url: impl Into<String>,
         api_key: impl Into<String>,
@@ -96,6 +102,7 @@ impl BinanceComOptionsClient {
             .join("&");
         let signature = sign_query(&self.api_secret, &query);
         let signed_query = format!("{query}&signature={signature}");
+        #[cfg(test)]
         let url = format!("{}{path}?{signed_query}", self.base_url);
 
         let (status, body) = match &self.transport {
@@ -114,6 +121,7 @@ impl BinanceComOptionsClient {
                     .map_err(|e| BinanceComOptionsError::Network(e.to_string()))?;
                 (resp.status, resp.body)
             }
+            #[cfg(test)]
             OptionsTransport::Direct(client) => {
                 let response = client
                     .get(&url)

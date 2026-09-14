@@ -1,6 +1,8 @@
 //! Injectable clock. The engine owns the clock; it never owns a sleep.
 
+#[cfg(test)]
 use std::sync::atomic::{AtomicI64, Ordering};
+#[cfg(test)]
 use std::sync::Arc;
 
 pub trait Clock: Send + Sync {
@@ -17,9 +19,11 @@ impl Clock for SystemClock {
 }
 
 /// Test clock: time only moves when a test moves it.
+#[cfg(test)]
 #[derive(Debug)]
 pub struct TestClock(AtomicI64);
 
+#[cfg(test)]
 impl TestClock {
     pub fn new(start_ms: i64) -> Arc<Self> {
         Arc::new(Self(AtomicI64::new(start_ms)))
@@ -34,6 +38,7 @@ impl TestClock {
     }
 }
 
+#[cfg(test)]
 impl Clock for TestClock {
     fn now_ms(&self) -> i64 {
         self.0.load(Ordering::SeqCst)
