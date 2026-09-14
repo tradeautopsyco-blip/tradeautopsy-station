@@ -30,7 +30,7 @@ struct BarOptionsDeclareView: View {
             VStack(alignment: .leading, spacing: 12) {
                 panelHead("Session", trailing: sessionTrailing)
                 sessionChartHole
-                Text("History · no licensed series on Kotak. Session bars need a live TickBook.")
+                Text("History · Kotak history unsupported. Session bars need a live TickBook. Not a 1m resample.")
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -60,10 +60,10 @@ struct BarOptionsDeclareView: View {
 
     private var sessionChartHole: some View {
         VStack(spacing: 6) {
-            Text("no licensed series")
+            Text(BarNfoHistoryCopy.sessionHoleTitle)
                 .font(BarDS.monoFont(11, weight: .medium))
                 .foregroundColor(BarDS.Accent.red)
-            Text("market/ohlcv · source refused at boot")
+            Text(BarNfoHistoryCopy.sessionHoleBody)
                 .font(BarDS.monoFont(10, weight: .regular))
                 .foregroundColor(BarDS.Text.muted)
         }
@@ -320,6 +320,13 @@ struct BarOptionsDeclareView: View {
         }
     }
 
+    /// Chips only. NFO never paints `deskGreeksDelta` — that field is the crypto
+    /// mark pass-through. An unrecognised wire word (including `success`) is still
+    /// `unavailable`; lit is not a fifth honesty state.
+    private var greeksChipStatus: HonestyStatus {
+        HonestyStatus.fromWire(viewModel.deskGreeksStatus) ?? .unavailable
+    }
+
     private var greeksGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 1) {
             ForEach(["Delta", "Gamma", "Theta / day", "Vega / 1 vol"], id: \.self) { label in
@@ -327,7 +334,7 @@ struct BarOptionsDeclareView: View {
                     Text(label.uppercased())
                         .font(BarDS.monoFont(9.5, weight: .regular))
                         .foregroundColor(BarDS.Text.muted)
-                    HonestyChip(status: hasLegs ? .inheritedDark : .empty)
+                    HonestyChip(status: greeksChipStatus)
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -339,10 +346,11 @@ struct BarOptionsDeclareView: View {
     }
 
     private var greeksProv: String {
-        if hasLegs {
-            return "derived/greeks · inherited dark — named inputs market/option_chain and reference/derivative_contracts (missing F&O master). A Greek from a missing master is a lie, so this stays empty."
-        }
-        return "derived/greeks — waiting on a declared leg."
+        BarNfoGreeksCopy.provenance(
+            asked: viewModel.deskGreeksAsked,
+            status: viewModel.deskGreeksStatus,
+            ineligible: viewModel.deskGreeksIneligible
+        )
     }
 
     private var payoffHole: some View {

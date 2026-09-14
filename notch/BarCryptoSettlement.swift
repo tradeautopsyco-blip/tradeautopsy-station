@@ -7,6 +7,35 @@ enum BarNfoPayoffCopy {
     static let holeBody = "derived/payoff inherits market/option_chain"
 }
 
+/// NFO `derived/greeks` copy. The three-zone surface never paints Δ/Γ/Θ — chips
+/// only, from the glance envelope. Legs are a local plan and do not gate this.
+enum BarNfoGreeksCopy {
+    static let pricingModelUnspecified = "pricing_model_unspecified"
+
+    static func provenance(asked: Bool, status: String, ineligible: [String]) -> String {
+        if ineligible.contains(pricingModelUnspecified) {
+            return "derived/greeks · unavailable — pricing_model_unspecified. Named inputs market/option_chain and reference/derivative_contracts are lit. Station has no trader model (OPTIONS-PRICING.md). A Greek from memory is a lie, so this stays empty."
+        }
+        if asked {
+            if HonestyStatus.fromWire(status) == .inheritedDark {
+                return "derived/greeks · inherited dark — named inputs market/option_chain and reference/derivative_contracts (missing F&O master). A Greek from a missing master is a lie, so this stays empty."
+            }
+            let wire = status.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shown = wire.isEmpty ? "unavailable" : wire
+            return "derived/greeks · \(shown) — NFO greeks stay dark until OPTIONS-PRICING.md names a trader model."
+        }
+        return "derived/greeks — waiting on a declared contract."
+    }
+}
+
+/// NFO session / derived OHLCV copy. Kotak has no history capability; Station
+/// does not compose coarser bars from a finer series.
+enum BarNfoHistoryCopy {
+    static let sessionHoleTitle = "no licensed series"
+    static let sessionHoleBody =
+        "derived/ohlcv · kotak_history_unsupported. Kotak history is unsupported; Station does not compose coarser bars from 1m."
+}
+
 /// European cash-settled P&L identity for Binance options At-expiry.
 ///
 /// Lock: `locks/binance-com-options.md` — S is eapi `indexPrice`, not spot last,

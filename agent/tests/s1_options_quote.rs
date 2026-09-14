@@ -1077,6 +1077,70 @@ async fn a_no_bid_sentinel_vanishes_without_voiding_the_greeks() {
     handle.abort();
 }
 
+/// S5 keep: lighting mark greeks must not rewrite last freshness. REST ticker has
+/// no exchange timestamp (`age_unknown`) → chip `unknown`, never `fresh`.
+#[tokio::test]
+async fn lighting_greeks_does_not_flip_last_unknown_to_fresh() {
+    const PORT: u16 = 19_547;
+    let handle = spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            plant_binance_options_quote: true,
+            plant_binance_options_mark: true,
+            ..TestAgentOptions::default()
+        },
+    );
+    wait_for_quote_route(PORT).await;
+    let client = reqwest::Client::new();
+
+    let quote: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("bind dated contract")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(quote["status"], "unknown");
+    assert_ne!(quote["status"], "fresh");
+    assert_eq!(quote["bind_status"], "bound");
+
+    let greeks: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/greeks?book=binance-com-options&instrument=BTC-200730-9000-C"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("greeks glance")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(greeks["status"], "success");
+    assert_eq!(greeks["data"]["delta"], "0.55937056");
+    assert_eq!(greeks["source"]["kind"], "venue_published");
+
+    let last_after: serde_json::Value = client
+        .get(format!(
+            "http://127.0.0.1:{PORT}/api/station/quote?instrument=BTC-200730-9000-C&book=binance-com-options"
+        ))
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+        .expect("quote after greeks")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(last_after["status"], "unknown");
+    assert_ne!(last_after["status"], "fresh");
+    assert_eq!(last_after["data"]["last"], "1.23");
+
+    handle.abort();
+}
+
 /// Depth on this book is a REST bounded snapshot, and obtain is scoped to the
 /// selected contract. With no planted ladder it is Unavailable — never
 /// `unsupported`, and never an empty `{bids:[],asks:[]}` success.

@@ -1101,10 +1101,105 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskGreeksStatus == "unavailable")
         #expect(vm.deskGreeksDelta == nil)
         #expect(vm.deskGreeksDisplay == false)
+        #expect(vm.deskGreeksIneligible.isEmpty)
+        #expect(vm.deskGreeksAsked == false)
+        let waiting = BarNfoGreeksCopy.provenance(
+            asked: vm.deskGreeksAsked,
+            status: vm.deskGreeksStatus,
+            ineligible: vm.deskGreeksIneligible
+        )
+        #expect(waiting.contains("waiting on a declared contract"))
+        #expect(!waiting.contains("missing F&O master"))
         // The NFO surface only ever renders a chip, and the dialect has no lit case.
         #expect(HonestyStatus.fromWire("success") == nil)
         #expect(!HonestyStatus.allCases.contains { $0.rawValue == "success" })
         #expect(HonestyStatus.fromWire("inherited_dark") == .inheritedDark)
+    }
+
+    /// Lit named inputs with no trader model: the extract's own hole, not a missing master.
+    @Test func nfoPricingModelUnspecifiedDoesNotClaimMissingMaster() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        vm.applyGreeksEnvelope([
+            "status": "unavailable",
+            "data": NSNull(),
+            "rights": ["research_fetch": true, "display": false],
+            "ineligible": ["pricing_model_unspecified"],
+        ])
+        #expect(vm.deskGreeksAsked)
+        #expect(vm.deskGreeksStatus == "unavailable")
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksGamma == nil)
+        #expect(vm.deskGreeksTheta == nil)
+        #expect(vm.deskGreeksVega == nil)
+        #expect(vm.deskGreeksDisplay == false)
+        #expect(vm.deskGreeksIneligible.contains("pricing_model_unspecified"))
+        let line = BarNfoGreeksCopy.provenance(
+            asked: vm.deskGreeksAsked,
+            status: vm.deskGreeksStatus,
+            ineligible: vm.deskGreeksIneligible
+        )
+        #expect(line.contains("pricing_model_unspecified"))
+        #expect(!line.contains("missing F&O master"))
+        #expect(!line.contains("delta"))
+        #expect(!line.contains("0.55937056"))
+        #expect(HonestyStatus.fromWire(vm.deskGreeksStatus) == .unavailable)
+    }
+
+    @Test func nfoInheritedDarkMayStillNameMissingMaster() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.applyGreeksEnvelope([
+            "status": "inherited_dark",
+            "data": NSNull(),
+            "rights": ["display": false],
+            "ineligible": [] as [String],
+        ])
+        #expect(vm.deskGreeksDelta == nil)
+        #expect(vm.deskGreeksDisplay == false)
+        let line = BarNfoGreeksCopy.provenance(
+            asked: vm.deskGreeksAsked,
+            status: vm.deskGreeksStatus,
+            ineligible: vm.deskGreeksIneligible
+        )
+        #expect(line.contains("inherited dark"))
+        #expect(line.contains("missing F&O master"))
+        #expect(!line.contains("pricing_model_unspecified"))
+    }
+
+    /// A hostile success envelope may fill the shared VM (crypto path). NFO copy
+    /// still never names a number, and `success` is not a chip.
+    @Test func nfoCopyNeverPaintsEvenIfSharedVmCarriesVenueStrings() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.applyGreeksEnvelope([
+            "status": "success",
+            "data": [
+                "delta": "0.55937056",
+                "gamma": "0.00010969",
+                "theta": "3739.82509871",
+                "vega": "978.58874732",
+            ],
+            "provenance": ["model": "venue_published", "path": "/eapi/v1/mark"],
+            "rights": ["display": true],
+            "ineligible": [] as [String],
+        ])
+        #expect(vm.deskGreeksDelta == "0.55937056")
+        let line = BarNfoGreeksCopy.provenance(
+            asked: vm.deskGreeksAsked,
+            status: vm.deskGreeksStatus,
+            ineligible: vm.deskGreeksIneligible
+        )
+        #expect(!line.contains("0.55937056"))
+        #expect(!line.contains("delta"))
+        #expect(HonestyStatus.fromWire(vm.deskGreeksStatus) == nil)
+        #expect(BarNfoHistoryCopy.sessionHoleBody.contains("kotak_history_unsupported"))
+        #expect(!BarNfoHistoryCopy.sessionHoleBody.contains("source refused at boot"))
+        #expect(BarNfoHistoryCopy.sessionHoleBody.contains("does not compose"))
     }
 
     @Test func invalidateWipesEveryGreeksFieldUnderTheSameGeneration() {
@@ -1155,6 +1250,7 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskGreeksVega == nil)
         #expect(vm.deskGreeksDisplay == false)
         #expect(vm.deskGreeksProv.isEmpty)
+        #expect(vm.deskGreeksIneligible.isEmpty)
         // Same generation bump as chain/OI — one rebind, one wipe.
         #expect(vm.deskChainStatus == "unavailable")
         #expect(vm.deskOiStatus == "unavailable")

@@ -543,6 +543,9 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskGreeksDisplay: Bool = false
     /// `model · path` for the lit greeks row — empty while dark.
     @Published var deskGreeksProv: String = ""
+    /// `ineligible` reasons from the glance envelope. NFO provenance reads this
+    /// (`pricing_model_unspecified`) instead of inventing “missing F&O master”.
+    @Published var deskGreeksIneligible: [String] = []
     /// Did the desk actually ask for greeks on this generation? Distinguishes "no dated
     /// contract yet, so nothing was requested" from "asked the venue and got a hole" —
     /// two different sentences, and only one of them is "waiting".
@@ -2227,6 +2230,7 @@ public final class NotchViewModel: ObservableObject {
         deskGreeksAsked = true
         deskGreeksStatus = status.isEmpty ? "unavailable" : status
         deskGreeksDisplay = display
+        deskGreeksIneligible = stringList(json["ineligible"])
 
         guard status == "success", display,
               let delta = published("delta"),
@@ -2259,6 +2263,7 @@ public final class NotchViewModel: ObservableObject {
         deskGreeksVega = nil
         deskGreeksDisplay = false
         deskGreeksProv = ""
+        deskGreeksIneligible = []
         deskGreeksAsked = false
     }
 

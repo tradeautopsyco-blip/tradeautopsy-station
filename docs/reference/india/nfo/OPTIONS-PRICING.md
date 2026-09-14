@@ -512,5 +512,7 @@ Facts that still need confirming against the live source or a test environment b
 | Infer cash vs physical settlement from memory | NCL 2026-08-31: **cash settled** for index **and** individual securities | Cited; still not a greek |
 | Light Binance `GET /eapi/v1/mark` because NFO research moved | Superseded 2026-08-31: mark is `VenuePublished`, not `ModelComputed`. Lit under the Binance Slice 3 lock; this file never gated it. | NFO stays `pricing_model_unspecified` |
 | One `calculate()` with `if CRYPTO` | Book law: two modules or zero | Dispatcher by `book_id` only |
+| Light NFO Δ/Γ/Θ because Kotak has LTP/OI | Quotes `quote_type` is `all \| depth \| ohlc \| ltp \| oi \| 52w \| circuit_limits \| scrip_details`. Live FO bodies name `ltp` and `open_int`, not greeks. | Nothing to copy. Not `VenuePublished`. |
+| Wrap OpenAlgo `opengreeks` / `option_greeks_service.py` | OpenAlgo computes Black-76 itself (`opengreeks` Rust), synthetic future ATM CE−PE, r=0, 15:30 IST cut-off. Kotak `get_quotes` maps LTP/OHLC/OI only. Consolidated plan: **Greeks not OpenAlgo `opengreeks`**. AGPL wrap is N-A. | **Refuse.** Unnamed ModelComputed. Hardcoded day-count / r / cut-off still unspecified here. |
 
 No memory fills for pricing formulas, day-count, option greeks rate, IV inversion, or rupee scaling. Gaps stay `NOT SPECIFIED IN SOURCE`. G0 continues.
