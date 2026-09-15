@@ -83,6 +83,12 @@ pub struct TestAgentOptions {
     pub plant_binance_spot_depth_unusable: bool,
     /// Spot private reads — point `BinanceComSpotClient` at wiremock (not `api.binance.com`).
     pub binance_spot_base_url: Option<String>,
+    /// USDM private reads — point the USDM client at wiremock (not `fapi.binance.com`).
+    pub binance_usdm_base_url: Option<String>,
+    /// Coin-M private reads — point the Coin-M client at wiremock (not `dapi.binance.com`).
+    pub binance_coinm_base_url: Option<String>,
+    /// Options eapi private reads — point the options client at wiremock (not `eapi.binance.com`).
+    pub binance_eapi_base_url: Option<String>,
     /// Kotak private reads — Direct HTTP to wiremock (not `cis.kotaksecurities.com`).
     pub kotak_private_base_url: Option<String>,
     pub gap_vendor_enabled: bool,
@@ -136,6 +142,9 @@ impl Default for TestAgentOptions {
             plant_binance_options_index: false,
             plant_binance_spot_depth_unusable: false,
             binance_spot_base_url: None,
+            binance_usdm_base_url: None,
+            binance_coinm_base_url: None,
+            binance_eapi_base_url: None,
             kotak_private_base_url: None,
             gap_vendor_enabled: false,
             gap_vendor_key: None,
@@ -199,6 +208,9 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_options_index = opts.plant_binance_options_index;
     cfg.plant_binance_spot_depth_unusable = opts.plant_binance_spot_depth_unusable;
     cfg.binance_spot_base_url = opts.binance_spot_base_url.clone();
+    cfg.binance_usdm_base_url = opts.binance_usdm_base_url.clone();
+    cfg.binance_coinm_base_url = opts.binance_coinm_base_url.clone();
+    cfg.binance_eapi_base_url = opts.binance_eapi_base_url.clone();
     cfg.kotak_private_base_url = opts.kotak_private_base_url.clone();
     cfg.gap_vendor_enabled = opts.gap_vendor_enabled;
     cfg.gap_vendor_key = opts.gap_vendor_key.clone();

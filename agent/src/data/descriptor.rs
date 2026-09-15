@@ -63,6 +63,10 @@ pub const BINANCE_COM_OPTIONS_BOOK_ID: &str = "binance-com-options";
 pub const KOTAK_NSE_BSE_CASH_BOOK_ID: &str = "kotak-nse-bse-cash";
 /// Named NFO book (Gate 0). Same `kotak_neo` slug; Start still ships cash.
 pub const KOTAK_NSE_NFO_BOOK_ID: &str = "kotak-nse-nfo";
+/// Named USDM book. Same `binance_com` slug; Start still ships spot.
+pub const BINANCE_COM_USDM_BOOK_ID: &str = "binance-com-usdm";
+/// Named Coin-M book. Third identity. Same `binance_com` slug.
+pub const BINANCE_COM_COINM_BOOK_ID: &str = "binance-com-coinm";
 
 fn market_quote_latest_state() -> Identity {
     Identity::new(

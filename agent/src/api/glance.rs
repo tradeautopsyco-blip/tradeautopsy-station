@@ -3,21 +3,21 @@
 
 use crate::api::AppState;
 use crate::data::{
-    apply_history_series, await_binance_options_ticker, await_bound_com_depth_row, chain_input_honesty,
-    chain_rows_for_contract, depth_snapshot_from_eapi_json, expiration_from_dated_contract,
-    extract_chain_from, extract_greeks_from_mark, extract_index, extract_open_interest,
-    extract_open_interest_for_book, extract_open_interest_from, extract_depth_on_book,
-    index_price_from_json_for_underlying, index_underlying_for_contract, is_dated_option_contract,
-    mark_row_for_symbol, normalize_options_instrument, oi_rows_from_json,
-    option_symbols_from_exchange_info_json, options_depth_query, options_index_query,
-    options_klines_query, options_mark_query, parse_nfo_instrument_id,
-    series_from_eapi_klines_json, underlying_asset_from_dated_contract,
-    validate_options_kline_request, CachedIndex, CachedMark, ChainRow, DepthEnvelope, GlanceEnvelope,
-    GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH, OPTIONS_INDEX_HOST,
-    OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH, OPTIONS_KLINE_LIMIT_DEFAULT,
-    OPTIONS_MARK_PATH,
+    apply_history_series, await_binance_options_ticker, await_bound_com_depth_row,
+    chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
+    expiration_from_dated_contract, extract_chain_from, extract_depth_on_book,
+    extract_greeks_from_mark, extract_index, extract_open_interest, extract_open_interest_for_book,
+    extract_open_interest_from, index_price_from_json_for_underlying,
+    index_underlying_for_contract, is_dated_option_contract, mark_row_for_symbol,
+    normalize_options_instrument, oi_rows_from_json, option_symbols_from_exchange_info_json,
+    options_depth_query, options_index_query, options_klines_query, options_mark_query,
+    parse_nfo_instrument_id, series_from_eapi_klines_json, underlying_asset_from_dated_contract,
+    validate_options_kline_request, CachedIndex, CachedMark, ChainRow, DepthEnvelope,
+    GlanceEnvelope, GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH,
+    OPTIONS_INDEX_HOST, OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
+    OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -776,7 +776,8 @@ pub async fn index_handler(
 mod tests {
     use super::*;
     use crate::data::{
-        options_ticker_query, mark_row_for_symbol, CachedMark, OPTIONS_EAPI_HOST, OPTIONS_TICKER_PATH,
+        mark_row_for_symbol, options_ticker_query, CachedMark, OPTIONS_EAPI_HOST,
+        OPTIONS_TICKER_PATH,
     };
 
     const OFFICIAL_EXAMPLE: &str = r#"[ { "symbol": "BTC-200730-9000-C", "markPrice": "1343.2883", "bidIV": "1.40000077", "askIV": "1.50000153", "markIV": "1.45000000", "delta": "0.55937056", "theta": "3739.82509871", "gamma": "0.00010969", "vega": "978.58874732", "highPriceLimit": "1618.241", "lowPriceLimit": "1068.3356", "riskFreeInterest": "0.1" } ]"#;

@@ -4,6 +4,7 @@ mod account_book;
 mod account_capability;
 mod account_split;
 mod apply;
+mod binance_coinm_private;
 mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
@@ -18,13 +19,13 @@ mod binance_options_ticker;
 mod binance_public;
 mod binance_spot_private;
 mod binance_spot_ticker;
+mod binance_usdm_private;
 mod book_identity;
 mod connection;
 mod contracts;
 mod depthbook;
 mod descriptor;
 mod extract;
-#[cfg(test)]
 mod force_order;
 mod glance;
 mod greeks;
@@ -67,6 +68,9 @@ pub use account_split::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };
 pub use apply::{apply_quote, ApplyError};
+pub use binance_coinm_private::{
+    ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
+};
 pub use binance_depth::{
     await_bound_com_depth_row, ensure_binance_com_depth_stream, spawn_binance_com_depth_loop,
 };
@@ -94,7 +98,9 @@ pub use binance_options_mark::{
     mark_row_for_symbol, mark_rows_from_json, options_mark_query, CachedMark, OPTIONS_MARK_PATH,
 };
 pub use binance_options_oi::{oi_rows_from_json, OptionsOiRow};
-pub use binance_options_private::ensure_options_user_trades;
+pub use binance_options_private::{
+    ensure_options_margin_account, ensure_options_positions, ensure_options_user_trades,
+};
 pub use binance_options_public::{
     ensure_binance_com_options_quote, is_dated_option_contract, normalize_options_instrument,
     quote_tick_from_options_ticker_json,
@@ -108,18 +114,26 @@ pub use binance_public::{
 };
 pub use binance_spot_private::{ensure_spot_account, ensure_spot_open_orders};
 pub use binance_spot_ticker::await_binance_spot_ticker_price;
+pub use binance_usdm_private::{
+    ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
+};
 pub use book_identity::{book_accepts_symbol, query_symbol};
 pub use connection::BrokerConnectionRuntime;
 pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};
 pub use depthbook::DepthBook;
 pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
-    BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,
     QuoteStatus,
+};
+pub use force_order::{
+    observation_from_rest, ForceOrderBook, ForceOrderEnvelope, LossyStatus,
+    LOSSY_CANNOT_CLAIM_COMPLETE,
 };
 pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_index, extract_open_interest,

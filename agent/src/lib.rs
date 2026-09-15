@@ -1,10 +1,12 @@
 mod api;
 mod bar_fill_ingress;
+mod binance_com_coinm_client;
 /// Native Binance.com spot modules — **reference only** (ADR 0001 / B5).
 /// Live Start uses `build_runtime_adapter` → `WasmBrokerAdapter`, never these.
 mod binance_com_options_client;
 mod binance_com_spot_adapter;
 mod binance_com_spot_client;
+mod binance_com_usdm_client;
 mod binance_com_validation;
 mod broker;
 mod broker_behavioral;
@@ -13,6 +15,7 @@ mod broker_redaction;
 mod broker_sync;
 mod broker_sync_control;
 mod broker_validation;
+mod coinm_realized_pnl;
 mod data;
 mod device_login;
 mod dns_block;
@@ -36,6 +39,7 @@ mod sse_signing;
 mod station_tokens;
 mod today;
 mod ubi;
+mod usdm_realized_pnl;
 mod wire;
 
 pub use bar_fill_ingress::{BarBrokerFillIngressConfig, BarFillIngestSource};
@@ -371,6 +375,12 @@ pub struct AgentConfig {
     pub eapi_public_fetch: bool,
     /// Test seam: non-venue base URL for spot private reads (wiremock). `None` = `api.binance.com`.
     pub binance_spot_base_url: Option<String>,
+    /// Test seam: non-venue base URL for USDM private reads (wiremock). `None` = `fapi.binance.com`.
+    pub binance_usdm_base_url: Option<String>,
+    /// Test seam: non-venue base URL for Coin-M private reads (wiremock). `None` = `dapi.binance.com`.
+    pub binance_coinm_base_url: Option<String>,
+    /// Test seam: non-venue base URL for options eapi private reads (wiremock). `None` = `eapi.binance.com`.
+    pub binance_eapi_base_url: Option<String>,
     /// Test seam: non-venue base URL for Kotak private reads (wiremock). `None` = session `baseUrl`.
     pub kotak_private_base_url: Option<String>,
     /// S7 CI: enable fixture `licensed_history` as a declared Kotak history gap.
@@ -508,6 +518,9 @@ impl AgentConfig {
             plant_binance_spot_depth_unusable: false,
             eapi_public_fetch: true,
             binance_spot_base_url: None,
+            binance_usdm_base_url: None,
+            binance_coinm_base_url: None,
+            binance_eapi_base_url: None,
             kotak_private_base_url: None,
             gap_vendor_enabled: false,
             gap_vendor_key: None,
@@ -585,6 +598,9 @@ impl AgentConfig {
             plant_binance_spot_depth_unusable: false,
             eapi_public_fetch: false,
             binance_spot_base_url: None,
+            binance_usdm_base_url: None,
+            binance_coinm_base_url: None,
+            binance_eapi_base_url: None,
             kotak_private_base_url: None,
             gap_vendor_enabled: false,
             gap_vendor_key: None,
@@ -1377,6 +1393,10 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         quote_selections: Arc::new(std::sync::Mutex::new(crate::api::QuoteSelections::default())),
         quote_fetch_error: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         binance_spot_base_url: config.binance_spot_base_url.clone(),
+        binance_usdm_base_url: config.binance_usdm_base_url.clone(),
+        binance_coinm_base_url: config.binance_coinm_base_url.clone(),
+        binance_eapi_base_url: config.binance_eapi_base_url.clone(),
+        force_order_book: Arc::new(Mutex::new(crate::data::ForceOrderBook::default())),
         kotak_private_base_url: config.kotak_private_base_url.clone(),
         gap_vendor: crate::data::GapVendorConfig {
             enabled: config.gap_vendor_enabled,

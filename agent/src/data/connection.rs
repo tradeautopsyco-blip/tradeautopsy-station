@@ -211,6 +211,16 @@ mod tests {
         let shipping = BrokerConnectionRuntime::on_start("binance_com", None, 6000);
         assert_eq!(shipping.book_id, crate::data::BINANCE_COM_SPOT_BOOK_ID);
         assert_ne!(shipping.book_id, crate::data::BINANCE_COM_OPTIONS_BOOK_ID);
+        let usdm = BrokerConnectionRuntime::on_start_for_book(
+            "binance_com",
+            crate::data::BINANCE_COM_USDM_BOOK_ID,
+            None,
+            60,
+        )
+        .expect("named USDM book on the same slug");
+        assert_eq!(usdm.book_id, crate::data::BINANCE_COM_USDM_BOOK_ID);
+        assert_eq!(usdm.adapter_id, "binance_com");
+        assert_ne!(usdm.book_id, shipping.book_id);
     }
 
     #[test]
@@ -229,8 +239,8 @@ mod tests {
     #[test]
     fn on_start_for_book_refuses_unknown_and_slug_mismatch() {
         let unknown =
-            BrokerConnectionRuntime::on_start_for_book("kotak_neo", "binance-com-usdm", None, 60)
-                .expect_err("usdm book stays dark");
+            BrokerConnectionRuntime::on_start_for_book("kotak_neo", "binance-com-stocks", None, 60)
+                .expect_err("unknown book stays dark");
         assert!(unknown.contains("unknown book_id"), "{unknown}");
 
         let mismatch = BrokerConnectionRuntime::on_start_for_book(

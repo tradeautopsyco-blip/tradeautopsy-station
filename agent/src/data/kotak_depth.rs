@@ -10,10 +10,10 @@
 
 use super::descriptor::KOTAK_NEO_ADAPTER_ID;
 use super::identity::{CapabilityId, Family, Identity, Physics};
-use super::rights::Rights;
 use super::kotak_quotes::{
     depth_book_and_instrument_from_quote_object, json_string, quote_objects,
 };
+use super::rights::Rights;
 use super::source_manifest::shipping_book_id_for_slug;
 use super::tick::Transport;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -111,8 +111,12 @@ fn display_depth_side(levels: &[DepthLevel], side: DepthSide, cap: usize) -> Vec
         .filter_map(|(i, level)| level.price.parse::<f64>().ok().map(|px| (i, px)))
         .collect();
     match side {
-        DepthSide::Bid => ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)),
-        DepthSide::Ask => ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)),
+        DepthSide::Bid => {
+            ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+        }
+        DepthSide::Ask => {
+            ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        }
     }
     ranked
         .into_iter()

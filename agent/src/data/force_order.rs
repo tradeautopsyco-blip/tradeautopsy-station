@@ -1,7 +1,6 @@
-//! Force-order fixture extract — `market/force_order` lossy_event_observation only.
+//! Force-order extract — `market/force_order` lossy_event_observation only.
 //!
-//! Port of Console `extractForceOrder` / `rejectLossyAsComplete`. No Axum route this PR;
-//! callers are unit tests only. No ingestSignal / routeOrder path.
+//! Never drives Kill or PnL. Never `synced` / `complete`.
 
 use super::descriptor::DelayClass;
 use super::identity::{CapabilityId, Family, Identity, Physics};
@@ -9,6 +8,7 @@ use super::matrix::{known_id_physics_ok, pair_allowed};
 use super::rights::Rights;
 use super::tick::Transport;
 use serde::Serialize;
+use std::collections::HashMap;
 
 pub const LOSSY_CANNOT_CLAIM_COMPLETE: &str = "lossy_cannot_claim_complete";
 
@@ -118,6 +118,35 @@ pub fn reject_lossy_as_complete() -> ForceOrderEnvelope {
     )
 }
 
+#[derive(Debug, Default)]
+pub struct ForceOrderBook {
+    slots: HashMap<String, ForceOrderEnvelope>,
+}
+
+impl ForceOrderBook {
+    pub fn replace(&mut self, book_id: &str, envelope: ForceOrderEnvelope) {
+        self.slots.insert(book_id.to_string(), envelope);
+    }
+
+    pub fn get(&self, book_id: &str) -> Option<&ForceOrderEnvelope> {
+        self.slots.get(book_id)
+    }
+}
+
+/// USER_DATA REST window → lossy observation. Empty array is idle, not complete.
+pub fn observation_from_rest(adapter_id: &str, events: serde_json::Value) -> ForceOrderEnvelope {
+    let empty = events.as_array().map(|a| a.is_empty()).unwrap_or(true);
+    let status = if empty {
+        LossyStatus::Idle
+    } else {
+        LossyStatus::Observing
+    };
+    let mut envelope = base_envelope(force_order_identity(), status, Some(events), vec![]);
+    envelope.provenance.adapter_id = adapter_id.to_string();
+    envelope.provenance.transport = Transport::Rest;
+    envelope
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +186,15 @@ mod tests {
         assert!(!observing.persist_canonical);
         assert!(!rejected.canonical);
         assert!(!rejected.persist_canonical);
+    }
+
+    #[test]
+    fn empty_rest_window_is_idle_not_complete() {
+        let envelope = observation_from_rest("binance_com", serde_json::json!([]));
+        assert_eq!(envelope.status, LossyStatus::Idle);
+        assert_ne!(format!("{:?}", envelope.status), "synced");
+        assert!(!envelope.canonical);
+        assert_eq!(envelope.identity.physics, Physics::LossyEventObservation);
+        assert!(envelope.data.is_some());
     }
 }

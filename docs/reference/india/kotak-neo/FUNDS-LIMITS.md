@@ -80,6 +80,7 @@ product  CNC, MIS, NRML, ALL (Default value - ALL)
 > **OUR INTERPRETATION**
 >
 > - Station copies the SDK **default** body `seg=ALL&exch=ALL&prod=ALL` for the cash-book funds kick. That is the documented demat-account snapshot, not a per-scrip calculator.
+> - Named NFO book `kotak-nse-nfo` sends `seg=FO&exch=ALL&prod=ALL` (Limits.md `segment` enum **FO**, re-fetched **2026-09-15 IST**). Same copy of `Net`/`MarginUsed`. Do not reuse the cash ALL snapshot as NFO funds.
 > - Host fence stays the session Kotak R0 host. This POST is a **private read**, not place/modify/cancel (see `is_mutation` RMS-read exception already in host policy).
 
 ---
@@ -122,7 +123,7 @@ No prose in `Limits.md` defines `Net`, `MarginUsed`, `CollateralValue`, or `Noti
 
 > **OUR INTERPRETATION**
 >
-> - `obtain(funds)` on `kotak-nse-bse-cash` is this RMS snapshot, **not** `account/margin_estimate`. SPAN/exposure keys stay unparsed (MARGIN-CALCULATOR.md).
+> - `obtain(funds)` on `kotak-nse-bse-cash` **and** `kotak-nse-nfo` is this RMS snapshot, **not** `account/margin_estimate`. SPAN/exposure keys stay unparsed (MARGIN-CALCULATOR.md). NFO is not a PnL engine.
 > - One holding row: `asset = "INR"` (B6 currency). `free` copies sample key `Net`. `locked` copies sample key `MarginUsed`. Station does **not** compute `CollateralValue - MarginUsed`.
 > - Zero `Net` and zero `MarginUsed` → success with `holdings: []` (same drop rule as Binance `free+locked <= 0`).
 > - `unrealized_pnl` stays `null` — `CashUnRlsMtomPrsnt` is a sample key with no definition.
@@ -145,3 +146,5 @@ No prose in `Limits.md` defines `Net`, `MarginUsed`, `CollateralValue`, or `Noti
 | Compute `free = CollateralValue - MarginUsed` because the sample almost adds up | Limits.md never states that formula | Copy `Net` and `MarginUsed` only. |
 | Invent INR units or paise scale | Limits.md sample is bare numeric strings; B6 says desk currency INR | Label the holding `INR`; do not rescale. |
 | Send `seg=nse_cm` because this is the cash book | Parameter table default is ALL | Use documented defaults `ALL`/`ALL`/`ALL`. |
+| Send cash `ALL` on the NFO book | Limits.md names `FO` as a `segment` enum (re-fetched **2026-09-15 IST**) | NFO funds body is `seg=FO&exch=ALL&prod=ALL`. Cash stays `ALL`/`ALL`/`ALL`. Do not guess `exch=NSE` / `prod=NRML`. |
+| Parse `SpanMarginPrsnt` because NFO uses SPAN | Limits.md sample keys are names, not SPAN mechanics | Copy `Net`/`MarginUsed` only. SPAN stays unparsed on both books. |

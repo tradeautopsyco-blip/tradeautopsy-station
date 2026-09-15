@@ -581,12 +581,12 @@ mod b5_enforcer_sot_tests {
     fn wasm_for_book_refuses_unknown_and_slug_mismatch() {
         let unknown = match build_wasm_runtime_adapter_for_book(
             "kotak_neo",
-            "binance-com-usdm",
+            "binance-com-stocks",
             "conn-nfo",
             &kotak_blob(),
         ) {
             Err(e) => e,
-            Ok(_) => panic!("usdm book stays dark"),
+            Ok(_) => panic!("unknown book stays dark"),
         };
         assert!(unknown.to_string().contains("unknown book_id"), "{unknown}");
 

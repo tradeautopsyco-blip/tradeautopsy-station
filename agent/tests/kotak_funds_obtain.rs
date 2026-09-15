@@ -97,6 +97,15 @@ async fn obtain_kotak_funds_via_limits_fixture_egress() {
         .and(path("/quick/user/limits"))
         .and(header("Auth", TRADE_TOKEN))
         .and(header("Sid", SID))
+        .and(body_string("seg=FO&exch=ALL&prod=ALL"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(LIMITS_FIXTURE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/quick/user/limits"))
+        .and(header("Auth", TRADE_TOKEN))
+        .and(header("Sid", SID))
         .and(body_string("seg=ALL&exch=ALL&prod=ALL"))
         .respond_with(ResponseTemplate::new(200).set_body_string(LIMITS_FIXTURE))
         .expect(1)
@@ -149,16 +158,26 @@ async fn obtain_kotak_funds_via_limits_fixture_egress() {
         .json::<serde_json::Value>()
         .await
         .expect("json");
-    assert_eq!(nfo["status"], "unsupported");
-    assert!(nfo["data"].is_null());
+    assert_eq!(nfo["status"], "success");
+    assert_eq!(nfo["book_id"], "kotak-nse-nfo");
+    assert_eq!(nfo["data"]["holdings"][0]["asset"], "INR");
+    assert_eq!(nfo["data"]["holdings"][0]["free"], 19.409999999999997);
+    assert_eq!(nfo["data"]["holdings"][0]["locked"], 18.78);
+    assert!(nfo["data"]["unrealized_pnl"].is_null());
+    assert_eq!(nfo["provenance_path"], "/quick/user/limits");
+    let nfo_wire = nfo.to_string();
+    assert!(
+        !nfo_wire.contains("SpanMarginPrsnt"),
+        "SPAN sample keys must not leak onto NFO obtain(funds)"
+    );
 
     let again = obtain_funds(PORT).await;
     assert_eq!(again["status"], "success");
     let received = server.received_requests().await.expect("received");
     assert_eq!(
         received.len(),
-        1,
-        "fresh funds slot must skip a second POST"
+        2,
+        "cash ALL and NFO FO are two POSTs; do not reuse the cash snapshot"
     );
 
     handle.abort();

@@ -218,6 +218,24 @@ fn account_binding(
     }
 }
 
+/// USER_DATA force-order is `market/force_order` lossy_event_observation only.
+/// Never CompleteEventSequence. Display stays research-fetch — not the S3 allowlist.
+fn forceorder_binding(adapter_id: &str, coverage: Coverage) -> ManifestBinding {
+    ManifestBinding {
+        operation: "forceorder".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Market,
+        capability_id: "force_order".into(),
+        physics: Physics::LossyEventObservation,
+        auth_mode: AuthMode::PrivateRead,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::research_fetch_only(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Unknown,
+    }
+}
+
 fn quotes_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> ManifestBinding {
     ManifestBinding {
         operation: "quotes".into(),
@@ -549,6 +567,7 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
             "depth".into(),
             "orderbook".into(),
             "positionbook".into(),
+            "funds".into(),
         ],
         bindings: vec![
             quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
@@ -572,6 +591,13 @@ pub fn kotak_neo_nfo_manifest() -> SourceManifest {
                 "kotak_neo",
                 "positionbook",
                 "positions",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "funds",
+                "funds",
                 coverage.clone(),
                 Limits::default(),
             ),
@@ -624,6 +650,8 @@ pub fn binance_com_options_manifest() -> SourceManifest {
             "history".into(),
             "tradebook".into(),
             "search".into(),
+            "funds".into(),
+            "positionbook".into(),
         ],
         bindings: vec![
             quotes_binding("binance_com", coverage.clone(), AuthMode::Public),
@@ -635,6 +663,20 @@ pub fn binance_com_options_manifest() -> SourceManifest {
                 "binance_com",
                 "tradebook",
                 "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "binance_com",
+                "funds",
+                "funds",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "binance_com",
+                "positionbook",
+                "positions",
                 coverage.clone(),
                 Limits::default(),
             ),
@@ -652,12 +694,83 @@ pub fn binance_com_options_manifest() -> SourceManifest {
     }
 }
 
+/// Named USDM book on the same `binance_com` adapter. USER_DATA funds +
+/// positions + lossy force-order only this slice — no quotes/history/tradebook.
+/// Lock: `locks/binance-com-usdm.md`. Catalog / Start slug still ships spot.
+pub fn binance_com_usdm_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_usdm".into()],
+        history_range: None,
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "binance_com.usdm.v1".into(),
+        adapter_id: "binance_com".into(),
+        book_id: "binance-com-usdm".into(),
+        implemented: vec!["funds".into(), "positionbook".into(), "forceorder".into()],
+        bindings: vec![
+            account_binding(
+                "binance_com",
+                "funds",
+                "funds",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "binance_com",
+                "positionbook",
+                "positions",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            forceorder_binding("binance_com", coverage),
+        ],
+    }
+}
+
+/// Named Coin-M book on the same `binance_com` adapter. Third identity vs
+/// USDM: matching is `book_id`. Lock: `locks/binance-com-coinm.md`.
+pub fn binance_com_coinm_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_coinm".into()],
+        history_range: None,
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "binance_com.coinm.v1".into(),
+        adapter_id: "binance_com".into(),
+        book_id: "binance-com-coinm".into(),
+        implemented: vec!["funds".into(), "positionbook".into(), "forceorder".into()],
+        bindings: vec![
+            account_binding(
+                "binance_com",
+                "funds",
+                "funds",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "binance_com",
+                "positionbook",
+                "positions",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            forceorder_binding("binance_com", coverage),
+        ],
+    }
+}
+
 pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
-    // Spot then options so `manifest_for_slug("binance_com")` stays spot.
-    // Cash stays before NFO so `manifest_for_slug("kotak_neo")` stays cash.
+    // Spot then options then USDM then Coin-M so `manifest_for_slug("binance_com")`
+    // stays spot (first match). Cash stays before NFO so slug stays cash.
     vec![
         binance_com_s1_manifest(),
         binance_com_options_manifest(),
+        binance_com_usdm_manifest(),
+        binance_com_coinm_manifest(),
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
     ]
@@ -807,6 +920,18 @@ mod tests {
             obtain(&kotak_neo_nfo_manifest(), "forceorder").status,
             ObtainStatus::Unsupported
         );
+        let usdm_fo = obtain(&binance_com_usdm_manifest(), "forceorder");
+        assert_eq!(usdm_fo.status, ObtainStatus::Unavailable);
+        assert_ne!(usdm_fo.status, ObtainStatus::Unsupported);
+        assert_ne!(usdm_fo.status, ObtainStatus::Success);
+        assert!(usdm_fo.data.is_none());
+        assert!(!is_empty_success(&usdm_fo));
+        let coinm_fo = obtain(&binance_com_coinm_manifest(), "forceorder");
+        assert_eq!(coinm_fo.status, ObtainStatus::Unavailable);
+        assert_ne!(coinm_fo.status, ObtainStatus::Unsupported);
+        assert_ne!(coinm_fo.status, ObtainStatus::Success);
+        assert!(coinm_fo.data.is_none());
+        assert!(!is_empty_success(&coinm_fo));
     }
 
     #[test]
@@ -1077,9 +1202,9 @@ mod tests {
     #[test]
     fn first_party_manifests_load_fail_closed() {
         let loaded = load_first_party_manifests().expect("S0 first-party manifests must validate");
-        assert!(loaded.len() >= 3);
-        assert!(manifest_for_book_id("binance-com-usdm").is_none());
-        assert!(manifest_for_book_id("binance-com-coinm").is_none());
+        assert!(loaded.len() >= 6);
+        assert!(manifest_for_book_id("binance-com-usdm").is_some());
+        assert!(manifest_for_book_id("binance-com-coinm").is_some());
         let options = manifest_for_book_id("binance-com-options").expect("options book");
         assert_eq!(options.manifest_id, "binance_com.options.v1");
         assert_eq!(options.adapter_id, "binance_com");
@@ -1094,7 +1219,9 @@ mod tests {
                 "depth",
                 "history",
                 "tradebook",
-                "search"
+                "search",
+                "funds",
+                "positionbook",
             ]
         );
         assert!(options.implemented.iter().any(|op| op == "optionchain"));
@@ -1113,6 +1240,20 @@ mod tests {
         assert_eq!(
             obtain(&options, "optiongreeks").status,
             ObtainStatus::Unavailable
+        );
+        assert_eq!(obtain(&options, "funds").status, ObtainStatus::Unavailable);
+        assert_ne!(obtain(&options, "funds").status, ObtainStatus::Unsupported);
+        assert_eq!(
+            obtain(&options, "positionbook").status,
+            ObtainStatus::Unavailable
+        );
+        assert_ne!(
+            obtain(&options, "positionbook").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&options, "forceorder").status,
+            ObtainStatus::Unsupported
         );
         // Depth with an empty DepthBook is Unavailable — never Unsupported, and
         // never an empty `{bids:[],asks:[]}` Success.
@@ -1217,7 +1358,7 @@ mod tests {
             manifest_for_book_id("binance-com-spot").unwrap().adapter_id,
             "binance_com"
         );
-        assert!(manifest_for_book_id("binance-com-usdm").is_none());
+        assert!(manifest_for_book_id("binance-com-usdm").is_some());
         assert_eq!(
             manifest_for_slug("kotak_neo").unwrap().manifest_id,
             "kotak_neo.s1k.v1"
@@ -1241,6 +1382,7 @@ mod tests {
                 "depth",
                 "orderbook",
                 "positionbook",
+                "funds",
             ]
         );
         assert!(nfo.implemented.iter().any(|op| op == "optionchain"));
@@ -1348,5 +1490,137 @@ mod tests {
             provenance_adapter_id: Some("binance_com".into()),
             provenance_path: None,
         }));
+    }
+
+    #[test]
+    fn usdm_manifest_funds_positions_forceorder_lossy() {
+        let manifest = binance_com_usdm_manifest();
+        assert!(describe(&manifest).is_ok());
+        assert_eq!(manifest.manifest_id, "binance_com.usdm.v1");
+        assert_eq!(manifest.adapter_id, "binance_com");
+        assert_eq!(manifest.book_id, "binance-com-usdm");
+        assert_eq!(
+            manifest.implemented,
+            vec!["funds", "positionbook", "forceorder"]
+        );
+        assert!(!manifest
+            .implemented
+            .iter()
+            .any(|op| { matches!(op.as_str(), "quotes" | "history" | "tradebook") }));
+        let funds = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "funds")
+            .expect("usdm funds binding");
+        assert_eq!(funds.family, Family::Account);
+        assert_eq!(funds.capability_id, "funds");
+        assert_eq!(funds.physics, Physics::BoundedSnapshot);
+        assert_eq!(funds.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(funds.rights, Rights::research_fetch_only());
+        assert!(!funds.rights.display);
+        assert_eq!(funds.coverage.venues, ["binance.com"]);
+        assert_eq!(funds.coverage.asset_classes, ["crypto_usdm"]);
+        let positions = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "positionbook")
+            .expect("usdm positionbook binding");
+        assert_eq!(positions.family, Family::Account);
+        assert_eq!(positions.capability_id, "positions");
+        assert_eq!(positions.physics, Physics::BoundedSnapshot);
+        assert_eq!(positions.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(positions.rights, Rights::research_fetch_only());
+        assert!(!positions.rights.display);
+        let force = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "forceorder")
+            .expect("usdm forceorder binding");
+        assert_eq!(force.family, Family::Market);
+        assert_eq!(force.capability_id, "force_order");
+        assert_eq!(force.physics, Physics::LossyEventObservation);
+        assert_ne!(force.physics, Physics::CompleteEventSequence);
+        assert_eq!(force.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(force.rights, Rights::research_fetch_only());
+        assert!(!force.rights.display);
+        assert_eq!(force.transports, vec![TransportKind::Rest]);
+        let fo = obtain(&manifest, "forceorder");
+        assert_eq!(fo.status, ObtainStatus::Unavailable);
+        assert_ne!(fo.status, ObtainStatus::Unsupported);
+        assert!(fo.data.is_none());
+        assert!(!is_empty_success(&fo));
+        assert_eq!(obtain(&manifest, "funds").status, ObtainStatus::Unavailable);
+        assert_eq!(
+            obtain(&manifest, "positionbook").status,
+            ObtainStatus::Unavailable
+        );
+        assert_eq!(
+            obtain(&manifest, "tradebook").status,
+            ObtainStatus::Unsupported
+        );
+        assert_eq!(
+            obtain(&manifest, "quotes").status,
+            ObtainStatus::Unsupported
+        );
+    }
+
+    #[test]
+    fn coinm_manifest_is_third_identity() {
+        let coinm = binance_com_coinm_manifest();
+        let usdm = binance_com_usdm_manifest();
+        assert!(describe(&coinm).is_ok());
+        assert_eq!(coinm.book_id, "binance-com-coinm");
+        assert_eq!(coinm.manifest_id, "binance_com.coinm.v1");
+        assert_eq!(coinm.adapter_id, "binance_com");
+        assert_ne!(coinm.book_id, usdm.book_id);
+        assert_ne!(coinm.book_id, "binance-com-spot");
+        assert_ne!(coinm.book_id, "binance-com-options");
+        let asset = coinm
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "forceorder")
+            .expect("coinm forceorder binding")
+            .coverage
+            .asset_classes
+            .clone();
+        assert_eq!(asset, vec!["crypto_coinm".to_string()]);
+        assert!(!asset.iter().any(|class| class == "crypto_spot"));
+        let force = coinm
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "forceorder")
+            .expect("coinm forceorder binding");
+        assert_eq!(force.family, Family::Market);
+        assert_eq!(force.capability_id, "force_order");
+        assert_eq!(force.physics, Physics::LossyEventObservation);
+        assert_ne!(force.physics, Physics::CompleteEventSequence);
+        assert_eq!(force.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(force.rights, Rights::research_fetch_only());
+        assert!(!force.rights.display);
+        // DualNoBlend: matching is book_id. Coin-M never shares the USDM slot.
+        assert_ne!(coinm.book_id, usdm.book_id);
+        assert_ne!(
+            force.coverage.asset_classes,
+            usdm.bindings
+                .iter()
+                .find(|binding| binding.operation == "forceorder")
+                .expect("usdm forceorder binding")
+                .coverage
+                .asset_classes
+        );
+        let fo = obtain(&coinm, "forceorder");
+        assert_eq!(fo.status, ObtainStatus::Unavailable);
+        assert_ne!(fo.status, ObtainStatus::Unsupported);
+        assert!(fo.data.is_none());
+        assert!(!is_empty_success(&fo));
+    }
+
+    #[test]
+    fn nfo_funds_is_unavailable_not_unsupported() {
+        let funds = obtain(&kotak_neo_nfo_manifest(), "funds");
+        assert_eq!(funds.status, ObtainStatus::Unavailable);
+        assert_ne!(funds.status, ObtainStatus::Unsupported);
+        assert!(funds.data.is_none());
+        assert!(!is_empty_success(&funds));
     }
 }

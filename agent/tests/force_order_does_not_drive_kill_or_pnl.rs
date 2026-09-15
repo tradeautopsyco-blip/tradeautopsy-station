@@ -6,10 +6,7 @@
 use std::path::{Path, PathBuf};
 
 /// Owner files at the Kill-apply and PnL seams.
-const OWNERS: &[&str] = &[
-    "src/round_trip_engine.rs",
-    "src/api/kill_switch.rs",
-];
+const OWNERS: &[&str] = &["src/round_trip_engine.rs", "src/api/kill_switch.rs"];
 
 fn agent_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()

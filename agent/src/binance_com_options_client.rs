@@ -1,17 +1,20 @@
 //! Binance Global options read-only client — `eapi.binance.com`.
 //!
 //! Ref: `docs/reference/crypto/binance-global/options/REST.md`
-//! Scope: `GET /eapi/v1/userTrades` (Slice 4).
+//! Lock: `issues/compliance/locks/binance-com-options.md` (funds/positions 2026-09-15 IST).
+//! Scope: `GET /eapi/v1/userTrades` (Slice 4), `GET /eapi/v1/marginAccount`,
+//! `GET /eapi/v1/position` (USER_DATA HMAC). No realized-PnL owner.
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 
+use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding, BrokerPositionRow};
+
 type HmacSha256 = Hmac<Sha256>;
 
-#[cfg(test)]
-pub const DEFAULT_BASE_URL: &str = "https://eapi.binance.com";
+const DEFAULT_BASE_URL: &str = "https://eapi.binance.com";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinanceComOptionsError {
@@ -38,7 +41,6 @@ pub struct BinanceComUserTrade {
 }
 
 pub struct BinanceComOptionsClient {
-    #[cfg(test)]
     base_url: String,
     api_key: String,
     api_secret: String,
@@ -47,14 +49,13 @@ pub struct BinanceComOptionsClient {
 
 enum OptionsTransport {
     Egress,
-    #[cfg(test)]
+    /// Wiremock / non-venue base. Unmetered: R0 would refuse a mock host.
     Direct(reqwest::Client),
 }
 
 impl BinanceComOptionsClient {
     pub fn new(api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
         Self {
-            #[cfg(test)]
             base_url: DEFAULT_BASE_URL.trim_end_matches('/').to_string(),
             api_key: api_key.into(),
             api_secret: api_secret.into(),
@@ -62,7 +63,7 @@ impl BinanceComOptionsClient {
         }
     }
 
-    #[cfg(test)]
+    /// Point this client at a non-venue base URL (wiremock). Prod stays `new()`.
     pub fn with_base_url(
         base_url: impl Into<String>,
         api_key: impl Into<String>,
@@ -86,6 +87,20 @@ impl BinanceComOptionsClient {
         parse_user_trades(&body)
     }
 
+    /// `GET /eapi/v1/marginAccount` — USER_DATA. Never `/api/v3/account`.
+    pub async fn fetch_margin_account(
+        &self,
+    ) -> Result<BrokerBalancesSnapshot, BinanceComOptionsError> {
+        let body = self.signed_get("/eapi/v1/marginAccount", &[]).await?;
+        parse_margin_account(&body)
+    }
+
+    /// `GET /eapi/v1/position` — USER_DATA. Never `/fapi/`.
+    pub async fn fetch_positions(&self) -> Result<Vec<BrokerPositionRow>, BinanceComOptionsError> {
+        let body = self.signed_get("/eapi/v1/position", &[]).await?;
+        parse_option_positions(&body)
+    }
+
     async fn signed_get(
         &self,
         path: &str,
@@ -102,7 +117,6 @@ impl BinanceComOptionsClient {
             .join("&");
         let signature = sign_query(&self.api_secret, &query);
         let signed_query = format!("{query}&signature={signature}");
-        #[cfg(test)]
         let url = format!("{}{path}?{signed_query}", self.base_url);
 
         let (status, body) = match &self.transport {
@@ -121,7 +135,6 @@ impl BinanceComOptionsClient {
                     .map_err(|e| BinanceComOptionsError::Network(e.to_string()))?;
                 (resp.status, resp.body)
             }
-            #[cfg(test)]
             OptionsTransport::Direct(client) => {
                 let response = client
                     .get(&url)
@@ -151,6 +164,63 @@ fn sign_query(api_secret: &str, query: &str) -> String {
         HmacSha256::new_from_slice(api_secret.as_bytes()).expect("HMAC accepts any key length");
     mac.update(query.as_bytes());
     hex::encode(mac.finalize().into_bytes())
+}
+
+pub fn parse_margin_account(body: &str) -> Result<BrokerBalancesSnapshot, BinanceComOptionsError> {
+    let parsed: MarginAccountResponse =
+        serde_json::from_str(body).map_err(|e| BinanceComOptionsError::Parse(e.to_string()))?;
+    let remaining: Vec<(BrokerHolding, Option<f64>)> = parsed
+        .asset
+        .into_iter()
+        .filter_map(|row| {
+            let free: f64 = row.available.parse().ok()?;
+            let locked: f64 = row.initial_margin.parse().ok()?;
+            if free <= 0.0 && locked <= 0.0 {
+                return None;
+            }
+            let row_unrealized = row.unrealized_pnl.and_then(|s| s.parse().ok());
+            Some((
+                BrokerHolding {
+                    asset: row.asset,
+                    free,
+                    locked,
+                },
+                row_unrealized,
+            ))
+        })
+        .collect();
+    let unrealized_pnl = if remaining.len() == 1 {
+        remaining[0].1
+    } else {
+        None
+    };
+    Ok(BrokerBalancesSnapshot {
+        holdings: remaining.into_iter().map(|(h, _)| h).collect(),
+        unrealized_pnl,
+    })
+}
+
+pub fn parse_option_positions(
+    body: &str,
+) -> Result<Vec<BrokerPositionRow>, BinanceComOptionsError> {
+    let parsed: Vec<OptionPositionResponse> =
+        serde_json::from_str(body).map_err(|e| BinanceComOptionsError::Parse(e.to_string()))?;
+    Ok(parsed
+        .into_iter()
+        .filter_map(|row| {
+            let net_qty: f64 = row.quantity.parse().ok()?;
+            if net_qty == 0.0 {
+                return None;
+            }
+            Some(BrokerPositionRow {
+                symbol: row.symbol.clone(),
+                exchange_segment: "options".into(),
+                product: String::new(),
+                net_qty,
+                trading_symbol: row.symbol,
+            })
+        })
+        .collect())
 }
 
 pub fn parse_user_trades(body: &str) -> Result<Vec<BinanceComUserTrade>, BinanceComOptionsError> {
@@ -188,6 +258,28 @@ pub fn user_trade_to_broker_fill(trade: &BinanceComUserTrade) -> crate::broker::
         instrument_type: None,
         lot: None,
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct MarginAccountResponse {
+    #[serde(default)]
+    asset: Vec<MarginAssetResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarginAssetResponse {
+    asset: String,
+    available: String,
+    #[serde(rename = "initialMargin")]
+    initial_margin: String,
+    #[serde(rename = "unrealizedPNL")]
+    unrealized_pnl: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OptionPositionResponse {
+    symbol: String,
+    quantity: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,5 +324,76 @@ mod tests {
         assert_eq!(trades[0].symbol, "BTC-200730-9000-C");
         assert_eq!(trades[0].side, "BUY");
         assert_eq!(trades[0].price, "1000.000");
+    }
+
+    /// Lock: `issues/compliance/locks/binance-com-options.md` (funds fetch 2026-09-15 IST).
+    /// `available` → free, `initialMargin` → locked. Drop when both parse `<= 0`.
+    /// Snapshot `unrealized_pnl` copies `unrealizedPNL` when exactly one row remains.
+    #[test]
+    fn parse_margin_account_one_remaining_row_copies_unrealized_pnl() {
+        let snap = parse_margin_account(
+            r#"{"asset":[{"asset":"USDT","available":"12.5","initialMargin":"3.25","unrealizedPNL":"1.1"},{"asset":"BNB","available":"0","initialMargin":"0","unrealizedPNL":"9"}]}"#,
+        )
+        .expect("parse");
+        assert_eq!(snap.holdings.len(), 1);
+        assert_eq!(snap.holdings[0].asset, "USDT");
+        assert_eq!(snap.holdings[0].free, 12.5);
+        assert_eq!(snap.holdings[0].locked, 3.25);
+        assert_eq!(snap.unrealized_pnl, Some(1.1));
+    }
+
+    /// Two remaining rows after drop: do not invent a sum of `unrealizedPNL`.
+    #[test]
+    fn parse_margin_account_two_remaining_rows_unrealized_pnl_is_none() {
+        let snap = parse_margin_account(
+            r#"{"asset":[{"asset":"USDT","available":"12.5","initialMargin":"3.25","unrealizedPNL":"1.1"},{"asset":"BNB","available":"0.5","initialMargin":"0.25","unrealizedPNL":"9"}]}"#,
+        )
+        .expect("parse");
+        assert_eq!(snap.holdings.len(), 2);
+        assert!(snap.unrealized_pnl.is_none());
+        assert_ne!(snap.unrealized_pnl, Some(10.1));
+    }
+
+    /// `greek[]` stays off BrokerBalancesSnapshot — optiongreeks is `GET /eapi/v1/mark`.
+    #[test]
+    fn parse_margin_account_does_not_map_greek_array() {
+        let snap = parse_margin_account(
+            r#"{"asset":[{"asset":"USDT","available":"12.5","initialMargin":"3.25","unrealizedPNL":"1.1"}],"greek":[{"underlying":"BTCUSDT","delta":"0.55937056","theta":"-1","gamma":"0.0001","vega":"2"}]}"#,
+        )
+        .expect("parse");
+        assert_eq!(snap.holdings.len(), 1);
+        assert_eq!(snap.holdings[0].asset, "USDT");
+        assert_eq!(snap.unrealized_pnl, Some(1.1));
+        assert_ne!(snap.unrealized_pnl, Some(0.55937056));
+        assert!(
+            snap.holdings
+                .iter()
+                .all(|h| h.asset != "BTCUSDT" && h.asset != "delta"),
+            "greek[] must not land as holdings"
+        );
+        let debug = format!("{snap:?}");
+        assert!(
+            !debug.contains("0.55937056"),
+            "venue greek delta must not appear on the funds snapshot"
+        );
+    }
+
+    /// Lock: mixed-case `symbol`, `quantity` → net_qty, skip 0. Never lowercase, never qty=1 smash.
+    #[test]
+    fn parse_option_positions_keeps_mixed_case_and_qty_gt_1() {
+        let rows = parse_option_positions(
+            r#"[{"symbol":"BTC-260925-145000-C","quantity":"2"},{"symbol":"ETH-260925-3000-P","quantity":"0"}]"#,
+        )
+        .expect("parse");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].symbol, "BTC-260925-145000-C");
+        assert_ne!(rows[0].symbol, "btc-260925-145000-c");
+        assert_eq!(rows[0].net_qty, 2.0);
+        assert_ne!(rows[0].net_qty, 1.0);
+        assert_eq!(rows[0].exchange_segment, "options");
+        assert_ne!(rows[0].exchange_segment, "usdm");
+        assert_ne!(rows[0].exchange_segment, "spot");
+        assert_ne!(rows[0].exchange_segment, "nfo");
+        assert_eq!(rows[0].trading_symbol, "BTC-260925-145000-C");
     }
 }

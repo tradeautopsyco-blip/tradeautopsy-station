@@ -68,10 +68,7 @@ fn declarations_upstream_path(params: &HashMap<String, String>) -> String {
         }
     }
     if let Some(limit) = params.get("limit") {
-        if !limit.is_empty()
-            && limit.len() <= 4
-            && limit.chars().all(|c| c.is_ascii_digit())
-        {
+        if !limit.is_empty() && limit.len() <= 4 && limit.chars().all(|c| c.is_ascii_digit()) {
             parts.push(format!("limit={limit}"));
         }
     }

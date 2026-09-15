@@ -8,9 +8,32 @@ use crate::broker_data_class::{
 use std::collections::HashMap;
 
 use super::descriptor::{
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
+
+fn funds_book_allowed(book_id: &str) -> bool {
+    matches!(
+        book_id,
+        BINANCE_COM_SPOT_BOOK_ID
+            | BINANCE_COM_OPTIONS_BOOK_ID
+            | BINANCE_COM_USDM_BOOK_ID
+            | BINANCE_COM_COINM_BOOK_ID
+            | KOTAK_NSE_BSE_CASH_BOOK_ID
+            | KOTAK_NSE_NFO_BOOK_ID
+    )
+}
+
+fn positions_book_allowed(book_id: &str) -> bool {
+    matches!(
+        book_id,
+        BINANCE_COM_OPTIONS_BOOK_ID
+            | BINANCE_COM_USDM_BOOK_ID
+            | BINANCE_COM_COINM_BOOK_ID
+            | KOTAK_NSE_BSE_CASH_BOOK_ID
+            | KOTAK_NSE_NFO_BOOK_ID
+    )
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Slot<T> {
@@ -62,7 +85,7 @@ impl AccountBook {
         path: &str,
         as_of_ms: i64,
     ) {
-        if book_id != BINANCE_COM_SPOT_BOOK_ID && book_id != KOTAK_NSE_BSE_CASH_BOOK_ID {
+        if !funds_book_allowed(book_id) {
             return;
         }
         let entry = self.slots.entry(book_id.to_string()).or_default();
@@ -98,7 +121,7 @@ impl AccountBook {
         path: &str,
         as_of_ms: i64,
     ) {
-        if book_id != KOTAK_NSE_BSE_CASH_BOOK_ID && book_id != KOTAK_NSE_NFO_BOOK_ID {
+        if !positions_book_allowed(book_id) {
             return;
         }
         let entry = self.slots.entry(book_id.to_string()).or_default();
@@ -226,10 +249,13 @@ mod tests {
         book.replace_funds(
             BINANCE_COM_OPTIONS_BOOK_ID,
             BrokerBalancesSnapshot::default(),
-            "/api/v3/account",
+            "/eapi/v1/marginAccount",
             3_000,
         );
-        assert!(book.funds_slot(BINANCE_COM_OPTIONS_BOOK_ID).is_none());
+        assert!(
+            book.funds_slot(BINANCE_COM_OPTIONS_BOOK_ID).is_some(),
+            "empty options snapshot is a plant, not a leak from spot"
+        );
         book.replace_funds(
             KOTAK_NSE_BSE_CASH_BOOK_ID,
             BrokerBalancesSnapshot {
@@ -244,13 +270,24 @@ mod tests {
             4_000,
         );
         assert!(book.funds_slot(KOTAK_NSE_BSE_CASH_BOOK_ID).is_some());
+        assert!(
+            book.funds_slot(KOTAK_NSE_NFO_BOOK_ID).is_none(),
+            "cash plant must not create the NFO slot"
+        );
         book.replace_funds(
             KOTAK_NSE_NFO_BOOK_ID,
-            BrokerBalancesSnapshot::default(),
+            BrokerBalancesSnapshot {
+                holdings: vec![BrokerHolding {
+                    asset: "INR".into(),
+                    free: 19.41,
+                    locked: 18.78,
+                }],
+                unrealized_pnl: None,
+            },
             "/quick/user/limits",
             5_000,
         );
-        assert!(book.funds_slot(KOTAK_NSE_NFO_BOOK_ID).is_none());
+        assert!(book.funds_slot(KOTAK_NSE_NFO_BOOK_ID).is_some());
     }
 
     #[test]

@@ -42,6 +42,10 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     "api.binance.com",
     // Named book `binance-com-options` (slice 1 last = REST lastPrice).
     "eapi.binance.com",
+    // Named books `binance-com-usdm` / `binance-com-coinm` (USER_DATA + lossy force-order).
+    // Spot fence still refuses these hosts.
+    "fapi.binance.com",
+    "dapi.binance.com",
     "cis.kotaksecurities.com",
     "neo.kotaksecurities.com",
     "mis.kotaksecurities.com",
@@ -137,14 +141,32 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         {
             true
         }
-        ("funds", "GET", AuthMode::PrivateRead) if path == "/api/v3/account" => true,
+        ("funds", "GET", AuthMode::PrivateRead)
+            if path == "/api/v3/account"
+                || normalize_request_path(path) == "/eapi/v1/marginAccount"
+                || normalize_request_path(path) == "/fapi/v3/balance"
+                || normalize_request_path(path) == "/dapi/v1/balance" =>
+        {
+            true
+        }
         ("funds", "POST", AuthMode::PrivateRead) if path.ends_with("/quick/user/limits") => true,
         ("orders", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/openOrders" || path.ends_with("/quick/user/orders") =>
         {
             true
         }
-        ("positions", "GET", AuthMode::PrivateRead) if path.ends_with("/quick/user/positions") => {
+        ("positions", "GET", AuthMode::PrivateRead)
+            if path.ends_with("/quick/user/positions")
+                || normalize_request_path(path) == "/eapi/v1/position"
+                || normalize_request_path(path) == "/fapi/v3/positionRisk"
+                || normalize_request_path(path) == "/dapi/v1/positionRisk" =>
+        {
+            true
+        }
+        ("force_order", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/fapi/v1/forceOrders"
+                || normalize_request_path(path) == "/dapi/v1/forceOrders" =>
+        {
             true
         }
         ("holdings", "GET", AuthMode::PrivateRead) if path.ends_with("/portfolio/v1/holdings") => {
@@ -204,6 +226,30 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
             Ok(("fills", AuthMode::PrivateRead))
         }
         ("GET", "/api/v3/account") => Ok(("funds", AuthMode::PrivateRead)),
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/marginAccount" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/eapi/v1/position" => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v3/balance" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v3/positionRisk" => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/forceOrders" => {
+            Ok(("force_order", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/balance" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/positionRisk" => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/forceOrders" => {
+            Ok(("force_order", AuthMode::PrivateRead))
+        }
         ("GET", "/api/v3/openOrders") => Ok(("orders", AuthMode::PrivateRead)),
         ("GET", p) if p.ends_with("/quick/user/orders") => Ok(("orders", AuthMode::PrivateRead)),
         ("GET", p) if p.ends_with("/quick/user/positions") => {
@@ -252,16 +298,11 @@ fn is_kotak_r0_host(host: &str) -> bool {
 }
 
 /// Fence is (book, host, path prefix). Global R0 still gates which hosts this
-/// process may ever dial — do not add fapi/dapi here. `eapi.binance.com` is
-/// named for book `binance-com-options` (REST lastPrice only).
+/// process may ever dial. `eapi.binance.com` is named for book `binance-com-options`.
+/// `fapi.binance.com` is named for `binance-com-usdm` only — never the spot fence.
+/// `dapi.binance.com` is named for `binance-com-coinm` only.
 ///
 /// Named book `kotak-nse-nfo` shares Kotak R0 hosts and may fetch FO scrip only.
-/// Planned (host: None — never add to R0_ALLOWED_HOSTS until that book is named):
-/// binance-com-usdm     fapi.binance.com
-/// binance-com-coinm    dapi.binance.com
-/// binance-com-stocks   api.binance.com + /sapi/v1/equity/  (same host, blocked by prefix)
-///
-/// Locks: locks/binance-com-spot.md + locks/kotak-nse-bse-cash.md (fetch 2026-08-22 IST).
 pub fn authorize_book_call(
     book_id: &str,
     host: &str,
@@ -297,6 +338,24 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !path_lower.starts_with("/eapi/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "binance-com-usdm" => {
+            if host_norm != "fapi.binance.com" {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !path_lower.starts_with("/fapi/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "binance-com-coinm" => {
+            if host_norm != "dapi.binance.com" {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !path_lower.starts_with("/dapi/") {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
@@ -1036,12 +1095,15 @@ mod tests {
             HostRefuse::PathNotAllowlisted
         );
         for host in ["fapi.binance.com", "dapi.binance.com"] {
-            assert!(!host_allowed(host), "{host} must stay off R0_ALLOWED_HOSTS");
+            assert!(
+                host_allowed(host),
+                "{host} is R0 for named USDM/Coin-M books"
+            );
             for path in ["/fapi/v1/premiumIndex", "/fapi/v1/forceOrders"] {
                 assert_eq!(
                     authorize_book_call("binance-com-spot", host, "GET", path, false).unwrap_err(),
                     HostRefuse::HostNotAllowed,
-                    "{host}{path}"
+                    "spot fence must not dial {host}{path}"
                 );
             }
         }
@@ -1303,7 +1365,7 @@ mod tests {
                 "/api/v3/ticker/price"
             )
             .unwrap_err(),
-            HostRefuse::PathNotAllowlisted
+            HostRefuse::HostNotAllowed
         );
     }
 

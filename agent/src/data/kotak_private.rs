@@ -9,14 +9,16 @@ use crate::ubi::{
 };
 use std::time::Duration;
 
-use super::descriptor::KOTAK_NSE_BSE_CASH_BOOK_ID;
-#[cfg(test)]
-use super::descriptor::KOTAK_NSE_NFO_BOOK_ID;
+use super::descriptor::{KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
 
 pub const KOTAK_ORDERS_PATH: &str = "/quick/user/orders";
 pub const KOTAK_POSITIONS_PATH: &str = "/quick/user/positions";
 pub const KOTAK_HOLDINGS_PATH: &str = "/portfolio/v1/holdings";
 pub const KOTAK_LIMITS_PATH: &str = "/quick/user/limits";
+/// Limits.md default body for the cash book (re-fetched 2026-09-15 IST).
+pub const KOTAK_CASH_LIMITS_BODY: &str = "seg=ALL&exch=ALL&prod=ALL";
+/// Limits.md `segment` enum FO for the NFO book (re-fetched 2026-09-15 IST).
+pub const KOTAK_NFO_LIMITS_BODY: &str = "seg=FO&exch=ALL&prod=ALL";
 
 #[cfg(test)]
 const KOTAK_CHECK_MARGIN_PATH: &str = "/quick/user/check-margin";
@@ -449,30 +451,30 @@ async fn fetch_and_plant_funds(
     state: &AppState,
     environment: &str,
     connection_id: &str,
+    book_id: &str,
 ) -> Result<(), KotakPrivateFetchError> {
-    let body = fetch_kotak_private_json(
+    let body = match book_id {
+        KOTAK_NSE_NFO_BOOK_ID => KOTAK_NFO_LIMITS_BODY,
+        _ => KOTAK_CASH_LIMITS_BODY,
+    };
+    let json = fetch_kotak_private_json(
         state.broker_sync_control.credential_vault().as_ref(),
         environment,
         connection_id,
-        KOTAK_NSE_BSE_CASH_BOOK_ID,
+        book_id,
         "POST",
         KOTAK_LIMITS_PATH,
-        Some("seg=ALL&exch=ALL&prod=ALL"),
+        Some(body),
         state.kotak_private_base_url.as_deref(),
     )
     .await?;
-    let snapshot = parse_kotak_limits_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
+    let snapshot = parse_kotak_limits_json(&json).map_err(|_| KotakPrivateFetchError::Http(0))?;
     let as_of_ms = Utc::now().timestamp_millis();
     state
         .account_book
         .lock()
         .expect("account_book mutex poisoned")
-        .replace_funds(
-            KOTAK_NSE_BSE_CASH_BOOK_ID,
-            snapshot,
-            KOTAK_LIMITS_PATH,
-            as_of_ms,
-        );
+        .replace_funds(book_id, snapshot, KOTAK_LIMITS_PATH, as_of_ms);
     Ok(())
 }
 
@@ -610,21 +612,21 @@ pub async fn ensure_kotak_holdings(state: &AppState) {
     let _ = fetch_and_plant_holdings(state, &environment, &connection_id).await;
 }
 
-pub async fn ensure_kotak_funds(state: &AppState) {
+pub async fn ensure_kotak_funds(state: &AppState, book_id: &str) {
     {
         let book = state
             .account_book
             .lock()
             .expect("account_book mutex poisoned");
         if book
-            .funds_slot(KOTAK_NSE_BSE_CASH_BOOK_ID)
+            .funds_slot(book_id)
             .is_some_and(|slot| slot_fresh(slot.as_of_ms, KOTAK_PRIVATE_MAX_AGE_MS))
         {
             return;
         }
     }
     if authorize_book_call(
-        KOTAK_NSE_BSE_CASH_BOOK_ID,
+        book_id,
         "cis.kotaksecurities.com",
         "POST",
         KOTAK_LIMITS_PATH,
@@ -637,7 +639,7 @@ pub async fn ensure_kotak_funds(state: &AppState) {
     let Some((environment, connection_id)) = kotak_session(state) else {
         return;
     };
-    let _ = fetch_and_plant_funds(state, &environment, &connection_id).await;
+    let _ = fetch_and_plant_funds(state, &environment, &connection_id, book_id).await;
 }
 
 #[cfg(test)]

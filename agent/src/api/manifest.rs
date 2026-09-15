@@ -3,15 +3,18 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    chain_rows_for_contract, depth_obtain_data, describe, ensure_options_user_trades,
-    ensure_spot_account, ensure_spot_open_orders, extract_chain_from, extract_depth_on_book,
-    extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
-    extract_options_history, extract_quote_for_book, history_obtain_data, is_dated_option_contract,
-    obtain, parse_nfo_instrument_id, search_identity, search_rows_for_book, DepthStatus,
-    GlanceStatus, GreeksStatus, InputHonesty, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry,
-    SourceManifest, TickBook, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_KLINES_PATH,
+    chain_rows_for_contract, depth_obtain_data, describe, ensure_coinm_balance,
+    ensure_coinm_force_orders, ensure_coinm_positions, ensure_options_margin_account,
+    ensure_options_positions, ensure_options_user_trades, ensure_spot_account,
+    ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
+    extract_chain_from, extract_depth_on_book, extract_greeks_from_mark, extract_licensed_history,
+    extract_open_interest_from, extract_options_history, extract_quote_for_book,
+    history_obtain_data, is_dated_option_contract, obtain, parse_nfo_instrument_id,
+    search_identity, search_rows_for_book, DepthStatus, GlanceStatus, GreeksStatus, InputHonesty,
+    LossyStatus, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
+    BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, OPTIONS_KLINES_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -174,6 +177,8 @@ pub async fn obtain_handler(
         // forever unless a glance happened to land first.
         kick_spot_private(&state, &envelope).await;
         kick_options_snapshot(&state, &envelope).await;
+        kick_usdm_private(&state, &envelope).await;
+        kick_coinm_private(&state, &envelope).await;
         kick_kotak_nfo_depth(&state, &envelope).await;
         kick_kotak_nfo_oi_session(&state, &envelope).await;
         kick_kotak_private(&state, &envelope).await;
@@ -262,6 +267,34 @@ async fn kick_options_snapshot(state: &AppState, envelope: &ObtainEnvelope) {
             }
             ensure_options_user_trades(state, &instrument).await;
         }
+        "funds" => ensure_options_margin_account(state).await,
+        "positionbook" => ensure_options_positions(state).await,
+        _ => {}
+    }
+}
+
+/// USDM USER_DATA kicks into AccountBook / ForceOrderBook. Matching is book_id.
+async fn kick_usdm_private(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != BINANCE_COM_USDM_BOOK_ID {
+        return;
+    }
+    match envelope.operation.as_str() {
+        "funds" => ensure_usdm_balance(state).await,
+        "positionbook" => ensure_usdm_positions(state).await,
+        "forceorder" => ensure_usdm_force_orders(state).await,
+        _ => {}
+    }
+}
+
+/// Coin-M USER_DATA kicks. DualNoBlend vs USDM — never the USDM book_id.
+async fn kick_coinm_private(state: &AppState, envelope: &ObtainEnvelope) {
+    if envelope.book_id != BINANCE_COM_COINM_BOOK_ID {
+        return;
+    }
+    match envelope.operation.as_str() {
+        "funds" => ensure_coinm_balance(state).await,
+        "positionbook" => ensure_coinm_positions(state).await,
+        "forceorder" => ensure_coinm_force_orders(state).await,
         _ => {}
     }
 }
@@ -322,7 +355,10 @@ async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
             crate::data::ensure_kotak_holdings(state).await;
         }
         ("kotak-nse-bse-cash", "funds") => {
-            crate::data::ensure_kotak_funds(state).await;
+            crate::data::ensure_kotak_funds(state, &envelope.book_id).await;
+        }
+        ("kotak-nse-nfo", "funds") => {
+            crate::data::ensure_kotak_funds(state, &envelope.book_id).await;
         }
         _ => {}
     }
@@ -366,6 +402,7 @@ fn enricher(
         ("kotak-nse-nfo", "tradebook") => Some(enrich_tradebook),
         ("kotak-nse-nfo", "orderbook") => Some(enrich_orders),
         ("kotak-nse-nfo", "positionbook") => Some(enrich_positions),
+        ("kotak-nse-nfo", "funds") => Some(enrich_binance_funds),
         ("kotak-nse-nfo", "instruments") => Some(enrich_kotak_nfo_instruments),
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         ("kotak-nse-nfo", "open_interest") => Some(enrich_open_interest),
@@ -379,6 +416,14 @@ fn enricher(
         // `book_id`, not by the slug the two Binance books share.
         ("binance-com-options", "depth") => Some(enrich_depth),
         ("binance-com-options", "history") => Some(enrich_options_history),
+        ("binance-com-options", "funds") => Some(enrich_binance_funds),
+        ("binance-com-options", "positionbook") => Some(enrich_positions),
+        ("binance-com-usdm", "funds") => Some(enrich_binance_funds),
+        ("binance-com-usdm", "positionbook") => Some(enrich_positions),
+        ("binance-com-usdm", "forceorder") => Some(enrich_forceorder),
+        ("binance-com-coinm", "funds") => Some(enrich_binance_funds),
+        ("binance-com-coinm", "positionbook") => Some(enrich_positions),
+        ("binance-com-coinm", "forceorder") => Some(enrich_forceorder),
         _ => None,
     }
 }
@@ -593,6 +638,32 @@ fn enrich_holdings(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope
 
 fn enrich_positions(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
     account_slot(state, envelope, "positions")
+}
+
+/// Lossy force-order observation. Idle/observing never map to complete/synced.
+/// Missing slot or `LossyStatus::Unavailable` leave obtain Unavailable with data null.
+fn enrich_forceorder(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    let book = state
+        .force_order_book
+        .lock()
+        .expect("force_order_book mutex poisoned");
+    let Some(slot) = book.get(&envelope.book_id).cloned() else {
+        return envelope;
+    };
+    drop(book);
+    if slot.status == LossyStatus::Unavailable {
+        return envelope;
+    }
+    envelope.status = ObtainStatus::Success;
+    envelope.data = Some(json!({
+        "identity": slot.identity,
+        "status": slot.status,
+        "events": slot.data.clone().unwrap_or(json!([])),
+        "ineligible": slot.ineligible,
+        "canonical": false,
+    }));
+    envelope.provenance_adapter_id = Some(slot.provenance.adapter_id);
+    envelope
 }
 
 fn broker_fill_to_row(fill: &crate::broker::BrokerFill) -> Value {
@@ -1359,7 +1430,10 @@ mod tests {
         assert_eq!(by_book.book_id, by_adapter.book_id);
         assert_eq!(both.adapter_id, by_adapter.adapter_id);
         assert_eq!(both.book_id, by_adapter.book_id);
-        assert!(resolve_manifest(&manifests, None, Some("binance-com-usdm")).is_none());
+        let usdm = resolve_manifest(&manifests, None, Some("binance-com-usdm")).unwrap();
+        assert_eq!(usdm.book_id, "binance-com-usdm");
+        assert_eq!(usdm.adapter_id, "binance_com");
+        assert_ne!(usdm.book_id, by_adapter.book_id);
         assert!(
             resolve_manifest(&manifests, Some("binance_com"), Some("kotak-nse-bse-cash")).is_none()
         );

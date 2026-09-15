@@ -357,7 +357,10 @@ mod tests {
             None,
             InputHonesty::Lit,
         );
-        assert!(envelope.data.is_none(), "unstamped mark must not carry a number");
+        assert!(
+            envelope.data.is_none(),
+            "unstamped mark must not carry a number"
+        );
         assert!(envelope
             .ineligible
             .iter()

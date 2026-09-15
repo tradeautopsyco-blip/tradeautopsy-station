@@ -101,7 +101,15 @@ const KOTAK_HOSTS: &[&str] = &[
 /// R8 gap closed: COM was reachable during an L3 block because it had no host set here.
 /// HTTP hosts stay aligned with `ubi::ALLOWED_BROKER_HOSTS`. `stream.binance.com` is
 /// extra: Market Streams WS (9443), not `broker_http_call`. A COM ban must sinkhole it.
-const BINANCE_COM_HOSTS: &[&str] = &["api.binance.com", "eapi.binance.com", "stream.binance.com"];
+const BINANCE_COM_HOSTS: &[&str] = &[
+    "api.binance.com",
+    "eapi.binance.com",
+    "fapi.binance.com",
+    "dapi.binance.com",
+    "stream.binance.com",
+    "fstream.binance.com",
+    "dstream.binance.com",
+];
 
 const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
 
@@ -551,13 +559,16 @@ mod tests {
 
     #[test]
     fn kill_dns_named_book_hosts_match_spot_and_cash_no_eapi_or_fo() {
-        // Options last dials eapi; fapi/dapi stay off. NFO shares Kotak hosts.
+        // Kill is slug-scoped: named books on `binance_com` share this host set.
+        // Spot's R0 fence still refuses fapi/dapi/eapi (host_policy). NFO shares Kotak.
         let com = hosts_for_broker("binance_com");
         assert_eq!(com, BINANCE_COM_HOSTS);
         assert!(com.contains(&"eapi.binance.com"));
+        assert!(com.contains(&"fapi.binance.com"));
+        assert!(com.contains(&"dapi.binance.com"));
+        assert!(com.contains(&"fstream.binance.com"));
+        assert!(com.contains(&"dstream.binance.com"));
         assert!(com.contains(&"stream.binance.com"));
-        assert!(!com.contains(&"fapi.binance.com"));
-        assert!(!com.contains(&"dapi.binance.com"));
 
         let kotak = hosts_for_broker("kotak_neo");
         assert_eq!(kotak, KOTAK_HOSTS);

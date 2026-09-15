@@ -161,6 +161,14 @@ pub struct AppState {
     pub quote_fetch_error: Arc<Mutex<HashMap<String, String>>>,
     /// Test seam: wiremock base for spot USER_DATA. Prod is always `None`.
     pub binance_spot_base_url: Option<String>,
+    /// Test seam: wiremock base for USDM USER_DATA. Prod is always `None`.
+    pub binance_usdm_base_url: Option<String>,
+    /// Test seam: wiremock base for Coin-M USER_DATA. Prod is always `None`.
+    pub binance_coinm_base_url: Option<String>,
+    /// Test seam: wiremock base for options eapi USER_DATA. Prod is always `None`.
+    pub binance_eapi_base_url: Option<String>,
+    /// Per-book lossy force-order observation. Never TickBook, never Kill/PnL.
+    pub force_order_book: Arc<Mutex<crate::data::ForceOrderBook>>,
     /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
     pub kotak_private_base_url: Option<String>,
     /// S7 declared-gap fixture. Prod stays disabled until a B6 vendor ships.
@@ -223,7 +231,10 @@ pub fn router(state: AppState) -> Router {
             get(capture::pending_get_handler).patch(capture::pending_patch_handler),
         )
         .route("/api/daemon/bar/live-state", get(bar::live_state_handler))
-        .route("/api/daemon/bar/declarations", get(bar::declarations_list_handler))
+        .route(
+            "/api/daemon/bar/declarations",
+            get(bar::declarations_list_handler),
+        )
         .route("/api/daemon/bar/declare", post(bar::declare_handler))
         .route("/api/daemon/bar/stop-me", post(bar::stop_me_handler))
         .route(

@@ -1,13 +1,20 @@
-//! Host-mediated Binance COM options private reads for obtain(tradebook).
+//! Host-mediated Binance COM options private reads for obtain(tradebook|funds|positionbook).
 //! Pipe A: async kick fetch → AccountBook slot → obtain enricher.
+//!
+//! Lock: `issues/compliance/locks/binance-com-options.md` (funds/positions 2026-09-15 IST).
+//! HMAC `GET /eapi/v1/marginAccount` and `GET /eapi/v1/position`. Never `/api/v3/account`
+//! or `/fapi/` on this book. No realized-PnL owner.
 
 use crate::api::AppState;
 use crate::binance_com_options_client::{user_trade_to_broker_fill, BinanceComOptionsClient};
+use crate::broker_data_class::BrokerPositionsSnapshot;
 use crate::data::{authorize_book_call, BINANCE_COM_OPTIONS_BOOK_ID};
 use crate::ubi::CredentialBlob;
 use chrono::Utc;
 
 const OPTIONS_USER_TRADES_PATH: &str = "/eapi/v1/userTrades";
+const OPTIONS_MARGIN_ACCOUNT_PATH: &str = "/eapi/v1/marginAccount";
+const OPTIONS_POSITION_PATH: &str = "/eapi/v1/position";
 const OPTIONS_PRIVATE_MAX_AGE_MS: i64 = 5_000;
 const OPTIONS_PRIVATE_ENV: &str = "prod";
 const OPTIONS_PRIVATE_SLUG: &str = "binance_com";
@@ -63,6 +70,16 @@ fn resolve_options_client(state: &AppState) -> Option<BinanceComOptionsClient> {
     else {
         return None;
     };
+    if let Some(base) = state
+        .binance_eapi_base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(BinanceComOptionsClient::with_base_url(
+            base, api_key, api_secret,
+        ));
+    }
     Some(BinanceComOptionsClient::new(api_key, api_secret))
 }
 
@@ -108,6 +125,92 @@ pub async fn ensure_options_user_trades(state: &AppState, symbol: &str) {
             BINANCE_COM_OPTIONS_BOOK_ID,
             fills,
             OPTIONS_USER_TRADES_PATH,
+            as_of_ms,
+        );
+}
+
+pub async fn ensure_options_margin_account(state: &AppState) {
+    {
+        let book = state
+            .account_book
+            .lock()
+            .expect("account_book mutex poisoned");
+        if book
+            .funds_slot(BINANCE_COM_OPTIONS_BOOK_ID)
+            .is_some_and(|slot| slot_fresh(slot.as_of_ms, OPTIONS_PRIVATE_MAX_AGE_MS))
+        {
+            return;
+        }
+    }
+    if authorize_book_call(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        "eapi.binance.com",
+        "GET",
+        OPTIONS_MARGIN_ACCOUNT_PATH,
+        true,
+    )
+    .is_err()
+    {
+        return;
+    }
+    let Some(client) = resolve_options_client(state) else {
+        return;
+    };
+    let Ok(snapshot) = client.fetch_margin_account().await else {
+        return;
+    };
+    let as_of_ms = Utc::now().timestamp_millis();
+    state
+        .account_book
+        .lock()
+        .expect("account_book mutex poisoned")
+        .replace_funds(
+            BINANCE_COM_OPTIONS_BOOK_ID,
+            snapshot,
+            OPTIONS_MARGIN_ACCOUNT_PATH,
+            as_of_ms,
+        );
+}
+
+pub async fn ensure_options_positions(state: &AppState) {
+    {
+        let book = state
+            .account_book
+            .lock()
+            .expect("account_book mutex poisoned");
+        if book
+            .positions_slot(BINANCE_COM_OPTIONS_BOOK_ID)
+            .is_some_and(|slot| slot_fresh(slot.as_of_ms, OPTIONS_PRIVATE_MAX_AGE_MS))
+        {
+            return;
+        }
+    }
+    if authorize_book_call(
+        BINANCE_COM_OPTIONS_BOOK_ID,
+        "eapi.binance.com",
+        "GET",
+        OPTIONS_POSITION_PATH,
+        true,
+    )
+    .is_err()
+    {
+        return;
+    }
+    let Some(client) = resolve_options_client(state) else {
+        return;
+    };
+    let Ok(positions) = client.fetch_positions().await else {
+        return;
+    };
+    let as_of_ms = Utc::now().timestamp_millis();
+    state
+        .account_book
+        .lock()
+        .expect("account_book mutex poisoned")
+        .replace_positions(
+            BINANCE_COM_OPTIONS_BOOK_ID,
+            BrokerPositionsSnapshot { positions },
+            OPTIONS_POSITION_PATH,
             as_of_ms,
         );
 }

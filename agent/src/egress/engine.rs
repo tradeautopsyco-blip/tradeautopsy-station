@@ -758,7 +758,7 @@ mod tests {
     fn an_unknown_book_has_no_meter_to_spend() {
         let (_clock, engine) = engine();
         let req = EgressRequest::new(
-            "binance-com-usdm",
+            "binance-com-stocks",
             "api.binance.com",
             "GET",
             "/api/v3/depth",

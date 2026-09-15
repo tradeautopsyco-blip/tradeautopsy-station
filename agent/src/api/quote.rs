@@ -172,7 +172,10 @@ mod tests {
             inferred_quote_book("nse_cm|2885"),
             Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
         );
-        assert_eq!(inferred_quote_book("btcusdt"), Some(BINANCE_COM_SPOT_BOOK_ID));
+        assert_eq!(
+            inferred_quote_book("btcusdt"),
+            Some(BINANCE_COM_SPOT_BOOK_ID)
+        );
         assert_eq!(inferred_quote_book(""), None);
         assert_eq!(inferred_quote_book("  "), None);
     }
@@ -188,10 +191,7 @@ mod tests {
             id,
             crate::data::normalize_quote_instrument("BTC-200730-9000-C")
         );
-        assert_eq!(
-            inferred_quote_book(&id),
-            Some(BINANCE_COM_OPTIONS_BOOK_ID)
-        );
+        assert_eq!(inferred_quote_book(&id), Some(BINANCE_COM_OPTIONS_BOOK_ID));
     }
 
     #[test]

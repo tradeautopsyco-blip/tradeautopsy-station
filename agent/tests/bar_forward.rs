@@ -370,20 +370,26 @@ async fn bar_declarations_week_proxies_get_query_to_upstream() {
     let captured_clone = Arc::clone(&captured);
     let upstream = Router::new().route(
         "/api/bar/v1/declarations",
-        get(move |req: axum::http::Request<axum::body::Body>| async move {
-            *captured_clone.lock().expect("lock") =
-                Some(req.uri().path_and_query().map(|pq| pq.to_string()).unwrap_or_default());
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "ok": true,
-                    "scope": "week",
-                    "timezone": "Asia/Kolkata",
-                    "items": [],
-                    "days": []
-                })),
-            )
-        }),
+        get(
+            move |req: axum::http::Request<axum::body::Body>| async move {
+                *captured_clone.lock().expect("lock") = Some(
+                    req.uri()
+                        .path_and_query()
+                        .map(|pq| pq.to_string())
+                        .unwrap_or_default(),
+                );
+                (
+                    StatusCode::OK,
+                    Json(json!({
+                        "ok": true,
+                        "scope": "week",
+                        "timezone": "Asia/Kolkata",
+                        "items": [],
+                        "days": []
+                    })),
+                )
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await

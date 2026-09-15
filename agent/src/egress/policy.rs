@@ -89,6 +89,23 @@ pub const BINANCE_COM_EAPI: MeterPolicy = MeterPolicy {
     max_concurrency: 4,
 };
 
+/// `fapi.binance.com` — numeric REQUEST_WEIGHT window **NOT SPECIFIED** on the
+/// USDM lock this slice. Pace/freeze only. Shares `binance_com` IP ban. Not the spot meter.
+pub const BINANCE_COM_FAPI: MeterPolicy = MeterPolicy {
+    meter_id: "binance_com:fapi",
+    slot_id: "binance_com",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+/// `dapi.binance.com` — Coin-M. Same NotSpecified budget rule as eapi/fapi.
+pub const BINANCE_COM_DAPI: MeterPolicy = MeterPolicy {
+    meter_id: "binance_com:dapi",
+    slot_id: "binance_com",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
 /// Kotak Neo — `india/kotak-neo/REST.md:22,260` records HTTP 429 as real and the
 /// numeric window as NOT SPECIFIED. REST.md:290 further records that whether
 /// quotes, file-paths, and the trade book share one bucket is unknown. Unknown
@@ -101,7 +118,13 @@ pub const KOTAK_NEO_REQUESTS: MeterPolicy = MeterPolicy {
     max_concurrency: 4,
 };
 
-pub const METERS: &[MeterPolicy] = &[BINANCE_COM_API_WEIGHT, BINANCE_COM_EAPI, KOTAK_NEO_REQUESTS];
+pub const METERS: &[MeterPolicy] = &[
+    BINANCE_COM_API_WEIGHT,
+    BINANCE_COM_EAPI,
+    BINANCE_COM_FAPI,
+    BINANCE_COM_DAPI,
+    KOTAK_NEO_REQUESTS,
+];
 
 /// Book id → (slot, meter). Book ids are the same strings the R0 fence keys on
 /// (`data::host_policy::authorize_book_fence`), so a book that the fence does not
@@ -110,6 +133,8 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
     match book_id.trim() {
         "binance-com-spot" => Some(&BINANCE_COM_API_WEIGHT),
         "binance-com-options" => Some(&BINANCE_COM_EAPI),
+        "binance-com-usdm" => Some(&BINANCE_COM_FAPI),
+        "binance-com-coinm" => Some(&BINANCE_COM_DAPI),
         "kotak-nse-bse-cash" | "kotak-nse-nfo" => Some(&KOTAK_NEO_REQUESTS),
         _ => None,
     }
@@ -260,7 +285,19 @@ mod tests {
             "kotak_neo"
         );
         assert_eq!(route_book("kotak-nse-nfo").unwrap().slot_id, "kotak_neo");
-        assert!(route_book("binance-com-usdm").is_none());
+        assert_eq!(
+            route_book("binance-com-usdm").unwrap().meter_id,
+            "binance_com:fapi"
+        );
+        assert_eq!(
+            route_book("binance-com-coinm").unwrap().meter_id,
+            "binance_com:dapi"
+        );
+        assert_ne!(
+            route_book("binance-com-usdm").unwrap().meter_id,
+            route_book("binance-com-spot").unwrap().meter_id
+        );
+        assert!(route_book("binance-com-stocks").is_none());
         assert!(route_book("").is_none());
     }
 
@@ -282,6 +319,8 @@ mod tests {
     #[test]
     fn unpublished_budgets_stay_unpublished() {
         assert_eq!(BINANCE_COM_EAPI.budget, Budget::NotSpecified);
+        assert_eq!(BINANCE_COM_FAPI.budget, Budget::NotSpecified);
+        assert_eq!(BINANCE_COM_DAPI.budget, Budget::NotSpecified);
         assert_eq!(KOTAK_NEO_REQUESTS.budget, Budget::NotSpecified);
         assert_eq!(forecast_weight(&BINANCE_COM_EAPI, "/eapi/v1/ticker", ""), 0);
         assert_eq!(used_weight_header(&BINANCE_COM_EAPI), None);
