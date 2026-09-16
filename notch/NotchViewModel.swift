@@ -1107,14 +1107,7 @@ public final class NotchViewModel: ObservableObject {
         guard let url = BarLiveStatePollingTarget.url(agentBase: baseURL()) else { return }
         guard !barLiveStateFetchInFlight else { return }
         barLiveStateFetchInFlight = true
-        setIfChanged(
-            \.barStateLoading,
-            BarLiveStatePollChrome.showsLoading(hasLiveState: barLiveState != nil, isInFlight: true)
-        )
-        defer {
-            barLiveStateFetchInFlight = false
-            setIfChanged(\.barStateLoading, false)
-        }
+        defer { barLiveStateFetchInFlight = false }
         do {
             let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -1141,7 +1134,6 @@ public final class NotchViewModel: ObservableObject {
         setIfChanged(\.daemonProtocolError, nil)
         withAnimation(.none) {
             var needsRecompute = false
-            var didPublishMeaningfulData = false
             let newState = decoded.notch
             let newFeaturesActive = decoded.barFeaturesActive
             let oldState = barLiveState
@@ -1149,7 +1141,6 @@ public final class NotchViewModel: ObservableObject {
             if barLiveState != newState {
                 barLiveState = newState
                 needsRecompute = true
-                didPublishMeaningfulData = true
                 if oldState?.archetype != newState?.archetype {
                     refreshActiveArchetype()
                 }
@@ -1168,7 +1159,6 @@ public final class NotchViewModel: ObservableObject {
             if barFeaturesActiveFromApi != newFeaturesActive {
                 barFeaturesActiveFromApi = newFeaturesActive
                 needsRecompute = true
-                didPublishMeaningfulData = true
                 if newFeaturesActive == false {
                     clearOptimisticArmedStorage()
                 }
@@ -1178,9 +1168,7 @@ public final class NotchViewModel: ObservableObject {
                 recomputeBarSurfacePhase()
             }
 
-            if didPublishMeaningfulData {
-                barLastFetched = Date()
-            }
+            barLastFetched = Date()
 
             setIfChanged(\.barStateError, nil)
             setIfChanged(\.barStateRequiresDeviceLogin, false)
@@ -1189,20 +1177,21 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Test seam — keep last-good `barLiveState`; chrome follows [`BarLiveStatePollChrome`].
+    /// Transient poll misses never write `barStateError` (that strip is stop-me / action errors).
     func applyLiveStatePollFailure(message: String, isDeviceLogin: Bool) {
+        _ = message
         recordOptimisticPollFailure()
         barLiveStateStripFailures = BarLiveStatePollChrome.nextConsecutiveFailures(
             previous: barLiveStateStripFailures,
             succeeded: false
         )
-        let publish = BarLiveStatePollChrome.shouldPublishError(
+        let showDeviceLogin = BarLiveStatePollChrome.shouldPublishError(
             hasLiveState: barLiveState != nil,
             consecutiveFailures: barLiveStateStripFailures,
             isDeviceLogin: isDeviceLogin
         )
-        if publish {
-            setIfChanged(\.barStateError, Optional(message))
-            setIfChanged(\.barStateRequiresDeviceLogin, isDeviceLogin)
+        if showDeviceLogin {
+            setIfChanged(\.barStateRequiresDeviceLogin, true)
         }
         recomputeBarSurfacePhase()
     }

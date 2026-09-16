@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import Testing
 @testable import Notch
@@ -14,10 +13,11 @@ struct BarLiveStatePollApplyTests {
         #expect(vm.barStateError == nil)
         vm.applyLiveStatePollFailure(message: "Live state unreachable (502)", isDeviceLogin: false)
         #expect(vm.barLiveState == lastGood)
-        #expect(vm.barStateError == "Live state unreachable (502)")
+        #expect(vm.barStateError == nil)
+        #expect(vm.barStateRequiresDeviceLogin == false)
     }
 
-    @Test func deviceLoginFailurePaintsStripWithoutClearingLastGood() {
+    @Test func deviceLoginFailureSetsFlagWithoutClearingLastGoodOrBodyStrip() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.barLiveState = Self.sampleNotch(slug: "kotak_neo")
         vm.applyLiveStatePollFailure(
@@ -26,23 +26,25 @@ struct BarLiveStatePollApplyTests {
         )
         #expect(vm.barLiveState != nil)
         #expect(vm.barStateRequiresDeviceLogin == true)
-        #expect(vm.barStateError?.localizedCaseInsensitiveContains("device login") == true)
+        #expect(vm.barStateError == nil)
     }
 
-    @Test func equalProtectiveSlugAndPhaseDoNotFireObjectWillChange() {
+    @Test func successStampsLastFetchedAndClearsDeviceLogin() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         let state = Self.sampleNotch(slug: "kotak_neo")
         vm.barLiveState = state
         vm.barFeaturesActiveFromApi = true
         vm.barProtectiveBrokerSlug = "kotak_neo"
+        vm.barStateRequiresDeviceLogin = true
         vm.recomputeBarSurfacePhase()
-        var fires = 0
-        let sub = vm.objectWillChange.sink { _ in fires += 1 }
+        let phase = vm.barSurfacePhase
         vm.applyLiveStatePollSuccess(
             BarLiveStateAPIResponse(barFeaturesActive: true, notch: state)
         )
-        #expect(fires == 0)
-        _ = sub
+        #expect(vm.barLastFetched != nil)
+        #expect(vm.barStateRequiresDeviceLogin == false)
+        #expect(vm.barProtectiveBrokerSlug == "kotak_neo")
+        #expect(vm.barSurfacePhase == phase)
     }
 
     private static func sampleNotch(slug: String) -> BarLiveStateResponse {

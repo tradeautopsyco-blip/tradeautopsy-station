@@ -27,6 +27,7 @@ struct BarNotchShell: View {
     @AppStorage("notch.planMorningBriefConsumed") private var morningBriefConsumed: Bool = false
     @State private var hoveredSession: BarNotchScreen?
     @State private var analysisOpen: Bool = false
+    @State private var freshnessClock = Date()
     @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
 
     init(viewModel: NotchViewModel, activeScreen: Binding<BarNotchScreen>? = nil) {
@@ -55,6 +56,7 @@ struct BarNotchShell: View {
             syncDeclarationFormFlagToActiveScreen()
             openAnalysisIfNeeded(for: activeScreen.wrappedValue)
         }
+        .onReceive(NotchOneSecondClock.publisher) { freshnessClock = $0 }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
             guard externalActiveScreen == nil else { return }
             syncActiveScreenFromPhase(animated: true)
@@ -433,6 +435,7 @@ struct BarNotchShell: View {
                     .foregroundColor(BarDS.Accent.amber)
             }
 
+            liveStateFreshnessChip
             brokerConnectionPill
             deskCapabilityPills
             statePill
@@ -590,45 +593,58 @@ struct BarNotchShell: View {
         }
     }
 
-    // MARK: - Header strip (loading / errors) — preserves BarCircuitPanelView diagnostics
+    // MARK: - Header strip (action errors only — live-state poll uses the freshness chip)
 
     @ViewBuilder
     private var loadingOrErrorStrip: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if viewModel.barStateLoading {
-                HStack {
-                    Spacer(minLength: 0)
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.75)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 6)
-            }
-            if let err = viewModel.barStateError, !err.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(err)
-                        .font(BarDS.bodyFont(11, weight: .medium))
-                        .foregroundColor(BarDS.Accent.red)
-                    if viewModel.barStateRequiresDeviceLogin {
-                        Button {
-                            viewModel.requestOpenDeviceLogin()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "macwindow")
-                                    .font(.system(size: 10, weight: .medium))
-                                Text("Open Station")
-                                    .font(BarDS.bodyFont(11, weight: .medium))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(BarDS.Accent.teal)
-                    }
-                }
+        if let err = viewModel.barStateError, !err.isEmpty, !viewModel.barStateRequiresDeviceLogin {
+            Text(err)
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(BarDS.Accent.red)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 6)
+                .padding(.vertical, 6)
+        }
+    }
+
+    private var liveStateFreshnessChip: some View {
+        let signIn = viewModel.barStateRequiresDeviceLogin
+        let stale = BarLiveStatePollChrome.isStale(
+            lastFetched: viewModel.barLastFetched,
+            now: freshnessClock
+        )
+        let label = signIn
+            ? "Sign in"
+            : BarLiveStatePollChrome.freshnessLabel(
+                lastFetched: viewModel.barLastFetched,
+                now: freshnessClock
+            )
+        let fg = signIn || stale ? BarDS.Accent.amber : BarDS.Text.muted
+        return HStack(spacing: 5) {
+            Text(label)
+                .font(BarDS.monoFont(11, weight: .medium))
+                .monospacedDigit()
+                .foregroundColor(fg)
+                .frame(minWidth: 64, alignment: .trailing)
+            if signIn {
+                Button {
+                    viewModel.requestOpenDeviceLogin()
+                } label: {
+                    Text("Open Station")
+                        .font(BarDS.bodyFont(11, weight: .medium))
+                        .foregroundColor(BarDS.Accent.teal)
+                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .background(fg.opacity(0.10))
+        .clipShape(Capsule())
+        .accessibilityLabel(
+            signIn
+                ? "Live Plan needs Station sign-in. Open Station."
+                : "Live Plan refreshed \(label)"
+        )
     }
 
     // MARK: - Main scroll

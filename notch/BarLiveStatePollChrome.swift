@@ -1,30 +1,43 @@
 import Foundation
 
-/// When PLAN live-state poll chrome (spinner / red strip) may paint.
+/// PLAN live-state poll chrome. Transient misses never insert a body strip.
 /// Separate from [`BarOptimisticArmedReconcilePolicy`] — that counter clears hybrid armed.
 enum BarLiveStatePollChrome {
-    /// Transient 502 / network: two consecutive misses (~4s at the 2s poll) before the strip.
-    static let stickyFailureCount = 2
+    /// Chip goes amber after this many seconds without a successful poll.
+    static let staleAfterSeconds: TimeInterval = 10
 
-    /// Spinner only on a cold fetch — never over last-good PLAN content.
+    /// Never a spinner strip — first open shows `Waiting` on the freshness chip.
     static func showsLoading(hasLiveState: Bool, isInFlight: Bool) -> Bool {
-        isInFlight && !hasLiveState
+        _ = hasLiveState
+        _ = isInFlight
+        return false
     }
 
-    /// Device-login is user-actionable and shows immediately. Transient misses keep last-good
-    /// until `stickyFailureCount`. First open with no last-good shows the strip on the first miss.
+    /// Device-login is sticky and user-actionable. Transient 502 / network never publish `barStateError`.
     static func shouldPublishError(
         hasLiveState: Bool,
         consecutiveFailures: Int,
         isDeviceLogin: Bool
     ) -> Bool {
+        _ = hasLiveState
         guard consecutiveFailures > 0 else { return false }
-        if isDeviceLogin { return true }
-        if !hasLiveState { return true }
-        return consecutiveFailures >= stickyFailureCount
+        return isDeviceLogin
     }
 
     static func nextConsecutiveFailures(previous: Int, succeeded: Bool) -> Int {
         succeeded ? 0 : previous + 1
+    }
+
+    /// `Waiting` · `9s ago` · `2m ago`
+    static func freshnessLabel(lastFetched: Date?, now: Date) -> String {
+        guard let lastFetched else { return "Waiting" }
+        let secs = max(0, Int(now.timeIntervalSince(lastFetched).rounded(.down)))
+        if secs < 60 { return "\(secs)s ago" }
+        return "\(secs / 60)m ago"
+    }
+
+    static func isStale(lastFetched: Date?, now: Date) -> Bool {
+        guard let lastFetched else { return false }
+        return now.timeIntervalSince(lastFetched) >= staleAfterSeconds
     }
 }

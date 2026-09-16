@@ -3,20 +3,14 @@ import Testing
 @testable import Notch
 
 struct BarLiveStatePollChromeTests {
-    @Test func noLastGoodAndInFlightShowsLoading() {
-        #expect(BarLiveStatePollChrome.showsLoading(hasLiveState: false, isInFlight: true) == true)
-    }
-
-    @Test func lastGoodAndInFlightDoesNotShowLoading() {
+    @Test func loadingIsAlwaysFalse() {
+        #expect(BarLiveStatePollChrome.showsLoading(hasLiveState: false, isInFlight: true) == false)
         #expect(BarLiveStatePollChrome.showsLoading(hasLiveState: true, isInFlight: true) == false)
-    }
-
-    @Test func notInFlightNeverShowsLoading() {
         #expect(BarLiveStatePollChrome.showsLoading(hasLiveState: false, isInFlight: false) == false)
         #expect(BarLiveStatePollChrome.showsLoading(hasLiveState: true, isInFlight: false) == false)
     }
 
-    @Test func lastGoodOneTransientFailDoesNotPublishError() {
+    @Test func lastGoodTransientFailsNeverPublishError() {
         #expect(
             BarLiveStatePollChrome.shouldPublishError(
                 hasLiveState: true,
@@ -24,25 +18,22 @@ struct BarLiveStatePollChromeTests {
                 isDeviceLogin: false
             ) == false
         )
-    }
-
-    @Test func lastGoodTwoTransientFailsPublishesError() {
         #expect(
             BarLiveStatePollChrome.shouldPublishError(
                 hasLiveState: true,
-                consecutiveFailures: 2,
+                consecutiveFailures: 8,
                 isDeviceLogin: false
-            ) == true
+            ) == false
         )
     }
 
-    @Test func noLastGoodFirstFailPublishesError() {
+    @Test func noLastGoodTransientFailNeverPublishesError() {
         #expect(
             BarLiveStatePollChrome.shouldPublishError(
                 hasLiveState: false,
                 consecutiveFailures: 1,
                 isDeviceLogin: false
-            ) == true
+            ) == false
         )
     }
 
@@ -60,6 +51,34 @@ struct BarLiveStatePollChromeTests {
         let afterFail = BarLiveStatePollChrome.nextConsecutiveFailures(previous: 1, succeeded: false)
         #expect(afterFail == 2)
         #expect(BarLiveStatePollChrome.nextConsecutiveFailures(previous: afterFail, succeeded: true) == 0)
+    }
+
+    @Test func freshnessLabelWaitingNineSecondsAndMinutes() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        #expect(BarLiveStatePollChrome.freshnessLabel(lastFetched: nil, now: now) == "Waiting")
+        #expect(
+            BarLiveStatePollChrome.freshnessLabel(
+                lastFetched: now.addingTimeInterval(-9),
+                now: now
+            ) == "9s ago"
+        )
+        #expect(
+            BarLiveStatePollChrome.freshnessLabel(
+                lastFetched: now.addingTimeInterval(-120),
+                now: now
+            ) == "2m ago"
+        )
+    }
+
+    @Test func staleAfterTenSecondsWithoutSuccess() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        #expect(BarLiveStatePollChrome.isStale(lastFetched: nil, now: now) == false)
+        #expect(
+            BarLiveStatePollChrome.isStale(lastFetched: now.addingTimeInterval(-9), now: now) == false
+        )
+        #expect(
+            BarLiveStatePollChrome.isStale(lastFetched: now.addingTimeInterval(-10), now: now) == true
+        )
     }
 
     @Test func scoreJitterDoesNotChangeLiveStateIdentity() {
