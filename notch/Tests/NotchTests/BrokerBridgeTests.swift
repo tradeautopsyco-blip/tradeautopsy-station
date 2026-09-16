@@ -594,7 +594,7 @@ struct BrokerBridgeTests {
         #expect(!vm.connectedInstrumentCatalogDesk)
     }
 
-    @Test func applyBrokerSyncStatePayloadOfflineClearsCapabilitiesWithoutBlendingFx() {
+    @Test func applyBrokerSyncStatePayloadOfflineKeepsLastKnownCapabilitiesWithoutBlendingFx() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.applyBrokerSyncStatePayload([
             "syncState": "synced",
@@ -611,10 +611,33 @@ struct BrokerBridgeTests {
             "syncState": "not_connected",
             "brokerSlug": "kotak_neo",
         ])
-        #expect(vm.deskQuoteCapability == "unavailable")
-        #expect(vm.deskFundsCapability == "unavailable")
-        #expect(vm.deskInstrumentsCapability == "unavailable")
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.deskFundsCapability == "fresh")
+        #expect(vm.deskInstrumentsCapability == "loading")
         #expect(vm.deskQuoteCurrency == "INR")
+    }
+
+    @Test func applyBrokerSyncStatePayloadOmittedCapabilitiesDoNotPaintQuoteAccountRed() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "kotak_neo",
+            "capabilities": [
+                "quote": "fresh",
+                "funds": "fresh",
+                "fills": "fresh",
+                "instruments": "fresh",
+            ],
+        ])
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "brokerSlug": "kotak_neo",
+        ])
+        #expect(vm.deskQuoteCapability == "fresh")
+        #expect(vm.deskFundsCapability == "fresh")
+        #expect(vm.deskFillsCapability == "fresh")
+        #expect(vm.deskInstrumentsCapability == "fresh")
+        #expect(DeskCapabilityChrome.dotName(forStatus: vm.deskQuoteCapability) == "teal")
     }
 
     @Test func venueEgressStateBannedDoesNotClearComSlug() {

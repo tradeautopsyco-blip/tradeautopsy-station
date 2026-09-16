@@ -770,6 +770,10 @@ public final class NotchViewModel: ObservableObject {
     private var daemonEventsTask: Task<Void, Never>?
     private var toolbarShowCoalesceTask: Task<Void, Never>?
     private var barLiveStatePollTimer: Timer?
+    private var barLiveStateKickoffTask: Task<Void, Never>?
+    private var barLiveStateFetchInFlight = false
+    /// Consecutive live-state chrome misses — not the hybrid-armed reconcile counter.
+    private var barLiveStateStripFailures: Int = 0
     /// Incremented when `live-state` fails while [hybrid armed](BarOptimisticArmedSnapshot) is active; cleared on 200.
     private var barOptimisticReconcilePollFailures: Int = 0
     /// Interactive screenshot temp file — removed after upload or from `stopPolling()` (Phase 7 hygiene).
@@ -1075,7 +1079,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func startBarLiveStatePolling() {
-        stopBarLiveStatePolling()
+        guard barLiveStatePollTimer == nil else { return }
         let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isExpanded, self.activeTab == .plan else { return }
@@ -1084,106 +1088,123 @@ public final class NotchViewModel: ObservableObject {
         }
         RunLoop.main.add(t, forMode: .common)
         barLiveStatePollTimer = t
-        Task {
-            // Defer the first fetch until the summon spring settles — decode work must not
-            // land in the first frames of the intro (content is pre-warmed at start()).
+        barLiveStateKickoffTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
-            guard isExpanded, activeTab == .plan else { return }
-            await fetchBarLiveState()
+            guard let self, !Task.isCancelled else { return }
+            guard self.isExpanded, self.activeTab == .plan else { return }
+            await self.fetchBarLiveState()
         }
     }
 
     private func stopBarLiveStatePolling() {
         barLiveStatePollTimer?.invalidate()
         barLiveStatePollTimer = nil
+        barLiveStateKickoffTask?.cancel()
+        barLiveStateKickoffTask = nil
     }
 
     func fetchBarLiveState() async {
         guard let url = BarLiveStatePollingTarget.url(agentBase: baseURL()) else { return }
-        let isFirstFetch = barLiveState == nil
-        if isFirstFetch {
-            barStateLoading = true
-        }
+        guard !barLiveStateFetchInFlight else { return }
+        barLiveStateFetchInFlight = true
+        setIfChanged(
+            \.barStateLoading,
+            BarLiveStatePollChrome.showsLoading(hasLiveState: barLiveState != nil, isInFlight: true)
+        )
         defer {
-            if isFirstFetch {
-                barStateLoading = false
-            }
+            barLiveStateFetchInFlight = false
+            setIfChanged(\.barStateLoading, false)
         }
         do {
             let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             guard code == 200 else {
-                recordOptimisticPollFailure()
-                barStateError = BarLiveStateErrorPresentation.message(httpStatus: code, body: data)
-                barStateRequiresDeviceLogin = BarLiveStateErrorPresentation.requiresDeviceLogin(body: data)
-                recomputeBarSurfacePhase()
+                applyLiveStatePollFailure(
+                    message: BarLiveStateErrorPresentation.message(httpStatus: code, body: data),
+                    isDeviceLogin: BarLiveStateErrorPresentation.requiresDeviceLogin(body: data)
+                )
                 return
             }
             let decoded = try JSONDecoder().decode(BarLiveStateAPIResponse.self, from: data)
+            applyLiveStatePollSuccess(decoded)
+        } catch {
+            applyLiveStatePollFailure(message: error.localizedDescription, isDeviceLogin: false)
+        }
+    }
+
+    /// Test seam — success path without `URLSession.shared`.
+    func applyLiveStatePollSuccess(_ decoded: BarLiveStateAPIResponse) {
+        barLiveStateStripFailures = BarLiveStatePollChrome.nextConsecutiveFailures(
+            previous: barLiveStateStripFailures,
+            succeeded: true
+        )
+        setIfChanged(\.daemonProtocolError, nil)
+        withAnimation(.none) {
+            var needsRecompute = false
+            var didPublishMeaningfulData = false
             let newState = decoded.notch
             let newFeaturesActive = decoded.barFeaturesActive
             let oldState = barLiveState
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if self.daemonProtocolError != nil {
-                    self.daemonProtocolError = nil
+            if barLiveState != newState {
+                barLiveState = newState
+                needsRecompute = true
+                didPublishMeaningfulData = true
+                if oldState?.archetype != newState?.archetype {
+                    refreshActiveArchetype()
                 }
-                withAnimation(.none) {
-                    var needsRecompute = false
-                    var didPublishMeaningfulData = false
-
-                    if self.barLiveState != newState {
-                        self.barLiveState = newState
-                        needsRecompute = true
-                        didPublishMeaningfulData = true
-                        if oldState?.archetype != newState?.archetype {
-                            self.refreshActiveArchetype()
-                        }
-                    }
-
-                    // Hosted `notch.behavioral_score` wins over pulse/SSE — apply every poll (#180).
-                    newState?.applyBehavioralToViewModel(self)
-
-                    if let slug = newState?.protectiveBrokerSlug?
-                        .trimmingCharacters(in: .whitespacesAndNewlines),
-                        !slug.isEmpty
-                    {
-                        self.barProtectiveBrokerSlug = slug
-                    }
-
-                    if self.barFeaturesActiveFromApi != newFeaturesActive {
-                        self.barFeaturesActiveFromApi = newFeaturesActive
-                        needsRecompute = true
-                        didPublishMeaningfulData = true
-                        if newFeaturesActive == false {
-                            self.clearOptimisticArmedStorage()
-                        }
-                    }
-
-                    if needsRecompute {
-                        self.recomputeBarSurfacePhase()
-                    }
-
-                    if didPublishMeaningfulData {
-                        self.barLastFetched = Date()
-                    }
-
-                    if self.barStateError != nil {
-                        self.barStateError = nil
-                    }
-                    if self.barStateRequiresDeviceLogin {
-                        self.barStateRequiresDeviceLogin = false
-                    }
-                }
-                self.resetOptimisticPollFailures()
             }
-        } catch {
-            recordOptimisticPollFailure()
-            barStateError = error.localizedDescription
-            barStateRequiresDeviceLogin = false
-            recomputeBarSurfacePhase()
+
+            // Hosted `notch.behavioral_score` wins over pulse/SSE — apply every poll (#180).
+            newState?.applyBehavioralToViewModel(self)
+
+            if let slug = newState?.protectiveBrokerSlug?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !slug.isEmpty
+            {
+                setIfChanged(\.barProtectiveBrokerSlug, slug)
+            }
+
+            if barFeaturesActiveFromApi != newFeaturesActive {
+                barFeaturesActiveFromApi = newFeaturesActive
+                needsRecompute = true
+                didPublishMeaningfulData = true
+                if newFeaturesActive == false {
+                    clearOptimisticArmedStorage()
+                }
+            }
+
+            if needsRecompute {
+                recomputeBarSurfacePhase()
+            }
+
+            if didPublishMeaningfulData {
+                barLastFetched = Date()
+            }
+
+            setIfChanged(\.barStateError, nil)
+            setIfChanged(\.barStateRequiresDeviceLogin, false)
         }
+        resetOptimisticPollFailures()
+    }
+
+    /// Test seam — keep last-good `barLiveState`; chrome follows [`BarLiveStatePollChrome`].
+    func applyLiveStatePollFailure(message: String, isDeviceLogin: Bool) {
+        recordOptimisticPollFailure()
+        barLiveStateStripFailures = BarLiveStatePollChrome.nextConsecutiveFailures(
+            previous: barLiveStateStripFailures,
+            succeeded: false
+        )
+        let publish = BarLiveStatePollChrome.shouldPublishError(
+            hasLiveState: barLiveState != nil,
+            consecutiveFailures: barLiveStateStripFailures,
+            isDeviceLogin: isDeviceLogin
+        )
+        if publish {
+            setIfChanged(\.barStateError, Optional(message))
+            setIfChanged(\.barStateRequiresDeviceLogin, isDeviceLogin)
+        }
+        recomputeBarSurfacePhase()
     }
 
     func recomputeBarSurfacePhase() {
@@ -1193,18 +1214,18 @@ public final class NotchViewModel: ObservableObject {
             stopMeStep = 0
         }
         if barDebriefPending {
-            barSurfacePhase = .debrief
+            setIfChanged(\.barSurfacePhase, .debrief)
             return
         }
         let hasPos = !positions.isEmpty
         if hasPos {
             clearOptimisticArmedStorage()
-            barSurfacePhase = .livePlan
+            setIfChanged(\.barSurfacePhase, .livePlan)
             return
         }
         if let pending = barLiveState?.pendingDeclaration, pending.status.uppercased() == "PENDING" {
             clearOptimisticArmedStorage()
-            barSurfacePhase = .armed
+            setIfChanged(\.barSurfacePhase, .armed)
             return
         }
         if let snap = barOptimisticArmedDisplay {
@@ -1214,19 +1235,19 @@ public final class NotchViewModel: ObservableObject {
             ) {
                 clearOptimisticArmedStorage()
                 barDeclarationConfirmWarning = BarOptimisticArmedReconcilePolicy.confirmWarningMessage
-                barSurfacePhase = .declaration
+                setIfChanged(\.barSurfacePhase, .declaration)
                 return
             }
-            barSurfacePhase = .armed
+            setIfChanged(\.barSurfacePhase, .armed)
             return
         }
         let planRaw = barLiveState?.planState?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasPlanSignal = !planRaw.isEmpty
         // Hosted `plan_state` can be set without a matched declaration; native declare UX lives on `.declaration`.
         if hasPlanSignal, !showingDeclarationForm {
-            barSurfacePhase = .livePlan
+            setIfChanged(\.barSurfacePhase, .livePlan)
         } else {
-            barSurfacePhase = .declaration
+            setIfChanged(\.barSurfacePhase, .declaration)
         }
     }
 
@@ -4606,27 +4627,20 @@ extension NotchViewModel {
     }
 
     /// Quote vs funds/fills stay independent — one broker pill is not enough.
+    /// Omitting `capabilities` keeps last-known pills; only an explicit status paints red.
     func applyDeskCapabilities(from payload: [String: Any]) {
         let caps = payload["capabilities"] as? [String: Any]
         if let q = caps?["quote"] as? String, !q.isEmpty {
-            deskQuoteCapability = q.lowercased()
+            setIfChanged(\.deskQuoteCapability, q.lowercased())
         }
         if let funds = caps?["funds"] as? String, !funds.isEmpty {
-            deskFundsCapability = funds.lowercased()
+            setIfChanged(\.deskFundsCapability, funds.lowercased())
         }
         if let fills = caps?["fills"] as? String, !fills.isEmpty {
-            deskFillsCapability = fills.lowercased()
+            setIfChanged(\.deskFillsCapability, fills.lowercased())
         }
         if let instruments = caps?["instruments"] as? String, !instruments.isEmpty {
-            deskInstrumentsCapability = instruments.lowercased()
-        }
-        if caps == nil,
-           brokerSyncClass == "not_connected" || brokerSyncClass == "disconnected"
-        {
-            deskQuoteCapability = "unavailable"
-            deskFundsCapability = "unavailable"
-            deskFillsCapability = "unavailable"
-            deskInstrumentsCapability = "unavailable"
+            setIfChanged(\.deskInstrumentsCapability, instruments.lowercased())
         }
     }
 

@@ -51,16 +51,9 @@ struct BarNotchShell: View {
         }
         .background(BarDS.Fill.appPanel)
         .onAppear {
-            Task { @MainActor in
-                syncActiveScreenFromPhase(animated: false)
-                syncDeclarationFormFlagToActiveScreen()
-                openAnalysisIfNeeded(for: activeScreen.wrappedValue)
-                // Pre-warmed at launch for ⌥Space — onAppear is not "the user is looking".
-                // Expanding starts the poll; fetching here would show a launch-time agent
-                // error in an invisible view and hand the first summon a stale strip.
-                guard viewModel.isExpanded else { return }
-                await viewModel.fetchBarLiveState()
-            }
+            syncActiveScreenFromPhase(animated: false)
+            syncDeclarationFormFlagToActiveScreen()
+            openAnalysisIfNeeded(for: activeScreen.wrappedValue)
         }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
             guard externalActiveScreen == nil else { return }

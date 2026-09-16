@@ -13,6 +13,12 @@ struct BarLiveStateAPIResponse: Decodable {
         case barFeaturesActive = "barFeaturesActive"
         case notch = "notch"
     }
+
+    init(schemaVersion: Int? = nil, barFeaturesActive: Bool? = true, notch: BarLiveStateResponse?) {
+        self.schemaVersion = schemaVersion
+        self.barFeaturesActive = barFeaturesActive
+        self.notch = notch
+    }
 }
 
 // MARK: - Notch subtree (NotchBarLiveStateV1)
@@ -307,9 +313,7 @@ extension BarLiveStateResponse: Equatable {
             lhs.composite?.state == rhs.composite?.state &&
             lhs.activeInterventions.count == rhs.activeInterventions.count &&
             lhs.declarationSubmitBlocked == rhs.declarationSubmitBlocked &&
-            lhs.behavioralScore == rhs.behavioralScore &&
-            lhs.behavioralVerdict == rhs.behavioralVerdict &&
-            lhs.behaviorSignals == rhs.behaviorSignals
+            lhs.behavioralVerdict == rhs.behavioralVerdict
     }
 }
 
