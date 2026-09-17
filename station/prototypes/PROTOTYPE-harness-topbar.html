@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: How should Harness TOP chrome show books + holes in Apple design,
+  without a row of competing capsules and without naming vendor slugs in the bar.
+  Pre-trade form is frozen background. Only the top strip changes.
+  Open: open station/prototypes/PROTOTYPE-harness-topbar.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Harness top bar · Apple HIG</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --secondary: rgba(245,245,247,.58); --tertiary: rgba(245,245,247,.32);
+      --bg: #050505; --fill: rgba(120,120,128,.22); --sep: rgba(84,84,88,.55);
+      --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --teal: #64d2ff;
+      --glass: rgba(22,22,24,.72); --sidebar: rgba(18,18,20,.82);
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 400 13px/1.35 var(--sans); letter-spacing: -.006em; font-optical-sizing: auto;
+      background: #1a1a1c; color: var(--label); -webkit-font-smoothing: antialiased;
+      padding: 16px 16px 110px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+    .press { transition: transform 100ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+
+    .q { width: min(1120px,100%); margin: 0 auto 12px; color: var(--tertiary); font-size: 11px; }
+    .q b { color: var(--secondary); font-size: 13px; font-weight: 600; }
+    .q p { margin-top: 6px; max-width: 72ch; }
+
+    .desktop {
+      width: min(1120px,100%); margin: 0 auto; height: 640px; border-radius: 12px; overflow: hidden;
+      background: #0c0c0e; box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+      display: flex; flex-direction: column;
+    }
+    .sheet { flex: 1; display: flex; min-height: 0; background: var(--glass); backdrop-filter: blur(48px) saturate(180%); }
+    .sb { width: 176px; flex-shrink: 0; background: var(--sidebar); border-right: .5px solid rgba(255,255,255,.06); padding: 8px; display: flex; flex-direction: column; }
+    .sb-sec { padding: 10px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary); }
+    .nav { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 7px; color: var(--secondary); }
+    .nav.on { background: rgba(10,132,255,.28); color: var(--label); font-weight: 600; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: rgba(0,0,0,.28); position: relative; }
+
+    .top { display: flex; align-items: center; gap: 10px; padding: 10px 16px; min-height: 44px;
+      background: rgba(18,18,20,.55); backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.06); }
+    .title { font-size: 17px; font-weight: 590; letter-spacing: -.022em; flex: 1; min-width: 0; }
+    .waiting { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--tertiary); min-width: 52px; text-align: right; }
+
+    .now {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center;
+    }
+    .cap { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--fill); color: var(--secondary); display: inline-flex; align-items: center; gap: 5px; }
+    .cap .d { width: 6px; height: 6px; border-radius: 50%; }
+    .cap.ok { color: #7ee0a4; } .cap.ok .d { background: var(--green); }
+    .cap.bad { color: #ff8a84; background: rgba(255,69,58,.14); } .cap.bad .d { background: var(--red); }
+    .cap.mute { color: var(--tertiary); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cap.mute .d { background: var(--tertiary); }
+
+    /* A — one trailing accessory */
+    .books { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,255,255,.06); border: .5px solid rgba(255,255,255,.1); }
+    .books .d { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .books .name { font-size: 12px; font-weight: 590; letter-spacing: -.006em; }
+    .books .sep { width: .5px; height: 12px; background: rgba(255,255,255,.18); }
+    .status-btn { font-size: 12px; font-weight: 590; padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,159,10,.16); color: var(--orange); border: .5px solid rgba(255,159,10,.28); }
+    .status-btn.quiet { background: rgba(255,255,255,.06); color: var(--secondary); border-color: rgba(255,255,255,.08); }
+
+    /* B — icon toolbar */
+    .tb { display: flex; gap: 2px; }
+    .tbi { width: 32px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--secondary); position: relative; }
+    .tbi:hover { background: var(--fill); color: var(--label); }
+    .tbi.on { color: var(--label); }
+    .tbi svg { width: 15px; height: 15px; }
+    .tbi .badge { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 1.5px #161618; }
+    .tbi .badge.warn { background: var(--orange); }
+    .tbi .badge.ok { background: var(--green); }
+
+    /* C — exception token */
+    .hole { font-size: 12px; font-weight: 590; padding: 4px 11px; border-radius: 999px;
+      background: rgba(255,69,58,.16); color: var(--red); border: .5px solid rgba(255,69,58,.3); }
+    .hole.warn { background: rgba(255,159,10,.16); color: var(--orange); border-color: rgba(255,159,10,.3); }
+
+    .pop {
+      position: absolute; top: 48px; right: 12px; width: 280px; z-index: 9;
+      background: rgba(30,30,32,.92); backdrop-filter: blur(40px) saturate(180%);
+      border: .5px solid rgba(255,255,255,.12); border-radius: 12px;
+      box-shadow: 0 18px 48px rgba(0,0,0,.5); padding: 8px; transform-origin: top right;
+      animation: popin 280ms cubic-bezier(.2,.8,.2,1);
+    }
+    @keyframes popin { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { .pop { animation: none; } .press { transition: none; } }
+    .pop h4 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary); padding: 6px 8px 4px; }
+    .pop .row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; }
+    .pop .row:hover { background: var(--fill); }
+    .pop .k { flex: 1; }
+    .pop .k b { display: block; font-weight: 590; font-size: 13px; }
+    .pop .k span { display: block; font-size: 11px; color: var(--tertiary); }
+    .pop .v { font-size: 11px; font-weight: 600; color: var(--secondary); }
+    .pop .v.ok { color: var(--green); } .pop .v.bad { color: var(--red); } .pop .v.warn { color: var(--orange); }
+    .pop .hint { padding: 6px 8px 4px; font-size: 11px; color: var(--tertiary); }
+
+    .scroll { flex: 1; padding: 20px 24px; opacity: .38; pointer-events: none; user-select: none; }
+    .scroll h2 { font-size: 13px; font-weight: 590; margin-bottom: 4px; }
+    .scroll .sub { font-size: 12px; color: var(--secondary); margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; margin-bottom: 18px; }
+    .cell { background: rgba(255,255,255,.04); border-radius: 10px; padding: 14px 8px; text-align: center; }
+    .cell b { display: block; font-size: 15px; }
+    .cell span { font-size: 10px; color: var(--tertiary); }
+    .field { background: rgba(255,255,255,.04); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; color: var(--tertiary); font-size: 12px; }
+
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20;
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 6px;
+      background: #f5f5f7; color: #1d1d1f; border-radius: 999px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 28px; height: 28px; border-radius: 50%; background: #e8e8ed; }
+    .switcher .lab { min-width: 220px; }
+    .switcher .lab span { display: block; font-weight: 400; font-size: 10px; color: #6e6e73; }
+
+    .scene { width: min(1120px,100%); margin: 8px auto 0; display: flex; gap: 6px; flex-wrap: wrap; }
+    .scene button { font-size: 11px; padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--secondary); }
+    .scene button.on { background: rgba(10,132,255,.28); color: var(--label); }
+    #state { width: min(1120px,100%); margin: 10px auto 0; font: 11px/1.4 ui-monospace, Menlo, monospace; color: var(--tertiary); white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="q">
+    <b>PROTOTYPE — Harness top bar.</b>
+    Question: how Apple chrome shows books + holes without naming vendors in the title strip.
+    Pre-trade body is frozen. ← → switches A/B/C. Scene chips change the same facts.
+  </div>
+  <div class="scene" id="scenes"></div>
+  <div class="desktop" id="desk"></div>
+  <pre id="state"></pre>
+  <div class="switcher" id="switcher"></div>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Books accessory", blurb: "One glass cluster. Holes live in a Status popover." },
+  { key: "B", name: "Toolbar icons", blurb: "Finder/Xcode trailing items. Badge only when not OK." },
+  { key: "C", name: "Quiet until dirty", blurb: "Healthy bar is empty. One exception token." },
+];
+const SCENES = [
+  { key: "now", label: "Screenshot now" },
+  { key: "dual", label: "COM + Kotak live" },
+  { key: "vendorUp", label: "Data eligible" },
+  { key: "quiet", label: "All healthy" },
+];
+
+const S = { variant: "A", scene: "now", pop: null };
+
+function facts() {
+  const base = {
+    title: "Pre-trade",
+    waiting: "Waiting",
+    books: [{ id: "binance_com", name: "Binance.com", live: true }],
+    quote: "unavailable",
+    instruments: "fresh",
+    account: "fresh",
+    declaration: true,
+    vendor: { id: "licensed_history", eligible: false, status: "unsupported" },
+  };
+  if (S.scene === "dual") {
+    base.books = [
+      { id: "binance_com", name: "Binance.com", live: true },
+      { id: "kotak_neo", name: "Kotak Neo", live: true },
+    ];
+    base.quote = "fresh";
+  }
+  if (S.scene === "vendorUp") {
+    base.vendor = { id: "licensed_history", eligible: true, status: "up" };
+    base.quote = "fresh";
+  }
+  if (S.scene === "quiet") {
+    base.books = [
+      { id: "binance_com", name: "Binance.com", live: true },
+      { id: "kotak_neo", name: "Kotak Neo", live: true },
+    ];
+    base.quote = "fresh";
+    base.vendor = { id: "licensed_history", eligible: true, status: "up" };
+    base.waiting = "3s ago";
+  }
+  return base;
+}
+
+function holes(f) {
+  const h = [];
+  if (f.quote !== "fresh") h.push({ k: "Quote", v: f.quote, kind: "bad" });
+  if (!f.vendor.eligible) h.push({ k: "Market data", v: "Not eligible — add a key in Box", kind: "warn" });
+  if (f.instruments !== "fresh") h.push({ k: "Instruments", v: f.instruments, kind: "warn" });
+  if (f.account !== "fresh") h.push({ k: "Account", v: f.account, kind: "warn" });
+  return h;
+}
+
+function ico(name) {
+  const p = {
+    radio: '<path d="M4 12a8 8 0 0 1 8-8"/><circle cx="12" cy="12" r="2"/>',
+    chart: '<path d="M4 16l4-4 3 3 5-7"/><path d="M4 20h16"/>',
+    cube: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>',
+    person: '<circle cx="12" cy="8" r="3"/><path d="M5 19c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5"/>',
+    shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  }[name];
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">${p}</svg>`;
+}
+
+function popover(f) {
+  if (!S.pop) return "";
+  const h = holes(f);
+  const bookRows = f.books.map(b => `<div class="row"><div class="k"><b>${b.name}</b><span>Connected book</span></div><div class="v ${b.live?"ok":"bad"}">${b.live?"Live":"Off"}</div></div>`).join("");
+  const dataRow = `<div class="row"><div class="k"><b>Market data</b><span>Eligible query — never a last</span></div><div class="v ${f.vendor.eligible?"ok":"warn"}">${f.vendor.eligible?"Eligible":"Not eligible"}</div></div>`;
+  const quoteRow = `<div class="row"><div class="k"><b>Quote</b><span>Desk last on the bound instrument</span></div><div class="v ${f.quote==="fresh"?"ok":"bad"}">${f.quote}</div></div>`;
+  return `<div class="pop" role="dialog">
+    <h4>Books</h4>${bookRows}
+    <h4>Desk</h4>${quoteRow}
+    <div class="row"><div class="k"><b>Instruments</b></div><div class="v ok">${f.instruments}</div></div>
+    <div class="row"><div class="k"><b>Account</b></div><div class="v ok">${f.account}</div></div>
+    <h4>Data</h4>${dataRow}
+    <p class="hint">Vendors are added in Backend Box. This bar never prints a slug. DualNoBlend: two books stay two books.</p>
+  </div>`;
+}
+
+function topA(f) {
+  const h = holes(f);
+  const books = `<button type="button" class="books press" data-act="pop" data-id="books">${f.books.map(b=>`<span class="d"></span><span class="name">${b.name.replace(".com","")}</span>`).join(`<span class="sep"></span>`)}</button>`;
+  const status = h.length
+    ? `<button type="button" class="status-btn press" data-act="pop" data-id="status">${h.length===1?h[0].k+" "+h[0].v:h.length+" holes"}</button>`
+    : `<button type="button" class="status-btn quiet press" data-act="pop" data-id="status">All clear</button>`;
+  return `${books}${status}`;
+}
+
+function topB(f) {
+  const items = [
+    { id: "books", ico: "radio", bad: f.books.some(b=>!b.live), ok: true },
+    { id: "quote", ico: "chart", bad: f.quote!=="fresh" },
+    { id: "inst", ico: "cube", bad: f.instruments!=="fresh", ok: f.instruments==="fresh" },
+    { id: "acct", ico: "person", bad: f.account!=="fresh", ok: f.account==="fresh" },
+    { id: "data", ico: "shield", bad: !f.vendor.eligible, warn: !f.vendor.eligible },
+  ];
+  return `<div class="tb">${items.map(it=>`
+    <button type="button" class="tbi press ${S.pop===it.id?"on":""}" data-act="pop" data-id="${it.id}" title="${it.id}">
+      ${ico(it.ico)}${it.bad?`<i class="badge ${it.warn?"warn":""}"></i>`:it.ok?`<i class="badge ok"></i>`:""}
+    </button>`).join("")}</div>`;
+}
+
+function topC(f) {
+  const h = holes(f);
+  if (!h.length) return `<span class="waiting" style="color:var(--tertiary)">2 books</span>`;
+  const kind = h.some(x=>x.kind==="bad") ? "" : "warn";
+  const label = h.length===1 ? `${h[0].k} ${h[0].v}` : `${h.length} holes`;
+  return `<button type="button" class="hole ${kind} press" data-act="pop" data-id="status">${label}</button>`;
+}
+
+function frozenForm() {
+  return `<div class="scroll">
+    <h2>How are you feeling?</h2>
+    <p class="sub">Two readings. Frozen — this prototype is the top strip only.</p>
+    <div class="grid">${["1 Calm","2 Focused","3 Tense","4 Anxious","5 Angry"].map(t=>`<div class="cell"><b>${t[0]}</b><span>${t.slice(2)}</span></div>`).join("")}</div>
+    <div class="field">Entry price</div>
+    <div class="field">DESK EXTRACTS · Last unavailable · History no licensed series</div>
+    <div class="field">Stop loss — exact price</div>
+  </div>`;
+}
+
+function paint() {
+  const f = facts();
+  const trail = S.variant==="A"?topA(f):S.variant==="B"?topB(f):topC(f);
+  document.getElementById("desk").innerHTML = `
+    <div class="sheet">
+      <aside class="sb">
+        <div class="sb-sec">Session</div>
+        <div class="nav">Morning brief</div>
+        <div class="nav on">Pre-trade</div>
+        <div class="nav">Live trade</div>
+        <div class="nav">Post-trade</div>
+      </aside>
+      <div class="main">
+        <div class="top">
+          <div class="title">${f.title}</div>
+          <span class="waiting">${f.waiting}</span>
+          ${trail}
+        </div>
+        ${popover(f)}
+        ${frozenForm()}
+      </div>
+    </div>`;
+  const v = VARIANTS.find(x=>x.key===S.variant);
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next">→</button>`;
+  document.getElementById("scenes").innerHTML = SCENES.map(sc=>
+    `<button type="button" class="${S.scene===sc.key?"on":""}" data-act="scene" data-id="${sc.key}">${sc.label}</button>`
+  ).join("");
+  document.getElementById("state").textContent = "STATE "+JSON.stringify({
+    variant: S.variant, scene: S.scene, pop: S.pop, books: f.books.map(b=>b.id),
+    quote: f.quote, vendorEligible: f.vendor.eligible, vendorNeverInBar: true,
+    dualNoBlend: true, userAddsEligibleVendorInBox: true,
+  }, null, 2);
+}
+
+function setVariant(k) {
+  S.variant = k; S.pop = null;
+  const u = new URL(location.href); u.searchParams.set("variant", k); history.replaceState(null,"",u);
+  paint();
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v=>v.key===S.variant);
+  setVariant(VARIANTS[(i+d+3)%3].key);
+}
+
+document.addEventListener("click",(e)=>{
+  const t = e.target.closest("[data-act]"); if(!t) return;
+  const act = t.getAttribute("data-act"), id = t.getAttribute("data-id");
+  if (act==="prev") cycle(-1);
+  if (act==="next") cycle(1);
+  if (act==="scene") { S.scene = id; S.pop = null; }
+  if (act==="pop") S.pop = S.pop===id ? null : id;
+  paint();
+});
+document.addEventListener("pointerdown",(e)=>{ const el=e.target.closest(".press"); if(el) el.classList.add("is-down"); },true);
+document.addEventListener("pointerup",()=>{ document.querySelectorAll(".press.is-down").forEach(el=>el.classList.remove("is-down")); },true);
+document.addEventListener("keydown",(e)=>{
+  if (e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowLeft") cycle(-1);
+  if (e.key==="ArrowRight") cycle(1);
+  if (e.key==="Escape") { S.pop = null; paint(); }
+});
+const boot = new URLSearchParams(location.search).get("variant") || "A";
+S.variant = VARIANTS.some(v=>v.key===boot) ? boot : "A";
+paint();
+</script>
+</body>
+</html>

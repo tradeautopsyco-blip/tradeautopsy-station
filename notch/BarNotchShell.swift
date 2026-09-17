@@ -28,6 +28,8 @@ struct BarNotchShell: View {
     @State private var hoveredSession: BarNotchScreen?
     @State private var analysisOpen: Bool = false
     @State private var freshnessClock = Date()
+    @State private var booksPopoverPresented = false
+    @State private var statusPopoverPresented = false
     @ObservedObject private var deskModeStore = RiskDeskModeStore.shared
 
     init(viewModel: NotchViewModel, activeScreen: Binding<BarNotchScreen>? = nil) {
@@ -413,10 +415,26 @@ struct BarNotchShell: View {
         }
     }
 
-    // MARK: - Top bar
+    // MARK: - Top bar (prototype A — books cluster + Status popover)
+
+    private var harnessTopChrome: HarnessTopChrome {
+        HarnessTopChrome.compose(
+            activeSlug: viewModel.activeExecutionBrokerSlug ?? viewModel.barProtectiveBrokerSlug,
+            brokerSyncClass: viewModel.brokerSyncClass,
+            venuePostureBySlug: viewModel.venuePostureBySlug,
+            quoteStatus: viewModel.deskQuoteCapability,
+            instrumentsStatus: viewModel.deskInstrumentsCapability,
+            accountStatus: DeskCapabilityChrome.accountStatus(
+                funds: viewModel.deskFundsCapability,
+                fills: viewModel.deskFillsCapability
+            ),
+            vendorFenceRows: viewModel.vendorFenceRows
+        )
+    }
 
     private var topBar: some View {
-        HStack(alignment: .center, spacing: 10) {
+        let chrome = harnessTopChrome
+        return HStack(alignment: .center, spacing: 10) {
             Text(activeScreen.wrappedValue.rawValue)
                 .font(BarDS.bodyFont(BarDS.FontSize.topbarTitle, weight: .medium))
                 .foregroundColor(BarDS.Text.primary)
@@ -436,10 +454,10 @@ struct BarNotchShell: View {
             }
 
             liveStateFreshnessChip
-            brokerConnectionPill
-            vendorFenceChip
-            deskCapabilityPills
-            statePill
+            if !chrome.clusterDisplayNames.isEmpty {
+                booksClusterButton(chrome)
+            }
+            statusButton(chrome)
         }
         .padding(.vertical, 11)
         .padding(.horizontal, 16)
@@ -451,161 +469,205 @@ struct BarNotchShell: View {
         }
     }
 
-    private var vendorFenceChip: some View {
-        let line = viewModel.vendorFenceRows
-            .map(\.fenceLine)
-            .joined(separator: " · ")
-        return Group {
-            if !line.isEmpty {
-                Text(line)
-                    .font(BarDS.bodyFont(11, weight: .medium))
-                    .foregroundColor(BarDS.Text.muted)
-                    .lineLimit(1)
-                    .help(line)
+    private func booksClusterButton(_ chrome: HarnessTopChrome) -> some View {
+        let cluster = chrome.books.filter(\.inCluster)
+        return Button {
+            statusPopoverPresented = false
+            booksPopoverPresented = true
+        } label: {
+            HStack(spacing: 8) {
+                ForEach(Array(cluster.enumerated()), id: \.element.id) { index, book in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: BarDS.borderThin, height: 12)
+                    }
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(BarDS.Accent.green)
+                            .frame(width: 6, height: 6)
+                        Text(book.displayName)
+                            .font(BarDS.bodyFont(12, weight: .medium))
+                            .foregroundColor(BarDS.Text.primary)
+                    }
+                }
             }
-        }
-    }
-
-    private var brokerConnectionPill: some View {
-        let style = brokerPillStyle
-        return HStack(spacing: 5) {
-            Circle()
-                .fill(style.dot)
-                .frame(width: 6, height: 6)
-            Text(style.label)
-                .font(BarDS.bodyFont(11, weight: .medium))
-                .foregroundColor(style.titleColor)
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 10)
-        .background(style.bg)
-        .clipShape(Capsule())
-    }
-
-    /// Quote vs account stay independent — quote can be green while funds/fills are not.
-    private var deskCapabilityPills: some View {
-        HStack(spacing: 6) {
-            capabilityPill(
-                title: "Quote",
-                status: viewModel.deskQuoteCapability
+            .padding(.vertical, 4)
+            .padding(.horizontal, 10)
+            .background(Color.white.opacity(0.06))
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: BarDS.borderThin)
             )
-            instrumentsCapabilityPill
-            capabilityPill(
-                title: "Account",
-                status: DeskCapabilityChrome.accountStatus(
-                    funds: viewModel.deskFundsCapability,
-                    fills: viewModel.deskFillsCapability
-                )
-            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.97))
+        .accessibilityLabel("Books \(chrome.clusterDisplayNames.joined(separator: ", "))")
+        .popover(isPresented: $booksPopoverPresented, arrowEdge: .bottom) {
+            harnessStatusPopover(harnessTopChrome)
         }
     }
 
-    @ViewBuilder
-    private var instrumentsCapabilityPill: some View {
-        let status = viewModel.deskInstrumentsCapability
-        if DeskCapabilityChrome.showsRetryInstruments(status: status) {
-            Button {
-                Task { await viewModel.retryInstruments() }
-            } label: {
-                capabilityPill(title: "Instruments", status: status)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Instruments \(status). Retry instruments")
-        } else {
-            capabilityPill(title: "Instruments", status: status)
-        }
-    }
-
-    private func capabilityPill(title: String, status: String) -> some View {
-        let dotName = DeskCapabilityChrome.dotName(forStatus: status)
-        let (dot, fg, bg): (Color, Color, Color) = {
-            switch dotName {
-            case "teal":
-                return (BarDS.Accent.teal, BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-            case "amber":
-                return (BarDS.Accent.amber, BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
-            default:
-                return (BarDS.Accent.red, BarDS.Accent.red, BarDS.Accent.red.opacity(0.10))
+    private func statusButton(_ chrome: HarnessTopChrome) -> some View {
+        let (fg, bg, stroke): (Color, Color, Color) = {
+            switch chrome.statusKind {
+            case .quiet:
+                return (BarDS.Text.secondary, Color.white.opacity(0.06), Color.white.opacity(0.08))
+            case .warn:
+                return (BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.16), BarDS.Accent.amber.opacity(0.28))
+            case .bad:
+                return (BarDS.Accent.red, BarDS.Accent.red.opacity(0.16), BarDS.Accent.red.opacity(0.30))
             }
         }()
-        return HStack(spacing: 5) {
-            Circle()
-                .fill(dot)
-                .frame(width: 6, height: 6)
-            Text(DeskCapabilityChrome.pillLabel(kind: title, status: status))
-                .font(BarDS.bodyFont(11, weight: .medium))
+        return Button {
+            booksPopoverPresented = false
+            statusPopoverPresented = true
+        } label: {
+            Text(chrome.statusLabel)
+                .font(BarDS.bodyFont(12, weight: .medium))
                 .foregroundColor(fg)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .background(bg)
+                .overlay(
+                    Capsule()
+                        .strokeBorder(stroke, lineWidth: BarDS.borderThin)
+                )
+                .clipShape(Capsule())
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 10)
-        .background(bg)
-        .clipShape(Capsule())
-        .accessibilityLabel("\(title) \(status)")
-    }
-
-    private var brokerPillStyle: (dot: Color, label: String, titleColor: Color, bg: Color) {
-        let slug = viewModel.activeExecutionBrokerSlug ?? viewModel.barProtectiveBrokerSlug
-        let postureKey = slug.trimmingCharacters(in: .whitespacesAndNewlines)
-        let chrome = NotchViewModel.brokerPillChrome(
-            brokerSyncClass: viewModel.brokerSyncClass,
-            slug: slug,
-            venuePosture: postureKey.isEmpty ? nil : viewModel.venuePostureBySlug[postureKey]
-        )
-        switch chrome.dotName {
-        case "teal":
-            return (BarDS.Accent.teal, chrome.label, BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case "amber":
-            return (BarDS.Accent.amber, chrome.label, BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
-        default:
-            return (BarDS.Accent.red, chrome.label, BarDS.Accent.red, BarDS.Accent.red.opacity(0.10))
+        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.97))
+        .accessibilityLabel(chrome.statusLabel)
+        .popover(isPresented: $statusPopoverPresented, arrowEdge: .bottom) {
+            harnessStatusPopover(harnessTopChrome)
         }
     }
 
-    private var statePill: some View {
-        let style = screenBehavioralPillStyle
-        return HStack(spacing: 5) {
-            Circle()
-                .fill(style.dot)
-                .frame(width: 6, height: 6)
-            Text(style.title)
-                .font(BarDS.bodyFont(11, weight: .medium))
-                .foregroundColor(style.titleColor)
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 10)
-        .background(style.bg)
-        .clipShape(Capsule())
-    }
-
-    private var screenBehavioralPillStyle: (dot: Color, title: String, titleColor: Color, bg: Color) {
-        switch activeScreen.wrappedValue {
-        case .morning:
-            return (BarDS.Accent.teal, "Pre-market", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case .pretrade:
-            return (BarDS.Accent.teal, "Declaration", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case .live:
-            let broken = viewModel.compositeScore >= 0.45
-            if broken {
-                return (BarDS.Accent.amber, "Intact", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
+    private func harnessStatusPopover(_ chrome: HarnessTopChrome) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            popoverSection("Books")
+            ForEach(chrome.books) { book in
+                popoverRow(
+                    title: book.displayName,
+                    subtitle: "Connected book",
+                    value: book.stateLabel,
+                    valueColor: bookStateColor(book.stateLabel)
+                )
             }
-            return (BarDS.Accent.teal, "Intact", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case .posttrade:
-            return (BarDS.Accent.amber, "Debrief", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
-        case .escrow:
-            return (BarDS.Accent.teal, "Match", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case .patterns:
-            return (BarDS.Accent.amber, "Building", BarDS.Accent.amber, BarDS.Accent.amber.opacity(0.10))
-        case .fidelity:
-            return (
-                BarDS.Text.primary,
-                String(format: "%.2f", viewModel.compositeScore),
-                BarDS.Text.primary,
-                Color.white.opacity(0.10)
+            popoverSection("Desk")
+            popoverRow(
+                title: "Quote",
+                subtitle: "Desk last on the bound instrument",
+                value: viewModel.deskQuoteCapability,
+                valueColor: capabilityValueColor(viewModel.deskQuoteCapability)
             )
-        case .triage:
-            return (BarDS.Accent.teal, "Triage", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
-        case .settings:
-            return (BarDS.Accent.teal, "Config", BarDS.Accent.teal, BarDS.Accent.teal.opacity(0.10))
+            popoverRow(
+                title: "Instruments",
+                subtitle: nil,
+                value: viewModel.deskInstrumentsCapability,
+                valueColor: capabilityValueColor(viewModel.deskInstrumentsCapability),
+                retryInstruments: chrome.showsRetryInstruments
+            )
+            popoverRow(
+                title: "Account",
+                subtitle: nil,
+                value: DeskCapabilityChrome.accountStatus(
+                    funds: viewModel.deskFundsCapability,
+                    fills: viewModel.deskFillsCapability
+                ),
+                valueColor: capabilityValueColor(
+                    DeskCapabilityChrome.accountStatus(
+                        funds: viewModel.deskFundsCapability,
+                        fills: viewModel.deskFillsCapability
+                    )
+                )
+            )
+            if !chrome.dataRows.isEmpty {
+                popoverSection("Data")
+                ForEach(Array(chrome.dataRows.enumerated()), id: \.offset) { _, row in
+                    popoverRow(
+                        title: row.nounLabel,
+                        subtitle: "Eligible query — never a last",
+                        value: row.statusLabel,
+                        valueColor: row.eligible ? BarDS.Accent.green : BarDS.Accent.amber
+                    )
+                }
+            }
+            Text("Vendors are added in Backend Box. DualNoBlend: two books stay two books.")
+                .font(BarDS.bodyFont(11, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+        }
+        .padding(8)
+        .frame(width: 280)
+    }
+
+    private func popoverSection(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(BarDS.bodyFont(11, weight: .semibold))
+            .tracking(0.6)
+            .foregroundColor(BarDS.Text.muted)
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+    }
+
+    private func popoverRow(
+        title: String,
+        subtitle: String?,
+        value: String,
+        valueColor: Color,
+        retryInstruments: Bool = false
+    ) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(BarDS.bodyFont(13, weight: .medium))
+                    .foregroundColor(BarDS.Text.primary)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(BarDS.bodyFont(11, weight: .regular))
+                        .foregroundColor(BarDS.Text.muted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(value)
+                .font(BarDS.bodyFont(11, weight: .semibold))
+                .foregroundColor(valueColor)
+            if retryInstruments {
+                Button("Retry") {
+                    Task { await viewModel.retryInstruments() }
+                }
+                .font(BarDS.bodyFont(11, weight: .medium))
+                .foregroundColor(BarDS.Accent.teal)
+                .buttonStyle(NotchPressButtonStyle(pressedScale: 0.97))
+                .accessibilityLabel("\(title) \(value). Retry instruments")
+            }
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+    }
+
+    private func bookStateColor(_ label: String) -> Color {
+        switch label {
+        case "Live":
+            return BarDS.Accent.green
+        case "Connecting", "Degraded", "Paused":
+            return BarDS.Accent.amber
+        default:
+            return BarDS.Accent.red
+        }
+    }
+
+    private func capabilityValueColor(_ status: String) -> Color {
+        switch DeskCapabilityChrome.dotName(forStatus: status) {
+        case "teal":
+            return BarDS.Accent.green
+        case "amber":
+            return BarDS.Accent.amber
+        default:
+            return BarDS.Accent.red
         }
     }
 

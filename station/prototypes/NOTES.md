@@ -11,6 +11,13 @@ Station desk · thin Console · PLAN Notch — fully clickable offline.
 open station/prototypes/PROTOTYPE-notch-desk.html
 ```
 
+**Notch · Harness top bar (UI, 2026-09-17):**  
+[`PROTOTYPE-harness-topbar.html`](./PROTOTYPE-harness-topbar.html) — Apple chrome for books + holes. **Verdict A shipped** in Notch `BarNotchShell`. Notes: [`PROTOTYPE-harness-topbar.NOTES.md`](./PROTOTYPE-harness-topbar.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-harness-topbar.html
+```
+
 **Notch · Apple HIG catalog (UI, 2026-09-12):**  
 [`PROTOTYPE-notch-hig.html`](./PROTOTYPE-notch-hig.html) — collapsed pill + expanded PLAN, SF-style symbols. Notes: [`PROTOTYPE-notch-hig.NOTES.md`](./PROTOTYPE-notch-hig.NOTES.md).
 
