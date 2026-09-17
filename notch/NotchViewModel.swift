@@ -347,6 +347,8 @@ public final class NotchViewModel: ObservableObject {
     }
     /// User click + programmatic expansion (never hover-to-expand).
     @Published var isExpanded: Bool = false
+    /// Closed island press — scales the whole chin from the top, not just the row.
+    @Published var collapsedPillPressed: Bool = false
     /// Set by `NotchPanelController`: the `NSPanel` currently sits at the expanded frame.
     /// True during the collapse exit fade — the pill must not render centered in the big frame.
     @Published var summonPanelAtExpandedFrame: Bool = false

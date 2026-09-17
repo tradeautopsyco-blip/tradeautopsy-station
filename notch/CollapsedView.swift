@@ -8,7 +8,6 @@ struct CollapsedNotchView: View {
 
     /// Subtle pill feedback only — never expands the panel on hover.
     @State private var pillHoverFeedback: Bool = false
-    @State private var isPressing: Bool = false
     @State private var dragReducer = CollapsedPillDragReducer()
 
     private var presentation: CollapsedNotchPresentation { viewModel.collapsedNotchPresentation }
@@ -30,7 +29,7 @@ struct CollapsedNotchView: View {
         let row = HStack(spacing: 8) {
             pillDot(BarDS.Accent.red)
             Text(keyword)
-                .font(BarDS.bodyFont(13, weight: .bold))
+                .font(BarNotchChrome.interventionKeywordFont())
                 .foregroundColor(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -41,7 +40,7 @@ struct CollapsedNotchView: View {
             } else {
                 HStack(spacing: 12) {
                     Text(keyword)
-                        .font(BarDS.bodyFont(13, weight: .bold))
+                        .font(BarNotchChrome.interventionKeywordFont())
                         .foregroundColor(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -154,10 +153,6 @@ struct CollapsedNotchView: View {
         Group {
             if viewModel.hasPhysicalNotch {
                 coreStrip(p)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.black.opacity(0.0))
-                    )
             } else {
                 coreStrip(p)
                     .background(capsuleBackground(p))
@@ -171,14 +166,11 @@ struct CollapsedNotchView: View {
             }
         }
         .opacity(pillHoverFeedback ? 1.0 : 0.94)
-        .scaleEffect(isPressing ? 0.97 : 1)
-        .animation(
-            isPressing
-                ? .easeOut(duration: 0.08)
-                : .spring(response: 0.28, dampingFraction: 1.0),
-            value: isPressing
+        .contentShape(
+            viewModel.hasPhysicalNotch
+                ? AnyShape(NotchShape(expansionProgress: 0, hardwareChin: true))
+                : AnyShape(Capsule())
         )
-        .contentShape(Capsule())
         .gesture(collapsedPillPointerGesture)
         .onHover { hovering in
             pillHoverFeedback = hovering
@@ -203,7 +195,7 @@ struct CollapsedNotchView: View {
     private var collapsedPillPointerGesture: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                isPressing = true
+                viewModel.collapsedPillPressed = true
                 switch dragReducer.changed(translation: value.translation) {
                 case .move:
                     NSCursor.closedHand.set()
@@ -213,7 +205,7 @@ struct CollapsedNotchView: View {
                 }
             }
             .onEnded { value in
-                isPressing = false
+                viewModel.collapsedPillPressed = false
                 switch dragReducer.ended(translation: value.translation) {
                 case .expand:
                     viewModel.expandFromCollapsedChromeTap()

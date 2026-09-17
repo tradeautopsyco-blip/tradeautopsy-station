@@ -136,6 +136,16 @@ struct NotchRootView: View {
                 hardwareChin: vm.hasPhysicalNotch,
             )
         )
+        .scaleEffect(
+            reduceMotion ? 1.0 : (vm.collapsedPillPressed ? 0.97 : 1),
+            anchor: .top
+        )
+        .animation(
+            vm.collapsedPillPressed
+                ? .easeOut(duration: 0.08)
+                : .spring(response: 0.28, dampingFraction: 1.0),
+            value: vm.collapsedPillPressed
+        )
     }
 
     /// Always mounted (pre-warmed at `start()`): first ⌥Space is never a cold SwiftUI mount.

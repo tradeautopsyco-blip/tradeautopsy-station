@@ -121,7 +121,11 @@ final class NotchPanelController {
     /// Screen-space grab for collapsed-pill drag (not SwiftUI translation — window would fight itself).
     private var pillDragStartMouse: NSPoint?
     private var pillDragStartOrigin: NSPoint?
+    private var pillDragHistory: [(t: CFTimeInterval, p: NSPoint)] = []
     private var isDraggingCollapsedPill = false
+    private var islandSpring: CollapsedIslandMotion.SpringState?
+    private var islandSpringTimer: Timer?
+    private var lastSpringTick: CFTimeInterval = 0
     /// True while `screencapture -i` runs — do not orderFront the HUD over the region picker.
     private var chromeHiddenForCapture = false
     private var windowsHiddenForCapture: [NSWindow] = []
@@ -180,6 +184,8 @@ final class NotchPanelController {
                 self.panel.acceptsMouseMovedEvents = !expanded
                 self.collapseFrameWorkItem?.cancel()
                 self.collapseFrameWorkItem = nil
+                self.cancelIslandSpring(applySlot: false)
+                self.viewModel.collapsedPillPressed = false
                 if expanded {
                     // Snap to the final frame instantly; only opacity + scale animate (SwiftUI).
                     self.layoutPanel(expanded: true)
@@ -242,6 +248,7 @@ final class NotchPanelController {
         }
         saveWorkItem?.cancel()
         collapseFrameWorkItem?.cancel()
+        islandSpringTimer?.invalidate()
         if let backdrop = backdropPanel {
             Task { @MainActor in
                 backdrop.orderOut(nil)
@@ -428,8 +435,12 @@ final class NotchPanelController {
 
     private func applyCollapsedPillDragFromScreen() {
         guard !viewModel.isExpanded else { return }
-        if viewModel.hasPhysicalNotch { return }
+        cancelIslandSpring(applySlot: false)
         let mouse = NSEvent.mouseLocation
+        if viewModel.hasPhysicalNotch {
+            applyNotchedIslandDrag(mouse: mouse)
+            return
+        }
         if pillDragStartMouse == nil {
             pillDragStartMouse = mouse
             pillDragStartOrigin = panel.frame.origin
@@ -449,10 +460,50 @@ final class NotchPanelController {
         isApplyingSnappedFrame = false
     }
 
+    /// Tug the island 1:1, rubber-band past the volume slot. Reduce Motion: stay home.
+    private func applyNotchedIslandDrag(mouse: NSPoint) {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return }
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let slot = collapsedSlotFrame(on: screen)
+        if pillDragStartMouse == nil {
+            pillDragStartMouse = mouse
+            pillDragStartOrigin = panel.frame.origin
+            isDraggingCollapsedPill = true
+            pillDragHistory = [(CACurrentMediaTime(), mouse)]
+        }
+        pillDragHistory.append((CACurrentMediaTime(), mouse))
+        if pillDragHistory.count > 6 {
+            pillDragHistory.removeFirst()
+        }
+        guard let startMouse = pillDragStartMouse, let startOrigin = pillDragStartOrigin else { return }
+        let unconstrained = CGPoint(
+            x: startOrigin.x + (mouse.x - startMouse.x),
+            y: startOrigin.y + (mouse.y - startMouse.y)
+        )
+        var f = slot
+        f.origin = CollapsedIslandMotion.rubberbandedOrigin(unconstrained: unconstrained, slot: slot)
+        isApplyingSnappedFrame = true
+        panel.setFrame(f, display: true)
+        isApplyingSnappedFrame = false
+    }
+
     private func endCollapsedPillDrag() {
+        let notched = viewModel.hasPhysicalNotch
+        let grabbed = pillDragStartMouse != nil
+        let history = pillDragHistory
         isDraggingCollapsedPill = false
         pillDragStartMouse = nil
         pillDragStartOrigin = nil
+        pillDragHistory = []
+        if notched {
+            // Never persist a parked origin on a notched Mac — that is a second blob.
+            if grabbed {
+                startIslandSpringHome(history: history)
+            } else {
+                snapIslandToSlot()
+            }
+            return
+        }
         handlePanelMoved()
         persistOriginNow(panel.frame.origin)
     }
@@ -461,6 +512,109 @@ final class NotchPanelController {
         saveWorkItem?.cancel()
         UserDefaults.standard.set(origin.x, forKey: Persistence.originX)
         UserDefaults.standard.set(origin.y, forKey: Persistence.originY)
+    }
+
+    private func collapsedSlotFrame(on screen: NSScreen) -> NSRect {
+        let frame = screen.frame
+        let vf = screen.visibleFrame
+        let inset = screen.safeAreaInsets
+        if inset.top > 0 {
+            let housing = BarNotchVolumeSlot.hardwareNotch(
+                screenFrame: frame,
+                leftMenu: screen.auxiliaryTopLeftArea ?? .zero,
+                rightMenu: screen.auxiliaryTopRightArea ?? .zero,
+            )
+            return BarNotchVolumeSlot.collapsedFrame(
+                screenFrame: frame,
+                visibleFrame: vf,
+                notchLeft: housing?.minX ?? (frame.midX - BarNotchChrome.collapsedPillWidth / 2),
+                notchWidth: housing?.width ?? BarNotchChrome.collapsedPillWidth,
+                notchInset: inset.top,
+                fallbackWidth: BarNotchChrome.collapsedPillWidth,
+            )
+        }
+        let h = BarNotchChrome.collapsedStripHeight
+        let w = BarNotchChrome.collapsedPillWidth
+        return NSRect(x: vf.midX - w / 2, y: vf.maxY - 8 - h, width: w, height: h)
+    }
+
+    private func snapIslandToSlot() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let slot = collapsedSlotFrame(on: screen)
+        isApplyingSnappedFrame = true
+        panel.setFrame(slot, display: true)
+        isApplyingSnappedFrame = false
+    }
+
+    private func cancelIslandSpring(applySlot: Bool) {
+        islandSpringTimer?.invalidate()
+        islandSpringTimer = nil
+        islandSpring = nil
+        if applySlot {
+            snapIslandToSlot()
+        }
+    }
+
+    private func startIslandSpringHome(history: [(t: CFTimeInterval, p: NSPoint)]) {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let slot = collapsedSlotFrame(on: screen)
+        let target = CollapsedIslandMotion.springHomeTarget(slot: slot)
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            snapIslandToSlot()
+            return
+        }
+        let vel = dragReleaseVelocity(history)
+        let speed = hypot(vel.dx, vel.dy)
+        let state = CollapsedIslandMotion.SpringState(
+            x: panel.frame.origin.x,
+            y: panel.frame.origin.y,
+            vx: vel.dx,
+            vy: vel.dy,
+            target: target,
+            dampingRatio: CollapsedIslandMotion.dampingRatio(releaseSpeed: speed)
+        )
+        islandSpring = state
+        lastSpringTick = CACurrentMediaTime()
+        islandSpringTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.stepIslandSpring()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        islandSpringTimer = timer
+    }
+
+    private func dragReleaseVelocity(
+        _ history: [(t: CFTimeInterval, p: NSPoint)],
+    ) -> CGVector {
+        guard history.count >= 2 else { return .zero }
+        let a = history[0]
+        let b = history[history.count - 1]
+        let dt = b.t - a.t
+        guard dt > 0 else { return .zero }
+        return CGVector(dx: (b.p.x - a.p.x) / dt, dy: (b.p.y - a.p.y) / dt)
+    }
+
+    private func stepIslandSpring() {
+        guard var spring = islandSpring else {
+            cancelIslandSpring(applySlot: false)
+            return
+        }
+        let now = CACurrentMediaTime()
+        let dt = CGFloat(min(0.032, now - lastSpringTick))
+        lastSpringTick = now
+        spring.step(dt: dt)
+        var f = panel.frame
+        f.origin = CGPoint(x: spring.x, y: spring.y)
+        isApplyingSnappedFrame = true
+        panel.setFrame(f, display: true)
+        isApplyingSnappedFrame = false
+        if spring.isSettled {
+            cancelIslandSpring(applySlot: true)
+        } else {
+            islandSpring = spring
+        }
     }
 
     private func schedulePersist(origin: NSPoint) {
@@ -547,18 +701,13 @@ final class NotchPanelController {
     /// SwiftUI opacity/scale is the only motion; collapse snaps after the exit fade.
     private func layoutPanel(expanded: Bool) {
         guard !chromeHiddenForCapture else { return }
-        guard !isDraggingCollapsedPill else { return }
+        guard !isDraggingCollapsedPill, islandSpring == nil else { return }
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
         let vf = screen.visibleFrame
         let inset = screen.safeAreaInsets
         let hasNotch = inset.top > 0
         let notchTopInset = inset.top
-        let housing = BarNotchVolumeSlot.hardwareNotch(
-            screenFrame: frame,
-            leftMenu: screen.auxiliaryTopLeftArea ?? .zero,
-            rightMenu: screen.auxiliaryTopRightArea ?? .zero,
-        )
 
         let expandedW: CGFloat
         let expandedContentH: CGFloat
@@ -574,29 +723,7 @@ final class NotchPanelController {
         }
         let expandedH = expandedContentH + (hasNotch ? notchTopInset : 0)
 
-        let collapsedH: CGFloat
-        let collapsedW: CGFloat
-        let collapsedX: CGFloat
-        let collapsedY: CGFloat
-        if hasNotch {
-            let slot = BarNotchVolumeSlot.collapsedFrame(
-                screenFrame: frame,
-                visibleFrame: vf,
-                notchLeft: housing?.minX ?? (frame.midX - BarNotchChrome.collapsedPillWidth / 2),
-                notchWidth: housing?.width ?? BarNotchChrome.collapsedPillWidth,
-                notchInset: notchTopInset,
-                fallbackWidth: BarNotchChrome.collapsedPillWidth,
-            )
-            collapsedH = slot.height
-            collapsedW = slot.width
-            collapsedX = slot.minX
-            collapsedY = slot.minY
-        } else {
-            collapsedH = BarNotchChrome.collapsedStripHeight
-            collapsedW = BarNotchChrome.collapsedPillWidth
-            collapsedX = vf.midX - collapsedW / 2
-            collapsedY = vf.maxY - 8 - collapsedH
-        }
+        let collapsed = collapsedSlotFrame(on: screen)
 
         let expandedX: CGFloat
         let expandedY: CGFloat
@@ -623,7 +750,6 @@ final class NotchPanelController {
         if expanded {
             appliedRect = expandedRect
         } else {
-            let collapsed = NSRect(x: collapsedX, y: collapsedY, width: collapsedW, height: collapsedH)
             appliedRect = hasNotch ? collapsed : clampFrame(collapsed, to: vf)
         }
         // Notched collapsed chip stays in the volume HUD slot. Saved drag origin

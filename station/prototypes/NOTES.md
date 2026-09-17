@@ -18,6 +18,13 @@ open station/prototypes/PROTOTYPE-notch-desk.html
 open station/prototypes/PROTOTYPE-harness-topbar.html
 ```
 
+**Notch · closed pill at 1:1 menu-bar scale (UI, 2026-09-18):**  
+[`PROTOTYPE-notch-closed-pill.html`](./PROTOTYPE-notch-closed-pill.html) — 24pt strip, Apple fluid press/drag, A island+ears / B menu extra / C split ears. **Verdict A shipped** in Notch closed chrome. Notes: [`PROTOTYPE-notch-closed-pill.NOTES.md`](./PROTOTYPE-notch-closed-pill.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-notch-closed-pill.html
+```
+
 **Notch · Apple HIG catalog (UI, 2026-09-12):**  
 [`PROTOTYPE-notch-hig.html`](./PROTOTYPE-notch-hig.html) — collapsed pill + expanded PLAN, SF-style symbols. Notes: [`PROTOTYPE-notch-hig.NOTES.md`](./PROTOTYPE-notch-hig.NOTES.md).
 

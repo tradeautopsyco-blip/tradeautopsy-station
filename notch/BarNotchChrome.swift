@@ -6,7 +6,8 @@ import SwiftUI
 // so chrome stays consistent (CollapsedView, BarEscrowMatchView, intervention rows).
 
 enum BarNotchChrome {
-    /// HTML `.pill` height (32px).
+    /// Non-notch floating pill height. Notched closed height is the menu bar
+    /// (`BarNotchVolumeSlot.menuBarHeight`) — not this constant, not the camera inset.
     static let collapsedStripHeight: CGFloat = 32
     /// Fallback floating-pill width on non-notched displays.
     /// Notched Macs use the hardware cutout width — extra chin overflow covered Window.

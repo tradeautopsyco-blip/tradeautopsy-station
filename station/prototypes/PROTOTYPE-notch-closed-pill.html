@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: At true menu-bar scale, which closed Notch can a trader read and grab?
+  1 CSS px = 1 pt. Do not zoom the page. Loupe is inspection only.
+  Open: open station/prototypes/PROTOTYPE-notch-closed-pill.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch closed pill · 1:1 menu bar</title>
+  <style>
+    :root {
+      --label: #f5f5f7;
+      --secondary: rgba(245,245,247,.58);
+      --tertiary: rgba(245,245,247,.34);
+      --blue: #0a84ff;
+      --green: #30d158;
+      --red: #ff453a;
+      --orange: #ff9f0a;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --bar-h: 24px;
+      --housing: 200px;
+      --stage: 1512px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font: 400 13px/1.4 var(--sans);
+      letter-spacing: -.006em;
+      font-optical-sizing: auto;
+      background: #141416;
+      color: var(--label);
+      -webkit-font-smoothing: antialiased;
+      padding: 16px 16px 120px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+
+    .page { width: min(var(--stage), 100%); margin: 0 auto; }
+    .q { color: var(--tertiary); font-size: 11px; letter-spacing: .01em; margin-bottom: 10px; }
+    .q b { color: var(--secondary); font-size: 13px; font-weight: 600; letter-spacing: -.006em; }
+    .q p { margin-top: 6px; max-width: 74ch; }
+    .warn {
+      display: none; margin-top: 8px; padding: 7px 10px; border-radius: 8px;
+      background: rgba(255,69,58,.16); color: #ff8a84; font-size: 12px; font-weight: 600;
+    }
+    .warn.on { display: block; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; align-items: center; }
+    .chips .k { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); margin-right: 4px; }
+    .chip {
+      font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
+      background: rgba(255,255,255,.06); color: var(--secondary);
+      border: .5px solid rgba(255,255,255,.08);
+    }
+    .chip.on { background: rgba(10,132,255,.28); color: var(--label); border-color: rgba(10,132,255,.4); }
+
+    .scroll {
+      overflow-x: auto; overflow-y: hidden;
+      border-radius: 12px;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .stage {
+      width: var(--stage);
+      height: 320px;
+      position: relative;
+      background:
+        radial-gradient(1200px 280px at 50% -40px, rgba(48,80,120,.28), transparent 60%),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.03) 47px 48px),
+        #0b0b0d;
+      cursor: default;
+    }
+    .menubar {
+      position: absolute; left: 0; right: 0; top: 0; height: var(--bar-h);
+      display: grid; grid-template-columns: 1fr var(--housing) 1fr;
+      align-items: stretch;
+      background: rgba(28,28,30,.78);
+      backdrop-filter: blur(40px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.08);
+      font-size: 13px; letter-spacing: 0;
+      color: var(--label);
+      user-select: none;
+      z-index: 2;
+      overflow: visible;
+    }
+    .menus-l, .menus-r { display: flex; align-items: center; gap: 0; min-width: 0; }
+    .menus-l { padding-left: 8px; }
+    .menus-r { justify-content: flex-end; padding-right: 12px; gap: 10px; color: var(--secondary); font-size: 13px; }
+    .mi {
+      padding: 0 11px; height: 100%; display: flex; align-items: center;
+      border-radius: 4px; white-space: nowrap;
+    }
+    .mi.window {
+      margin-left: auto;
+      background: rgba(255,159,10,.14); color: var(--orange);
+    }
+    .apple { width: 28px; justify-content: center; font-size: 15px; }
+    .camera {
+      position: relative;
+      background: #000;
+    }
+    .camera::after {
+      content: "";
+      position: absolute; left: 50%; top: 50%;
+      width: 8px; height: 8px; margin: -4px 0 0 -4px;
+      border-radius: 50%; background: #1a1a1c; box-shadow: inset 0 0 0 1.5px #2c2c2e;
+    }
+    .clock { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--label); }
+
+    .ruler {
+      position: absolute; left: 8px; top: calc(var(--bar-h) + 8px);
+      display: flex; align-items: flex-start; gap: 8px; z-index: 1;
+      color: var(--tertiary); font-size: 10px; font-family: var(--mono); pointer-events: none;
+    }
+    .ruler i {
+      display: block; width: 1px; background: #ff453a;
+      height: var(--bar-h); margin-top: calc(var(--bar-h) * -1 - 8px);
+      position: relative;
+    }
+    .chart-label {
+      position: absolute; left: 16px; bottom: 14px;
+      font-size: 11px; color: var(--tertiary);
+    }
+
+    .pill {
+      position: absolute; top: 0; z-index: 8;
+      height: var(--bar-h);
+      display: flex; align-items: center;
+      color: #fff;
+      touch-action: none;
+      will-change: transform;
+      transform-origin: 50% 0%;
+    }
+    .pill[hidden] { display: none !important; }
+    .pill-inner {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; height: 100%; padding: 0 10px;
+    }
+    .pill-inner.center { justify-content: center; }
+    .menus-r .pill.extra {
+      position: relative; top: auto; left: auto; z-index: 3;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: rgba(255,255,255,.14);
+      display: grid; place-items: center;
+      font: 700 9px/1 var(--sans); letter-spacing: .02em;
+      flex-shrink: 0;
+    }
+    .pnl {
+      font: 600 11px/1 var(--mono);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .01em;
+      white-space: nowrap;
+    }
+    .pnl.up { color: var(--green); }
+    .pnl.dn { color: var(--red); }
+    .bars { display: flex; align-items: center; gap: 2px; width: 16px; height: 12px; flex-shrink: 0; }
+    .bars i { width: 2px; border-radius: 999px; background: currentColor; display: block; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); box-shadow: 0 0 6px rgba(255,69,58,.5); flex-shrink: 0; }
+    .kw {
+      font: 700 11px/1 var(--sans); letter-spacing: .04em;
+      white-space: nowrap;
+    }
+
+    .island-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .pill.island { color: #fff; }
+    .pill.island .pill-inner { position: relative; z-index: 1; padding: 0 14px; }
+
+    .pill.extra {
+      border-radius: 0;
+      background: transparent;
+      padding: 0 8px;
+      gap: 6px;
+    }
+    .pill.extra:hover { background: rgba(255,255,255,.08); }
+    .pill.extra .logo { width: 12px; height: 12px; font-size: 8px; }
+    .pill.extra .pnl { font-size: 12px; font-weight: 500; font-family: var(--sans); letter-spacing: 0; }
+
+    .ear {
+      position: absolute; top: 0; z-index: 8; height: var(--bar-h);
+      display: flex; align-items: center; justify-content: center;
+      background: #000; color: #fff;
+      touch-action: none; will-change: transform;
+    }
+    .ear.left { border-radius: 0 0 11px 0; padding: 0 8px 0 10px; }
+    .ear.right { border-radius: 0 0 0 11px; padding: 0 10px 0 8px; gap: 6px; }
+
+    .sheet {
+      position: absolute; z-index: 9;
+      width: 280px; padding: 12px 14px 14px;
+      background: rgba(28,28,30,.78);
+      backdrop-filter: blur(40px) saturate(180%);
+      border: .5px solid rgba(255,255,255,.12);
+      border-radius: 12px;
+      box-shadow: 0 22px 60px rgba(0,0,0,.5);
+      transform-origin: top center;
+      color: var(--label);
+    }
+    .sheet[hidden] { display: none !important; }
+    .sheet h3 { font-size: 15px; font-weight: 600; letter-spacing: -.016em; }
+    .sheet p { font-size: 12px; color: var(--secondary); margin-top: 4px; }
+    .sheet .big { font: 600 22px/1.1 var(--mono); letter-spacing: -.02em; margin-top: 10px; }
+    .sheet .hint { font-size: 11px; color: var(--tertiary); margin-top: 10px; }
+
+    .loupe-wrap { margin-top: 14px; }
+    .loupe-lab { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); margin-bottom: 6px; }
+    .loupe {
+      display: inline-block; background: #000; border-radius: 10px; padding: 12px 14px 14px;
+      border: .5px solid rgba(255,255,255,.1);
+    }
+    .loupe-stage {
+      transform: scale(3); transform-origin: top left;
+      width: fit-content; height: fit-content;
+    }
+    .loupe-host { overflow: hidden; }
+
+    .state {
+      margin-top: 12px; background: #000; color: #8bffce;
+      font-family: var(--mono); font-size: 10px; border-radius: 8px;
+      padding: 10px 12px; white-space: pre-wrap; max-height: 120px; overflow: auto;
+    }
+    .switcher {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 280px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .pill, .ear, .sheet { transition: opacity 180ms ease !important; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .menubar, .sheet { background: #1c1c1e; backdrop-filter: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="q">
+      PROTOTYPE · throwaway · <b>Closed Notch at 1:1 menu-bar scale.</b>
+      <p>1 CSS pixel = 1 SwiftUI point. The strip in the Mac chrome is the size Station draws. Press the chip (feedback on down). Move past 10pt to drag — it springs home. Click expands from the chip. Hover does not expand. ⌥Space toggles. Esc collapses.</p>
+      <div class="warn" id="zoomWarn">Page zoom is not 100%. Reset to 100% or the scale prototype is lying.</div>
+    </div>
+    <div class="chips" id="scenes"></div>
+    <div class="chips" id="heights"></div>
+    <div class="scroll">
+      <div class="stage" id="stage"></div>
+    </div>
+    <div class="loupe-wrap">
+      <div class="loupe-lab">3× loupe — inspection only. Judge the 1:1 bar above.</div>
+      <div class="loupe"><div class="loupe-host" id="loupeHost"></div></div>
+    </div>
+    <pre class="state" id="state"></pre>
+  </div>
+  <div class="switcher" id="switcher"></div>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Island + ears", blurb: "Production SoT · housing + sound ears" },
+  { key: "B", name: "Menu extra", blurb: "Right extras · never covers Window" },
+  { key: "C", name: "Split ears", blurb: "Camera empty · two pieces, one grab" },
+];
+const SCENES = [
+  { key: "up", label: "+₹4,280" },
+  { key: "flat", label: "—" },
+  { key: "down", label: "−₹1,120" },
+  { key: "expired", label: "EXPIRED" },
+  { key: "cooling", label: "COOLING" },
+  { key: "limit", label: "LIMIT" },
+];
+const HEIGHTS = [
+  { key: 24, label: "24pt menu bar" },
+  { key: 38, label: "38pt camera hang" },
+];
+
+const STAGE_W = 1512;
+const HOUSING = 200;
+const HYSTERESIS = 10;
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const S = {
+  variant: "A",
+  scene: "up",
+  barH: 24,
+  expanded: false,
+  hidden: false,
+  pressing: false,
+  dragging: false,
+  hover: false,
+  scale: 1,
+  ox: 0,
+  oy: 0,
+  vx: 0,
+  vy: 0,
+  vs: 0,
+  targetX: 0,
+  targetY: 0,
+  targetScale: 1,
+  restX: 0,
+  restY: 0,
+};
+
+function soundEarExtra(h) { return 2 * Math.max(0, h - 12) + 20; }
+function housingLeft() { return (STAGE_W - HOUSING) / 2; }
+function islandWidth() { return HOUSING + soundEarExtra(S.barH); }
+function islandLeft() { return housingLeft() - soundEarExtra(S.barH) / 2; }
+
+function sceneData() {
+  switch (S.scene) {
+    case "up": return { kind: "impact", pnl: "+₹4,280", tone: "up" };
+    case "flat": return { kind: "impact", pnl: "—", tone: "" };
+    case "down": return { kind: "impact", pnl: "−₹1,120", tone: "dn" };
+    case "expired": return { kind: "intervention", kw: "EXPIRED" };
+    case "cooling": return { kind: "intervention", kw: "COOLING" };
+    default: return { kind: "intervention", kw: "LIMIT" };
+  }
+}
+
+function chinPath(w, h, topR = 6, botR = 14) {
+  const tr = Math.min(topR, h / 2);
+  const br = Math.min(botR, h / 2, w / 2 - tr);
+  return `M0,0 Q${tr},0 ${tr},${tr} L${tr},${h - br} Q${tr},${h} ${tr + br},${h} L${w - tr - br},${h} Q${w - tr},${h} ${w - tr},${h - br} L${w - tr},${tr} Q${w - tr},0 ${w},0 Z`;
+}
+
+function bars(tone) {
+  const h = [5, 10, 7, 12, 6];
+  const c = tone === "up" ? "var(--green)" : tone === "dn" ? "var(--red)" : "#fff";
+  return `<span class="bars" style="color:${c}">${h.map(n => `<i style="height:${n}px"></i>`).join("")}</span>`;
+}
+
+function innerHTML() {
+  const d = sceneData();
+  if (d.kind === "intervention") {
+    return `<span class="dot"></span><span class="kw">${d.kw}</span>`;
+  }
+  return `<span class="logo">T</span><span style="flex:1"></span><span class="pnl ${d.tone}">${d.pnl}</span>${bars(d.tone)}`;
+}
+
+function innerClass() {
+  return sceneData().kind === "intervention" ? "pill-inner center" : "pill-inner";
+}
+
+function extraInner() {
+  const d = sceneData();
+  if (d.kind === "intervention") {
+    return `<span class="dot"></span><span class="kw" style="font-size:11px">${d.kw}</span>`;
+  }
+  return `<span class="logo">T</span><span class="pnl ${d.tone}">${d.pnl}</span>`;
+}
+
+function windowOverlapPx() {
+  if (S.variant !== "A") return 0;
+  const windowRight = housingLeft();
+  const pillLeft = islandLeft();
+  return Math.max(0, Math.round(windowRight - pillLeft));
+}
+
+function restForVariant() {
+  if (S.variant === "A") return { x: islandLeft(), y: 0 };
+  if (S.variant === "B") return { x: 0, y: 0 };
+  return { x: islandLeft(), y: 0 };
+}
+
+function extraWidth() {
+  const d = sceneData();
+  return d.kind === "intervention" ? 88 : 92;
+}
+
+function earGeom() {
+  const extra = soundEarExtra(S.barH);
+  const leftW = Math.max(36, extra / 2 + 4);
+  const rightW = Math.max(72, extra / 2 + 28);
+  return {
+    leftW,
+    rightW,
+    leftX: housingLeft() - leftW,
+    rightX: housingLeft() + HOUSING,
+  };
+}
+
+function rubberband(over, dim, c = 0.55) {
+  if (over === 0) return 0;
+  return (over * dim * c) / (dim + c * Math.abs(over));
+}
+
+function project(v, decel = 0.998) {
+  return (v / 1000) * decel / (1 - decel);
+}
+
+/* Apple response/damping → stiffness/damping for a critically damped spring. */
+function springAccel(pos, vel, target, response, dampingRatio) {
+  const omega = (2 * Math.PI) / response;
+  const damp = 2 * dampingRatio * omega;
+  return -omega * omega * (pos - target) - damp * vel;
+}
+
+let raf = 0;
+let lastT = 0;
+function tick(t) {
+  raf = requestAnimationFrame(tick);
+  if (!lastT) lastT = t;
+  let dt = Math.min(0.032, (t - lastT) / 1000);
+  lastT = t;
+  if (S.dragging) { applyPillTransform(); return; }
+
+  const bounce = Math.hypot(S.vx, S.vy) > 420 ? 0.8 : 1.0;
+  const response = 0.35;
+  const ax = springAccel(S.ox, S.vx, S.targetX, response, bounce);
+  const ay = springAccel(S.oy, S.vy, S.targetY, response, 1.0);
+  const as = springAccel(S.scale, S.vs, S.targetScale, S.pressing ? 0.18 : 0.28, 1.0);
+  S.vx += ax * dt; S.vy += ay * dt; S.vs += as * dt;
+  S.ox += S.vx * dt; S.oy += S.vy * dt; S.scale += S.vs * dt;
+
+  if (Math.abs(S.ox - S.targetX) < 0.15 && Math.abs(S.vx) < 4) { S.ox = S.targetX; S.vx = 0; }
+  if (Math.abs(S.oy - S.targetY) < 0.15 && Math.abs(S.vy) < 4) { S.oy = S.targetY; S.vy = 0; }
+  if (Math.abs(S.scale - S.targetScale) < 0.002 && Math.abs(S.vs) < 0.02) { S.scale = S.targetScale; S.vs = 0; }
+
+  applyPillTransform();
+  applySheet();
+}
+
+function applyPillTransform() {
+  const scale = S.pressing ? 0.97 : (reducedMotion ? 1 : S.scale);
+  const pills = document.querySelectorAll("[data-pill]");
+  pills.forEach((el, i) => {
+    const dx = S.ox - S.restX;
+    const dy = S.oy - S.restY;
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+    el.style.opacity = S.hover || S.pressing || S.dragging ? "1" : "0.94";
+  });
+}
+
+function applySheet() {
+  const sheet = document.getElementById("sheet");
+  if (!sheet) return;
+  const p = S.expanded ? 1 : 0;
+  if (reducedMotion) {
+    sheet.style.opacity = p;
+    sheet.style.transform = "none";
+    return;
+  }
+  sheet.style.opacity = p;
+  sheet.style.transform = `scale(${0.92 + 0.08 * p})`;
+}
+
+function menuBarHTML() {
+  const extra = S.variant === "B" && !S.hidden
+    ? `<button type="button" class="pill extra" data-pill="extra" style="position:relative;left:0;width:${extraWidth()}px;height:${S.barH}px">${extraInner()}</button>`
+    : "";
+  return `
+    <div class="menubar" style="height:${S.barH}px">
+      <div class="menus-l">
+        <span class="mi apple"></span>
+        <span class="mi">TradeAutopsy</span>
+        <span class="mi">File</span>
+        <span class="mi">Edit</span>
+        <span class="mi">View</span>
+        <span class="mi window" title="Last menu before the camera. Island ears that overhang cover this.">Window</span>
+      </div>
+      <div class="camera" title="Hardware housing ${HOUSING}pt"></div>
+      <div class="menus-r" id="rightExtras">
+        ${extra}
+        <span>Wi‑Fi</span>
+        <span>CC</span>
+        <span class="clock">12:41</span>
+      </div>
+    </div>`;
+}
+
+function sheetHTML() {
+  const d = sceneData();
+  const figure = d.kind === "intervention" ? d.kw : d.pnl;
+  const cls = d.tone === "up" ? "up" : d.tone === "dn" ? "dn" : "";
+  return `<div class="sheet" id="sheet" ${S.expanded ? "" : "hidden"}>
+    <h3>PLAN</h3>
+    <p>Grows from the closed chip. This prototype is the chip, not the catalog.</p>
+    <div class="big ${cls}" style="color:${cls==="up"?"var(--green)":cls==="dn"?"var(--red)":"var(--label)"}">${figure}</div>
+    <p class="hint">Esc or click the chip to collapse. Same path out.</p>
+  </div>`;
+}
+
+function pillLayerHTML() {
+  const d = sceneData();
+  if (S.hidden) return "";
+  if (S.variant === "A") {
+    const w = islandWidth();
+    const h = S.barH;
+    const path = chinPath(w, h);
+    return `<div class="pill island" data-pill="island" style="left:${islandLeft()}px;width:${w}px;height:${h}px">
+      <svg class="island-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        <path d="${path}" fill="#000"/>
+      </svg>
+      <div class="${innerClass()}">${innerHTML()}</div>
+    </div>`;
+  }
+  if (S.variant === "B") return "";
+  const g = earGeom();
+  const leftInner = d.kind === "intervention" ? `<span class="dot"></span>` : `<span class="logo">T</span>`;
+  const rightInner = d.kind === "intervention"
+    ? `<span class="kw">${d.kw}</span>`
+    : `<span class="pnl ${d.tone}">${d.pnl}</span>${bars(d.tone)}`;
+  return `
+    <div class="ear left" data-pill="left" style="left:${g.leftX}px;width:${g.leftW}px">${leftInner}</div>
+    <div class="ear right" data-pill="right" style="left:${g.rightX}px;width:${g.rightW}px">${rightInner}</div>`;
+}
+
+function loupeHTML() {
+  if (S.variant === "A") {
+    const w = islandWidth();
+    const h = S.barH;
+    return `<div class="loupe-stage">
+      <div class="pill island" style="position:relative;left:0;width:${w}px;height:${h}px;opacity:1">
+        <svg class="island-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path d="${chinPath(w,h)}" fill="#000"/></svg>
+        <div class="${innerClass()}">${innerHTML()}</div>
+      </div>
+    </div>`;
+  }
+  if (S.variant === "B") {
+    const w = extraWidth();
+    return `<div class="loupe-stage" style="background:rgba(28,28,30,.9);border-radius:4px">
+      <div class="pill extra" style="position:relative;left:0;width:${w}px;height:${S.barH}px;opacity:1">${extraInner()}</div>
+    </div>`;
+  }
+  const g = earGeom();
+  const d = sceneData();
+  const leftInner = d.kind === "intervention" ? `<span class="dot"></span>` : `<span class="logo">T</span>`;
+  const rightInner = d.kind === "intervention"
+    ? `<span class="kw">${d.kw}</span>`
+    : `<span class="pnl ${d.tone}">${d.pnl}</span>${bars(d.tone)}`;
+  return `<div class="loupe-stage" style="display:flex;gap:8px">
+    <div class="ear left" style="position:relative;left:0;width:${g.leftW}px;height:${S.barH}px">${leftInner}</div>
+    <div class="ear right" style="position:relative;left:0;width:${g.rightW}px;height:${S.barH}px">${rightInner}</div>
+  </div>`;
+}
+
+function placeSheet() {
+  const sheet = document.getElementById("sheet");
+  if (!sheet) return;
+  let originX, originY;
+  if (S.variant === "A") {
+    originX = islandLeft() + islandWidth() / 2 - 140;
+    originY = S.barH + 6;
+    sheet.style.transformOrigin = "top center";
+  } else if (S.variant === "B") {
+    const extra = document.querySelector("[data-pill=extra]");
+    const stage = document.getElementById("stage").getBoundingClientRect();
+    const r = extra ? extra.getBoundingClientRect() : { right: stage.right - 12, bottom: stage.top + S.barH };
+    originX = r.right - stage.left - 280;
+    originY = S.barH + 4;
+    sheet.style.transformOrigin = "top right";
+  } else {
+    const g = earGeom();
+    originX = (g.leftX + g.rightX + g.rightW) / 2 - 140;
+    originY = S.barH + 6;
+    sheet.style.transformOrigin = "top center";
+  }
+  sheet.style.left = originX + "px";
+  sheet.style.top = originY + "px";
+  sheet.hidden = !S.expanded;
+}
+
+function paint() {
+  document.documentElement.style.setProperty("--bar-h", S.barH + "px");
+  const rest = restForVariant();
+  S.restX = rest.x;
+  S.restY = rest.y;
+  if (!S.dragging) {
+    S.targetX = rest.x;
+    S.targetY = rest.y;
+    S.ox = rest.x;
+    S.oy = rest.y;
+  }
+  S.targetScale = 1;
+
+  document.getElementById("stage").innerHTML = `
+    ${menuBarHTML()}
+    <div class="ruler"><i></i><span>${S.barH}pt = menu bar</span></div>
+    ${pillLayerHTML()}
+    ${sheetHTML()}
+    <div class="chart-label">Desktop. Closed chip is only the ${S.barH}pt strip. Window is highlighted so overhang is visible.</div>`;
+  placeSheet();
+
+  const loupeHost = document.getElementById("loupeHost");
+  loupeHost.style.height = (S.barH * 3 + 8) + "px";
+  loupeHost.style.width = (S.variant === "A" ? islandWidth() * 3 + 8 : S.variant === "B" ? extraWidth() * 3 + 8 : 360) + "px";
+  loupeHost.innerHTML = loupeHTML();
+
+  bindPill();
+  dump();
+  paintSwitcher();
+  applyPillTransform();
+  applySheet();
+}
+
+function dump() {
+  const d = sceneData();
+  document.getElementById("state").textContent = "STATE " + JSON.stringify({
+    variant: S.variant,
+    scene: S.scene,
+    barH: S.barH,
+    housing: HOUSING,
+    soundEarExtra: soundEarExtra(S.barH),
+    islandW: S.variant === "A" ? islandWidth() : undefined,
+    windowOverlapPx: windowOverlapPx(),
+    expanded: S.expanded,
+    hidden: S.hidden,
+    pressing: S.pressing,
+    dragging: S.dragging,
+    layout: d.kind,
+    pnl: d.pnl || null,
+    keyword: d.kw || null,
+    scale: "1csspx=1pt",
+  }, null, 2);
+}
+
+function paintSwitcher() {
+  const v = VARIANTS.find(x => x.key === S.variant);
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next">→</button>`;
+  document.getElementById("scenes").innerHTML =
+    `<span class="k">Scene</span>` + SCENES.map(s =>
+      `<button class="chip ${S.scene===s.key?"on":""}" data-act="scene" data-id="${s.key}">${s.label}</button>`
+    ).join("");
+  document.getElementById("heights").innerHTML =
+    `<span class="k">Height</span>` + HEIGHTS.map(h =>
+      `<button class="chip ${S.barH===h.key?"on":""}" data-act="height" data-id="${h.key}">${h.label}</button>`
+    ).join("") +
+    `<button class="chip" data-act="optspace">⌥Space</button>` +
+    `<button class="chip" data-act="hide">${S.hidden ? "Show chip" : "Hide chip"}</button>`;
+}
+
+function setVariant(k) {
+  S.variant = k;
+  S.expanded = false;
+  S.dragging = false;
+  S.pressing = false;
+  const u = new URL(location.href);
+  u.searchParams.set("variant", k);
+  history.replaceState(null, "", u);
+  paint();
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  setVariant(VARIANTS[(i + d + 3) % 3].key);
+}
+
+let grab = null;
+function bindPill() {
+  document.querySelectorAll("[data-pill]").forEach(el => {
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    el.addEventListener("mouseenter", () => { S.hover = true; dump(); applyPillTransform(); });
+    el.addEventListener("mouseleave", () => { if (!S.pressing) { S.hover = false; dump(); applyPillTransform(); } });
+  });
+}
+
+function onDown(e) {
+  if (e.button !== undefined && e.button !== 0) return;
+  const el = e.currentTarget;
+  el.setPointerCapture(e.pointerId);
+  S.pressing = true;
+  S.targetScale = 0.97;
+  if (!reducedMotion) { S.scale = 0.97; S.vs = 0; }
+  grab = {
+    id: e.pointerId,
+    sx: e.clientX,
+    sy: e.clientY,
+    ox: S.ox,
+    oy: S.oy,
+    passed: false,
+    hist: [{ t: performance.now(), x: e.clientX, y: e.clientY }],
+    canDrag: S.variant !== "B",
+  };
+  dump();
+  applyPillTransform();
+}
+
+function onMove(e) {
+  if (!grab || e.pointerId !== grab.id) return;
+  grab.hist.push({ t: performance.now(), x: e.clientX, y: e.clientY });
+  if (grab.hist.length > 6) grab.hist.shift();
+  const dx = e.clientX - grab.sx;
+  const dy = e.clientY - grab.sy;
+  const dist = Math.hypot(dx, dy);
+  if (!grab.passed && dist >= HYSTERESIS) grab.passed = true;
+  if (!grab.passed || !grab.canDrag) return;
+  S.dragging = true;
+  S.expanded = false;
+  placeSheet();
+  const nx = grab.ox + dx;
+  const ny = grab.oy + dy;
+  const minX = 8;
+  const maxX = STAGE_W - 8 - (S.variant === "A" ? islandWidth() : 80);
+  if (nx < minX) S.ox = minX + rubberband(nx - minX, STAGE_W);
+  else if (nx > maxX) S.ox = maxX + rubberband(nx - maxX, STAGE_W);
+  else S.ox = nx;
+  S.oy = S.restY + rubberband(ny - S.restY, S.barH * 4);
+  applyPillTransform();
+  dump();
+}
+
+function velocity() {
+  if (!grab || grab.hist.length < 2) return { x: 0, y: 0 };
+  const a = grab.hist[0];
+  const b = grab.hist[grab.hist.length - 1];
+  const dt = (b.t - a.t) / 1000;
+  if (dt <= 0) return { x: 0, y: 0 };
+  return { x: (b.x - a.x) / dt, y: (b.y - a.y) / dt };
+}
+
+function onUp(e) {
+  if (!grab || e.pointerId !== grab.id) return;
+  const moving = grab.passed && grab.canDrag;
+  const vel = velocity();
+  grab = null;
+  S.pressing = false;
+  S.targetScale = 1;
+  if (moving) {
+    S.dragging = false;
+    const projX = S.ox + project(vel.x);
+    const home = Math.abs(projX - S.restX) < 80 ? S.restX : S.restX;
+    S.targetX = home;
+    S.targetY = S.restY;
+    S.vx = vel.x;
+    S.vy = vel.y;
+  } else {
+    S.dragging = false;
+    S.expanded = !S.expanded;
+    S.ox = S.restX;
+    S.oy = S.restY;
+    S.targetX = S.restX;
+    S.targetY = S.restY;
+    placeSheet();
+    applySheet();
+  }
+  dump();
+  applyPillTransform();
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-act]");
+  if (!t) {
+    if (S.expanded && !e.target.closest("[data-pill]") && !e.target.closest(".sheet")) {
+      S.expanded = false;
+      placeSheet();
+      applySheet();
+      dump();
+    }
+    return;
+  }
+  const act = t.getAttribute("data-act");
+  const id = t.getAttribute("data-id");
+  if (act === "prev") cycle(-1);
+  if (act === "next") cycle(1);
+  if (act === "scene") { S.scene = id; S.expanded = false; paint(); }
+  if (act === "height") { S.barH = Number(id); S.expanded = false; paint(); }
+  if (act === "optspace") {
+    if (S.hidden) { S.hidden = false; S.expanded = true; }
+    else S.expanded = !S.expanded;
+    paint();
+  }
+  if (act === "hide") { S.hidden = !S.hidden; S.expanded = false; paint(); }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+  if (e.key === "Escape") { S.expanded = false; placeSheet(); applySheet(); dump(); }
+  if (e.code === "Space" && e.altKey) {
+    e.preventDefault();
+    if (S.hidden) S.hidden = false;
+    S.expanded = !S.expanded;
+    paint();
+  }
+});
+
+function checkZoom() {
+  const z = window.visualViewport ? window.visualViewport.scale : 1;
+  document.getElementById("zoomWarn").classList.toggle("on", Math.abs(z - 1) > 0.02);
+}
+visualViewport?.addEventListener("resize", checkZoom);
+visualViewport?.addEventListener("scroll", checkZoom);
+
+const boot = new URLSearchParams(location.search).get("variant") || "A";
+S.variant = VARIANTS.some(v => v.key === boot) ? boot : "A";
+paint();
+checkZoom();
+raf = requestAnimationFrame(tick);
+</script>
+</body>
+</html>

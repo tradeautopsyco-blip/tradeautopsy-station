@@ -60,4 +60,21 @@ struct CollapsedPillDragCallbackTests {
         #expect(fromScreen == 0)
         #expect(vm.isExpanded == true)
     }
+
+    @Test func dragAllowedOnPhysicalNotchWithoutExpanding() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.notchTopInset = 38
+        var fromScreen = 0
+        var ended = 0
+        vm.onCollapsedPillDragFromScreen = { fromScreen += 1 }
+        vm.onCollapsedPillDragEnded = { ended += 1 }
+
+        vm.applyCollapsedPillDragFromScreen()
+        vm.endCollapsedPillDrag()
+
+        #expect(vm.hasPhysicalNotch)
+        #expect(fromScreen == 1)
+        #expect(ended == 1)
+        #expect(vm.isExpanded == false)
+    }
 }
