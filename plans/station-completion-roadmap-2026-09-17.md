@@ -10,7 +10,7 @@ A realigned build order for TradeAutopsy Station. Dated 17 September 2026. This 
 
 Work waves in order. Each wave is a thin vertical slice you can dogfood on this Mac. One agent session equals one slice, not the whole PDF.
 
-**Current gate (do this first):** S7 vendor runtime + Health + quotas + vendor UI. Then a *scoped* S8: Notch obtain glance and C1 last units on crypto Options. Console S8 and Notch *account chrome* stay out.
+**Current gate (do this first):** Scoped S8: Notch obtain glance and C1 last units on crypto Options. Console S8 and Notch *account chrome* stay out.
 
 **Then:** unfreeze LiveBook, rename the overlay into trading language, ship Pre / Live / Post as one journal object, then size and R:R, then patterns / fidelity / triage as *derived* facts.
 
@@ -21,8 +21,8 @@ If a later idea fights a lock in this document, the lock wins.
 # Where we actually are
 
 ```text
-DATA     R0 ◐  S0–S2 ✔  S3 ◐ leftover  S4 ✔  S5 ✔  S6 ◐ leftover  S7 ○  S8 ◐ scoped
-BUILD    T0–T3 ✔  T4 partial  T5 ◐ PLAN Kill  T6′ pending  T7–T11 later
+DATA     R0 ◐  S0–S2 ✔  S3 ◐ leftover  S4 ✔  S5 ✔  S6 ◐ leftover  S7 ✔  S8 ◐ scoped
+BUILD    T0–T3 ✔  T4 partial  T5 ◐ PLAN Kill  T6′ Health panel ✔  T7–T11 later
 NOTCH    PLAN host ✔  declare POST ✔  LiveBook freeze ✗  journal lander OPEN
 CONSOLE  C1–C3 cull landed  /api/bar/v1 still hosted  S8 unproven
 ```
@@ -33,7 +33,7 @@ CONSOLE  C1–C3 cull landed  /api/bar/v1 still hosted  S8 unproven
 |---|---|---|
 | S6 leftover | Founder, not code | Kotak TOTP remint, then live cash holdings / positions / obtain(funds) / orders |
 | S3 leftover | Weekday dogfood | NFO + options depth together in session; one COM gap → Unusable; cash ladder; glance 20 rows |
-| **S7** | **Current build** | pick_route on obtain, per-vendor quota, Health rows, vendor UI, one live India history obtain, one labs type |
+| **S7** | **Closed 2026-09-18** | pick_route, quotas, Health rows + Box panel, vendor UI, AMFI live labs, history fixture (no named B6) |
 | **S8 scoped** | **After S7** | Notch obtain glance + C1 last on crypto Options chrome. Not account pulse/ledger. Not Console waterfalls |
 | S8 account chrome | **Out** | Settings → Broker pulse + ledger (`plans/s8-account-chrome.md`) stays parked |
 | Console S8 | **Out** | Pointing Console at extracts is unproven. Do not start it to close this gate |

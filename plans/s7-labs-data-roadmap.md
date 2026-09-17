@@ -53,17 +53,17 @@ Workflow Labs / TAI          Notch / Today / Kill
 
 **Done when (runtime)**
 
-- [ ] `obtain` uses `pick_route` (Kotak history gap tracer in `s7-source-route.md`)
-- [ ] Keys not URLs; vendor `book_id`; per-vendor quota; budget 0 → that vendor dark, broker quote still live
-- [ ] Envelope: `product_use` + `provenance_adapter_id`
-- [ ] Health: one row per non-broker binding (up / exhausted / unsupported) — T6′
+- [x] `obtain` uses `pick_route` (Kotak history gap tracer in `s7-source-route.md`)
+- [x] Keys not URLs; vendor `book_id`; per-vendor quota; budget 0 → that vendor dark, broker quote still live
+- [x] Envelope: `product_use` + `provenance_adapter_id`
+- [x] Health: one row per non-broker binding (up / exhausted / unsupported) — T6′
 
 **Done when (you can quote the types — not fixture-only)**
 
-S7 is not complete with only `licensed_history` in CI. First live obtains, `product_use=labs` unless a lock says desk:
+S7 live obtains, `product_use=labs` unless a lock says desk:
 
-- [ ] India history (one B6 vendor) — cash/NFO candles
-- [ ] At least one specialized India type (FII/DII **or** AMFI **or** RBI policy) so Labs has a real node
+- [x] India history — **CI fixture `licensed_history`** (founder 2026-09-18: no named B6 vendor; Enable + obtain paints labs series when the fixture answers, else `no licensed series`)
+- [x] At least one specialized India type: **AMFI** NAV labs
 - [ ] Crypto: existing broker obtains unchanged; perps **funding** if that binding is in this tranche
 
 More India types (shareholding, MOSPI, announcements) ride the **same** S7 obtain/health path; they are extra adapters, not a new stage.

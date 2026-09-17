@@ -65,6 +65,8 @@ public struct StationShellView: View {
         // Decision recorded in issue #5, #7, and #8.
         case .brokers:
             BrokersView(viewModel: coordinator.brokersViewModel)
+        case .health:
+            HealthPanelView(viewModel: coordinator.healthPanelViewModel)
         case .marketData:
             MarketDataKeysView(viewModel: coordinator.marketDataKeysViewModel)
         case .aiWorkflow:

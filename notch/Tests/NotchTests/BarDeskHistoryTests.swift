@@ -115,7 +115,7 @@ struct BarDeskHistoryTests {
         #expect(vm.deskHistoryCandles.count == 1)
         #expect(vm.deskHistoryCandles[0].close == "1401.00")
         let line = glanceLine(vm)
-        #expect(line == "success")
+        #expect(line == "success · labs · licensed-history")
         #expect(!line.contains("licensed_history"))
         #expect(!line.contains("yahoo"))
         #expect(!line.contains("binance"))
@@ -174,7 +174,9 @@ struct BarDeskHistoryTests {
             licensedIneligible: vm.deskHistoryIneligible,
             yahooStatus: vm.deskYahooHistoryStatus,
             yahooIneligible: vm.deskYahooHistoryIneligible,
-            stitchYahoo: false
+            stitchYahoo: false,
+            productUse: vm.deskHistoryProductUse,
+            bookId: vm.deskHistoryBookId
         )
     }
 }

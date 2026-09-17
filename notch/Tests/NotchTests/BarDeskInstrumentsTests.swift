@@ -80,6 +80,21 @@ struct BarDeskInstrumentsTests {
         #expect(!line.contains("yahoo"))
     }
 
+    @Test func vendorHistoryGlanceNamesLabsBookNotAdapterSlug() {
+        let line = BarDeskTemplate.historyGlanceLine(
+            licensedStatus: "success",
+            licensedIneligible: [],
+            yahooStatus: "unavailable",
+            yahooIneligible: [],
+            stitchYahoo: false,
+            productUse: "labs",
+            bookId: "licensed-history"
+        )
+        #expect(line == "success · labs · licensed-history")
+        #expect(!line.contains("licensed_history"))
+        #expect(!line.contains("yahoo"))
+    }
+
     @Test func binanceHistoryGlanceIsLicensedOnly() {
         let hole = BarDeskTemplate.historyGlanceLine(
             licensedStatus: "unavailable",

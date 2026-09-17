@@ -509,6 +509,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskHistoryStatus: String = "unavailable"
     @Published var deskHistoryIneligible: [String] = []
     @Published var deskHistoryCandles: [DeskSessionCandle] = []
+    @Published var deskHistoryProductUse: String?
+    @Published var deskHistoryBookId: String?
     @Published var deskYahooHistoryStatus: String = "unavailable"
     @Published var deskYahooHistoryIneligible: [String] = []
     @Published var deskChainStatus: String = "unavailable"
@@ -1809,6 +1811,8 @@ public final class NotchViewModel: ObservableObject {
                 deskHistoryStatus = "unsupported"
                 deskHistoryIneligible = []
                 deskHistoryCandles = []
+                deskHistoryProductUse = nil
+                deskHistoryBookId = nil
                 return
             }
             if vendorGap {
@@ -1818,6 +1822,8 @@ public final class NotchViewModel: ObservableObject {
             deskHistoryStatus = "unsupported"
             deskHistoryIneligible = []
             deskHistoryCandles = []
+            deskHistoryProductUse = nil
+            deskHistoryBookId = nil
             return
         }
 
@@ -1840,10 +1846,16 @@ public final class NotchViewModel: ObservableObject {
             $0 != "rights_forbid_canonical"
         }
         deskHistoryCandles = []
+        deskHistoryProductUse = nil
+        deskHistoryBookId = nil
     }
 
     /// Declared-gap vendor series on a Kotak desk. Never Kotak last. Never COM klines.
     private func applyKotakVendorHistory(json: [String: Any], status: String) {
+        deskHistoryProductUse = (json["product_use"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        deskHistoryBookId = (json["book_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
         if status == "success", !candles.isEmpty {
             deskHistoryStatus = "success"

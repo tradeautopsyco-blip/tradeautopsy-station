@@ -8,6 +8,7 @@ public final class StationAppCoordinator: ObservableObject {
     public let sessionModel: SessionModel
     public let brokersViewModel: BrokersViewModel
     public let marketDataKeysViewModel: MarketDataKeysViewModel
+    public let healthPanelViewModel: HealthPanelViewModel
     public let aiWorkflowKeysViewModel: AIWorkflowKeysViewModel
     public let todayViewModel: TodayViewModel
     public let journalViewModel: JournalViewModel
@@ -121,13 +122,19 @@ public final class StationAppCoordinator: ObservableObject {
         self.marketDataKeysViewModel = MarketDataKeysViewModel(
             bindingClient: LocalVendorBindingClient(daemonSecret: resolvedDaemonSecret)
         )
+        let session = self.sessionModel
+        self.healthPanelViewModel = HealthPanelViewModel(
+            daemonSecret: resolvedDaemonSecret,
+            agentHealthy: { agentSupervisor.isHealthy },
+            agentMessage: { agentSupervisor.isHealthy ? nil : "Agent unavailable" },
+            killActive: { session.killSwitchActive }
+        )
         self.aiWorkflowKeysViewModel = AIWorkflowKeysViewModel()
 
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(
             daemonSecret: resolvedDaemonSecret,
             isAgentHealthy: { agentSupervisor.isHealthy }
         )
-        let session = self.sessionModel
         let brokers = self.brokersViewModel
         self.todayViewModel = TodayViewModel(
             client: resolvedTodayClient,

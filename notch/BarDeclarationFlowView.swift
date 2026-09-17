@@ -749,7 +749,9 @@ struct BarDeclarationFlowView: View {
                 licensedIneligible: viewModel.deskHistoryIneligible,
                 yahooStatus: viewModel.deskYahooHistoryStatus,
                 yahooIneligible: viewModel.deskYahooHistoryIneligible,
-                stitchYahoo: false
+                stitchYahoo: false,
+                productUse: viewModel.deskHistoryProductUse,
+                bookId: viewModel.deskHistoryBookId
             )
         case .chain:
             return viewModel.deskChainStatus

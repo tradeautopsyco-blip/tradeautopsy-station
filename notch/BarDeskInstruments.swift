@@ -288,12 +288,30 @@ enum BarDeskTemplate {
         licensedIneligible: [String],
         yahooStatus: String,
         yahooIneligible: [String],
-        stitchYahoo: Bool
+        stitchYahoo: Bool,
+        productUse: String? = nil,
+        bookId: String? = nil
     ) -> String {
         let licensed = historyDetail(status: licensedStatus, ineligible: licensedIneligible)
-        guard stitchYahoo else { return licensed }
+        let strip = historyProvenanceStrip(
+            status: licensedStatus,
+            productUse: productUse,
+            bookId: bookId
+        )
+        let named = strip.map { "\(licensed) · \($0)" } ?? licensed
+        guard stitchYahoo else { return named }
         let yahoo = historyDetail(status: yahooStatus, ineligible: yahooIneligible)
-        return "\(licensed) · \(yahoo)"
+        return "\(named) · \(yahoo)"
+    }
+
+    /// Vendor series only. Never the adapter slug `licensed_history`.
+    static func historyProvenanceStrip(status: String, productUse: String?, bookId: String?) -> String? {
+        let statusN = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard statusN == "success" else { return nil }
+        let use = productUse?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let book = bookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard use == "labs", book == "licensed-history" else { return nil }
+        return "labs · licensed-history"
     }
 
     static func isKotakNeoDesk(slug: String?) -> Bool {

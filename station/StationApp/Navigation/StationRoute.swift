@@ -10,6 +10,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
     case today = "Today"
     case journal = "Journal"
     case brokers = "Brokers"
+    case health = "Health"
     case marketData = "Market Data"
     case aiWorkflow = "AI / Workflow"
     case settings = "Settings"
@@ -26,7 +27,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
         switch self {
         case .today:
             return .session
-        case .journal, .brokers, .marketData, .aiWorkflow, .settings:
+        case .journal, .brokers, .health, .marketData, .aiWorkflow, .settings:
             return .desk
         }
     }
@@ -36,6 +37,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
         case .today: return "sun.max"
         case .journal: return "book"
         case .brokers: return "link"
+        case .health: return "heart.text.square"
         case .marketData: return "chart.line.uptrend.xyaxis"
         case .aiWorkflow: return "sparkles"
         case .settings: return "gear"
