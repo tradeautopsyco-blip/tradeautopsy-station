@@ -13,6 +13,13 @@ use tradeautopsy_agent::{
     BrokerCredentialVault, CredentialBlob, MemoryBrokerCredentialVault, RedactionBoundary,
 };
 
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[tokio::test]
 async fn get_health_returns_ok_for_headless_agent() {
     const PORT: u16 = 19_337;
@@ -76,6 +83,8 @@ async fn get_health_returns_ok_for_headless_agent() {
 /// Distinctive vault literals so a leak is obvious in the serialized health body.
 const PLANTED_API_KEY: &str = "health-json-probe-api-key-binance-us";
 const PLANTED_API_SECRET: &str = "health-json-probe-api-secret-literal";
+/// Distinctive gap-vendor literal. Health JSON must never echo it.
+const PLANTED_VENDOR_KEY: &str = "lh-health-probe-vendor-key-must-not-leak";
 
 #[tokio::test]
 async fn health_json_must_not_leak_credential_shaped_keys() {
@@ -92,13 +101,16 @@ async fn health_json_must_not_leak_credential_shaped_keys() {
         )
         .expect("seed vault");
 
-    let handle = spawn_test_agent_with_options(
+    let _handle = AbortOnDrop(spawn_test_agent_with_options(
         PORT,
         TestAgentOptions {
             credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+            gap_vendor_enabled: true,
+            gap_vendor_key: Some(PLANTED_VENDOR_KEY.into()),
+            gap_vendor_history_budget: 5,
             ..TestAgentOptions::default()
         },
-    );
+    ));
     wait_ready(PORT).await;
 
     let url = format!("http://127.0.0.1:{PORT}{path}");
@@ -120,10 +132,156 @@ async fn health_json_must_not_leak_credential_shaped_keys() {
     assert!(
         !RedactionBoundary::contains_forbidden_material(
             &body,
-            &[TEST_SECRET, PLANTED_API_KEY, PLANTED_API_SECRET]
+            &[TEST_SECRET, PLANTED_API_KEY, PLANTED_API_SECRET, PLANTED_VENDOR_KEY]
         ),
         "GET /api/daemon/health must not expose credential-shaped keys or in-process secrets; got {body}"
     );
+}
 
-    handle.abort();
+async fn get_health(port: u16) -> serde_json::Value {
+    let path = "/api/daemon/health";
+    let url = format!("http://127.0.0.1:{port}{path}");
+    let resp = apply_wire_v1(
+        client().get(&url),
+        "GET",
+        path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .timeout(Duration::from_secs(2))
+    .send()
+    .await
+    .expect("health request should reach agent");
+    assert_eq!(resp.status(), 200);
+    resp.json().await.expect("json body")
+}
+
+fn licensed_history_vendor<'a>(body: &'a serde_json::Value) -> &'a serde_json::Value {
+    body["vendors"]
+        .as_array()
+        .expect("vendors array")
+        .iter()
+        .find(|row| row["adapter_id"] == "licensed_history")
+        .expect("licensed_history vendor row")
+}
+
+#[tokio::test]
+async fn health_vendors_licensed_history_unsupported_by_default() {
+    const PORT: u16 = 19_680;
+
+    let _handle = AbortOnDrop(spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            gap_vendor_key: Some(PLANTED_VENDOR_KEY.into()),
+            ..TestAgentOptions::default()
+        },
+    ));
+    wait_ready(PORT).await;
+
+    let body = get_health(PORT).await;
+    let row = licensed_history_vendor(&body);
+
+    assert_eq!(row["adapter_id"], "licensed_history");
+    assert_eq!(row["parent"], "backend_box");
+    assert_eq!(row["kind"], "vendor");
+    assert_eq!(row["status"], "unsupported");
+    assert_eq!(row["what"], "licensed_history India ohlcv (Kotak has none)");
+    assert_eq!(row["why"], "unsupported");
+    assert!(row["error"].is_null());
+    assert!(
+        body["vendors"]
+            .as_array()
+            .expect("vendors")
+            .iter()
+            .all(|row| row["adapter_id"] != "kotak_neo"),
+        "broker quote is not a vendors[] row; got {body}"
+    );
+    let serialized = body.to_string();
+    assert!(
+        !serialized.contains(PLANTED_VENDOR_KEY),
+        "health JSON must not contain the planted vendor key; got {serialized}"
+    );
+}
+
+#[tokio::test]
+async fn health_vendors_licensed_history_up_when_enabled_with_budget() {
+    const PORT: u16 = 19_681;
+
+    let _handle = AbortOnDrop(spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            gap_vendor_enabled: true,
+            gap_vendor_key: Some("lh-fixture-key".into()),
+            gap_vendor_history_budget: 5,
+            ..TestAgentOptions::default()
+        },
+    ));
+    wait_ready(PORT).await;
+
+    let body = get_health(PORT).await;
+    let row = licensed_history_vendor(&body);
+
+    assert_eq!(row["adapter_id"], "licensed_history");
+    assert_eq!(row["parent"], "backend_box");
+    assert_eq!(row["kind"], "vendor");
+    assert_eq!(row["status"], "up");
+    assert_eq!(row["what"], "licensed_history India ohlcv (Kotak has none)");
+    assert_eq!(row["why"], "up");
+    assert!(row["error"].is_null());
+    assert!(
+        !body.to_string().contains("lh-fixture-key"),
+        "health JSON must not contain the vendor key; got {body}"
+    );
+}
+
+#[tokio::test]
+async fn health_vendors_licensed_history_exhausted_when_budget_zero() {
+    const PORT: u16 = 19_682;
+
+    let _handle = AbortOnDrop(spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            gap_vendor_enabled: true,
+            gap_vendor_key: Some("lh-fixture-key".into()),
+            gap_vendor_history_budget: 0,
+            ..TestAgentOptions::default()
+        },
+    ));
+    wait_ready(PORT).await;
+
+    let body = get_health(PORT).await;
+    let row = licensed_history_vendor(&body);
+
+    assert_eq!(row["adapter_id"], "licensed_history");
+    assert_eq!(row["parent"], "backend_box");
+    assert_eq!(row["kind"], "vendor");
+    assert_eq!(row["status"], "exhausted");
+    assert_eq!(row["what"], "licensed_history India ohlcv (Kotak has none)");
+    assert_eq!(row["why"], "exhausted");
+    assert!(row["error"].is_null());
+}
+
+#[tokio::test]
+async fn health_json_must_not_leak_gap_vendor_key() {
+    const PORT: u16 = 19_683;
+
+    let _handle = AbortOnDrop(spawn_test_agent_with_options(
+        PORT,
+        TestAgentOptions {
+            gap_vendor_enabled: true,
+            gap_vendor_key: Some(PLANTED_VENDOR_KEY.into()),
+            gap_vendor_history_budget: 5,
+            ..TestAgentOptions::default()
+        },
+    ));
+    wait_ready(PORT).await;
+
+    let body = get_health(PORT).await;
+    let row = licensed_history_vendor(&body);
+    assert_eq!(row["status"], "up");
+    assert!(row["error"].is_null());
+    assert!(
+        !RedactionBoundary::contains_forbidden_material(&body, &[PLANTED_VENDOR_KEY]),
+        "GET /api/daemon/health must not expose the planted vendor key; got {body}"
+    );
 }

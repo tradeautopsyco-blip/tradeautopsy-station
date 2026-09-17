@@ -18,5 +18,8 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         "sse_signing_pubkey_b64": state.sse_signer.public_key_b64(),
         "metrics_listen_port": metrics_port,
         "observability": state.metrics.snapshot_json(),
+        "vendors": crate::data::vendor_health_rows(
+            &state.gap_vendor.lock().expect("gap_vendor mutex poisoned"),
+        ),
     }))
 }

@@ -383,6 +383,10 @@ pub struct AgentConfig {
     pub binance_eapi_base_url: Option<String>,
     /// Test seam: non-venue base URL for Kotak private reads (wiremock). `None` = session `baseUrl`.
     pub kotak_private_base_url: Option<String>,
+    /// Test seam: non-venue base URL for AMFI NAV (wiremock). `None` = `www.amfiindia.com`.
+    pub amfi_nav_base_url: Option<String>,
+    /// Test seam: override the AMFI host fence. `None` = `www.amfiindia.com`.
+    pub amfi_nav_host: Option<String>,
     /// S7 CI: enable fixture `licensed_history` as a declared Kotak history gap.
     pub gap_vendor_enabled: bool,
     pub gap_vendor_key: Option<String>,
@@ -522,6 +526,8 @@ impl AgentConfig {
             binance_coinm_base_url: None,
             binance_eapi_base_url: None,
             kotak_private_base_url: None,
+            amfi_nav_base_url: None,
+            amfi_nav_host: None,
             gap_vendor_enabled: false,
             gap_vendor_key: None,
             gap_vendor_history_budget: 0,
@@ -602,6 +608,8 @@ impl AgentConfig {
             binance_coinm_base_url: None,
             binance_eapi_base_url: None,
             kotak_private_base_url: None,
+            amfi_nav_base_url: None,
+            amfi_nav_host: None,
             gap_vendor_enabled: false,
             gap_vendor_key: None,
             gap_vendor_history_budget: 0,
@@ -1398,12 +1406,14 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         binance_eapi_base_url: config.binance_eapi_base_url.clone(),
         force_order_book: Arc::new(Mutex::new(crate::data::ForceOrderBook::default())),
         kotak_private_base_url: config.kotak_private_base_url.clone(),
-        gap_vendor: crate::data::GapVendorConfig {
+        amfi_nav_base_url: config.amfi_nav_base_url.clone(),
+        amfi_nav_host: config.amfi_nav_host.clone(),
+        gap_vendor: Arc::new(Mutex::new(crate::data::GapVendorConfig {
             enabled: config.gap_vendor_enabled,
             key: config.gap_vendor_key.clone(),
             history_budget: config.gap_vendor_history_budget,
             quote_budget: config.kotak_quote_budget,
-        },
+        })),
     };
     crate::data::spawn_binance_com_trade_loop(
         state.quote_registry.clone(),

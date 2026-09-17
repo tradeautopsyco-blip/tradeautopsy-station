@@ -230,6 +230,14 @@ pub const OPENALGO_OPERATIONS: &[Operation] = &[
         Physics::BoundedSnapshot,
         AuthMode::PrivateRead
     ),
+    // AMFI NAV — labs noun, not an OpenAlgo execution noun.
+    read_op!(
+        "amfi_nav",
+        Family::Fundamentals,
+        "nav",
+        Physics::HistoricalSeries,
+        AuthMode::Public
+    ),
     forbidden("placeorder"),
     forbidden("placesmartorder"),
     forbidden("modifyorder"),

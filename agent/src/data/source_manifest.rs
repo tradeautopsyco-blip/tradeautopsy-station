@@ -153,11 +153,15 @@ pub struct ObtainEnvelope {
     /// a Success may never claim a path the venue does not have.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provenance_path: Option<String>,
+    /// `labs` vs `desk`. Vendor history is labs unless a lock says desk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_use: Option<String>,
 }
 
 /// Host-owned obtain. Implemented ops without a live snapshot stay `unavailable`.
 /// Missing capabilities are `unsupported` with `data: null`.
 pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
+    let product_use = (manifest.adapter_id == "amfi").then(|| "labs".to_string());
     if catalog_row(operation).is_some_and(|row| row.kind == OperationKind::ExecutionForbidden) {
         return ObtainEnvelope {
             adapter_id: manifest.adapter_id.clone(),
@@ -167,6 +171,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
             data: None,
             provenance_adapter_id: None,
             provenance_path: None,
+            product_use,
         };
     }
     if !manifest.implemented.iter().any(|noun| noun == operation) {
@@ -178,6 +183,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
             data: None,
             provenance_adapter_id: None,
             provenance_path: None,
+            product_use,
         };
     }
     ObtainEnvelope {
@@ -188,6 +194,7 @@ pub fn obtain(manifest: &SourceManifest, operation: &str) -> ObtainEnvelope {
         data: None,
         provenance_adapter_id: Some(manifest.adapter_id.clone()),
         provenance_path: None,
+        product_use,
     }
 }
 
@@ -773,6 +780,7 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         binance_com_coinm_manifest(),
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
+        super::amfi::amfi_nav_manifest(),
     ]
 }
 
@@ -1479,6 +1487,7 @@ mod tests {
             data: None,
             provenance_adapter_id: None,
             provenance_path: None,
+            product_use: None,
         };
         assert!(!is_empty_success(&envelope));
         assert!(is_empty_success(&ObtainEnvelope {
@@ -1489,6 +1498,7 @@ mod tests {
             data: None,
             provenance_adapter_id: Some("binance_com".into()),
             provenance_path: None,
+            product_use: None,
         }));
     }
 

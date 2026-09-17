@@ -4,14 +4,71 @@ import Testing
 
 @MainActor
 struct MarketDataKeysViewModelTests {
+    @Test func shippingAllowlistIsLicensedHistoryOnly() {
+        let slugs = MarketDataProvider.allCases.map(\.rawValue)
+        #expect(slugs == ["licensed_history"])
+        #expect(slugs.contains("OpenBB") == false)
+        #expect(slugs.contains("Polygon") == false)
+        #expect(slugs.contains("Alpha Vantage") == false)
+    }
+
+    @Test func addKeyRefusesURLAndDoesNotSave() async {
+        let store = FakeProviderAPIKeyStore()
+        let viewModel = MarketDataKeysViewModel(store: store)
+
+        await #expect(throws: MarketDataKeyError.urlIsNotAKey) {
+            try await viewModel.addKey(
+                provider: .licensedHistory,
+                apiKey: "https://evil.example/klines"
+            )
+        }
+
+        #expect(viewModel.keys.isEmpty)
+        #expect(store.saveCallCount == 0)
+    }
+
+    @Test func addKeySavesLicensedHistoryMaskedAndEnabled() async throws {
+        let store = FakeProviderAPIKeyStore()
+        let viewModel = MarketDataKeysViewModel(store: store)
+
+        try await viewModel.addKey(provider: .licensedHistory, apiKey: "lh-fixture-key")
+
+        #expect(viewModel.keys.count == 1)
+        #expect(viewModel.keys[0].provider == .licensedHistory)
+        #expect(viewModel.keys[0].maskedValue != "lh-fixture-key")
+        #expect(viewModel.keys[0].maskedValue.contains("•"))
+        #expect(viewModel.keys[0].enabled == true)
+        #expect(store.saveCallCount == 1)
+    }
+
+    @Test func disableThenEnableTogglesListItem() async throws {
+        let store = FakeProviderAPIKeyStore()
+        let viewModel = MarketDataKeysViewModel(store: store)
+        try await viewModel.addKey(provider: .licensedHistory, apiKey: "lh-fixture-key")
+        let keyID = viewModel.keys[0].id
+
+        try await viewModel.disable(id: keyID)
+        #expect(viewModel.keys[0].enabled == false)
+
+        try await viewModel.enable(id: keyID)
+        #expect(viewModel.keys[0].enabled == true)
+    }
+
+    @Test func provenanceStripNamesLicensedHistoryAndKotakHasNone() {
+        let viewModel = MarketDataKeysViewModel(store: FakeProviderAPIKeyStore())
+        let strip = viewModel.provenanceStrip(for: .licensedHistory)
+        #expect(strip.contains("licensed_history"))
+        #expect(strip.contains("Kotak has none"))
+    }
+
     @Test func addKeyListsMaskedEntryWithNotValidatedState() async throws {
         let store = FakeProviderAPIKeyStore()
         let viewModel = MarketDataKeysViewModel(store: store)
 
-        try await viewModel.addKey(provider: .polygon, apiKey: "polygon-secret-key-1234")
+        try await viewModel.addKey(provider: .licensedHistory, apiKey: "polygon-secret-key-1234")
 
         #expect(viewModel.keys.count == 1)
-        #expect(viewModel.keys[0].provider == .polygon)
+        #expect(viewModel.keys[0].provider == .licensedHistory)
         #expect(viewModel.keys[0].maskedValue.hasSuffix("1234"))
         #expect(viewModel.keys[0].maskedValue.contains("•"))
         #expect(viewModel.keys[0].validationState == .notValidated)
@@ -21,7 +78,7 @@ struct MarketDataKeysViewModelTests {
     @Test func deleteKeyRemovesEntryFromList() async throws {
         let store = FakeProviderAPIKeyStore()
         let viewModel = MarketDataKeysViewModel(store: store)
-        try await viewModel.addKey(provider: .openBB, apiKey: "openbb-key-5678")
+        try await viewModel.addKey(provider: .licensedHistory, apiKey: "openbb-key-5678")
         let keyID = viewModel.keys[0].id
 
         try await viewModel.deleteKey(id: keyID)
@@ -34,7 +91,7 @@ struct MarketDataKeysViewModelTests {
         let store = FakeProviderAPIKeyStore()
         let identity = ProviderAPIKeyIdentity(
             namespace: .marketData,
-            providerSlug: MarketDataProvider.alphaVantage.rawValue,
+            providerSlug: MarketDataProvider.licensedHistory.rawValue,
             keyID: UUID()
         )
         try store.save(
@@ -46,7 +103,7 @@ struct MarketDataKeysViewModelTests {
         await viewModel.loadKeys()
 
         #expect(viewModel.keys.count == 1)
-        #expect(viewModel.keys[0].provider == .alphaVantage)
+        #expect(viewModel.keys[0].provider == .licensedHistory)
         #expect(viewModel.keys[0].maskedValue.hasSuffix("9999"))
     }
 }

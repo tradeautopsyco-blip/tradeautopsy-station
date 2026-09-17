@@ -9,12 +9,18 @@ use common::{
 use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
-use tradeautopsy_agent::{BrokerAdapter, BrokerCredentialVault, CountingPollAdapter};
+use tradeautopsy_agent::{
+    BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, CredentialBlob,
+    MemoryBrokerCredentialVault,
+};
 
 const PORT_UNSUP: u16 = 19_670;
 const PORT_VENDOR: u16 = 19_671;
 const PORT_BUDGET: u16 = 19_672;
 const PORT_URL: u16 = 19_673;
+const PORT_VAULT: u16 = 19_780;
+const PORT_VAULT_QUOTA: u16 = 19_781;
+const PORT_VAULT_URL: u16 = 19_782;
 
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
@@ -102,6 +108,33 @@ fn vendor_on() -> TestAgentOptions {
     })
 }
 
+fn vault_with_kotak_and_vendor(vendor_key: &str) -> Arc<MemoryBrokerCredentialVault> {
+    let vault = seeded_hmac_vault("kotak_neo", "TA_S7_HISTORY_SYNC");
+    vault
+        .save(
+            "prod",
+            "licensed_history",
+            "licensed_history",
+            &CredentialBlob::hmac(vendor_key, "unused"),
+        )
+        .expect("plant vendor vault key");
+    vault
+}
+
+fn kotak_start_opts_vault(
+    vault: Arc<MemoryBrokerCredentialVault>,
+    extra: TestAgentOptions,
+) -> TestAgentOptions {
+    let counter = Arc::new(CountingPollAdapter::new());
+    TestAgentOptions {
+        runtime_poll_adapter: Some(counter as Arc<dyn BrokerAdapter>),
+        broker_base_poll_ms: 80,
+        credential_vault: Some(vault as Arc<dyn BrokerCredentialVault>),
+        plant_kotak_s1k_fixtures: true,
+        ..extra
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn kotak_history_without_vendor_is_unsupported() {
@@ -186,4 +219,92 @@ async fn url_shaped_secret_does_not_light_vendor() {
     assert_eq!(history["status"], "unsupported");
     assert_ne!(history["book_id"], "licensed-history");
     assert_ne!(history["provenance_adapter_id"], "licensed_history");
+}
+
+/// Production path: vendor key lives in the host vault (not TestAgentOptions.gap_vendor_key).
+/// Fixture licensed_history; no lock says desk, so product_use is labs.
+#[tokio::test]
+#[serial]
+async fn vault_vendor_key_history_success_is_labs_licensed_history() {
+    let vault = vault_with_kotak_and_vendor("lh-fixture-key");
+    let _h = AbortOnDrop(spawn_test_agent_with_options(
+        PORT_VAULT,
+        kotak_start_opts_vault(
+            vault,
+            TestAgentOptions {
+                plant_licensed_history_gap: true,
+                gap_vendor_enabled: true,
+                gap_vendor_history_budget: 1,
+                kotak_quote_budget: 10,
+                ..TestAgentOptions::default()
+            },
+        ),
+    ));
+    wait_ready(PORT_VAULT).await;
+    post_kotak_start(PORT_VAULT).await;
+    let history = obtain(PORT_VAULT, "adapter=kotak_neo&operation=history").await;
+    assert_eq!(history["status"], "success");
+    assert_eq!(history["provenance_adapter_id"], "licensed_history");
+    assert_eq!(history["book_id"], "licensed-history");
+    assert_eq!(history["product_use"], "labs");
+}
+
+/// Live quota: budget 1 is consumed by the first vendor history obtain.
+/// Quote meter is independent — Kotak last still succeeds.
+#[tokio::test]
+#[serial]
+async fn vault_vendor_budget_one_second_history_unavailable_quote_still_kotak() {
+    let vault = vault_with_kotak_and_vendor("lh-fixture-key");
+    let _h = AbortOnDrop(spawn_test_agent_with_options(
+        PORT_VAULT_QUOTA,
+        kotak_start_opts_vault(
+            vault,
+            TestAgentOptions {
+                plant_licensed_history_gap: true,
+                gap_vendor_enabled: true,
+                gap_vendor_history_budget: 1,
+                kotak_quote_budget: 10,
+                ..TestAgentOptions::default()
+            },
+        ),
+    ));
+    wait_ready(PORT_VAULT_QUOTA).await;
+    post_kotak_start(PORT_VAULT_QUOTA).await;
+
+    let first = obtain(PORT_VAULT_QUOTA, "adapter=kotak_neo&operation=history").await;
+    assert_eq!(first["status"], "success");
+    assert_eq!(first["provenance_adapter_id"], "licensed_history");
+
+    let second = obtain(PORT_VAULT_QUOTA, "adapter=kotak_neo&operation=history").await;
+    assert_eq!(second["status"], "unavailable");
+    assert!(second["data"].is_null());
+
+    bind_planted_cash_quote(PORT_VAULT_QUOTA).await;
+    let quote = obtain(PORT_VAULT_QUOTA, "adapter=kotak_neo&operation=quotes").await;
+    assert_eq!(quote["status"], "success");
+    assert_eq!(quote["provenance_adapter_id"], "kotak_neo");
+}
+
+#[tokio::test]
+#[serial]
+async fn vault_url_shaped_secret_does_not_light_vendor() {
+    let vault = vault_with_kotak_and_vendor("https://evil.example/klines");
+    let _h = AbortOnDrop(spawn_test_agent_with_options(
+        PORT_VAULT_URL,
+        kotak_start_opts_vault(
+            vault,
+            TestAgentOptions {
+                plant_licensed_history_gap: true,
+                gap_vendor_enabled: true,
+                gap_vendor_history_budget: 9,
+                kotak_quote_budget: 10,
+                ..TestAgentOptions::default()
+            },
+        ),
+    ));
+    wait_ready(PORT_VAULT_URL).await;
+    post_kotak_start(PORT_VAULT_URL).await;
+    let history = obtain(PORT_VAULT_URL, "adapter=kotak_neo&operation=history").await;
+    assert_eq!(history["status"], "unsupported");
+    assert_ne!(history["book_id"], "licensed-history");
 }

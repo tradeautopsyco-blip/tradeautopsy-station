@@ -1,5 +1,9 @@
 import Foundation
 
+public enum MarketDataKeyError: Error, Equatable, Sendable {
+    case urlIsNotAKey
+}
+
 public enum ProviderKeyNamespace: String, Codable, Hashable, Sendable {
     case marketData = "market-data"
     case aiWorkflow = "ai-workflow"
@@ -11,9 +15,7 @@ public enum ProviderKeyValidationState: String, Codable, Equatable, Sendable {
 }
 
 public enum MarketDataProvider: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
-    case openBB = "OpenBB"
-    case polygon = "Polygon"
-    case alphaVantage = "Alpha Vantage"
+    case licensedHistory = "licensed_history"
 
     public var id: String { rawValue }
 }
@@ -41,10 +43,23 @@ public struct ProviderAPIKeyIdentity: Equatable, Hashable, Sendable {
 public struct ProviderAPIKeyRecord: Equatable, Codable, Sendable {
     public let apiKey: String
     public let validationState: ProviderKeyValidationState
+    public let enabled: Bool
 
-    public init(apiKey: String, validationState: ProviderKeyValidationState) {
+    public init(
+        apiKey: String,
+        validationState: ProviderKeyValidationState,
+        enabled: Bool = true
+    ) {
         self.apiKey = apiKey
         self.validationState = validationState
+        self.enabled = enabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiKey = try container.decode(String.self, forKey: .apiKey)
+        validationState = try container.decode(ProviderKeyValidationState.self, forKey: .validationState)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     }
 }
 

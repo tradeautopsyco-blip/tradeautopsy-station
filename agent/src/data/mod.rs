@@ -3,6 +3,7 @@
 mod account_book;
 mod account_capability;
 mod account_split;
+mod amfi;
 mod apply;
 mod binance_coinm_private;
 mod binance_depth;
@@ -59,6 +60,7 @@ mod source_manifest;
 mod source_route;
 mod tick;
 mod tickbook;
+mod vendor_health;
 
 pub use account_book::AccountBook;
 pub use account_capability::{
@@ -67,6 +69,7 @@ pub use account_capability::{
 pub use account_split::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };
+pub use amfi::{obtain_amfi_nav, AMFI_NAV_HOST};
 pub use apply::{apply_quote, ApplyError};
 pub use binance_coinm_private::{
     ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
@@ -192,7 +195,8 @@ pub use source_manifest::{
 pub use source_manifest::{first_party_s0_manifests, manifest_for_slug};
 pub use source_route::{
     apply_kotak_source_route, decide_kotak_route, should_source_route, GapVendorConfig,
-    LICENSED_HISTORY_ADAPTER_ID,
+    LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_VAULT_CONNECTION_ID,
 };
 pub use tick::{QuoteTick, Transport};
 pub use tickbook::TickBook;
+pub use vendor_health::vendor_health_rows;

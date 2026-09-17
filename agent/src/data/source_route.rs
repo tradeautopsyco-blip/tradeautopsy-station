@@ -13,6 +13,10 @@ use super::source_manifest::{ObtainEnvelope, ObtainStatus};
 pub const LICENSED_HISTORY_ADAPTER_ID: &str = "licensed_history";
 /// Vendor series book — never a Kotak shipping book (DualNoBlend).
 pub const LICENSED_HISTORY_BOOK_ID: &str = "licensed-history";
+/// Vault account id — `{env}.licensed_history.licensed_history`, same host-vault pattern as brokers.
+pub const LICENSED_HISTORY_VAULT_CONNECTION_ID: &str = "licensed_history";
+/// No lock says desk for the CI gap fixture.
+pub const PRODUCT_USE_LABS: &str = "labs";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GapVendorConfig {
@@ -148,6 +152,7 @@ pub fn apply_kotak_source_route(
                 envelope.adapter_id = LICENSED_HISTORY_ADAPTER_ID.into();
                 envelope.book_id = LICENSED_HISTORY_BOOK_ID.into();
                 envelope.provenance_adapter_id = Some(LICENSED_HISTORY_ADAPTER_ID.into());
+                envelope.product_use = Some(PRODUCT_USE_LABS.into());
             } else {
                 envelope.status = ObtainStatus::Unavailable;
                 envelope.data = None;
@@ -190,6 +195,7 @@ mod tests {
             data: None,
             provenance_adapter_id: None,
             provenance_path: None,
+            product_use: None,
         }
     }
 

@@ -6,24 +6,27 @@ public struct MarketDataKeyListItem: Identifiable, Equatable, Sendable {
     public let provider: MarketDataProvider
     public let maskedValue: String
     public let validationState: ProviderKeyValidationState
+    public let enabled: Bool
 
     public init(
         id: UUID,
         provider: MarketDataProvider,
         maskedValue: String,
-        validationState: ProviderKeyValidationState
+        validationState: ProviderKeyValidationState,
+        enabled: Bool
     ) {
         self.id = id
         self.provider = provider
         self.maskedValue = maskedValue
         self.validationState = validationState
+        self.enabled = enabled
     }
 }
 
 @MainActor
 public final class MarketDataKeysViewModel: ObservableObject {
     @Published public private(set) var keys: [MarketDataKeyListItem] = []
-    @Published public var selectedProvider: MarketDataProvider = .openBB
+    @Published public var selectedProvider: MarketDataProvider = .licensedHistory
     @Published public var draftAPIKey = ""
     @Published public private(set) var errorMessage: String?
 
@@ -44,7 +47,8 @@ public final class MarketDataKeysViewModel: ObservableObject {
                     id: identity.keyID,
                     provider: provider,
                     maskedValue: ProviderAPIKeyMasking.maskedValue(for: record.apiKey),
-                    validationState: record.validationState
+                    validationState: record.validationState,
+                    enabled: record.enabled
                 )
             }
             .sorted { $0.provider.rawValue < $1.provider.rawValue }
@@ -56,6 +60,11 @@ public final class MarketDataKeysViewModel: ObservableObject {
     public func addKey(provider: MarketDataProvider, apiKey: String) async throws {
         let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let lowered = trimmed.lowercased()
+        if lowered.hasPrefix("http://") || lowered.hasPrefix("https://") {
+            errorMessage = "URL is not a key."
+            throw MarketDataKeyError.urlIsNotAKey
+        }
 
         let keyID = UUID()
         let identity = ProviderAPIKeyIdentity(
@@ -63,11 +72,12 @@ public final class MarketDataKeysViewModel: ObservableObject {
             providerSlug: provider.rawValue,
             keyID: keyID
         )
-        let record = ProviderAPIKeyRecord(apiKey: trimmed, validationState: .notValidated)
+        let record = ProviderAPIKeyRecord(apiKey: trimmed, validationState: .notValidated, enabled: true)
         try store.save(record, for: identity)
         await loadKeys()
         draftAPIKey = ""
         selectedProvider = provider
+        errorMessage = nil
     }
 
     public func deleteKey(id: UUID) async throws {
@@ -81,5 +91,40 @@ public final class MarketDataKeysViewModel: ObservableObject {
         )
         try store.delete(for: identity)
         await loadKeys()
+    }
+
+    public func disable(id: UUID) async throws {
+        try await setEnabled(false, id: id)
+    }
+
+    public func enable(id: UUID) async throws {
+        try await setEnabled(true, id: id)
+    }
+
+    private func setEnabled(_ enabled: Bool, id: UUID) async throws {
+        guard let item = keys.first(where: { $0.id == id }) else {
+            throw ProviderAPIKeyStoreError.keyNotFound
+        }
+        let identity = ProviderAPIKeyIdentity(
+            namespace: .marketData,
+            providerSlug: item.provider.rawValue,
+            keyID: id
+        )
+        guard let existing = try store.read(for: identity) else {
+            throw ProviderAPIKeyStoreError.keyNotFound
+        }
+        try store.save(
+            ProviderAPIKeyRecord(
+                apiKey: existing.apiKey,
+                validationState: existing.validationState,
+                enabled: enabled
+            ),
+            for: identity
+        )
+        await loadKeys()
+    }
+
+    public func provenanceStrip(for provider: MarketDataProvider) -> String {
+        "History: \(provider.rawValue) (Kotak has none)"
     }
 }

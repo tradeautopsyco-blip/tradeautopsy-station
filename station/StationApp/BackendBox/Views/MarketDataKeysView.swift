@@ -14,9 +14,19 @@ public struct MarketDataKeysView: View {
                     .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
                     .foregroundStyle(StationDS.Text.primary)
 
-                Text("Store API keys for market-data providers. Validation is stubbed in v1.")
+                Text("Store a Keychain key for a shipping vendor. Paste a key, not a URL.")
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                     .foregroundStyle(StationDS.Text.muted)
+
+                Text(viewModel.provenanceStrip(for: viewModel.selectedProvider))
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                    .foregroundStyle(StationDS.Text.labels)
+
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
+                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                        .foregroundStyle(StationDS.Text.labels)
+                }
 
                 addKeySection
                 keyListSection
@@ -84,11 +94,23 @@ public struct MarketDataKeysView: View {
                             Text(entry.maskedValue)
                                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
                                 .foregroundStyle(StationDS.Text.muted)
+                            Text(entry.enabled ? "Enabled" : "Disabled")
+                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                                .foregroundStyle(StationDS.Text.labels)
                             Text(validationLabel(for: entry.validationState))
                                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
                                 .foregroundStyle(StationDS.Text.labels)
                         }
                         Spacer()
+                        if entry.enabled {
+                            Button("Disable") {
+                                Task { try? await viewModel.disable(id: entry.id) }
+                            }
+                        } else {
+                            Button("Enable") {
+                                Task { try? await viewModel.enable(id: entry.id) }
+                            }
+                        }
                         Button("Delete", role: .destructive) {
                             Task { try? await viewModel.deleteKey(id: entry.id) }
                         }

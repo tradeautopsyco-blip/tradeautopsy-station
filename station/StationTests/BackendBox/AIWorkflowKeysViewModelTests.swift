@@ -33,7 +33,7 @@ struct AIWorkflowKeysViewModelTests {
         let store = FakeProviderAPIKeyStore()
         let marketDataIdentity = ProviderAPIKeyIdentity(
             namespace: .marketData,
-            providerSlug: MarketDataProvider.polygon.rawValue,
+            providerSlug: MarketDataProvider.licensedHistory.rawValue,
             keyID: UUID()
         )
         try store.save(

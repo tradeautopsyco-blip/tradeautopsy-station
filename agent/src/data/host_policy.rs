@@ -62,6 +62,9 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // Cash scrip CSV host from official file-paths `filesPaths` sample (guide +
     // REST.md). F&O CSVs and `/quick/user/trades` stay refused on this host.
     "lapi.kotaksecurities.com",
+    // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
+    // Labs vendor only — not a shipping broker, not Kill DNS.
+    "www.amfiindia.com",
 ];
 
 pub fn host_allowed(host: &str) -> bool {
@@ -184,6 +187,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         }
         ("quote", "GET", AuthMode::PrivateRead) if is_kotak_latest_quote_path(path) => true,
         ("order_book", "GET", AuthMode::PrivateRead) if is_kotak_depth_path(path) => true,
+        ("nav", "GET", AuthMode::Public) if is_amfi_nav_path(path) => true,
         _ => false,
     }
 }
@@ -271,6 +275,7 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         }
         ("GET", p) if is_kotak_depth_path(p) => Ok(("order_book", AuthMode::PrivateRead)),
         ("GET", p) if is_kotak_latest_quote_path(p) => Ok(("quote", AuthMode::PrivateRead)),
+        ("GET", p) if is_amfi_nav_path(p) => Ok(("nav", AuthMode::Public)),
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -391,6 +396,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
+        "amfi-nav" => {
+            if host_norm != "www.amfiindia.com" {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !is_amfi_nav_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -401,6 +415,14 @@ fn is_kotak_depth_path(path: &str) -> bool {
 
 fn is_kotak_latest_quote_path(path: &str) -> bool {
     super::kotak_quotes::is_kotak_latest_quote_path(path)
+}
+
+/// Official AMFI daily NAV file. Query strings stripped; trailing `/` trimmed.
+pub fn is_amfi_nav_path(path: &str) -> bool {
+    let lower = path.trim().to_ascii_lowercase();
+    let lower = lower.split('?').next().unwrap_or(&lower);
+    let lower = lower.trim_end_matches('/');
+    lower == "/spages/navall.txt"
 }
 
 /// Official file-paths sample: `…/wso2-scripmaster/v1/prod/…/transformed/{nse,bse}_cm.csv`.
@@ -558,6 +580,9 @@ pub fn authorize_host_call(
             || is_kotak_depth_path(path))
     {
         return Err(HostRefuse::PathNotAllowlisted);
+    }
+    if is_amfi_nav_path(path) && host_norm != "www.amfiindia.com" {
+        return Err(HostRefuse::HostNotAllowed);
     }
     if is_mutation(method, path) {
         return Err(HostRefuse::MutationForbidden);

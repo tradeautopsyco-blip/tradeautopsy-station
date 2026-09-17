@@ -11,7 +11,7 @@ struct KeychainProviderAPIKeyStoreTests {
         let store = makeStore(suffix: UUID().uuidString)
         let identity = ProviderAPIKeyIdentity(
             namespace: .marketData,
-            providerSlug: MarketDataProvider.polygon.rawValue,
+            providerSlug: MarketDataProvider.licensedHistory.rawValue,
             keyID: UUID()
         )
         let record = ProviderAPIKeyRecord(
@@ -38,7 +38,7 @@ struct KeychainProviderAPIKeyStoreTests {
         let store = makeStore(suffix: UUID().uuidString)
         let marketIdentity = ProviderAPIKeyIdentity(
             namespace: .marketData,
-            providerSlug: MarketDataProvider.openBB.rawValue,
+            providerSlug: MarketDataProvider.licensedHistory.rawValue,
             keyID: UUID()
         )
         let aiIdentity = ProviderAPIKeyIdentity(

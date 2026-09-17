@@ -171,8 +171,12 @@ pub struct AppState {
     pub force_order_book: Arc<Mutex<crate::data::ForceOrderBook>>,
     /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
     pub kotak_private_base_url: Option<String>,
-    /// S7 declared-gap fixture. Prod stays disabled until a B6 vendor ships.
-    pub gap_vendor: crate::data::GapVendorConfig,
+    /// Test seam: wiremock base for AMFI NAV GET. Prod is always `None` (official host).
+    pub amfi_nav_base_url: Option<String>,
+    /// Test seam: override AMFI fence host. Prod is always `None`.
+    pub amfi_nav_host: Option<String>,
+    /// S7 declared-gap fixture. Live quota is shared and decremented on vendor history success.
+    pub gap_vendor: Arc<Mutex<crate::data::GapVendorConfig>>,
 }
 
 pub fn router(state: AppState) -> Router {

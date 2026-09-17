@@ -99,7 +99,39 @@ fn unsupported_obtain(adapter_id: &str, book_id: &str, operation: &str) -> Obtai
         data: None,
         provenance_adapter_id: None,
         provenance_path: None,
+        product_use: (adapter_id == "amfi").then(|| "labs".to_string()),
     }
+}
+
+/// TestAgentOptions.gap_vendor_key stays a backdoor. Production reads the HMAC apiKey
+/// planted under licensed_history in the host vault (same account-key pattern as brokers).
+fn live_gap_vendor(state: &AppState) -> crate::data::GapVendorConfig {
+    let mut cfg = state.gap_vendor.lock().expect("gap_vendor mutex poisoned");
+    if cfg
+        .key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .is_none()
+    {
+        use crate::data::{LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_VAULT_CONNECTION_ID};
+        let vault = state.broker_sync_control.credential_vault();
+        if let Ok(Some(crate::CredentialBlob::HmacApiKeySecret { api_key, .. })) = vault.load(
+            "prod",
+            LICENSED_HISTORY_ADAPTER_ID,
+            LICENSED_HISTORY_VAULT_CONNECTION_ID,
+        ) {
+            if !api_key.trim().is_empty() {
+                cfg.key = Some(api_key);
+            }
+        }
+    }
+    cfg.clone()
+}
+
+fn consume_vendor_history_quota(state: &AppState) {
+    let mut cfg = state.gap_vendor.lock().expect("gap_vendor mutex poisoned");
+    cfg.history_budget = cfg.history_budget.saturating_sub(1);
 }
 
 pub async fn manifest_handler(
@@ -131,6 +163,15 @@ pub async fn obtain_handler(
     let adapter = query_id(query.adapter.as_deref()).unwrap_or_default();
     let book = query_id(query.book.as_deref()).unwrap_or_default();
     let operation = query_id(query.operation.as_deref()).unwrap_or_default();
+    if adapter == "amfi" {
+        let host = state
+            .amfi_nav_host
+            .as_deref()
+            .unwrap_or(crate::data::AMFI_NAV_HOST);
+        return Json(
+            crate::data::obtain_amfi_nav(operation, host, state.amfi_nav_base_url.as_deref()).await,
+        );
+    }
     if operation.is_empty() || (adapter.is_empty() && book.is_empty()) {
         return Json(unsupported_obtain(adapter, book, operation));
     }
@@ -147,8 +188,9 @@ pub async fn obtain_handler(
             apply_kotak_source_route, decide_kotak_route, extract_gap_vendor_history,
             gap_history_obtain_data, LICENSED_HISTORY_ADAPTER_ID,
         };
+        let gap_vendor = live_gap_vendor(&state);
         if envelope.operation == "quotes" {
-            let decision = decide_kotak_route("quotes", &state.gap_vendor);
+            let decision = decide_kotak_route("quotes", &gap_vendor);
             if decision.outcome == crate::data::RouteOutcome::Unavailable {
                 envelope.status = crate::data::ObtainStatus::Unavailable;
                 envelope.data = None;
@@ -167,7 +209,12 @@ pub async fn obtain_handler(
             );
             let gap = gap_history_obtain_data(&hist, LICENSED_HISTORY_ADAPTER_ID);
             drop(book);
-            envelope = apply_kotak_source_route(envelope, &state.gap_vendor, gap);
+            envelope = apply_kotak_source_route(envelope, &gap_vendor, gap);
+            if envelope.status == crate::data::ObtainStatus::Success
+                && envelope.provenance_adapter_id.as_deref() == Some(LICENSED_HISTORY_ADAPTER_ID)
+            {
+                consume_vendor_history_quota(&state);
+            }
             return Json(envelope);
         }
     }
