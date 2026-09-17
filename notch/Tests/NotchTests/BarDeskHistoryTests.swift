@@ -84,6 +84,69 @@ struct BarDeskHistoryTests {
         #expect(!line.contains("yahoo-shaped"))
     }
 
+    @Test func applyStationHistoryEnvelopeKotakVendorSuccessPaintsLabsSeries() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "adapter_id": "licensed_history",
+            "book_id": "licensed-history",
+            "product_use": "labs",
+            "provenance_adapter_id": "licensed_history",
+            "ineligible": [] as [String],
+            "data": [
+                "last_close": "1401.00",
+                "interval": "1m",
+                "source": "licensed_history",
+                "candles": [
+                    [
+                        "open_time_ms": 1_700_000_000_000,
+                        "open": "1400.00",
+                        "high": "1402.00",
+                        "low": "1398.00",
+                        "close": "1401.00",
+                        "volume": "10",
+                    ],
+                ],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].close == "1401.00")
+        let line = glanceLine(vm)
+        #expect(line == "success")
+        #expect(!line.contains("licensed_history"))
+        #expect(!line.contains("yahoo"))
+        #expect(!line.contains("binance"))
+    }
+
+    @Test func applyStationHistoryEnvelopeKotakVendorUnavailableIsNoLicensedSeries() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationHistoryEnvelope([
+            "status": "unavailable",
+            "adapter_id": "licensed_history",
+            "book_id": "licensed-history",
+            "product_use": "labs",
+            "provenance_adapter_id": "licensed_history",
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+        #expect(glanceLine(vm) == "no licensed series")
+    }
+
+    @Test func applyStationHistoryEnvelopeKotakEmptyStaysUnsupported() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationHistoryEnvelope([:])
+        #expect(vm.deskHistoryStatus == "unsupported")
+        #expect(vm.deskHistoryCandles.isEmpty)
+        #expect(glanceLine(vm) == "unsupported")
+    }
+
     @Test func applyStationHistoryEnvelopeIgnoresYahooSource() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.brokerSyncClass = "synced"

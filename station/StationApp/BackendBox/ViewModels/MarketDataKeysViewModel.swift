@@ -160,7 +160,7 @@ public final class MarketDataKeysViewModel: ObservableObject {
 
     public func obtainNow(id: UUID) async {
         guard let item = keys.first(where: { $0.id == id }) else { return }
-        VendorFetchModeStore.armObtain(item.provider.rawValue)
+        VendorFetchModeStore.prepareObtainNow(adapterId: item.provider.rawValue)
         let query: String
         switch item.provider {
         case .amfi:

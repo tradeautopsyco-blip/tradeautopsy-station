@@ -77,4 +77,25 @@ struct VendorHistoryObtainTests {
                 == "/api/station/obtain?adapter=kotak_neo&operation=history"
         )
     }
+
+    @Test func obtainNowPromotesOffToOnObtainAndArms() {
+        let suite = "vendor.fetchMode.obtainNow.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        #expect(VendorFetchModeStore.mode(for: "licensed_history", defaults: defaults) == .off)
+        VendorFetchModeStore.prepareObtainNow(adapterId: "licensed_history", defaults: defaults)
+        #expect(VendorFetchModeStore.mode(for: "licensed_history", defaults: defaults) == .onObtain)
+        #expect(VendorFetchModeStore.consumeArmed("licensed_history", defaults: defaults) == true)
+        #expect(VendorFetchModeStore.consumeArmed("licensed_history", defaults: defaults) == false)
+    }
+
+    @Test func obtainNowLeavesPaneAutoAndStillArms() {
+        let suite = "vendor.fetchMode.paneAuto.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        VendorFetchModeStore.set(.paneAuto, for: "amfi", defaults: defaults)
+        VendorFetchModeStore.prepareObtainNow(adapterId: "amfi", defaults: defaults)
+        #expect(VendorFetchModeStore.mode(for: "amfi", defaults: defaults) == .paneAuto)
+        #expect(VendorFetchModeStore.consumeArmed("amfi", defaults: defaults) == true)
+    }
 }

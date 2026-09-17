@@ -206,7 +206,7 @@ pub fn extract_gap_vendor_history(
     let Some(row) = row else {
         return empty_licensed(instrument_id, adapter_id, Vec::new());
     };
-    licensed_success(row, "binance_klines")
+    licensed_success(row, adapter_id)
 }
 
 /// Obtain(history) for a declared gap vendor — never COM, never Kotak.
@@ -493,5 +493,42 @@ mod tests {
             dated.data.as_ref().and_then(|d| d.get("source")),
             Some(&serde_json::json!("eapi_klines"))
         );
+    }
+
+    #[test]
+    fn gap_vendor_series_is_not_binance_klines() {
+        use crate::data::binance_klines::HistoryCandle;
+        use crate::data::LICENSED_HISTORY_ADAPTER_ID;
+        let mut book = HistoryBook::new();
+        apply_history_series(
+            &mut book,
+            HistorySeries {
+                instrument_id: "nse_cm|2885".into(),
+                adapter_id: LICENSED_HISTORY_ADAPTER_ID.into(),
+                interval: DEFAULT_HISTORY_INTERVAL.into(),
+                candles: vec![HistoryCandle {
+                    open_time_ms: 1_700_000_000_000,
+                    open: "1400.00".into(),
+                    high: "1402.00".into(),
+                    low: "1398.00".into(),
+                    close: "1401.00".into(),
+                    volume: "10".into(),
+                    close_time_ms: 1_700_000_060_000,
+                }],
+                transport: Transport::Fixture,
+            },
+        );
+        let env = extract_gap_vendor_history(
+            &book,
+            LICENSED_HISTORY_ADAPTER_ID,
+            "",
+            Some(DEFAULT_HISTORY_INTERVAL),
+        );
+        assert_eq!(env.status, HistoryStatus::Success);
+        assert_eq!(env.provenance.adapter_id, LICENSED_HISTORY_ADAPTER_ID);
+        let data = env.data.as_ref().expect("vendor series");
+        assert_eq!(data["source"], LICENSED_HISTORY_ADAPTER_ID);
+        assert_ne!(data["source"], "binance_klines");
+        assert!(gap_history_obtain_data(&env, LICENSED_HISTORY_ADAPTER_ID).is_some());
     }
 }

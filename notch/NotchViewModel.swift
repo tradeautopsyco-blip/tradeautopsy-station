@@ -1762,23 +1762,20 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Bind History from a Station history extract (testable without network).
-    /// Crypto Options session chart consumes eapi candles. Kotak stays unsupported.
+    /// Crypto Options session chart consumes eapi candles.
+    /// Kotak broker history stays unsupported. A declared gap vendor may paint labs series.
     /// Spot `/api/station/history` never paints a dated contract.
     func applyStationHistoryEnvelope(_ json: [String: Any]) {
         deskYahooHistoryStatus = "unavailable"
         deskYahooHistoryIneligible = []
 
-        if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
-            deskHistoryStatus = "unsupported"
-            deskHistoryIneligible = []
-            deskHistoryCandles = []
-            return
-        }
-
         let adapter = ((json["provenance"] as? [String: Any])?["adapter_id"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
         let provenanceAdapter = (json["provenance_adapter_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let envelopeAdapter = (json["adapter_id"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? ""
         let dataSource = ((json["data"] as? [String: Any])?["source"] as? String)?
@@ -1798,6 +1795,32 @@ public final class NotchViewModel: ObservableObject {
             return
         }
 
+        let kotakDesk = BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
+        if kotakDesk {
+            let binanceShaped = adapter == "binance_com"
+                || provenanceAdapter == "binance_com"
+                || envelopeAdapter == "binance_com"
+                || bookId == "binance-com-spot"
+                || dataSource == "binance_klines"
+            let vendorGap = provenanceAdapter == "licensed_history"
+                || envelopeAdapter == "licensed_history"
+                || bookId == "licensed-history"
+            if binanceShaped && !vendorGap {
+                deskHistoryStatus = "unsupported"
+                deskHistoryIneligible = []
+                deskHistoryCandles = []
+                return
+            }
+            if vendorGap {
+                applyKotakVendorHistory(json: json, status: status)
+                return
+            }
+            deskHistoryStatus = "unsupported"
+            deskHistoryIneligible = []
+            deskHistoryCandles = []
+            return
+        }
+
         let cryptoOptions = BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
             instrumentId: deskSelectedInstrumentId
@@ -1813,6 +1836,25 @@ public final class NotchViewModel: ObservableObject {
         }
 
         deskHistoryStatus = status
+        deskHistoryIneligible = stringList(json["ineligible"]).filter {
+            $0 != "rights_forbid_canonical"
+        }
+        deskHistoryCandles = []
+    }
+
+    /// Declared-gap vendor series on a Kotak desk. Never Kotak last. Never COM klines.
+    private func applyKotakVendorHistory(json: [String: Any], status: String) {
+        let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
+        if status == "success", !candles.isEmpty {
+            deskHistoryStatus = "success"
+            deskHistoryIneligible = []
+            deskHistoryCandles = candles
+            return
+        }
+        deskHistoryStatus = status.isEmpty ? "unavailable" : status
+        if deskHistoryStatus == "success" {
+            deskHistoryStatus = "unavailable"
+        }
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }

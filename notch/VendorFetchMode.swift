@@ -48,6 +48,14 @@ public enum VendorFetchModeStore {
         }
         return armed
     }
+
+    /// Box Obtain now: Off becomes On-obtain so Notch will fetch the armed query.
+    public static func prepareObtainNow(adapterId: String, defaults: UserDefaults = .standard) {
+        if mode(for: adapterId, defaults: defaults) == .off {
+            set(.onObtain, for: adapterId, defaults: defaults)
+        }
+        armObtain(adapterId, defaults: defaults)
+    }
 }
 
 /// Client-driven obtain gate. Agent stays fetch-on-demand.
