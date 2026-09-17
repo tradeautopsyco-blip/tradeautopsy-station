@@ -95,10 +95,12 @@ pub struct TestAgentOptions {
     pub gap_vendor_key: Option<String>,
     pub gap_vendor_history_budget: u32,
     pub kotak_quote_budget: u32,
+    /// S7 CI: enable fixture `licensed_history` as a declared Kotak history gap.
     pub plant_licensed_history_gap: bool,
     pub amfi_nav_base_url: Option<String>,
     /// Test seam: override AMFI fence host (default `www.amfiindia.com`).
     pub amfi_nav_host: Option<String>,
+    pub amfi_enabled: bool,
 }
 
 impl Default for TestAgentOptions {
@@ -156,6 +158,7 @@ impl Default for TestAgentOptions {
             plant_licensed_history_gap: false,
             amfi_nav_base_url: None,
             amfi_nav_host: None,
+            amfi_enabled: true,
         }
     }
 }
@@ -224,6 +227,7 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_licensed_history_gap = opts.plant_licensed_history_gap;
     cfg.amfi_nav_base_url = opts.amfi_nav_base_url.clone();
     cfg.amfi_nav_host = opts.amfi_nav_host.clone();
+    cfg.amfi_enabled = opts.amfi_enabled;
 }
 
 fn remove_sqlite_files(path: &std::path::Path) {

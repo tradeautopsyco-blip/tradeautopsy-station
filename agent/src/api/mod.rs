@@ -19,7 +19,7 @@ use crate::{
 };
 use axum::{
     middleware,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
     Router,
 };
 use std::collections::{HashMap, HashSet};
@@ -56,6 +56,7 @@ mod sse;
 mod station_auth;
 mod sync_hint;
 mod today;
+mod vendor_bindings;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -177,12 +178,18 @@ pub struct AppState {
     pub amfi_nav_host: Option<String>,
     /// S7 declared-gap fixture. Live quota is shared and decremented on vendor history success.
     pub gap_vendor: Arc<Mutex<crate::data::GapVendorConfig>>,
+    /// AMFI labs vendor. Public file — Enable still gates Health + obtain.
+    pub amfi_enabled: Arc<Mutex<bool>>,
 }
 
 pub fn router(state: AppState) -> Router {
     let state_for_layer = state.clone();
     let protected = Router::new()
         .route("/api/daemon/health", get(health::handler))
+        .route(
+            "/api/daemon/vendor-bindings",
+            put(vendor_bindings::put_handler),
+        )
         .route("/api/daemon/events/stream", get(sse::handler))
         .route(
             "/api/daemon/toolbar/recent-trades",

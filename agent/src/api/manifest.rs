@@ -164,6 +164,26 @@ pub async fn obtain_handler(
     let book = query_id(query.book.as_deref()).unwrap_or_default();
     let operation = query_id(query.operation.as_deref()).unwrap_or_default();
     if adapter == "amfi" {
+        if !*state
+            .amfi_enabled
+            .lock()
+            .expect("amfi_enabled mutex poisoned")
+        {
+            return Json(crate::data::ObtainEnvelope {
+                adapter_id: crate::data::AMFI_ADAPTER_ID.into(),
+                book_id: crate::data::AMFI_NAV_BOOK_ID.into(),
+                operation: if operation.is_empty() {
+                    "amfi_nav".to_string()
+                } else {
+                    operation.to_string()
+                },
+                status: crate::data::ObtainStatus::Unsupported,
+                data: None,
+                provenance_adapter_id: Some(crate::data::AMFI_ADAPTER_ID.into()),
+                provenance_path: None,
+                product_use: Some("labs".into()),
+            });
+        }
         let host = state
             .amfi_nav_host
             .as_deref()

@@ -188,6 +188,15 @@ async fn health_vendors_licensed_history_unsupported_by_default() {
     assert_eq!(row["what"], "licensed_history India ohlcv (Kotak has none)");
     assert_eq!(row["why"], "unsupported");
     assert!(row["error"].is_null());
+    let amfi = body["vendors"]
+        .as_array()
+        .expect("vendors")
+        .iter()
+        .find(|row| row["adapter_id"] == "amfi")
+        .expect("amfi vendor row");
+    assert_eq!(amfi["status"], "up");
+    assert_eq!(amfi["what"], "AMFI NAV (labs)");
+    assert_eq!(amfi["obtain_noun"], "amfi_nav");
     assert!(
         body["vendors"]
             .as_array()

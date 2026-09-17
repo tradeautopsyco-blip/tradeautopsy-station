@@ -118,7 +118,9 @@ public final class StationAppCoordinator: ObservableObject {
             syncControl: resolvedSyncControl,
             runtimeClient: resolvedRuntimeClient
         )
-        self.marketDataKeysViewModel = MarketDataKeysViewModel()
+        self.marketDataKeysViewModel = MarketDataKeysViewModel(
+            bindingClient: LocalVendorBindingClient(daemonSecret: resolvedDaemonSecret)
+        )
         self.aiWorkflowKeysViewModel = AIWorkflowKeysViewModel()
 
         let resolvedTodayClient = todayClient ?? LocalTodayAgentClient(

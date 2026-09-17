@@ -1,3 +1,4 @@
+import Notch
 import SwiftUI
 
 public struct MarketDataKeysView: View {
@@ -53,18 +54,24 @@ public struct MarketDataKeysView: View {
             }
             .pickerStyle(.menu)
 
-            SecureField("API key", text: $viewModel.draftAPIKey)
-                .textFieldStyle(.roundedBorder)
+            if viewModel.selectedProvider.requiresKey {
+                SecureField("API key", text: $viewModel.draftAPIKey)
+                    .textFieldStyle(.roundedBorder)
 
-            Button("Save key") {
-                Task {
-                    try? await viewModel.addKey(
-                        provider: viewModel.selectedProvider,
-                        apiKey: viewModel.draftAPIKey
-                    )
+                Button("Save key") {
+                    Task {
+                        try? await viewModel.addKey(
+                            provider: viewModel.selectedProvider,
+                            apiKey: viewModel.draftAPIKey
+                        )
+                    }
                 }
+                .disabled(viewModel.draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } else {
+                Text("AMFI is a public labs file. No key. Enable and pick a fetch mode.")
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                    .foregroundStyle(StationDS.Text.muted)
             }
-            .disabled(viewModel.draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(16)
         .background(
@@ -75,17 +82,13 @@ public struct MarketDataKeysView: View {
 
     @ViewBuilder
     private var keyListSection: some View {
-        if viewModel.keys.isEmpty {
-            Text("No market data keys saved.")
-                .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
-                .foregroundStyle(StationDS.Text.muted)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Saved keys")
-                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                    .foregroundStyle(StationDS.Text.primary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Bindings")
+                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
+                .foregroundStyle(StationDS.Text.primary)
 
-                ForEach(viewModel.keys) { entry in
+            ForEach(viewModel.keys) { entry in
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(entry.provider.rawValue)
@@ -97,9 +100,16 @@ public struct MarketDataKeysView: View {
                             Text(entry.enabled ? "Enabled" : "Disabled")
                                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
                                 .foregroundStyle(StationDS.Text.labels)
-                            Text(validationLabel(for: entry.validationState))
-                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                                .foregroundStyle(StationDS.Text.labels)
+                            if entry.provider.requiresKey {
+                                Text(validationLabel(for: entry.validationState))
+                                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                                    .foregroundStyle(StationDS.Text.labels)
+                            }
+                            if let status = entry.lastObtainStatus {
+                                Text("Last obtain: \(status)")
+                                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                                    .foregroundStyle(StationDS.Text.labels)
+                            }
                         }
                         Spacer()
                         if entry.enabled {
@@ -111,18 +121,39 @@ public struct MarketDataKeysView: View {
                                 Task { try? await viewModel.enable(id: entry.id) }
                             }
                         }
-                        Button("Delete", role: .destructive) {
-                            Task { try? await viewModel.deleteKey(id: entry.id) }
+                        if entry.provider.requiresKey {
+                            Button("Delete", role: .destructive) {
+                                Task { try? await viewModel.deleteKey(id: entry.id) }
+                            }
                         }
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.04))
-                    )
+                    Picker("Fetch", selection: fetchModeBinding(for: entry)) {
+                        ForEach(VendorFetchMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Button("Obtain now") {
+                        Task { await viewModel.obtainNow(id: entry.id) }
+                    }
+                    .disabled(!entry.enabled)
                 }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
             }
         }
+    }
+
+    private func fetchModeBinding(for entry: MarketDataKeyListItem) -> Binding<VendorFetchMode> {
+        Binding(
+            get: { entry.fetchMode },
+            set: { mode in
+                Task { await viewModel.setFetchMode(mode, id: entry.id) }
+            }
+        )
     }
 
     private func validationLabel(for state: ProviderKeyValidationState) -> String {

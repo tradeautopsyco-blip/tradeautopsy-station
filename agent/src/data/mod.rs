@@ -61,6 +61,7 @@ mod source_route;
 mod tick;
 mod tickbook;
 mod vendor_health;
+mod vendor_registry;
 
 pub use account_book::AccountBook;
 pub use account_capability::{
@@ -69,7 +70,7 @@ pub use account_capability::{
 pub use account_split::{
     fills_provenance_path, merge_poll_book_id, split_fills_by_book, stamp_nfo_fills,
 };
-pub use amfi::{obtain_amfi_nav, AMFI_NAV_HOST};
+pub use amfi::{obtain_amfi_nav, AMFI_ADAPTER_ID, AMFI_NAV_BOOK_ID, AMFI_NAV_HOST};
 pub use apply::{apply_quote, ApplyError};
 pub use binance_coinm_private::{
     ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
@@ -194,9 +195,10 @@ pub use source_manifest::{
 #[cfg(test)]
 pub use source_manifest::{first_party_s0_manifests, manifest_for_slug};
 pub use source_route::{
-    apply_kotak_source_route, decide_kotak_route, should_source_route, GapVendorConfig,
-    LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_VAULT_CONNECTION_ID,
+    apply_kotak_source_route, decide_kotak_route, secret_looks_like_url, should_source_route,
+    GapVendorConfig, LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_VAULT_CONNECTION_ID,
 };
+pub use vendor_health::vendor_health_rows;
+pub use vendor_registry::{binding_for, clamp_budget};
 pub use tick::{QuoteTick, Transport};
 pub use tickbook::TickBook;
-pub use vendor_health::vendor_health_rows;

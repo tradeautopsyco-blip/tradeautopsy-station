@@ -370,6 +370,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var authProvider: String?
     /// Phase 9 — founder QA snapshot text from `/api/daemon/health` (+ metrics URL hint).
     @Published var agentLocalDiagnostics: String = ""
+    /// S7 vendor fence — Health of bindings, never a vendor last.
+    @Published var vendorFenceRows: [VendorFenceRow] = []
     @Published var dictationWaveform: [Float] = Array(repeating: 0, count: WaveformNineDotRing.dotCount)
     @Published var isDictating: Bool = false
     @Published var dictationPermissionDenied: Bool = false
@@ -2324,7 +2326,9 @@ public final class NotchViewModel: ObservableObject {
             : nil
         let historyPath: String?
         if plan.usesKotakHistoryObtain {
-            historyPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
+            let mode = VendorFetchModeStore.mode(for: "licensed_history")
+            let armed = mode == .onObtain && VendorFetchModeStore.consumeArmed("licensed_history")
+            historyPath = VendorHistoryObtain.kotakHistoryPath(mode: mode, armed: armed)
         } else if plan.usesOptionsHistoryObtain {
             historyPath = deskOptionsHistoryExtractPath()
         } else if declareAssetClass == .options {
@@ -3846,6 +3850,7 @@ public final class NotchViewModel: ObservableObject {
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
             guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
             rebuildAgentLocalDiagnostics(from: json)
+            applyVendorFence(from: json)
             guard let boot = json["boot_id"] as? String else { return }
             guard let pk = json["sse_signing_pubkey_b64"] as? String else { return }
 
@@ -3862,6 +3867,10 @@ public final class NotchViewModel: ObservableObject {
             }
             pinnedAgentSsePubKeyB64 = pk
         } catch {}
+    }
+
+    func applyVendorFence(from json: [String: Any]) {
+        vendorFenceRows = VendorFence.rows(fromHealthJSON: json)
     }
 
     /// Phase 9 — surfaces agent observability for Pulse tab (plan: founder-support snapshot).

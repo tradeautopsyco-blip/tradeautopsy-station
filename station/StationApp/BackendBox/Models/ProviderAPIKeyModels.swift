@@ -16,8 +16,25 @@ public enum ProviderKeyValidationState: String, Codable, Equatable, Sendable {
 
 public enum MarketDataProvider: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {
     case licensedHistory = "licensed_history"
+    case amfi = "amfi"
 
     public var id: String { rawValue }
+
+    public var requiresKey: Bool {
+        switch self {
+        case .licensedHistory: return true
+        case .amfi: return false
+        }
+    }
+
+    public var provenanceStrip: String {
+        switch self {
+        case .licensedHistory:
+            return "History: licensed_history (Kotak has none)"
+        case .amfi:
+            return "NAV: amfi (labs — not Kotak last)"
+        }
+    }
 }
 
 public enum AIWorkflowProvider: String, CaseIterable, Codable, Hashable, Sendable, Identifiable {

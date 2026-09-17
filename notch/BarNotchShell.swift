@@ -437,6 +437,7 @@ struct BarNotchShell: View {
 
             liveStateFreshnessChip
             brokerConnectionPill
+            vendorFenceChip
             deskCapabilityPills
             statePill
         }
@@ -447,6 +448,21 @@ struct BarNotchShell: View {
             Rectangle()
                 .fill(BarDS.Border.section)
                 .frame(height: BarDS.borderThin)
+        }
+    }
+
+    private var vendorFenceChip: some View {
+        let line = viewModel.vendorFenceRows
+            .map(\.fenceLine)
+            .joined(separator: " · ")
+        return Group {
+            if !line.isEmpty {
+                Text(line)
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Text.muted)
+                    .lineLimit(1)
+                    .help(line)
+            }
         }
     }
 

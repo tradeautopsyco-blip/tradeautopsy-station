@@ -20,6 +20,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
         "observability": state.metrics.snapshot_json(),
         "vendors": crate::data::vendor_health_rows(
             &state.gap_vendor.lock().expect("gap_vendor mutex poisoned"),
+            *state.amfi_enabled.lock().expect("amfi_enabled mutex poisoned"),
         ),
     }))
 }

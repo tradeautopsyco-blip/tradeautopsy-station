@@ -393,6 +393,8 @@ pub struct AgentConfig {
     pub gap_vendor_history_budget: u32,
     pub kotak_quote_budget: u32,
     pub plant_licensed_history_gap: bool,
+    /// AMFI labs vendor starts enabled (public file). PUT can dark it.
+    pub amfi_enabled: bool,
     /// Disk cache for exchangeInfo JSON / Kotak cash CSVs (`AGENT_INSTRUMENT_MASTER_CACHE_DIR`).
     pub instrument_master_cache_dir: PathBuf,
 }
@@ -533,6 +535,7 @@ impl AgentConfig {
             gap_vendor_history_budget: 0,
             kotak_quote_budget: 1_000,
             plant_licensed_history_gap: false,
+            amfi_enabled: true,
             instrument_master_cache_dir: instrument_master_cache_dir_from_env(),
         })
     }
@@ -615,6 +618,7 @@ impl AgentConfig {
             gap_vendor_history_budget: 0,
             kotak_quote_budget: 1_000,
             plant_licensed_history_gap: false,
+            amfi_enabled: true,
             instrument_master_cache_dir,
         }
     }
@@ -1414,6 +1418,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             history_budget: config.gap_vendor_history_budget,
             quote_budget: config.kotak_quote_budget,
         })),
+        amfi_enabled: Arc::new(Mutex::new(config.amfi_enabled)),
     };
     crate::data::spawn_binance_com_trade_loop(
         state.quote_registry.clone(),

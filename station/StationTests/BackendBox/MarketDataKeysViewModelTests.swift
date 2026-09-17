@@ -1,20 +1,34 @@
 import Foundation
+import Notch
 import Testing
 @testable import Station
 
 @MainActor
 struct MarketDataKeysViewModelTests {
-    @Test func shippingAllowlistIsLicensedHistoryOnly() {
+    private func licensed(_ viewModel: MarketDataKeysViewModel) -> MarketDataKeyListItem? {
+        viewModel.keys.first { $0.provider == .licensedHistory }
+    }
+
+    private func amfi(_ viewModel: MarketDataKeysViewModel) -> MarketDataKeyListItem? {
+        viewModel.keys.first { $0.provider == .amfi }
+    }
+
+    @Test func shippingAllowlistIsLicensedHistoryAndAmfi() {
         let slugs = MarketDataProvider.allCases.map(\.rawValue)
-        #expect(slugs == ["licensed_history"])
+        #expect(slugs.contains("licensed_history"))
+        #expect(slugs.contains("amfi"))
         #expect(slugs.contains("OpenBB") == false)
         #expect(slugs.contains("Polygon") == false)
         #expect(slugs.contains("Alpha Vantage") == false)
+        #expect(slugs.contains("finnhub") == false)
+        #expect(MarketDataProvider.amfi.requiresKey == false)
+        #expect(MarketDataProvider.licensedHistory.requiresKey == true)
     }
 
     @Test func addKeyRefusesURLAndDoesNotSave() async {
         let store = FakeProviderAPIKeyStore()
-        let viewModel = MarketDataKeysViewModel(store: store)
+        let client = FakeVendorBindingClient()
+        let viewModel = MarketDataKeysViewModel(store: store, bindingClient: client)
 
         await #expect(throws: MarketDataKeyError.urlIsNotAKey) {
             try await viewModel.addKey(
@@ -23,35 +37,44 @@ struct MarketDataKeysViewModelTests {
             )
         }
 
-        #expect(viewModel.keys.isEmpty)
+        #expect(licensed(viewModel) == nil)
         #expect(store.saveCallCount == 0)
+        #expect(client.puts.isEmpty)
     }
 
-    @Test func addKeySavesLicensedHistoryMaskedAndEnabled() async throws {
+    @Test func addKeySavesLicensedHistoryAndPushesEnableToAgent() async throws {
         let store = FakeProviderAPIKeyStore()
-        let viewModel = MarketDataKeysViewModel(store: store)
+        let client = FakeVendorBindingClient()
+        let viewModel = MarketDataKeysViewModel(store: store, bindingClient: client)
 
         try await viewModel.addKey(provider: .licensedHistory, apiKey: "lh-fixture-key")
 
-        #expect(viewModel.keys.count == 1)
-        #expect(viewModel.keys[0].provider == .licensedHistory)
-        #expect(viewModel.keys[0].maskedValue != "lh-fixture-key")
-        #expect(viewModel.keys[0].maskedValue.contains("•"))
-        #expect(viewModel.keys[0].enabled == true)
+        let row = try #require(licensed(viewModel))
+        #expect(row.maskedValue != "lh-fixture-key")
+        #expect(row.maskedValue.contains("•"))
+        #expect(row.enabled == true)
         #expect(store.saveCallCount == 1)
+        #expect(client.puts.count == 1)
+        #expect(client.puts[0].adapterId == "licensed_history")
+        #expect(client.puts[0].enabled == true)
+        #expect(client.puts[0].apiKey == "lh-fixture-key")
+        #expect(amfi(viewModel) != nil)
     }
 
-    @Test func disableThenEnableTogglesListItem() async throws {
+    @Test func disableThenEnablePushesAgent() async throws {
         let store = FakeProviderAPIKeyStore()
-        let viewModel = MarketDataKeysViewModel(store: store)
+        let client = FakeVendorBindingClient()
+        let viewModel = MarketDataKeysViewModel(store: store, bindingClient: client)
         try await viewModel.addKey(provider: .licensedHistory, apiKey: "lh-fixture-key")
-        let keyID = viewModel.keys[0].id
+        let keyID = try #require(licensed(viewModel)?.id)
 
         try await viewModel.disable(id: keyID)
-        #expect(viewModel.keys[0].enabled == false)
+        #expect(licensed(viewModel)?.enabled == false)
+        #expect(client.puts.last?.enabled == false)
 
         try await viewModel.enable(id: keyID)
-        #expect(viewModel.keys[0].enabled == true)
+        #expect(licensed(viewModel)?.enabled == true)
+        #expect(client.puts.last?.enabled == true)
     }
 
     @Test func provenanceStripNamesLicensedHistoryAndKotakHasNone() {
@@ -59,6 +82,7 @@ struct MarketDataKeysViewModelTests {
         let strip = viewModel.provenanceStrip(for: .licensedHistory)
         #expect(strip.contains("licensed_history"))
         #expect(strip.contains("Kotak has none"))
+        #expect(viewModel.provenanceStrip(for: .amfi).contains("labs"))
     }
 
     @Test func addKeyListsMaskedEntryWithNotValidatedState() async throws {
@@ -67,27 +91,29 @@ struct MarketDataKeysViewModelTests {
 
         try await viewModel.addKey(provider: .licensedHistory, apiKey: "polygon-secret-key-1234")
 
-        #expect(viewModel.keys.count == 1)
-        #expect(viewModel.keys[0].provider == .licensedHistory)
-        #expect(viewModel.keys[0].maskedValue.hasSuffix("1234"))
-        #expect(viewModel.keys[0].maskedValue.contains("•"))
-        #expect(viewModel.keys[0].validationState == .notValidated)
+        let row = try #require(licensed(viewModel))
+        #expect(row.maskedValue.hasSuffix("1234"))
+        #expect(row.maskedValue.contains("•"))
+        #expect(row.validationState == .notValidated)
         #expect(store.saveCallCount == 1)
     }
 
-    @Test func deleteKeyRemovesEntryFromList() async throws {
+    @Test func deleteKeyRemovesLicensedHistoryAndPushesDisable() async throws {
         let store = FakeProviderAPIKeyStore()
-        let viewModel = MarketDataKeysViewModel(store: store)
+        let client = FakeVendorBindingClient()
+        let viewModel = MarketDataKeysViewModel(store: store, bindingClient: client)
         try await viewModel.addKey(provider: .licensedHistory, apiKey: "openbb-key-5678")
-        let keyID = viewModel.keys[0].id
+        let keyID = try #require(licensed(viewModel)?.id)
 
         try await viewModel.deleteKey(id: keyID)
 
-        #expect(viewModel.keys.isEmpty)
+        #expect(licensed(viewModel) == nil)
+        #expect(amfi(viewModel) != nil)
         #expect(store.deleteCallCount == 1)
+        #expect(client.puts.last?.enabled == false)
     }
 
-    @Test func loadKeysRestoresPersistedEntries() async throws {
+    @Test func loadKeysRestoresPersistedEntriesAndAmfiBinding() async throws {
         let store = FakeProviderAPIKeyStore()
         let identity = ProviderAPIKeyIdentity(
             namespace: .marketData,
@@ -102,8 +128,20 @@ struct MarketDataKeysViewModelTests {
         let viewModel = MarketDataKeysViewModel(store: store)
         await viewModel.loadKeys()
 
-        #expect(viewModel.keys.count == 1)
-        #expect(viewModel.keys[0].provider == .licensedHistory)
-        #expect(viewModel.keys[0].maskedValue.hasSuffix("9999"))
+        let row = try #require(licensed(viewModel))
+        #expect(row.maskedValue.hasSuffix("9999"))
+        #expect(amfi(viewModel) != nil)
+    }
+
+    @Test func setFetchModePersistsPerIdentity() async throws {
+        let store = FakeProviderAPIKeyStore()
+        let viewModel = MarketDataKeysViewModel(store: store)
+        await viewModel.loadKeys()
+        let amfiID = try #require(amfi(viewModel)?.id)
+
+        await viewModel.setFetchMode(.paneAuto, id: amfiID)
+        #expect(amfi(viewModel)?.fetchMode == .paneAuto)
+        #expect(VendorFetchModeStore.mode(for: "amfi") == .paneAuto)
+        VendorFetchModeStore.set(.off, for: "amfi")
     }
 }
