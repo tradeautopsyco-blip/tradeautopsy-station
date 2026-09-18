@@ -86,8 +86,13 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
         serde_json::from_str(body).map_err(|e| format!("trade book json: {e}"))?;
 
     // `stCode` 1003 is a dead session; the host also classifies it, this is belt-and-braces.
-    if root.get("stCode").and_then(|v| v.as_i64()) == Some(1003) {
+    if st_code(&root) == Some(1003) {
         return Err("kotak_neo session_expired".to_string());
+    }
+    // Official SDK "No Data Response": stCode 5203 / errMsg "No Data" is an empty
+    // day book (v3.0.6 docs/functions/README.md + smoke_test). Not a venue error.
+    if is_empty_day_book(&root) {
+        return Ok(Vec::new());
     }
     // Trade_report.md: `stat` is "ok" on success. HTTP 200 + Not_Ok is still a venue error
     // (400/403 table). Do not treat a missing `data` array as a quiet day.
@@ -280,6 +285,23 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     let doy = (153 * mp + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146_097 + doe - 719_468
+}
+
+fn st_code(root: &serde_json::Value) -> Option<i64> {
+    root.get("stCode").and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_u64().map(|n| n as i64))
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+    })
+}
+
+/// Kotak Neo SDK: `{ "stCode": 5203, "errMsg": "No Data", "stat": "Not_Ok" }`
+/// means no orders/trades/positions today — empty success, not a failed session.
+fn is_empty_day_book(root: &serde_json::Value) -> bool {
+    if st_code(root) == Some(5203) {
+        return true;
+    }
+    string_field(root, "errMsg").is_some_and(|m| m.eq_ignore_ascii_case("No Data"))
 }
 
 fn string_field(row: &serde_json::Value, key: &str) -> Option<String> {

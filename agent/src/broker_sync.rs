@@ -102,11 +102,17 @@ impl BrokerRuntimeState {
         if self.circuit_open {
             return "disconnected";
         }
+        // Dead TOTP/session is Stop-class. A live session whose fills poll
+        // failed (quiet-day `Not_Ok`, funds leftover) is stale/degraded — Notch
+        // maps `disconnected` to "Not connected" and that was lying.
+        if self
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("session_expired"))
+        {
+            return "disconnected";
+        }
         let Some(last_ok) = self.last_success_at_ms else {
-            if self.last_error.is_some() {
-                return "disconnected";
-            }
-            /* Broker session up, first successful poll not yet observed. */
             return "stale";
         };
 
@@ -720,6 +726,48 @@ mod tests {
             "VenueStopped must not open the class circuit"
         );
         assert_eq!(crate::dns_block::is_block_active(), kill_before);
+    }
+
+    #[test]
+    fn live_session_trade_book_not_ok_is_stale_not_disconnected() {
+        // Founder symptom 2026-09-18: Kotak session live (quotes/holdings) but
+        // Notch "Not connected" because fills poll got `stat: Not_Ok` and
+        // last_success_at_ms stayed None.
+        let st = BrokerRuntimeState {
+            broker_connected: true,
+            last_success_at_ms: None,
+            last_error: Some("adapter: kotak_neo trade_book_not_ok (Not_Ok)".into()),
+            ..BrokerRuntimeState::default()
+        };
+        assert_eq!(st.sync_state_literal(15, 60), "stale");
+    }
+
+    #[test]
+    fn session_expired_error_is_disconnected_even_if_start_flag_still_true() {
+        let st = BrokerRuntimeState {
+            broker_connected: true,
+            last_success_at_ms: None,
+            last_error: Some("adapter: kotak_neo session_expired".into()),
+            ..BrokerRuntimeState::default()
+        };
+        assert_eq!(st.sync_state_literal(15, 60), "disconnected");
+    }
+
+    #[test]
+    fn stop_without_session_is_not_connected() {
+        let st = BrokerRuntimeState::default();
+        assert_eq!(st.sync_state_literal(15, 60), "not_connected");
+    }
+
+    #[test]
+    fn circuit_open_is_disconnected() {
+        let st = BrokerRuntimeState {
+            broker_connected: true,
+            circuit_open: true,
+            last_error: Some("adapter: kotak_neo trade_book_not_ok (Not_Ok)".into()),
+            ..BrokerRuntimeState::default()
+        };
+        assert_eq!(st.sync_state_literal(15, 60), "disconnected");
     }
 
     #[test]

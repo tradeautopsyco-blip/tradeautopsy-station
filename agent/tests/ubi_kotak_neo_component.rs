@@ -180,6 +180,23 @@ fn empty_day_book_null_or_empty_data_is_zero_fills() {
     }
 }
 
+/// Official SDK "No Data Response" (`docs/functions/README.md` + v3.0.6 smoke_test
+/// stCode 5203): empty trade book, not a venue error. Quiet day must not paint
+/// the live session as disconnected.
+#[test]
+fn no_data_5203_is_empty_day_book() {
+    let wasm = component_wasm("kotak_neo");
+    for body in [
+        r#"{"stCode":5203,"errMsg":"No Data","desc":"data not found","stat":"Not_Ok"}"#,
+        r#"{"stat":"Not_Ok","stCode":"5203","errMsg":"No Data"}"#,
+    ] {
+        let (fills, _state) =
+            run_fetch_fills(&wasm, fixture_state(200, body.to_string()), empty_cursor())
+                .expect("5203 No Data is empty success");
+        assert!(fills.is_empty(), "body={body}");
+    }
+}
+
 /// HTTP 200 + `stat: Not_Ok` is a venue error (Trade_report.md 400/403 table via body).
 /// Must not look like a quiet day just because `data` is absent.
 #[test]

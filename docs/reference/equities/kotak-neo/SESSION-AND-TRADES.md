@@ -155,6 +155,7 @@ Sample row fields from Trade_report.md: `exSeg`, `prod`, `trdSym`, `trnsTp`, `fl
 | `sId` | Query param = `hsServerId` | string |
 | `exTm` | Exchange time string in sample | `dd-Mon-yyyy HH:mm:ss` (month name) |
 | `stCode` 1003 | Dead session (B6 + host classify) | int in JSON body |
+| `stCode` 5203 | Official empty book (`errMsg` "No Data") | int in JSON body |
 
 **Gaps (NOT SPECIFIED IN SOURCE):**
 
@@ -163,7 +164,7 @@ Sample row fields from Trade_report.md: `exSeg`, `prod`, `trdSym`, `trnsTp`, `fl
 > **OUR INTERPRETATION**
 >
 > - v1 ingest: segments `nse_cm`/`bse_cm`, products `CNC`/`MIS` only (B6 refuse NRML/F&O).
-> - Empty filtered day book is success.
+> - Empty filtered day book is success. Official v3.0.6 `docs/functions/README.md` "No Data Response" is HTTP 200 + `stat: Not_Ok` + `stCode: 5203` + `errMsg: No Data` — treat as zero fills, never as a dead session. `stCode` 400/403/1003 stay errors.
 > - Timestamps treated as IST (+05:30) with no zone marker.
 
 ---
