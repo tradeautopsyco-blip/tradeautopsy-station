@@ -1,7 +1,11 @@
 //! Binance USDM read-only client — `fapi.binance.com`.
 //!
-//! Lock: `issues/compliance/locks/binance-com-usdm.md` (fetch 2026-09-15 IST).
+//! Lock: `issues/compliance/locks/binance-com-usdm.md` (fetch 2026-09-15 IST;
+//! path oracle 2026-09-19 IST).
+//! Oracle (cite, not a dep): `/Users/bishnu/binance-connector-rust`
+//! `binance-sdk` 70.1.0 @ `592f16b` feature `derivatives_trading_usds_futures`.
 //! USER_DATA HMAC on `/fapi/v3/balance`, `/fapi/v3/positionRisk`, `/fapi/v1/forceOrders`.
+//! Do not call SDK `new_order` / `POST /fapi/v1/order`.
 
 use hmac::{Hmac, Mac};
 use serde::Deserialize;

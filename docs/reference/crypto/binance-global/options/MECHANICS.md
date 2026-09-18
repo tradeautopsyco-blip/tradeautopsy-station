@@ -1,10 +1,10 @@
 # Options (European) — Mechanics Reference
 
 **Exchange:** Binance Global only (`eapi.binance.com`) — NOT available on Binance.US  
-**Source:** `options/REST.md`, web search (Tier 4)  
-**Snapshot date:** 2026-07-02  
+**Source:** `options/REST.md`; path oracle `/Users/bishnu/binance-connector-rust` @ `592f16b` (`derivatives_trading_options`)  
+**Snapshot date:** 2026-07-02 · oracle **2026-09-19 IST**  
 **Reviewed:** No  
-**TradeAutopsy status:** NOT BUILDING — reference only
+**TradeAutopsy status:** named book `binance-com-options` **SHIPPING** for public last + chain/OI (S8 signed). This file is a citation dump — **the lock wins**. No realized-PnL owner.
 
 ---
 

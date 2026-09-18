@@ -1,10 +1,10 @@
 # Futures COIN-M — Mechanics Reference
 
 **Exchange:** Binance Global only (`dapi.binance.com`) — NOT available on Binance.US  
-**Source:** `futures-coinm/CHANGELOG-NOTES.md`, `futures-usdm/MECHANICS.md` (shared concepts), web search (Tier 4)  
-**Snapshot date:** 2026-07-02  
+**Source:** `futures-coinm/CHANGELOG-NOTES.md`, `futures-usdm/MECHANICS.md` (shared concepts); path oracle `/Users/bishnu/binance-connector-rust` @ `592f16b`  
+**Snapshot date:** 2026-07-02 · oracle **2026-09-19 IST**  
 **Reviewed:** No  
-**TradeAutopsy status:** NOT BUILDING — reference only
+**TradeAutopsy status:** named book `binance-com-coinm` **SHIPPING** for USER_DATA funds / positionbook / lossy force-order on `dapi.binance.com`. This file is a citation dump — **the lock wins**. DualNoBlend vs USDM.
 
 ---
 

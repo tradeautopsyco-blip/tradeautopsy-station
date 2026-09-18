@@ -1,7 +1,10 @@
 //! Binance Global options read-only client — `eapi.binance.com`.
 //!
 //! Ref: `docs/reference/crypto/binance-global/options/REST.md`
-//! Lock: `issues/compliance/locks/binance-com-options.md` (funds/positions 2026-09-15 IST).
+//! Lock: `issues/compliance/locks/binance-com-options.md` (funds/positions 2026-09-15 IST;
+//! path oracle 2026-09-19 IST).
+//! Oracle: `/Users/bishnu/binance-connector-rust` `binance-sdk` 70.1.0 @ `592f16b`
+//! feature `derivatives_trading_options`.
 //! Scope: `GET /eapi/v1/userTrades` (Slice 4), `GET /eapi/v1/marginAccount`,
 //! `GET /eapi/v1/position` (USER_DATA HMAC). No realized-PnL owner.
 

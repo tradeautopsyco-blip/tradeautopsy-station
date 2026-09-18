@@ -621,6 +621,46 @@ mod tests {
     }
 
     #[test]
+    fn usdm_book_allows_user_data_gets_and_refuses_trade_and_other_hosts() {
+        // Lock: binance-com-usdm.md — USER_DATA GET three paths; TRADE place refused.
+        for path in [
+            "/fapi/v3/balance",
+            "/fapi/v3/positionRisk",
+            "/fapi/v1/forceOrders",
+        ] {
+            authorize_book_call("binance-com-usdm", "fapi.binance.com", "GET", path, true)
+                .unwrap_or_else(|_| panic!("USDM USER_DATA GET {path} must be allowlisted"));
+        }
+        assert_eq!(
+            infer_capability("POST", "/fapi/v1/order").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "fapi.binance.com",
+                "POST",
+                "/fapi/v1/order",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert!(is_mutation("POST", "/fapi/v1/order"));
+        for (host, path) in [
+            ("api.binance.com", "/api/v3/account"),
+            ("eapi.binance.com", "/eapi/v1/ticker"),
+            ("dapi.binance.com", "/dapi/v1/balance"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-usdm", host, "GET", path, true).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "USDM fence must not dial {host}{path}"
+            );
+        }
+    }
+
+    #[test]
     fn place_and_withdraw_are_refused() {
         assert_eq!(
             authorize_host_call(

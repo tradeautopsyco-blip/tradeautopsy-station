@@ -1,6 +1,9 @@
 //! Binance Coin-M read-only client — `dapi.binance.com`.
 //!
-//! Lock: `issues/compliance/locks/binance-com-coinm.md` (fetch 2026-09-15 IST).
+//! Lock: `issues/compliance/locks/binance-com-coinm.md` (fetch 2026-09-15 IST;
+//! path oracle 2026-09-19 IST).
+//! Oracle: `/Users/bishnu/binance-connector-rust` `binance-sdk` 70.1.0 @ `592f16b`
+//! feature `derivatives_trading_coin_futures`. DualNoBlend vs USDM.
 
 use hmac::{Hmac, Mac};
 use serde::Deserialize;

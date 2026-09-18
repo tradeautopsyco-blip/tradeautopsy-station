@@ -1,6 +1,6 @@
 //! Spot round-trip reconstruction + WAC realized P&L (Today v1, Slice 1).
 //!
-//! Spec: `docs/reference/crypto/binance-us/spot/MECHANICS.md` §2–5
+//! Spec: lock `issues/compliance/locks/binance-com-spot.md` (COM WAC). Not Binance.US.
 
 use crate::broker::BrokerFill;
 use crate::exchange_info::{

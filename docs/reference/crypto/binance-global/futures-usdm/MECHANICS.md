@@ -1,10 +1,10 @@
 # Futures USDⓈ-M — Mechanics Reference
 
 **Exchange:** Binance Global only (`fapi.binance.com`) — NOT available on Binance.US  
-**Source:** `futures-usdm/ENUMS-FILTERS.md`, `futures-usdm/WEBSOCKET.md`, `futures-usdm/CHANGELOG-NOTES.md`, web search (Tier 4 — marketing/review sources, not official docs)  
-**Snapshot date:** 2026-07-02  
+**Source:** `futures-usdm/ENUMS-FILTERS.md`, `futures-usdm/WEBSOCKET.md`, `futures-usdm/CHANGELOG-NOTES.md`; path oracle `/Users/bishnu/binance-connector-rust` @ `592f16b` (`binance-sdk` 70.1.0)  
+**Snapshot date:** 2026-07-02 · oracle **2026-09-19 IST**  
 **Reviewed:** No  
-**TradeAutopsy status:** NOT BUILDING — reference only, no broker connection supports this asset class today
+**TradeAutopsy status:** named book `binance-com-usdm` **SHIPPING** for USER_DATA funds / positionbook / lossy force-order. This file is a 2026-07-02 citation dump — **the lock wins**. Do not use this file for TRADE. Do not cargo-depend the SDK.
 
 ---
 

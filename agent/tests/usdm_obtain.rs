@@ -279,6 +279,59 @@ async fn obtain_usdm_funds_positionbook_and_empty_forceorder_via_mock_egress() {
 
 #[tokio::test]
 #[serial]
+async fn obtain_usdm_empty_balance_is_success_with_empty_holdings() {
+    let server = MockServer::start().await;
+    mount_hmac_get(&server, "/fapi/v3/balance", "[]").await;
+
+    let handle = spawn_test_agent_with_options(PORT, start_opts(server.uri()));
+    wait_ready(PORT).await;
+    post_binance_com_start(PORT).await;
+
+    let funds = obtain(
+        PORT,
+        "adapter=binance_com&book=binance-com-usdm&operation=funds",
+    )
+    .await;
+    assert_eq!(funds["status"], "success");
+    assert_eq!(funds["book_id"], "binance-com-usdm");
+    assert!(
+        !funds["data"].is_null(),
+        "empty success with data:null is a fail: {funds}"
+    );
+    let holdings = funds["data"]["holdings"].as_array().expect("holdings");
+    assert!(
+        holdings.is_empty(),
+        "empty balance must be holdings []: {funds}"
+    );
+    assert!(funds["data"]["unrealized_pnl"].is_null());
+    assert_no_secrets(&funds.to_string());
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
+async fn obtain_usdm_quotes_is_unsupported() {
+    let server = MockServer::start().await;
+    let handle = spawn_test_agent_with_options(PORT, start_opts(server.uri()));
+    wait_ready(PORT).await;
+    post_binance_com_start(PORT).await;
+
+    let quotes = obtain(
+        PORT,
+        "adapter=binance_com&book=binance-com-usdm&operation=quotes",
+    )
+    .await;
+    assert_eq!(quotes["status"], "unsupported");
+    assert_eq!(quotes["book_id"], "binance-com-usdm");
+    assert!(quotes["data"].is_null());
+    assert_ne!(quotes["status"], "success");
+
+    handle.abort();
+}
+
+#[tokio::test]
+#[serial]
 async fn obtain_usdm_forceorder_with_event_is_observing_not_complete() {
     let server = MockServer::start().await;
     mount_hmac_get(&server, "/fapi/v1/forceOrders", USDM_FORCE_ORDERS_OBSERVING).await;

@@ -61,3 +61,18 @@ Does **not** change Phase 1 fills (`GET /api/v3/myTrades`). This is **market** `
 - [x] Approve for Phase 1+ build
 
 **Signed:** founder research pass (reconciled) **Date:** 2026-07-24
+
+---
+
+## Research amendments (2026-09-19) — official Rust connector as path oracle
+
+Local clone `/Users/bishnu/binance-connector-rust` @ `592f16b6bb34ff11d9eb47fbcd956c80be1529ef` (`binance-sdk` v70.1.0). Pin: [binance-connector-rust-citation.md](../binance-connector-rust-citation.md).
+
+Does **not** change the slug. Default Start stays `binance-com-spot`. Named books `binance-com-usdm` / `binance-com-coinm` / `binance-com-options` are **locks**, not a new B6.
+
+| # | Field | Answer |
+|---|-------|--------|
+| R1 | Role of the clone | Path / host / JSON-alias **oracle**. Station keeps thin REST clients. **Do not** add `binance-sdk` to Station Cargo. The crate generates TRADE (`POST /fapi/v1/order`). |
+| R2 | Row 1 vs named books | Slug v1 connect is still **crypto_spot** USER_DATA. Named USDM/Coin-M books exist on the same slug and are obtain-gated with `book=`. Do not treat row 12 “futures/USDM” as a bar on `binance-com-usdm` obtain. |
+| R3 | Testnet | SDK names `https://testnet.binancefuture.com` and `https://demo-fapi.binance.com`. Station live host stays prod. Testnet still **refuse** until this sheet names it. |
+| R4 | Wrap | Same as OpenAlgo bar: take official paths, never wrap their generated TRADE surface. |
