@@ -72,6 +72,10 @@ fn usdm_client_has_no_trade_place_surface() {
         "public USER_DATA surface: fetch_force_orders"
     );
     assert!(
+        code.contains("fn fetch_income"),
+        "public USER_DATA surface: fetch_income (REALIZED_PNL, not TRADE)"
+    );
+    assert!(
         !mentions_place_order_path(&code),
         "{CLIENT} must not dial /fapi/v1/order (forceOrders GET is a different path)"
     );

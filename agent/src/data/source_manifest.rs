@@ -259,6 +259,27 @@ fn quotes_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> 
     }
 }
 
+/// REST ticker only. USDM this slice has no fapi trade stream — do not claim Stream.
+fn quotes_rest_binding(
+    adapter_id: &str,
+    coverage: Coverage,
+    auth_mode: AuthMode,
+) -> ManifestBinding {
+    ManifestBinding {
+        operation: "quotes".into(),
+        adapter_id: adapter_id.to_string(),
+        family: Family::Market,
+        capability_id: "quote".into(),
+        physics: Physics::LatestState,
+        auth_mode,
+        transports: vec![TransportKind::Rest],
+        rights: Rights::research_fetch_only(),
+        limits: Limits::default(),
+        coverage,
+        delay_class: DelayClass::Realtime,
+    }
+}
+
 fn optionchain_binding(
     adapter_id: &str,
     coverage: Coverage,
@@ -714,8 +735,9 @@ pub fn binance_com_options_manifest() -> SourceManifest {
 }
 
 /// Named USDM book on the same `binance_com` adapter. USER_DATA funds +
-/// positions + lossy force-order only this slice — no quotes/history/tradebook.
-/// Lock: `locks/binance-com-usdm.md`. Catalog / Start slug still ships spot.
+/// positions + lossy force-order + public REST last this slice — no history/tradebook,
+/// no fapi trade stream. Lock: `locks/binance-com-usdm.md`. Catalog / Start slug
+/// still ships spot.
 pub fn binance_com_usdm_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["binance.com".into()],
@@ -727,7 +749,12 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
         manifest_id: "binance_com.usdm.v1".into(),
         adapter_id: "binance_com".into(),
         book_id: "binance-com-usdm".into(),
-        implemented: vec!["funds".into(), "positionbook".into(), "forceorder".into()],
+        implemented: vec![
+            "funds".into(),
+            "positionbook".into(),
+            "forceorder".into(),
+            "quotes".into(),
+        ],
         bindings: vec![
             account_binding(
                 "binance_com",
@@ -743,7 +770,8 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
-            forceorder_binding("binance_com", coverage),
+            forceorder_binding("binance_com", coverage.clone()),
+            quotes_rest_binding("binance_com", coverage, AuthMode::Public),
         ],
     }
 }
@@ -1534,12 +1562,25 @@ mod tests {
         assert_eq!(manifest.book_id, "binance-com-usdm");
         assert_eq!(
             manifest.implemented,
-            vec!["funds", "positionbook", "forceorder"]
+            vec!["funds", "positionbook", "forceorder", "quotes"]
         );
+        assert!(manifest.implemented.iter().any(|op| op == "quotes"));
         assert!(!manifest
             .implemented
             .iter()
-            .any(|op| { matches!(op.as_str(), "quotes" | "history" | "tradebook") }));
+            .any(|op| { matches!(op.as_str(), "history" | "tradebook") }));
+        let quotes = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "quotes")
+            .expect("usdm quotes binding");
+        assert_eq!(quotes.capability_id, "quote");
+        assert_eq!(quotes.auth_mode, AuthMode::Public);
+        assert_eq!(quotes.transports, vec![TransportKind::Rest]);
+        assert_ne!(
+            quotes.transports,
+            vec![TransportKind::Stream, TransportKind::Rest]
+        );
         let funds = manifest
             .bindings
             .iter()
@@ -1591,10 +1632,10 @@ mod tests {
             obtain(&manifest, "tradebook").status,
             ObtainStatus::Unsupported
         );
-        assert_eq!(
-            obtain(&manifest, "quotes").status,
-            ObtainStatus::Unsupported
-        );
+        let quotes_env = obtain(&manifest, "quotes");
+        assert_eq!(quotes_env.status, ObtainStatus::Unavailable);
+        assert_ne!(quotes_env.status, ObtainStatus::Unsupported);
+        assert!(quotes_env.data.is_none());
     }
 
     #[test]

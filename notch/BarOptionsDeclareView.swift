@@ -554,7 +554,9 @@ struct BarOptionsDeclareView: View {
     private var planAndConfirm: some View {
         VStack(alignment: .leading, spacing: 12) {
             planZone
-            confirmBar
+            if viewModel.showsConfirmControl {
+                confirmBar
+            }
         }
     }
 
@@ -853,7 +855,7 @@ struct BarOptionsDeclareView: View {
                 style: .primary,
                 action: onConfirm,
             )
-            .disabled(!submitReady || viewModel.barDeclarationBusy)
+            .disabled(!submitReady || viewModel.barDeclarationBusy || !viewModel.showsConfirmControl)
             .opacity(submitReady && !viewModel.barDeclarationBusy ? 1 : 0.3)
             if !submitReady, let hint = submitHint, !viewModel.barDeclarationBusy {
                 Text(hint)

@@ -286,7 +286,10 @@ async fn s0_manifest_and_obtain_are_host_owned() {
         .json()
         .await
         .unwrap();
-    assert_eq!(usdm["status"], "unsupported");
+    assert_eq!(usdm["status"], "unavailable");
+    assert_eq!(usdm["book_id"], "binance-com-usdm");
+    assert!(usdm["data"].is_null());
+    assert_ne!(usdm["status"], "unsupported");
 
     let disagree: serde_json::Value = client
         .get(format!(

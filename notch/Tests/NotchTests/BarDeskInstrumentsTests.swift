@@ -8,6 +8,36 @@ struct BarDeskInstrumentsTests {
         #expect(BarDeskTemplate.glanceKinds(for: .equity) == [.last, .history, .depth])
     }
 
+    @Test func usdmClassIsLastOnlyAndLabeledDistinctFromSpot() {
+        #expect(BarDeclareAssetClass.usdm.label == "USDM")
+        #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.spot.label)
+        #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.options.label)
+        #expect(BarDeskTemplate.glanceKinds(for: .usdm) == [.last])
+        #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.depth))
+        #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.chain))
+        #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.openInterest))
+        #expect(BarDeskTemplate.binanceComUsdmBookId == "binance-com-usdm")
+        #expect(BarDeskTemplate.binanceComUsdmBookId != BarDeskTemplate.binanceComSpotBookId)
+        #expect(!BarDeskTemplate.showsConfirmControl(for: .usdm))
+        #expect(!BarDeskTemplate.canSubmitBarDeclaration(for: .usdm))
+        #expect(BarDeskTemplate.showsConfirmControl(for: .spot))
+        #expect(BarDeskTemplate.canSubmitBarDeclaration(for: .spot))
+        #expect(BarDeskTemplate.showsConfirmControl(for: .options))
+        #expect(BarDeskTemplate.canSubmitBarDeclaration(for: .equity))
+    }
+
+    @Test func usdmExtractPlanIssuesNoGlanceOrSpotDepth() {
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .usdm,
+            instrumentId: "BTCUSDT"
+        )
+        #expect(!plan.fetchesGlance)
+        #expect(!plan.defersComSpotDepth)
+        #expect(!plan.usesOptionsHistoryObtain)
+        #expect(!plan.usesKotakHistoryObtain)
+    }
+
     @Test func optionsShellIncludesRedChainAndOi() {
         #expect(BarDeskTemplate.glanceKinds(for: .options) == [
             .last, .history, .chain, .openInterest, .depth,
@@ -610,6 +640,13 @@ struct BarDeskInstrumentsTests {
         #expect(spot.assetClass == .spot)
         #expect(spot.bookId == nil)
         #expect(spot.chainUnderlying == "BTCUSDT")
+
+        let usdmPair = DeskInstrumentBind.resolve(
+            rawId: "BTCUSDT", slug: "binance_com", currentClass: .usdm
+        )
+        #expect(usdmPair.shape == .binanceSpot)
+        #expect(usdmPair.assetClass == .usdm)
+        #expect(usdmPair.bookId == nil)
 
         let contract = DeskInstrumentBind.resolve(
             rawId: "BTC-200730-9000-C", slug: "binance_com", currentClass: .spot

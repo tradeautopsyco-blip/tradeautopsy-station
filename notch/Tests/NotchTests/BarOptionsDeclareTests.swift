@@ -29,9 +29,9 @@ struct BarOptionsDeclareTests {
             for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
         ) == .standardForm)
 
-        // Spot / equity never leave the standard form on either desk.
+        // Spot / equity / USDM never leave the standard form on either desk.
         for slug in ["kotak_neo", "binance_com"] {
-            for klass in [BarDeclareAssetClass.spot, .equity] {
+            for klass in [BarDeclareAssetClass.spot, .equity, .usdm] {
                 #expect(BarOptionsDeclareSurface.surface(
                     for: klass, slug: slug, instrumentId: "BTC-200730-9000-C"
                 ) == .standardForm)
@@ -719,6 +719,87 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskQuoteExtractPath(instrument: "nse_fo|12345").contains("instrument=nse_fo%7C12345"))
         vm.declareAssetClass = .equity
         #expect(!vm.deskQuoteExtractPath(instrument: "nse_cm|2885").contains("book="))
+    }
+
+    @Test func usdmQuotePathNamesTheUsdmBookAndSpotClassStaysBookless() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        let path = vm.deskQuoteExtractPath(instrument: "BTCUSDT")
+        #expect(path.contains("instrument=BTCUSDT"))
+        #expect(path.contains("&book=binance-com-usdm"))
+        #expect(!path.contains("book=binance-com-spot"))
+        #expect(!path.contains("book=binance-com-options"))
+        #expect(vm.shouldBindQuoteLast(adapter: nil, instrumentId: "BTCUSDT"))
+        #expect(vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "BTCUSDT",
+            bookId: "binance-com-usdm"
+        ))
+        #expect(!vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "BTCUSDT",
+            bookId: "binance-com-spot"
+        ))
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTCUSDT"))
+        #expect(!vm.shouldBindQuoteLast(adapter: nil, instrumentId: "BTC-200730-9000-C"))
+        #expect(!vm.canSubmitBarDeclaration)
+        #expect(!vm.showsConfirmControl)
+        #expect(!vm.canExecuteSelectedInstrument())
+
+        vm.declareAssetClass = .spot
+        #expect(!vm.deskQuoteExtractPath(instrument: "BTCUSDT").contains("book="))
+        #expect(vm.canSubmitBarDeclaration)
+        #expect(vm.showsConfirmControl)
+    }
+
+    @Test func usdmDoesNotBindLeftoverSpotTickBookLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSyncClass = "synced"
+        vm.declareAssetClass = .spot
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "book_id": "binance-com-spot",
+            "data": ["last": "64000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+
+        vm.declareAssetClass = .usdm
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.deskQuoteCapability == "unavailable")
+        #expect(vm.declareAssetClass == .usdm)
+
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "book_id": "binance-com-spot",
+            "data": ["last": "64000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "data": ["last": "64000"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTCUSDT",
+            "book_id": "binance-com-usdm",
+            "data": ["last": "64111"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.declEntryPrice == "64111.00")
     }
 
     @Test func cryptoOptionsLastGoesDarkWhenTheTabRebindsOntoAPair() {
@@ -1728,6 +1809,23 @@ struct BarOptionsDeclareTests {
         #expect(dated.deskDepthExtractPath(symbol: "BTC-200730-9000-C").contains("instrument=BTC-200730-9000-C"))
         #expect(dated.deskDepthPhysicsNote.contains("limit=50"))
         #expect(!dated.deskDepthPhysicsNote.contains("synced badge"))
+    }
+
+    @Test func usdmDepthPathDoesNotNameSpotBook() {
+        let usdm = NotchViewModel(planSurfaceOnly: true)
+        usdm.activeBrokerSlug = "binance_com"
+        usdm.declareAssetClass = .usdm
+        usdm.deskSelectedInstrumentId = "BTCUSDT"
+        let path = usdm.deskDepthExtractPath(symbol: "BTCUSDT")
+        #expect(!path.contains("book=binance-com-spot"))
+        #expect(!path.contains("book=binance-com-options"))
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .usdm,
+            instrumentId: "BTCUSDT"
+        )
+        #expect(!plan.fetchesGlance)
+        #expect(!plan.defersComSpotDepth)
     }
 
     @Test func leftoverSpotPairOnOptionsIssuesNoDepthGlance() {

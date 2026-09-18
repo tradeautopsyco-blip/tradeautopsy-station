@@ -117,7 +117,9 @@ pub async fn handler(
 mod tests {
     use super::*;
     use crate::api::desk::bind_spot_market_ids;
-    use crate::data::{quote_subscription_for, MarketBind, QuoteSubscription};
+    use crate::data::{
+        quote_subscription_for, MarketBind, QuoteSubscription, BINANCE_COM_USDM_BOOK_ID,
+    };
 
     #[test]
     fn empty_instrument_query_is_unresolved() {
@@ -175,6 +177,14 @@ mod tests {
         assert_eq!(
             inferred_quote_book("btcusdt"),
             Some(BINANCE_COM_SPOT_BOOK_ID)
+        );
+        assert_eq!(
+            inferred_quote_book("BTCUSDT"),
+            Some(BINANCE_COM_SPOT_BOOK_ID)
+        );
+        assert_ne!(
+            inferred_quote_book("BTCUSDT"),
+            Some(BINANCE_COM_USDM_BOOK_ID)
         );
         assert_eq!(inferred_quote_book(""), None);
         assert_eq!(inferred_quote_book("  "), None);

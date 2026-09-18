@@ -1,8 +1,8 @@
 //! Book-scoped quote selection. Each TickBook slot keeps its own bound instrument.
 
 use crate::data::{
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use std::collections::HashMap;
 
@@ -61,6 +61,7 @@ pub struct ValidatedQuoteBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuoteSource {
     BinanceOptionsPublic,
+    BinanceUsdmPublic,
     BinanceSpotPublic,
     KotakPrivate,
 }
@@ -112,6 +113,7 @@ pub fn is_known_quote_book(book_id: &str) -> bool {
         book_id.trim(),
         BINANCE_COM_OPTIONS_BOOK_ID
             | BINANCE_COM_SPOT_BOOK_ID
+            | BINANCE_COM_USDM_BOOK_ID
             | KOTAK_NSE_NFO_BOOK_ID
             | KOTAK_NSE_BSE_CASH_BOOK_ID
     )

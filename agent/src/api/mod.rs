@@ -116,6 +116,8 @@ pub struct AppState {
     pub kotak_nfo_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
     /// `optionSymbols` from eapi exchangeInfo. Separate from spot `instrument_master`.
     pub options_option_symbols: Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
+    /// USDM `GET /fapi/v1/exchangeInfo` filters. Third identity — never spot `instrument_master`.
+    pub usdm_exchange_info: Arc<Mutex<crate::data::UsdmExchangeInfoCache>>,
     /// Planted OI rows for CI. Live fetch fills this path when `eapi_public_fetch`.
     pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
     /// NFO open interest, keyed `nse_fo|{token}`, read off the same
@@ -170,6 +172,10 @@ pub struct AppState {
     pub binance_eapi_base_url: Option<String>,
     /// Per-book lossy force-order observation. Never TickBook, never Kill/PnL.
     pub force_order_book: Arc<Mutex<crate::data::ForceOrderBook>>,
+    /// USDM realized from income `REALIZED_PNL`. Not spot WAC. Not force-order.
+    /// Written by `ensure_usdm_realized_income`; not an obtain operation this slice.
+    #[allow(dead_code)]
+    pub usdm_realized: Arc<Mutex<Option<crate::UsdmRealizedSlot>>>,
     /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
     pub kotak_private_base_url: Option<String>,
     /// Test seam: wiremock base for AMFI NAV GET. Prod is always `None` (official host).

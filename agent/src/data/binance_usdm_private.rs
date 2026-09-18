@@ -1,11 +1,15 @@
-//! Host-mediated Binance USDM USER_DATA for obtain(funds|positionbook|forceorder).
+//! Host-mediated Binance USDM USER_DATA for obtain(funds|positionbook|forceorder)
+//! plus `ensure_usdm_realized_income` (not an obtain operation this slice).
 
 use crate::api::AppState;
 use crate::binance_com_usdm_client::BinanceComUsdmClient;
 use crate::broker_data_class::BrokerPositionsSnapshot;
 use crate::data::{authorize_book_call, observation_from_rest, BINANCE_COM_USDM_BOOK_ID};
 use crate::ubi::CredentialBlob;
+use crate::usdm_realized_pnl::UsdmRealizedSlot;
 use chrono::Utc;
+
+pub use crate::usdm_realized_pnl::usdm_income_call;
 
 const USDM_BALANCE_PATH: &str = "/fapi/v3/balance";
 const USDM_POSITION_PATH: &str = "/fapi/v3/positionRisk";
@@ -187,4 +191,55 @@ pub async fn ensure_usdm_force_orders(state: &AppState) {
         .lock()
         .expect("force_order_book mutex poisoned")
         .replace(BINANCE_COM_USDM_BOOK_ID, envelope);
+}
+
+/// Fetch venue `REALIZED_PNL` income into `AppState.usdm_realized`.
+/// Not wired to obtain. Force-order is not this sum. Parent may kick later.
+#[allow(dead_code)]
+pub async fn ensure_usdm_realized_income(state: &AppState) {
+    {
+        let slot = state
+            .usdm_realized
+            .lock()
+            .expect("usdm_realized mutex poisoned");
+        if slot
+            .as_ref()
+            .is_some_and(|s| slot_fresh(s.as_of_ms, USDM_PRIVATE_MAX_AGE_MS))
+        {
+            return;
+        }
+    }
+    let call = usdm_income_call();
+    if authorize_book_call(call.book_id, call.host, call.method, call.path, true).is_err() {
+        return;
+    }
+    let Some(client) = resolve_usdm_client(state) else {
+        return;
+    };
+    let Ok(body) = client.fetch_income().await else {
+        return;
+    };
+    let as_of_ms = Utc::now().timestamp_millis();
+    *state
+        .usdm_realized
+        .lock()
+        .expect("usdm_realized mutex poisoned") =
+        Some(UsdmRealizedSlot::from_income_json(&body, as_of_ms));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn income_call_is_not_force_order_or_trade() {
+        let call = usdm_income_call();
+        assert_eq!(call.book_id, BINANCE_COM_USDM_BOOK_ID);
+        assert_eq!(call.host, "fapi.binance.com");
+        assert_eq!(call.method, "GET");
+        assert_eq!(call.path, "/fapi/v1/income");
+        assert_eq!(call.query_income_type, "REALIZED_PNL");
+        assert_ne!(call.path, USDM_FORCE_ORDERS_PATH);
+        assert_ne!(call.path, "/fapi/v1/order");
+    }
 }

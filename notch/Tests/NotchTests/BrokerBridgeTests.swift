@@ -388,6 +388,58 @@ struct BrokerBridgeTests {
         #expect(!chain.contains("book="))
     }
 
+    @Test func selectSymbolBinancePairOnUsdmStaysUsdmAndDoesNotSnapToSpot() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .usdm
+        let pair = InstrumentResult(
+            trading_symbol: "BTCUSDT",
+            name: "Bitcoin",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 65000
+        )
+        vm.selectSymbol(pair)
+        #expect(vm.declareAssetClass == .usdm)
+        #expect(vm.deskSelectedInstrumentId == "BTCUSDT")
+        #expect(vm.declEntryPrice.isEmpty)
+        #expect(vm.deskQuoteExtractPath(instrument: "BTCUSDT").contains("book=binance-com-usdm"))
+        #expect(!vm.canSubmitBarDeclaration)
+        #expect(!vm.canExecuteSelectedInstrument())
+    }
+
+    @Test func selectSymbolDatedContractOnUsdmDoesNotPaintOptionsLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .usdm
+        vm.deskSelectedInstrumentId = "BTCUSDT"
+        vm.declEntryPrice = ""
+        let contract = InstrumentResult(
+            trading_symbol: "BTC-200730-9000-C",
+            name: "BTC option",
+            exchange: "binance_com",
+            segment: nil,
+            instrument_token: nil,
+            last_price: 64000
+        )
+        vm.selectSymbol(contract)
+        #expect(vm.declareAssetClass == .usdm)
+        #expect(vm.deskSelectedInstrumentId == "BTC-200730-9000-C")
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTC-200730-9000-C"))
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "BTC-200730-9000-C",
+            "book_id": "binance-com-options",
+            "data": ["last": "0.001"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+        #expect(vm.declEntryPrice.isEmpty)
+    }
+
     @Test func selectSymbolBinanceContractKeepsOptionsWithDarkLastAndNoNfoBook() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"

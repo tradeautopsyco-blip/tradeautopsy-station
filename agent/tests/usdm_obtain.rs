@@ -311,7 +311,7 @@ async fn obtain_usdm_empty_balance_is_success_with_empty_holdings() {
 
 #[tokio::test]
 #[serial]
-async fn obtain_usdm_quotes_is_unsupported() {
+async fn obtain_usdm_quotes_empty_tickbook_is_unavailable() {
     let server = MockServer::start().await;
     let handle = spawn_test_agent_with_options(PORT, start_opts(server.uri()));
     wait_ready(PORT).await;
@@ -322,10 +322,11 @@ async fn obtain_usdm_quotes_is_unsupported() {
         "adapter=binance_com&book=binance-com-usdm&operation=quotes",
     )
     .await;
-    assert_eq!(quotes["status"], "unsupported");
+    assert_eq!(quotes["status"], "unavailable");
     assert_eq!(quotes["book_id"], "binance-com-usdm");
     assert!(quotes["data"].is_null());
-    assert_ne!(quotes["status"], "success");
+    assert_ne!(quotes["status"], "unsupported");
+    assert_ne!(quotes["data"]["last"], "0");
 
     handle.abort();
 }

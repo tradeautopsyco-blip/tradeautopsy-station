@@ -162,6 +162,10 @@ pub use ubi::{
     WasmBrokerAdapter, ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE, COMPONENT_DIR_ENV,
     FORBIDDEN_COMPONENT_HEADERS, KOTAK_SESSION_KEYCHAIN_SERVICE, RESPONSE_HEADER_ALLOWLIST,
 };
+pub use usdm_realized_pnl::{
+    income_realized_from_json, realized_pnl_usd, usdm_income_call, UsdmIncomeCall, UsdmIncomeRow,
+    UsdmRealizedSlot, OWNER_PATH as USDM_REALIZED_PNL_OWNER_PATH,
+};
 pub use wire::{WireVerifier, WIRE_PROTO_VERSION};
 
 pub use api::daemon_commands::{parse_daemon_command_type, DaemonCommandKind};
@@ -352,6 +356,8 @@ pub struct AgentConfig {
     pub plant_binance_spot_funds: bool,
     /// Options last CI: plant committed eapi ticker JSON into TickBook. No live eapi.
     pub plant_binance_options_quote: bool,
+    /// USDM last CI: plant committed fapi ticker JSON into TickBook `binance-com-usdm`. No live fapi.
+    pub plant_binance_usdm_quote: bool,
     /// Options chain/OI CI: plant committed exchangeInfo + OI JSON. No live eapi.
     pub plant_binance_options_chain: bool,
     /// Venue-published greeks CI: plant the committed `/eapi/v1/mark` JSON. No live eapi.
@@ -516,6 +522,7 @@ impl AgentConfig {
             plant_binance_s2_history: false,
             plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
+            plant_binance_usdm_quote: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
@@ -599,6 +606,7 @@ impl AgentConfig {
             plant_binance_s2_history: false,
             plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
+            plant_binance_usdm_quote: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
@@ -897,6 +905,20 @@ fn plant_binance_options_quote(
         let mut book = tickbook.lock().expect("tickbook mutex poisoned");
         if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
             tracing::warn!(error = %err, "options fixture: quote plant refused");
+        }
+    }
+}
+
+/// Headless USDM last: committed fapi ticker JSON into `binance-com-usdm`. No live fapi.
+fn plant_binance_usdm_quote(
+    registry: &crate::data::Registry,
+    tickbook: &Arc<Mutex<crate::data::TickBook>>,
+) {
+    let json = include_str!("../fixtures/binance/usdm_ticker.json");
+    if let Some(tick) = crate::data::quote_tick_from_usdm_ticker_json(json, Utc::now()) {
+        let mut book = tickbook.lock().expect("tickbook mutex poisoned");
+        if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
+            tracing::warn!(error = %err, "usdm fixture: quote plant refused");
         }
     }
 }
@@ -1312,7 +1334,13 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     if config.plant_binance_options_quote {
         plant_binance_options_quote(quote_registry.as_ref(), &tickbook);
     }
+    if config.plant_binance_usdm_quote {
+        plant_binance_usdm_quote(quote_registry.as_ref(), &tickbook);
+    }
     let options_option_symbols = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let usdm_exchange_info = Arc::new(std::sync::Mutex::new(
+        crate::data::UsdmExchangeInfoCache::empty(),
+    ));
     let options_oi_rows = Arc::new(std::sync::Mutex::new(Vec::new()));
     if config.plant_binance_options_chain {
         plant_binance_options_chain(&options_option_symbols, &options_oi_rows);
@@ -1415,6 +1443,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         kotak_scrip_master,
         kotak_nfo_scrip_master,
         options_option_symbols,
+        usdm_exchange_info,
         options_oi_rows,
         nfo_open_interest,
         nfo_oi_session,
@@ -1440,6 +1469,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         binance_coinm_base_url: config.binance_coinm_base_url.clone(),
         binance_eapi_base_url: config.binance_eapi_base_url.clone(),
         force_order_book: Arc::new(Mutex::new(crate::data::ForceOrderBook::default())),
+        usdm_realized: Arc::new(Mutex::new(None)),
         kotak_private_base_url: config.kotak_private_base_url.clone(),
         amfi_nav_base_url: config.amfi_nav_base_url.clone(),
         amfi_nav_host: config.amfi_nav_host.clone(),

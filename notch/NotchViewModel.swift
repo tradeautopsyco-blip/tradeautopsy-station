@@ -490,11 +490,14 @@ public final class NotchViewModel: ObservableObject {
     @Published var declInvalidationCondition: String = ""
     @Published var declProtectiveSLConsent: Bool = true
 
-    /// Spot / equity / options — not the Intraday/Swing style tabs.
+    /// Spot / equity / options / USDM — not the Intraday/Swing style tabs.
     @Published var declareAssetClass: BarDeclareAssetClass = .spot {
         didSet {
             guard oldValue != declareAssetClass else { return }
-            reconcileDeskLastForAssetClass()
+            reconcileDeskLastForAssetClass(previousClass: oldValue)
+            if brokerSessionActive {
+                Task { await refreshAccountChrome() }
+            }
         }
     }
     @Published var declOptionStrike: String = ""
@@ -1278,7 +1281,7 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchHint = nil
         // The tab follows the instrument when it is showing Options for something that is
         // not an option (a Binance pair). Never the reverse — picking a contract does not
-        // silently arm the Options surface.
+        // silently arm the Options surface. USDM must not snap a pair back to spot.
         if declareAssetClass == .options, bind.assetClass != .options {
             declareAssetClass = bind.assetClass
         }
@@ -1300,7 +1303,7 @@ public final class NotchViewModel: ObservableObject {
             // and `/instruments/ltp` is a Kotak seam that no-ops here.
             fetchStationQuote(instrument: bind.tickBookId)
         case .binanceSpot:
-            if result.last_price > 0 {
+            if declareAssetClass != .usdm, result.last_price > 0 {
                 applyLTP(result.last_price)
             }
             fetchStationQuote(instrument: bind.tickBookId)
@@ -1414,7 +1417,11 @@ public final class NotchViewModel: ObservableObject {
 
     /// Whether the active execution broker can place orders for the selected instrument.
     /// Kotak market books require `kotak_neo`; `binance-com-options` is public data only.
+    /// USDM TRADE is unnamed — last may bind; Confirm / place may not.
     func canExecuteSelectedInstrument() -> Bool {
+        if declareAssetClass == .usdm {
+            return false
+        }
         let book = Self.marketBook(for: deskSelectedInstrumentId) ?? selectedMarketBookId
         guard let book else {
             return DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
@@ -1427,6 +1434,14 @@ public final class NotchViewModel: ObservableObject {
             return BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug)
         }
         return false
+    }
+
+    var showsConfirmControl: Bool {
+        BarDeskTemplate.showsConfirmControl(for: declareAssetClass)
+    }
+
+    var canSubmitBarDeclaration: Bool {
+        BarDeskTemplate.canSubmitBarDeclaration(for: declareAssetClass)
     }
 
     /// Live Kotak/Binance desk — empty slug still counts when session is up (bridge defaults kotak_neo).
@@ -1447,7 +1462,7 @@ public final class NotchViewModel: ObservableObject {
 
     func fetchLTP(symbol: String, exchange: String, segment: String) {
         let exchangeNorm = exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if declareAssetClass == .options {
+        if declareAssetClass == .options || declareAssetClass == .usdm {
             return
         }
         if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
@@ -1495,6 +1510,7 @@ public final class NotchViewModel: ObservableObject {
         guard let url = URL(string: "\(baseURL())\(deskQuoteExtractPath(instrument: instrument))") else {
             return
         }
+        let generation = deskExtractGeneration
         Task {
             let req = authorizedRequest(url: url)
             do {
@@ -1503,6 +1519,7 @@ public final class NotchViewModel: ObservableObject {
                     return
                 }
                 await MainActor.run {
+                    guard generation == self.deskExtractGeneration else { return }
                     applyStationQuoteEnvelope(json)
                     // COM `@depth` bind happens on this quote. Glance after
                     // apply — not in parallel with it — so DepthBook wait can see the bind.
@@ -1560,7 +1577,9 @@ public final class NotchViewModel: ObservableObject {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         let instrumentId = (json["instrument_id"] as? String) ?? ""
-        if !shouldBindQuoteLast(adapter: adapter, instrumentId: instrumentId) {
+        let bookId = (json["book_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !shouldBindQuoteLast(adapter: adapter, instrumentId: instrumentId, bookId: bookId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
             return
@@ -1594,8 +1613,26 @@ public final class NotchViewModel: ObservableObject {
 
     /// Options last is market-book scoped: a Kotak NFO TickBook id, or a dated Binance
     /// contract on `binance-com-options`. A Binance *pair* must not paint the options
-    /// declare, so the instrument shape is the discriminator here.
-    func shouldBindQuoteLast(adapter: String?, instrumentId: String) -> Bool {
+    /// declare, so the instrument shape is the discriminator there.
+    /// USDM last is **class + `book=`** — `BTCUSDT` is shared with spot, so leftover
+    /// TickBook / spot envelopes must not fill this hole.
+    func shouldBindQuoteLast(adapter: String?, instrumentId: String, bookId: String? = nil) -> Bool {
+        if declareAssetClass == .usdm {
+            let trimmed = instrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return false }
+            if InstrumentTickBookId.isDatedOptionContract(trimmed) { return false }
+            if InstrumentTickBookId.isNfoIdentity(trimmed) { return false }
+            if InstrumentTickBookId.isCashIdentity(trimmed) { return false }
+            let named = bookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !named.isEmpty {
+                return named == BarDeskTemplate.binanceComUsdmBookId
+            }
+            // Envelope without a named book is leftover spot TickBook last.
+            if adapter != nil {
+                return false
+            }
+            return DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug)
+        }
         if declareAssetClass == .options {
             if BarDeskTemplate.isBinanceOptionsSelection(
                 assetClass: declareAssetClass,
@@ -1646,9 +1683,15 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    private func reconcileDeskLastForAssetClass() {
+    private func reconcileDeskLastForAssetClass(previousClass: BarDeclareAssetClass? = nil) {
         // Wipe first: the old class's chain/OI belong to a book this class may not read.
         invalidateDeskMarketExtracts(reason: "asset-class")
+        // Same letters (`BTCUSDT`) on USDM vs spot are two books — leftover last must not stand.
+        if declareAssetClass == .usdm || previousClass == .usdm {
+            deskLastStatus = "unavailable"
+            deskQuoteCapability = "unavailable"
+            declEntryPrice = ""
+        }
         if declareAssetClass == .options {
             if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
                 fetchStationQuote(instrument: deskSelectedInstrumentId)
@@ -1890,10 +1933,15 @@ public final class NotchViewModel: ObservableObject {
         return deskExtractGeneration
     }
 
-    /// Testable quote path. Dated contracts name `binance-com-options`; Kotak identities
-    /// stay bookless on quote — no other desk sends `book=` on a quote at all.
+    /// Testable quote path. Dated contracts name `binance-com-options`; USDM names
+    /// `binance-com-usdm` from **class**, not instrument shape (`BTCUSDT` is shared).
+    /// Kotak identities stay bookless on quote — no other desk sends `book=` on a quote at all.
     func deskQuoteExtractPath(instrument: String) -> String {
         let encoded = InstrumentTickBookId.queryEncode(instrument)
+        if declareAssetClass == .usdm {
+            let encodedBook = InstrumentTickBookId.queryEncode(BarDeskTemplate.binanceComUsdmBookId)
+            return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
+        }
         guard let book = Self.marketBook(for: instrument),
               book == BarDeskTemplate.binanceComOptionsBookId
         else {
@@ -1976,6 +2024,9 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func glanceBookId(symbol: String) -> String? {
+        if declareAssetClass == .usdm {
+            return BarDeskTemplate.binanceComUsdmBookId
+        }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
@@ -1987,6 +2038,9 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func depthInstrument(symbol: String) -> String {
+        if declareAssetClass == .usdm {
+            return ""
+        }
         let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         let trimmed = selected.trimmingCharacters(in: .whitespacesAndNewlines)
         if BarDeskTemplate.isBinanceOptionsSelection(
@@ -2005,6 +2059,9 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func depthBookId(symbol: String) -> String? {
+        if declareAssetClass == .usdm {
+            return nil
+        }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
@@ -2308,7 +2365,7 @@ public final class NotchViewModel: ObservableObject {
             historyPath = VendorHistoryObtain.kotakHistoryPath(mode: mode, armed: armed)
         } else if plan.usesOptionsHistoryObtain {
             historyPath = deskOptionsHistoryExtractPath()
-        } else if declareAssetClass == .options {
+        } else if declareAssetClass == .options || declareAssetClass == .usdm {
             historyPath = nil
         } else {
             historyPath = "/api/station/history?instrument=\(encoded)"
@@ -2399,6 +2456,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func submitBarDeclaration(body: Data) async {
+        guard canSubmitBarDeclaration else { return }
         guard let url = URL(string: baseURL() + "/api/daemon/bar/declare") else { return }
         barDeclarationBusy = true
         barDeclarationLastError = nil
@@ -4637,7 +4695,10 @@ extension NotchViewModel {
         positions: [String: Any]?,
         orders: [String: Any]?
     ) {
-        guard let book = BarAccountChrome.shippingBookId(forStartSlug: activeExecutionBrokerSlug) else {
+        guard let book = BarAccountChrome.pulseBookId(
+            forAssetClass: declareAssetClass,
+            startSlug: activeExecutionBrokerSlug
+        ) else {
             accountChrome = .empty
             return
         }
@@ -4658,7 +4719,10 @@ extension NotchViewModel {
         guard brokerSessionActive,
               let slug = activeExecutionBrokerSlug,
               let adapter = BarAccountChrome.obtainAdapterId(forStartSlug: slug),
-              let book = BarAccountChrome.shippingBookId(forStartSlug: slug)
+              let book = BarAccountChrome.pulseBookId(
+                forAssetClass: declareAssetClass,
+                startSlug: slug
+              )
         else {
             accountChrome = .empty
             return
@@ -4668,19 +4732,32 @@ extension NotchViewModel {
         async let funds = getExtractJSON(
             BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "funds")
         )
-        async let holdings = getExtractJSON(
-            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "holdings")
-        )
-        async let positions = getExtractJSON(
-            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "positionbook")
-        )
-        async let orders = getExtractJSON(
-            BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "orderbook")
-        )
+        let holdingsJSON: [String: Any]?
+        let positionsJSON: [String: Any]?
+        let ordersJSON: [String: Any]?
+        if declareAssetClass == .usdm {
+            // Named USDM pulse: funds + positionbook. Force-order is lossy and stays off the Funds pill.
+            async let positions = getExtractJSON(
+                BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "positionbook")
+            )
+            holdingsJSON = nil
+            positionsJSON = await positions
+            ordersJSON = nil
+        } else {
+            async let holdings = getExtractJSON(
+                BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "holdings")
+            )
+            async let positions = getExtractJSON(
+                BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "positionbook")
+            )
+            async let orders = getExtractJSON(
+                BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "orderbook")
+            )
+            holdingsJSON = await holdings
+            positionsJSON = await positions
+            ordersJSON = await orders
+        }
         let fundsJSON = await funds
-        let holdingsJSON = await holdings
-        let positionsJSON = await positions
-        let ordersJSON = await orders
         guard gen == accountChromeGeneration else { return }
         applyAccountObtainEnvelopes(
             funds: fundsJSON,

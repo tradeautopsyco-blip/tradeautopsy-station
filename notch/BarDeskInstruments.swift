@@ -5,6 +5,7 @@ enum BarDeclareAssetClass: String, CaseIterable, Identifiable {
     case spot
     case equity
     case options
+    case usdm
 
     var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum BarDeclareAssetClass: String, CaseIterable, Identifiable {
         case .spot: return "Spot"
         case .equity: return "Equity"
         case .options: return "Options"
+        case .usdm: return "USDM"
         }
     }
 }
@@ -266,7 +268,18 @@ enum BarDeskTemplate {
             return [.last, .history, .depth]
         case .options:
             return [.last, .history, .chain, .openInterest, .depth]
+        case .usdm:
+            return [.last]
         }
+    }
+
+    /// TRADE is unnamed on USDM — Confirm / `POST /api/daemon/bar/declare` stay off this class.
+    static func showsConfirmControl(for assetClass: BarDeclareAssetClass) -> Bool {
+        assetClass != .usdm
+    }
+
+    static func canSubmitBarDeclaration(for assetClass: BarDeclareAssetClass) -> Bool {
+        showsConfirmControl(for: assetClass)
     }
 
     static func historyDetail(status: String, ineligible: [String]) -> String {
@@ -331,6 +344,8 @@ enum BarDeskTemplate {
     static let binanceComOptionsBookId = "binance-com-options"
     /// COM spot book — depth glance names this even when bind `bookId` is nil.
     static let binanceComSpotBookId = "binance-com-spot"
+    /// Named USDT-M book on slug `binance_com`. Not Start. Not spot WAC.
+    static let binanceComUsdmBookId = "binance-com-usdm"
 
     /// Desk copy under the ladder. Never claims `synced` / `ordered_state`.
     static func depthPhysicsNote(bookId: String?, physics: String) -> String {
@@ -437,6 +452,15 @@ struct DeskExtractPlan: Equatable {
     var defersComSpotDepth: Bool
 
     static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
+        if assetClass == .usdm {
+            // Last is the quote path (`book=binance-com-usdm`). Depth/chain/OI unnamed this slice.
+            return DeskExtractPlan(
+                fetchesGlance: false,
+                usesKotakHistoryObtain: false,
+                usesOptionsHistoryObtain: false,
+                defersComSpotDepth: false
+            )
+        }
         let book = BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
         let cryptoDated = BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: assetClass,
@@ -590,10 +614,23 @@ struct DeskInstrumentBind: Equatable {
         slug: String?,
         currentClass: BarDeclareAssetClass
     ) -> DeskInstrumentBind {
-        let assetClass = shape.impliedAssetClass ?? currentClass
+        // USDM stays on the tab: a pair must not snap to spot (Options does). Quote
+        // `book=` is the discriminator, so bind.bookId stays nil for this class.
+        let assetClass: BarDeclareAssetClass
+        if currentClass == .usdm {
+            assetClass = .usdm
+        } else {
+            assetClass = shape.impliedAssetClass ?? currentClass
+        }
+        let bookId: String?
+        if currentClass == .usdm {
+            bookId = nil
+        } else {
+            bookId = BarDeskTemplate.marketBook(for: tickBookId)
+                ?? BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
+        }
         return DeskInstrumentBind(
-            bookId: BarDeskTemplate.marketBook(for: tickBookId)
-                ?? BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass),
+            bookId: bookId,
             assetClass: assetClass,
             tickBookId: tickBookId,
             chainUnderlying: chainUnderlying,

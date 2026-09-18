@@ -6,13 +6,15 @@ use super::quote_selection::{
 use super::AppState;
 use crate::data::{
     apply_history_series, binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
-    ensure_binance_com_options_quote, ensure_binance_com_trade_stream, extract_quote_for_book,
+    ensure_binance_com_options_quote, ensure_binance_com_trade_stream, ensure_usdm_exchange_info,
+    extract_quote_for_book,
     is_dated_option_contract, kotak_quote_book_id, normalize_options_instrument,
-    normalize_quote_instrument, parse_nfo_instrument_id, resolve_among, series_from_klines_json,
-    validate_kline_request, write_raw_cache, HistoryBook, InstrumentMasterErrorClass,
-    InstrumentMasterFetchError, InstrumentMasterStatus, MarketBind, QuoteStatus, Transport,
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
-    KLINE_LIMIT_DEFAULT, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    normalize_quote_instrument, normalize_usdm_instrument, parse_nfo_instrument_id, resolve_among,
+    series_from_klines_json, validate_kline_request, write_raw_cache, HistoryBook,
+    InstrumentMasterErrorClass, InstrumentMasterFetchError, InstrumentMasterStatus, MarketBind,
+    QuoteStatus, Transport, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -460,6 +462,19 @@ impl AppState {
         super::glance::ensure_options_ticker(self, instrument).await;
     }
 
+    /// Wait for one unsigned `GET /fapi/v1/ticker/price?symbol=` before extract.
+    /// REST last only — do not subscribe spot WS, do not call the spot ticker.
+    pub async fn prime_binance_usdm_ticker(&self, instrument: &str) {
+        crate::data::await_binance_usdm_ticker(
+            self.quote_registry.clone(),
+            self.tickbook.clone(),
+            self.com_ticker_inflight.clone(),
+            self.quote_fetch_error.clone(),
+            instrument,
+        )
+        .await;
+    }
+
     /// Wait for one unsigned COM `GET /api/v3/ticker/price` before the caller
     /// subscribes this id. Ordering is load-bearing: once `subscribe_instrument`
     /// binds the trade stream, `apply_quote` refuses the REST tick `RestClosed`
@@ -513,6 +528,14 @@ impl AppState {
 
         if let Some(id) = self.resolve_kotak_cash_instrument(raw) {
             return self.validate_kotak_cash_binding(&id, requested_book);
+        }
+
+        if requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+            == Some(BINANCE_COM_USDM_BOOK_ID)
+        {
+            return self.validate_binance_usdm_binding(raw, requested_book);
         }
 
         self.validate_binance_spot_binding(raw, requested_book)
@@ -607,6 +630,34 @@ impl AppState {
             book_id: KOTAK_NSE_BSE_CASH_BOOK_ID,
             instrument_id: instrument_id.to_string(),
             source: QuoteSource::KotakPrivate,
+        })
+    }
+
+    fn validate_binance_usdm_binding(
+        &self,
+        raw: &str,
+        requested_book: Option<&str>,
+    ) -> Result<ValidatedQuoteBinding, QuoteBindError> {
+        if let Some(book) = requested_book
+            .map(str::trim)
+            .filter(|book| !book.is_empty())
+        {
+            if book != BINANCE_COM_USDM_BOOK_ID {
+                return Err(QuoteBindError::InstrumentBookMismatch);
+            }
+        }
+        let instrument_id = normalize_usdm_instrument(raw);
+        if instrument_id.is_empty()
+            || instrument_id.contains('|')
+            || is_dated_option_contract(&instrument_id)
+            || !instrument_id.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return Err(QuoteBindError::InstrumentInvalid);
+        }
+        Ok(ValidatedQuoteBinding {
+            book_id: BINANCE_COM_USDM_BOOK_ID,
+            instrument_id,
+            source: QuoteSource::BinanceUsdmPublic,
         })
     }
 
@@ -750,6 +801,10 @@ impl AppState {
                     .await;
                 self.bind_spot_market(&binding.instrument_id);
             }
+            QuoteSource::BinanceUsdmPublic => {
+                self.prime_binance_usdm_ticker(&binding.instrument_id).await;
+                ensure_usdm_exchange_info(self, &binding.instrument_id).await;
+            }
             QuoteSource::BinanceSpotPublic => {
                 if self.is_binance_com_desk()
                     || self
@@ -793,10 +848,14 @@ impl AppState {
             if let Some(id) = self.selected_quote_for(BINANCE_COM_OPTIONS_BOOK_ID) {
                 return Some((id, BINANCE_COM_OPTIONS_BOOK_ID));
             }
+            if let Some(id) = self.selected_quote_for(BINANCE_COM_USDM_BOOK_ID) {
+                return Some((id, BINANCE_COM_USDM_BOOK_ID));
+            }
         }
         for book in [
             BINANCE_COM_OPTIONS_BOOK_ID,
             BINANCE_COM_SPOT_BOOK_ID,
+            BINANCE_COM_USDM_BOOK_ID,
             KOTAK_NSE_NFO_BOOK_ID,
             KOTAK_NSE_BSE_CASH_BOOK_ID,
         ] {

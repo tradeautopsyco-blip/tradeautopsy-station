@@ -100,7 +100,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
     match (capability_id, method.as_str(), auth_mode) {
         ("quote", "GET", AuthMode::Public)
             if path == "/api/v3/ticker/price"
-                || normalize_request_path(path) == "/eapi/v1/ticker" =>
+                || normalize_request_path(path) == "/eapi/v1/ticker"
+                || normalize_request_path(path) == "/fapi/v1/ticker/price" =>
         {
             true
         }
@@ -124,6 +125,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("instrument_master", "GET", AuthMode::Public)
             if path == "/api/v3/exchangeInfo"
                 || normalize_request_path(path) == "/eapi/v1/exchangeInfo"
+                || normalize_request_path(path) == "/fapi/v1/exchangeInfo"
                 || is_kotak_cash_scrip_csv_path(path)
                 || is_kotak_fo_scrip_csv_path(path) =>
         {
@@ -140,7 +142,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("fills", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/myTrades"
                 || path.ends_with("/quick/user/trades")
-                || normalize_request_path(path) == "/eapi/v1/userTrades" =>
+                || normalize_request_path(path) == "/eapi/v1/userTrades"
+                || normalize_request_path(path) == "/fapi/v1/income" =>
         {
             true
         }
@@ -204,6 +207,15 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", "/api/v3/ticker/price") => Ok(("quote", AuthMode::Public)),
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/ticker" => {
             Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/ticker/price" => {
+            Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/exchangeInfo" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/income" => {
+            Ok(("fills", AuthMode::PrivateRead))
         }
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/exchangeInfo" => {
             Ok(("instrument_master", AuthMode::Public))
@@ -575,6 +587,13 @@ pub fn authorize_host_call(
     if normalize_request_path(path) == "/eapi/v1/klines" && host_norm != "eapi.binance.com" {
         return Err(HostRefuse::HostNotAllowed);
     }
+    if (normalize_request_path(path) == "/fapi/v1/ticker/price"
+        || normalize_request_path(path) == "/fapi/v1/exchangeInfo"
+        || normalize_request_path(path) == "/fapi/v1/income")
+        && host_norm != "fapi.binance.com"
+    {
+        return Err(HostRefuse::HostNotAllowed);
+    }
     if (is_kotak_cash_scrip_csv_path(path) || is_kotak_fo_scrip_csv_path(path))
         && host_norm != "lapi.kotaksecurities.com"
     {
@@ -632,6 +651,72 @@ mod tests {
                 .unwrap_or_else(|_| panic!("USDM USER_DATA GET {path} must be allowlisted"));
         }
         assert_eq!(
+            infer_capability("GET", "/fapi/v1/ticker/price").unwrap(),
+            ("quote", AuthMode::Public)
+        );
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/ticker/price?symbol=BTCUSDT").unwrap(),
+            ("quote", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "GET",
+            "/fapi/v1/ticker/price",
+            false,
+        )
+        .expect("USDM public ticker GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "fapi.binance.com",
+                "GET",
+                "/fapi/v1/ticker/price",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/exchangeInfo").unwrap(),
+            ("instrument_master", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "GET",
+            "/fapi/v1/exchangeInfo",
+            false,
+        )
+        .expect("USDM public exchangeInfo GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "fapi.binance.com",
+                "GET",
+                "/fapi/v1/exchangeInfo",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/income").unwrap(),
+            ("fills", AuthMode::PrivateRead)
+        );
+        authorize_book_call(
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "GET",
+            "/fapi/v1/income",
+            true,
+        )
+        .expect("USDM income GET is PrivateRead fills with HMAC");
+        assert_eq!(
+            infer_capability("GET", "/fapi/v2/ticker/price").unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        assert_eq!(
             infer_capability("POST", "/fapi/v1/order").unwrap_err(),
             HostRefuse::MutationForbidden
         );
@@ -647,6 +732,28 @@ mod tests {
             HostRefuse::MutationForbidden
         );
         assert!(is_mutation("POST", "/fapi/v1/order"));
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "api.binance.com",
+                "GET",
+                "/fapi/v1/ticker/price",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "api.binance.com",
+                "GET",
+                "/api/v3/ticker/price",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
         for (host, path) in [
             ("api.binance.com", "/api/v3/account"),
             ("eapi.binance.com", "/eapi/v1/ticker"),

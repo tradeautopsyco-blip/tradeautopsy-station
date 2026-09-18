@@ -51,6 +51,25 @@ enum BarAccountChrome {
         }
     }
 
+    /// Named USDM book on COM only. Nil for every other class/slug — Start chrome stays spot.
+    static func namedBookId(forAssetClass assetClass: BarDeclareAssetClass, startSlug: String?) -> String? {
+        guard assetClass == .usdm else { return nil }
+        switch normalized(startSlug) {
+        case "binance_com", "binance":
+            return BarDeskTemplate.binanceComUsdmBookId
+        default:
+            return nil
+        }
+    }
+
+    /// Pulse/ledger book for this declare class. USDM never falls back to Start spot.
+    static func pulseBookId(forAssetClass assetClass: BarDeclareAssetClass, startSlug: String?) -> String? {
+        if assetClass == .usdm {
+            return namedBookId(forAssetClass: assetClass, startSlug: startSlug)
+        }
+        return shippingBookId(forStartSlug: startSlug)
+    }
+
     static func obtainAdapterId(forStartSlug slug: String?) -> String? {
         switch normalized(slug) {
         case "kotak_neo", "kotak":
@@ -69,7 +88,7 @@ enum BarAccountChrome {
         return "/api/station/obtain?adapter=\(a)&book=\(b)&operation=\(o)"
     }
 
-    /// Compose pulse + ledger. Success envelopes whose `book_id` is not the shipping book are dropped (DualNoBlend).
+    /// Compose pulse + ledger. Success envelopes whose `book_id` is not the pulse book are dropped (DualNoBlend).
     static func compose(
         shippingBookId: String,
         quoteCurrency: String,
@@ -203,6 +222,8 @@ enum BarAccountChrome {
             kind = "Cash"
         case "binance-com-spot":
             kind = "Spot"
+        case BarDeskTemplate.binanceComUsdmBookId:
+            kind = "USDM"
         default:
             kind = bookId
         }

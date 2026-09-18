@@ -14,8 +14,8 @@
 | Same slug | `binance_com` — **no new B6**, no new broker |
 | Host / path | `https://fapi.binance.com` + `/fapi/` |
 | PnL owner | `agent/src/usdm_realized_pnl.rs` — **not** `round_trip_engine.rs` |
-| Allow this slice | HMAC `GET /fapi/v3/balance`, `GET /fapi/v3/positionRisk`, `GET /fapi/v1/forceOrders` (lossy) |
-| Refuse | spot `/api/v3/` · eapi · dapi · `POST /fapi/v1/order` · `pricePrecision` as tick · complete force-order · default Start=USDM |
+| Allow this slice | HMAC `GET /fapi/v3/balance`, `GET /fapi/v3/positionRisk`, `GET /fapi/v1/forceOrders` (lossy); public `GET /fapi/v1/ticker/price` (no HMAC) |
+| Refuse | spot `/api/v3/` · eapi · dapi · `POST /fapi/v1/order` · `/fapi/v2/ticker/price` this slice · depth/klines until named · testnet · `pricePrecision` as tick · complete force-order · default Start=USDM |
 | Sister book | Coin-M [`locks/binance-com-coinm.md`](../../../issues/compliance/locks/binance-com-coinm.md) on `dapi.binance.com` `/dapi/` |
 
 Blended “crypto perps” as one class is **N-A** in [`CLAIM-REGISTRY.md`](../../../issues/compliance/CLAIM-REGISTRY.md). Matching is `book_id`, never the letters `BTCUSDT`.
@@ -34,7 +34,7 @@ Blended “crypto perps” as one class is **N-A** in [`CLAIM-REGISTRY.md`](../.
 | Wiremock | `agent/tests/usdm_obtain.rs` |
 | Notch | **no** `BarDeclareAssetClass` for USDM (only spot / equity / options). Harness cannot bind this book as a declare desk yet. |
 
-Quotes / history / tradebook on USDM are **not** in the manifest. `enricher("binance-com-usdm", "quotes")` is none. Do not expect S8-style last on this book tonight.
+Phase 1 **law** names public `GET /fapi/v1/ticker/price` on this book (HMAC must not attach; last = JSON `price`). Notch class / `BarDeclareAssetClass` for USDM is still a **later** slice. TRADE still out. Running obtain `quotes` stays `unsupported` until Phase 1 **code**. History / tradebook stay unnamed. Do not expect a USDM class chip tonight.
 
 ---
 
@@ -158,7 +158,7 @@ Source: [binance-cli README command list](https://github.com/binance/binance-cli
 
 1. **USDM founder obtain** on live `fapi` with `book=binance-com-usdm` (checklist B). Sign a dogfood file when it matches CLI.
 2. **Coin-M obtain** — same three nouns on `dapi`, book `binance-com-coinm`. Never parse with the USDM client.
-3. **Do not** add Notch `BarDeclareAssetClass.usdm` or Harness last until a later slice names public `GET /fapi/v1/ticker/price` / depth / klines on **this** book (lock currently has no quotes).
+3. Phase 1 names public `GET /fapi/v1/ticker/price` on **this** book (lock allow-list, 2026-09-19). Notch `BarDeclareAssetClass.usdm` is still a **later** slice. Depth/klines still unnamed. TRADE still out.
 4. **Do not** add `binance-sdk` to `Cargo.toml`.
 5. **Do not** start margin / portfolio-margin / convert as live books.
 6. **Done 2026-09-19:** USDM/Coin-M/spot/options locks + B6 + MECHANICS headers cite local clone `592f16b` / `binance-sdk` 70.1.0. Deprecated python futures connector retired. Pin: [binance-connector-rust-citation.md](binance-connector-rust-citation.md). Wire paths were already aligned — no client behavior change.

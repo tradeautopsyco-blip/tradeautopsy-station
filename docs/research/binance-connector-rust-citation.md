@@ -27,6 +27,7 @@ Testnet/demo URLs in the same file (`testnet.binancefuture.com`, `demo-fapi.bina
 | USDM | `GET /fapi/v3/balance` | `src/derivatives_trading_usds_futures/rest_api/apis/account_api.rs` (`futures_account_balance_v3`) |
 | USDM | `GET /fapi/v3/positionRisk` | `…/trade_api.rs` (`position_information_v3`) |
 | USDM | `GET /fapi/v1/forceOrders` | `…/trade_api.rs` (`users_force_orders`) |
+| USDM | `GET /fapi/v1/ticker/price` | `src/derivatives_trading_usds_futures/rest_api/apis/market_data_api.rs` (`MarketDataApi` / `symbol_price_ticker`). Model `SymbolPriceTickerResponse1` alias `price` description “Price.” Public, **no HMAC**. **Not** `/fapi/v2/ticker/price` this slice. **Not** Options `lastPrice`. |
 | Coin-M | `GET /dapi/v1/balance` | `src/derivatives_trading_coin_futures/rest_api/apis/account_api.rs` |
 | Coin-M | `GET /dapi/v1/positionRisk` | `…/trade_api.rs` |
 | Coin-M | `GET /dapi/v1/forceOrders` | `…/trade_api.rs` |
@@ -35,10 +36,11 @@ Testnet/demo URLs in the same file (`testnet.binancefuture.com`, `demo-fapi.bina
 
 ## JSON aliases this slice copies (USDM)
 
-From `FuturesAccountBalanceV2ResponseInner` / `PositionInformationV3ResponseInner`:
+From `FuturesAccountBalanceV2ResponseInner` / `PositionInformationV3ResponseInner` / `SymbolPriceTickerResponse1`:
 
 - funds: `asset`, `availableBalance` (string). Do not sum `crossUnPnl` into snapshot `unrealized_pnl` (lock: null).
 - positions: `symbol`, `positionAmt` (positive long / negative short). `unRealizedProfit` / `entryPrice` / `marginAsset` exist on the model — display copy later; this slice does not blend them into spot WAC.
+- last: `SymbolPriceTickerResponse1.price` (string, description “Price.”). TickBook key `{binance-com-usdm}\0{BTCUSDT}`. Never Options `lastPrice`. Never `/fapi/v2/ticker/price` this slice.
 
 ## Hard refuse in this crate
 

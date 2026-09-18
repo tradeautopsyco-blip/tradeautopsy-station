@@ -4,8 +4,10 @@
 //! path oracle 2026-09-19 IST).
 //! Oracle (cite, not a dep): `/Users/bishnu/binance-connector-rust`
 //! `binance-sdk` 70.1.0 @ `592f16b` feature `derivatives_trading_usds_futures`.
-//! USER_DATA HMAC on `/fapi/v3/balance`, `/fapi/v3/positionRisk`, `/fapi/v1/forceOrders`.
-//! Do not call SDK `new_order` / `POST /fapi/v1/order`.
+//! USER_DATA HMAC on `/fapi/v3/balance`, `/fapi/v3/positionRisk`,
+//! `/fapi/v1/forceOrders`, `/fapi/v1/income` (`incomeType=REALIZED_PNL`).
+//! Do not call SDK `new_order` / `POST /fapi/v1/order`. Realized identity lives
+//! in `usdm_realized_pnl.rs` — this client only fetches the body.
 
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
@@ -13,7 +15,7 @@ use sha2::Sha256;
 
 use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding, BrokerPositionRow};
 use crate::data::BINANCE_COM_USDM_BOOK_ID;
-use crate::usdm_realized_pnl::parse_position_amt;
+use crate::usdm_realized_pnl::{parse_position_amt, usdm_income_call};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -76,6 +78,16 @@ impl BinanceComUsdmClient {
     pub async fn fetch_force_orders(&self) -> Result<serde_json::Value, BinanceComUsdmError> {
         let body = self.signed_get("/fapi/v1/forceOrders", &[]).await?;
         serde_json::from_str(&body).map_err(|e| BinanceComUsdmError::Parse(e.to_string()))
+    }
+
+    /// USER_DATA GET `/fapi/v1/income?incomeType=REALIZED_PNL`. Body is parsed
+    /// by `usdm_realized_pnl` — not a second writer, not force-order, not TRADE.
+    /// Parent kicks via `ensure_usdm_realized_income`; not an obtain operation.
+    #[allow(dead_code)]
+    pub async fn fetch_income(&self) -> Result<String, BinanceComUsdmError> {
+        let call = usdm_income_call();
+        self.signed_get(call.path, &[("incomeType", call.query_income_type)])
+            .await
     }
 
     async fn signed_get(

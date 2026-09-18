@@ -3,18 +3,20 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    chain_rows_for_contract, depth_obtain_data, describe, ensure_coinm_balance,
-    ensure_coinm_force_orders, ensure_coinm_positions, ensure_options_margin_account,
-    ensure_options_positions, ensure_options_user_trades, ensure_spot_account,
-    ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
-    extract_chain_from, extract_depth_on_book, extract_greeks_from_mark, extract_licensed_history,
-    extract_open_interest_from, extract_options_history, extract_quote_for_book,
-    history_obtain_data, is_dated_option_contract, obtain, parse_nfo_instrument_id,
-    search_identity, search_rows_for_book, DepthStatus, GlanceStatus, GreeksStatus, InputHonesty,
-    LossyStatus, ObtainEnvelope, ObtainStatus, QuoteStatus, Registry, SourceManifest, TickBook,
-    BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    BINANCE_COM_USDM_BOOK_ID, DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, OPTIONS_KLINES_PATH,
+    await_binance_usdm_ticker, chain_rows_for_contract, depth_obtain_data, describe,
+    ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
+    ensure_options_margin_account, ensure_options_positions, ensure_options_user_trades,
+    ensure_spot_account, ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_exchange_info,
+    ensure_usdm_force_orders, ensure_usdm_positions, ensure_usdm_realized_income,
+    extract_chain_from, extract_depth_on_book,
+    extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
+    extract_options_history, extract_quote_for_book, history_obtain_data, is_dated_option_contract,
+    obtain, parse_nfo_instrument_id, search_identity, search_rows_for_book, DepthStatus,
+    GlanceStatus, GreeksStatus, InputHonesty, LossyStatus, ObtainEnvelope, ObtainStatus,
+    QuoteStatus, Registry, SourceManifest, TickBook, BINANCE_COM_COINM_BOOK_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID,
+    DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_KLINES_PATH,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -377,9 +379,29 @@ async fn kick_usdm_private(state: &AppState, envelope: &ObtainEnvelope) {
         return;
     }
     match envelope.operation.as_str() {
-        "funds" => ensure_usdm_balance(state).await,
+        "funds" => {
+            ensure_usdm_balance(state).await;
+            ensure_usdm_realized_income(state).await;
+        }
         "positionbook" => ensure_usdm_positions(state).await,
         "forceorder" => ensure_usdm_force_orders(state).await,
+        "quotes" => {
+            let instrument = state
+                .selected_quote_for(BINANCE_COM_USDM_BOOK_ID)
+                .unwrap_or_default();
+            if instrument.is_empty() {
+                return;
+            }
+            await_binance_usdm_ticker(
+                state.quote_registry.clone(),
+                state.tickbook.clone(),
+                state.com_ticker_inflight.clone(),
+                state.quote_fetch_error.clone(),
+                &instrument,
+            )
+            .await;
+            ensure_usdm_exchange_info(state, &instrument).await;
+        }
         _ => {}
     }
 }
@@ -516,6 +538,7 @@ fn enricher(
         ("binance-com-options", "history") => Some(enrich_options_history),
         ("binance-com-options", "funds") => Some(enrich_binance_funds),
         ("binance-com-options", "positionbook") => Some(enrich_positions),
+        ("binance-com-usdm", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-usdm", "funds") => Some(enrich_binance_funds),
         ("binance-com-usdm", "positionbook") => Some(enrich_positions),
         ("binance-com-usdm", "forceorder") => Some(enrich_forceorder),
@@ -1555,7 +1578,7 @@ mod tests {
             "binance-com-options"
         );
         assert!(enricher("binance-com-spot", "optionchain").is_none());
-        assert!(enricher("binance-com-usdm", "quotes").is_none());
+        assert!(enricher("binance-com-usdm", "quotes").is_some());
         assert!(enricher("binance-com-options", "quotes").is_some());
         assert!(enricher("binance-com-options", "optionchain").is_some());
         assert!(enricher("binance-com-options", "open_interest").is_some());

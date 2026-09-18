@@ -97,37 +97,39 @@ struct BarDeclarationFlowView: View {
                     BarSectionLabel(text: "Setup & invalidation")
                     setupAndInvalidationCard
 
-                    BarSectionLabel(text: "Review")
-                    BarToggleRow(
-                        label: "Auto-place stop loss on fill",
-                        sub: "Pre-authorized — placed within 500ms of broker fill",
-                        isOn: $viewModel.declProtectiveSLConsent,
-                    )
-                    .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
+                    if viewModel.showsConfirmControl {
+                        BarSectionLabel(text: "Review")
+                        BarToggleRow(
+                            label: "Auto-place stop loss on fill",
+                            sub: "Pre-authorized — placed within 500ms of broker fill",
+                            isOn: $viewModel.declProtectiveSLConsent,
+                        )
+                        .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
 
-                    BarBigButton(
-                        label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
-                        style: .primary,
-                    ) {
-                        Task { await submit() }
+                        BarBigButton(
+                            label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
+                            style: .primary,
+                        ) {
+                            Task { await submit() }
+                        }
+                        .disabled(!submitReadiness.ready || viewModel.barDeclarationBusy)
+                        .opacity(submitReadiness.ready && !viewModel.barDeclarationBusy ? 1 : 0.3)
+
+                        if !submitReadiness.ready,
+                           viewModel.barDeclarationLastError == nil,
+                           let hint = submitReadiness.hint,
+                           !viewModel.barDeclarationBusy {
+                            Text(hint)
+                                .font(BarDS.bodyFont(10, weight: .medium))
+                                .foregroundColor(BarDS.Text.hint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Text("Completed in \(elapsedLiveSeconds)s")
+                            .font(BarDS.bodyFont(10, weight: .regular))
+                            .foregroundColor(BarDS.Text.labels)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .disabled(!submitReadiness.ready || viewModel.barDeclarationBusy)
-                    .opacity(submitReadiness.ready && !viewModel.barDeclarationBusy ? 1 : 0.3)
-
-                    if !submitReadiness.ready,
-                       viewModel.barDeclarationLastError == nil,
-                       let hint = submitReadiness.hint,
-                       !viewModel.barDeclarationBusy {
-                        Text(hint)
-                            .font(BarDS.bodyFont(10, weight: .medium))
-                            .foregroundColor(BarDS.Text.hint)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Text("Completed in \(elapsedLiveSeconds)s")
-                        .font(BarDS.bodyFont(10, weight: .regular))
-                        .foregroundColor(BarDS.Text.labels)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         .onAppear {
@@ -263,13 +265,15 @@ struct BarDeclarationFlowView: View {
                     .foregroundColor(BarDS.Accent.amber)
             }
             deskGlanceStrip
-            BarDeskDepthLadder(
-                status: viewModel.deskDepthStatus,
-                display: viewModel.deskDepthDisplay,
-                bids: viewModel.deskDepthBids,
-                asks: viewModel.deskDepthAsks,
-                physicsNote: viewModel.deskDepthPhysicsNote,
-            )
+            if BarDeskTemplate.glanceKinds(for: viewModel.declareAssetClass).contains(.depth) {
+                BarDeskDepthLadder(
+                    status: viewModel.deskDepthStatus,
+                    display: viewModel.deskDepthDisplay,
+                    bids: viewModel.deskDepthBids,
+                    asks: viewModel.deskDepthAsks,
+                    physicsNote: viewModel.deskDepthPhysicsNote,
+                )
+            }
             BarInputField(placeholder: "Stop loss — exact price", text: $stopLossText)
             BarInputField(placeholder: "Target price", text: $targetPriceText)
             symbolAutocompleteField
@@ -491,6 +495,7 @@ struct BarDeclarationFlowView: View {
 
     private func submit() async {
         viewModel.barDeclarationLastError = nil
+        guard viewModel.canSubmitBarDeclaration else { return }
         guard let data = buildJsonBody() else {
             viewModel.barDeclarationLastError = submitReadiness.hint ?? "Fix trade fields before submitting."
             return

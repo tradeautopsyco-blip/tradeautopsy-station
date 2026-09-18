@@ -9,6 +9,39 @@ struct BarAccountChromeTests {
         #expect(BarAccountChrome.shippingBookId(forStartSlug: "binance_com") == "binance-com-spot")
         #expect(BarAccountChrome.shippingBookId(forStartSlug: "kotak-nse-nfo") == nil)
         #expect(BarAccountChrome.shippingBookId(forStartSlug: "binance-com-options") == nil)
+        #expect(BarAccountChrome.shippingBookId(forStartSlug: "binance_com") != "binance-com-usdm")
+        #expect(BarAccountChrome.shippingBookId(forStartSlug: "binance_com") == "binance-com-spot")
+        #expect(BarAccountChrome.namedBookId(forAssetClass: .spot, startSlug: "binance_com") == nil)
+        #expect(BarAccountChrome.namedBookId(forAssetClass: .options, startSlug: "binance_com") == nil)
+        #expect(
+            BarAccountChrome.namedBookId(forAssetClass: .usdm, startSlug: "binance_com")
+                == "binance-com-usdm"
+        )
+        #expect(BarAccountChrome.namedBookId(forAssetClass: .usdm, startSlug: "kotak_neo") == nil)
+        #expect(
+            BarAccountChrome.pulseBookId(forAssetClass: .usdm, startSlug: "binance_com")
+                == "binance-com-usdm"
+        )
+        #expect(
+            BarAccountChrome.pulseBookId(forAssetClass: .spot, startSlug: "binance_com")
+                == "binance-com-spot"
+        )
+        let usdmFunds = BarAccountChrome.obtainPath(
+            adapter: "binance_com",
+            bookId: BarAccountChrome.namedBookId(forAssetClass: .usdm, startSlug: "binance_com")
+                ?? "",
+            operation: "funds"
+        )
+        #expect(usdmFunds.contains("adapter=binance_com"))
+        #expect(usdmFunds.contains("book=binance-com-usdm"))
+        #expect(usdmFunds.contains("operation=funds"))
+        let usdmPositions = BarAccountChrome.obtainPath(
+            adapter: "binance_com",
+            bookId: "binance-com-usdm",
+            operation: "positionbook"
+        )
+        #expect(usdmPositions.contains("book=binance-com-usdm"))
+        #expect(usdmPositions.contains("operation=positionbook"))
         #expect(BarAccountChrome.obtainAdapterId(forStartSlug: "kotak") == "kotak_neo")
         #expect(
             BarAccountChrome.obtainPath(
@@ -62,6 +95,90 @@ struct BarAccountChromeTests {
         #expect(snap.freeText == "—")
         #expect(snap.fundsStatus == "unavailable")
         #expect(snap.bookId == "kotak-nse-bse-cash")
+    }
+
+    @Test func spotComposeDropsForeignUsdmBookIdDualNoBlend() {
+        let snap = BarAccountChrome.compose(
+            shippingBookId: "binance-com-spot",
+            quoteCurrency: "USDT",
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: [["symbol": "ETHUSDT", "net_qty": 2]]
+            ),
+            orders: nil
+        )
+        #expect(snap.bookId == "binance-com-spot")
+        #expect(snap.freeText == "—")
+        #expect(snap.fundsStatus == "unavailable")
+        #expect(snap.positionsCount == 0)
+        #expect(snap.positionsRows.isEmpty)
+    }
+
+    @Test func usdmEmptyPositionbookComposesToCountZero() {
+        let snap = BarAccountChrome.compose(
+            shippingBookId: "binance-com-usdm",
+            quoteCurrency: "USDT",
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: []
+            ),
+            orders: nil
+        )
+        #expect(snap.bookLabel == "USDM · USDT")
+        #expect(snap.freeText == "USDT 1.04")
+        #expect(snap.positionsCount == 0)
+        #expect(snap.positionsRows.isEmpty)
+        #expect(snap.holdingsCount == 0)
+        #expect(snap.holdingsRows.isEmpty)
+        #expect(snap.fundsStatus == "success")
+        #expect(snap.fundsStatus != "synced")
+    }
+
+    @Test func usdmPulsePlantUsesNamedBookNotStartSpot() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.declareAssetClass = .usdm
+        vm.applyAccountObtainEnvelopes(
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: []
+            ),
+            orders: nil
+        )
+        #expect(vm.accountChrome.bookId == "binance-com-usdm")
+        #expect(vm.accountChrome.freeText == "USDT 1.04")
+        #expect(vm.accountChrome.positionsCount == 0)
+        #expect(vm.accountChrome.fundsStatus == "success")
+        #expect(vm.accountChrome.fundsStatus != "synced")
+    }
+
+    @Test func spotPulseStillDropsUsdmWhenClassIsSpot() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.declareAssetClass = .spot
+        vm.applyAccountObtainEnvelopes(
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: nil,
+            orders: nil
+        )
+        #expect(vm.accountChrome.bookId == "binance-com-spot")
+        #expect(vm.accountChrome.freeText == "—")
+        #expect(vm.accountChrome.fundsStatus == "unavailable")
     }
 
     @Test func viewModelPlantDoesNotTouchTodayFillInventory() {

@@ -823,7 +823,9 @@ struct BarCryptoOptionsDeclareView: View {
     private var planAndConfirm: some View {
         VStack(alignment: .leading, spacing: 12) {
             planZone
-            confirmBar
+            if viewModel.showsConfirmControl {
+                confirmBar
+            }
         }
     }
 
@@ -1151,7 +1153,7 @@ struct BarCryptoOptionsDeclareView: View {
                 style: .primary,
                 action: onConfirm,
             )
-            .disabled(!submitReady || viewModel.barDeclarationBusy || submitBlocked)
+            .disabled(!submitReady || viewModel.barDeclarationBusy || submitBlocked || !viewModel.showsConfirmControl)
             .opacity(submitReady && !viewModel.barDeclarationBusy && !submitBlocked ? 1 : 0.3)
             if !submitReady, let hint = submitHint, !viewModel.barDeclarationBusy {
                 Text(hint)

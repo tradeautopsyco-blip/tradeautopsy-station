@@ -20,7 +20,9 @@ mod binance_options_ticker;
 mod binance_public;
 mod binance_spot_private;
 mod binance_spot_ticker;
+mod binance_usdm_exchange_info;
 mod binance_usdm_private;
+mod binance_usdm_ticker;
 mod book_identity;
 mod connection;
 mod contracts;
@@ -119,8 +121,16 @@ pub use binance_public::{
 };
 pub use binance_spot_private::{ensure_spot_account, ensure_spot_open_orders};
 pub use binance_spot_ticker::await_binance_spot_ticker_price;
+pub use binance_usdm_exchange_info::{
+    ensure_usdm_exchange_info, step_size_for, tick_size_for, UsdmExchangeInfoCache,
+    UsdmSymbolFilters,
+};
 pub use binance_usdm_private::{
     ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
+    ensure_usdm_realized_income,
+};
+pub use binance_usdm_ticker::{
+    await_binance_usdm_ticker, normalize_usdm_instrument, quote_tick_from_usdm_ticker_json,
 };
 pub use book_identity::{book_accepts_symbol, query_symbol};
 pub use connection::BrokerConnectionRuntime;
