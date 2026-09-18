@@ -27,6 +27,7 @@ mod instruments;
 mod kill_policy;
 mod kill_switch_audit;
 mod kotak_nfo_scrip;
+mod kotak_rest_history;
 mod kotak_rest_quotes;
 mod kotak_scrip_master;
 mod live_book;

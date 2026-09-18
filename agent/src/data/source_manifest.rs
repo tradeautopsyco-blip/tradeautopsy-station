@@ -3,9 +3,9 @@
 //! `binance_com.s1.v1` binds public quotes + instrument master + private account reads
 //! plus S2 public klines `history` (`ohlcv` / `historical_series`).
 //! `kotak_neo.s1k.v1` claims private quotes + REST depth snapshot + scrip master +
-//! tradebook. Quotes succeed when TickBook has a `kotak_neo` tick (REST latest_state).
-//! Depth succeeds when DepthBook has a complete bounded snapshot — never `synced`.
-//! Kotak history is not implemented. Missing capabilities stay `unsupported`, not empty success.
+//! tradebook + cash REST `history` (`ohlcv` / `historical_series`, v3.0.6
+//! `GET /market-data/1.0/historical/details`). Empty candles stay `unavailable`.
+//! NFO history stays a declared gap. Missing capabilities stay `unsupported`, not empty success.
 
 use super::descriptor::{DelayClass, Limits};
 use super::host_policy::AuthMode;
@@ -366,14 +366,14 @@ fn search_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> 
     }
 }
 
-fn history_binding(adapter_id: &str, coverage: Coverage) -> ManifestBinding {
+fn history_binding(adapter_id: &str, coverage: Coverage, auth_mode: AuthMode) -> ManifestBinding {
     ManifestBinding {
         operation: "history".into(),
         adapter_id: adapter_id.to_string(),
         family: Family::Market,
         capability_id: "ohlcv".into(),
         physics: Physics::HistoricalSeries,
-        auth_mode: AuthMode::Public,
+        auth_mode,
         transports: vec![TransportKind::Rest],
         rights: Rights::research_fetch_only(),
         limits: Limits::default(),
@@ -465,7 +465,7 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
                 coverage.clone(),
                 fills_limits,
             ),
-            history_binding("binance_com", history_coverage),
+            history_binding("binance_com", history_coverage, AuthMode::Public),
             depth_binding(
                 "binance_com",
                 coverage,
@@ -477,13 +477,23 @@ pub fn binance_com_s1_manifest() -> SourceManifest {
 }
 
 /// Kotak S1k: quotes (REST latest_state) + REST depth bounded_snapshot + scrip master
-/// + session tradebook. No history, no HSM `isDepth`, no optionchain.
+/// + session tradebook + cash REST history (`GET /market-data/1.0/historical/details`).
+/// No HSM `isDepth`, no optionchain. NFO history stays a declared gap.
 pub fn kotak_neo_s1k_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["nse_cm".into(), "bse_cm".into()],
         asset_classes: vec!["equities".into()],
         history_range: Some("session".into()),
         intervals: vec![],
+    };
+    let history_coverage = Coverage {
+        venues: vec!["nse_cm".into(), "bse_cm".into()],
+        asset_classes: vec!["equities".into()],
+        history_range: None,
+        intervals: super::kotak_historical::ALLOWED_INTERVALS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
     };
     SourceManifest {
         manifest_id: "kotak_neo.s1k.v1".into(),
@@ -496,6 +506,7 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
             "tradebook".into(),
             "depth".into(),
             "orderbook".into(),
+            "history".into(),
             "holdings".into(),
             "positionbook".into(),
             "funds".into(),
@@ -539,6 +550,7 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
+            history_binding("kotak_neo", history_coverage, AuthMode::PrivateRead),
             depth_binding(
                 "kotak_neo",
                 coverage,
@@ -687,7 +699,7 @@ pub fn binance_com_options_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
-            history_binding("binance_com", history_coverage),
+            history_binding("binance_com", history_coverage, AuthMode::Public),
             // REST bounded snapshot of `GET /eapi/v1/depth` — `Rest` only. Spot's
             // `@depth` reconstruction loop is another book on another host, and
             // this binding must never claim `Stream`.
@@ -1061,7 +1073,7 @@ mod tests {
     }
 
     #[test]
-    fn s1k_kotak_does_not_claim_history() {
+    fn s1k_kotak_claims_cash_history() {
         let manifest = kotak_neo_s1k_manifest();
         assert!(validate_manifest(&manifest).is_empty());
         assert_eq!(manifest.manifest_id, "kotak_neo.s1k.v1");
@@ -1075,6 +1087,7 @@ mod tests {
                 "tradebook",
                 "depth",
                 "orderbook",
+                "history",
                 "holdings",
                 "positionbook",
                 "funds",
@@ -1100,7 +1113,7 @@ mod tests {
         assert_eq!(depth_bind.capability_id, "order_book");
         assert_eq!(depth_bind.physics, Physics::BoundedSnapshot);
         assert_eq!(depth_bind.transports, vec![TransportKind::Rest]);
-        assert!(!manifest.implemented.iter().any(|op| op == "history"));
+        assert!(manifest.implemented.iter().any(|op| op == "history"));
         assert!(!manifest.implemented.iter().any(|op| op == "depth_stream"));
         assert!(!manifest.implemented.iter().any(|op| op == "optionchain"));
         let instruments_bind = manifest
@@ -1109,8 +1122,18 @@ mod tests {
             .find(|binding| binding.operation == "instruments")
             .expect("instruments binding");
         assert_eq!(instruments_bind.auth_mode, AuthMode::PrivateRead);
+        let history_bind = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "history")
+            .expect("history binding");
+        assert_eq!(history_bind.auth_mode, AuthMode::PrivateRead);
+        assert_eq!(history_bind.capability_id, "ohlcv");
+        assert_eq!(history_bind.physics, Physics::HistoricalSeries);
+        assert!(history_bind.coverage.venues.contains(&"nse_cm".into()));
+        assert!(history_bind.coverage.intervals.contains(&"15min".into()));
         let history = obtain(&manifest, "history");
-        assert_eq!(history.status, ObtainStatus::Unsupported);
+        assert_eq!(history.status, ObtainStatus::Unavailable);
         assert!(history.data.is_none());
         assert_ne!(history.status, ObtainStatus::Success);
         assert_eq!(

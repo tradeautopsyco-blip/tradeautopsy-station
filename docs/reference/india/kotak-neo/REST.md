@@ -24,7 +24,7 @@
 > - Whether a live cash CSV GET on `lapi.kotaksecurities.com` requires `Sid` / `Auth` if a future GET returns 401/403 (Station unsigned GET 2026-08-27 returned 200).
 > - Whether production gateways require `Sid` / `Auth` / `sId` on REST quotes despite the SDK sending only `Authorization` = consumer key.
 >
-> Do not invent klines, OHLCV history, or `/quick/quotes`. **S2:** Kotak `obtain(history)` remains unsupported (FAQ 2026-08-26). Binance.com klines live on slug `binance_com` — [`docs/reference/crypto/binance-global/spot/REST.md`](../../crypto/binance-global/spot/REST.md).
+> Do not invent `/quick/quotes`. **Cash v1 (2026-09-18):** official `GET /market-data/1.0/historical/details` (SDK v3.0.6, consumer_key only) is cash `obtain(history)`. Empty `candles[]` is unavailable. NFO / `mcx_fo` / `nse_com` stay refused or a declared gap. Binance.com klines remain slug `binance_com`.
 
 ---
 
@@ -354,7 +354,7 @@ Trade book (already documented): `GET {baseUrl}/quick/user/trades?sId={hsServerI
 | Scrip master file-paths | **GET** | `{BASE_URL}/script-details/1.0/masterscrip/file-paths` | `Authorization` = consumer key | Wrapper requires 2FA. Official guide 2026-05-22 / fetched 2026-08-26 |
 | REST quotes | **GET** | `{baseUrl}/script-details/1.0/quotes/neosymbol/{neo_symbols}/{quote_type}` | `Authorization` = consumer key | `quote_type` enum above. Leading `/` in `PROD_URL` may double-slash |
 | CSV bytes at `filesPaths` | **GET** | `/wso2-scripmaster/v1/prod/{date}/transformed/{nse,bse}_cm.csv` (SDK sample) and `…/transformed-v1/{nse,bse}_cm-v1.csv` (live) | Unsigned Public on `lapi.kotaksecurities.com` (OpenAlgo public CDN GET, fetched 2026-08-27). Official SDK does not download. `Sid`/`Auth` **NOT SPECIFIED** | Host already allowlisted. F&O refused. No new hosts. |
-| Historical candles / klines | **none** | — | — | FAQ 2026-08-26: unavailable. **S2:** `obtain(history)` remains unsupported |
+| Historical candles | **GET** | `{host}/market-data/1.0/historical/details` | `Authorization` = consumer_key | SDK v3.0.6. Query `neosymbol`/`interval`/`fromdate`/`todate`. No `/trading` prefix. Cash `nse_cm`/`bse_cm` only. Empty `candles[]` → unavailable. FAQ 2026-08-26 superseded for cash. |
 | `/quick/quotes` | **NOT SPECIFIED IN SOURCE** | — | — | Do not guess |
 
 ---

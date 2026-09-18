@@ -42,6 +42,14 @@ pub struct ObtainQuery {
     pub operation: Option<String>,
     /// Prefix filter for `operation=search` (not an instrument id).
     pub q: Option<String>,
+    /// Cash history: `{segment}|{token}`. Selected cash quote if omitted.
+    pub instrument: Option<String>,
+    /// Kotak v3.0.6 interval (`15min` default). Ignored on other books.
+    pub interval: Option<String>,
+    /// Wire `fromdate` (`YYYY-MM-DD`).
+    pub fromdate: Option<String>,
+    /// Wire `todate` (`YYYY-MM-DD`).
+    pub todate: Option<String>,
 }
 
 fn query_id(raw: Option<&str>) -> Option<&str> {
@@ -217,6 +225,29 @@ pub async fn obtain_handler(
                 return Json(envelope);
             }
         } else if envelope.operation == "history" {
+            if envelope.book_id == KOTAK_NSE_BSE_CASH_BOOK_ID {
+                let instrument = query_id(query.instrument.as_deref())
+                    .map(str::to_string)
+                    .or_else(|| state.selected_quote_for(KOTAK_NSE_BSE_CASH_BOOK_ID));
+                match crate::kotak_rest_history::try_native_cash_history(
+                    &state.broker_sync_control.credential_vault(),
+                    &state.kotak_session_locator,
+                    instrument.as_deref(),
+                    query.interval.as_deref(),
+                    query.fromdate.as_deref(),
+                    query.todate.as_deref(),
+                )
+                .await
+                {
+                    crate::kotak_rest_history::NativeHistory::Answered(env) => {
+                        return Json(env);
+                    }
+                    crate::kotak_rest_history::NativeHistory::Unsupported(env) => {
+                        return Json(env);
+                    }
+                    crate::kotak_rest_history::NativeHistory::Skip => {}
+                }
+            }
             let book = state
                 .historybook
                 .lock()

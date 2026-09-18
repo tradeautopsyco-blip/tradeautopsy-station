@@ -39,9 +39,10 @@ pub use host::{
 };
 pub use http::{
     attach_kotak_file_paths_session, classify_response, effective_host, kotak_base_host,
-    prepare_kotak_catalog_get, prepare_kotak_file_paths_get, prepare_request,
-    prepare_unsigned_request, redact_response_headers, BrokerHttpTransport, PreparedHttpRequest,
-    RecordingTransport, ReqwestBrokerHttpTransport, TransportResponse, RESPONSE_HEADER_ALLOWLIST,
+    prepare_kotak_catalog_get, prepare_kotak_file_paths_get, prepare_kotak_market_data_get,
+    prepare_request, prepare_unsigned_request, redact_response_headers, BrokerHttpTransport,
+    PreparedHttpRequest, RecordingTransport, ReqwestBrokerHttpTransport, TransportResponse,
+    RESPONSE_HEADER_ALLOWLIST,
 };
 pub use kotak_session::{mint_totp_session, KotakMintRequest, ReqwestKotakSessionHttp};
 pub use wasm_adapter::{fill_event_to_broker_fill, WasmBrokerAdapter};

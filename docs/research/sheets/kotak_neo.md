@@ -86,6 +86,22 @@ Lock: `/Users/bishnu/issues/compliance/locks/kotak-nse-nfo.md` (fetch 2026-08-28
 
 ---
 
+## Research amendment (2026-09-18) — official `historical_data` (SDK v3.0.6)
+
+Supersedes **M4 / S2 “Kotak has no candles”** for **cash** `nse_cm` / `bse_cm` only. Does **not** wrap the Python SDK. Does **not** enable `place_order`. Does **not** claim NFO / `mcx_fo` / `nse_com` history. Gap vendor `licensed_history` still fills only when native Kotak history is dark.
+
+Cite: local `kotak-neo-python-3.0.6` — `settings.py` `PROD_URL["historical_data"]`, `services/historical_data.py`, `docs/functions/market_data/historical_data.md`, `tests/unit/test_historical_data.py`.
+
+| # | Field | Answer |
+|---|-------|--------|
+| H1 | Path | **GET** `{host}/market-data/1.0/historical/details` — query `neosymbol` / `interval` / `fromdate` / `todate` (wire keys lowercase). **Not** `{host}/trading/market-data/…`. |
+| H2 | Auth | `Authorization` = **consumer_key** only. No TOTP. SDK unit test without `totp_validate` uses `https://mis.kotaksecurities.com/market-data/1.0/historical/details`. |
+| H3 | Cash v1 | `nse_cm\|token` / `bse_cm\|token` only. SDK: historical **not available** for `mcx_fo` and `nse_com`. NFO `obtain(history)` stays the declared gap. |
+| H4 | Empty | `status=success` + `candles: []` → **unavailable**, never a zero series, never a vendor fill. |
+| H5 | Default interval | `15min` when the obtain query omits `interval`. Backend date-range limits per SDK table (15min = 60 days). |
+
+---
+
 ## Founder sign-off
 
 - [x] Login flow protocol verified (official guide + Console `tradeApiLogin` / `tradeApiValidate`)

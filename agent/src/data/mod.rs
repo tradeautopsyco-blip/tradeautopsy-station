@@ -43,6 +43,7 @@ mod instrument_master_status;
 mod instrument_search;
 mod klines_pager;
 mod kotak_depth;
+pub(crate) mod kotak_historical;
 mod kotak_private;
 mod kotak_quotes;
 mod margin_estimate;
@@ -198,7 +199,7 @@ pub use source_route::{
     apply_kotak_source_route, decide_kotak_route, secret_looks_like_url, should_source_route,
     GapVendorConfig, LICENSED_HISTORY_ADAPTER_ID, LICENSED_HISTORY_VAULT_CONNECTION_ID,
 };
-pub use vendor_health::vendor_health_rows;
-pub use vendor_registry::{binding_for, clamp_budget};
 pub use tick::{QuoteTick, Transport};
 pub use tickbook::TickBook;
+pub use vendor_health::vendor_health_rows;
+pub use vendor_registry::{binding_for, clamp_budget};

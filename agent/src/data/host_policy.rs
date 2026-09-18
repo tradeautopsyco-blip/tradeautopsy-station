@@ -187,6 +187,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         }
         ("quote", "GET", AuthMode::PrivateRead) if is_kotak_latest_quote_path(path) => true,
         ("order_book", "GET", AuthMode::PrivateRead) if is_kotak_depth_path(path) => true,
+        ("ohlcv", "GET", AuthMode::PrivateRead) if is_kotak_historical_path(path) => true,
         ("nav", "GET", AuthMode::Public) if is_amfi_nav_path(path) => true,
         _ => false,
     }
@@ -275,6 +276,7 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         }
         ("GET", p) if is_kotak_depth_path(p) => Ok(("order_book", AuthMode::PrivateRead)),
         ("GET", p) if is_kotak_latest_quote_path(p) => Ok(("quote", AuthMode::PrivateRead)),
+        ("GET", p) if is_kotak_historical_path(p) => Ok(("ohlcv", AuthMode::PrivateRead)),
         ("GET", p) if is_amfi_nav_path(p) => Ok(("nav", AuthMode::Public)),
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
@@ -415,6 +417,10 @@ fn is_kotak_depth_path(path: &str) -> bool {
 
 fn is_kotak_latest_quote_path(path: &str) -> bool {
     super::kotak_quotes::is_kotak_latest_quote_path(path)
+}
+
+fn is_kotak_historical_path(path: &str) -> bool {
+    super::kotak_historical::is_kotak_historical_path(path)
 }
 
 /// Official AMFI daily NAV file. Query strings stripped; trailing `/` trimmed.
@@ -1069,6 +1075,48 @@ mod tests {
             .unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
+    }
+
+    #[test]
+    fn kotak_historical_details_is_private_read_ohlcv_cash_only() {
+        let path = "/market-data/1.0/historical/details?neosymbol=nse_cm%7C1333&interval=15min&fromdate=2026-08-20&todate=2026-09-01";
+        let (cap, mode) = infer_capability("GET", path).unwrap();
+        assert_eq!(cap, "ohlcv");
+        assert_eq!(mode, AuthMode::PrivateRead);
+        authorize_host_call(
+            "mis.kotaksecurities.com",
+            "GET",
+            path,
+            "ohlcv",
+            AuthMode::PrivateRead,
+            true,
+        )
+        .expect("SDK fallback host admits cash historical");
+        authorize_book_call(
+            "kotak-nse-bse-cash",
+            "e22.kotaksecurities.com",
+            "GET",
+            path,
+            true,
+        )
+        .expect("cash book admits nse_cm historical");
+        authorize_book_call(
+            "kotak-nse-bse-cash",
+            "e22.kotaksecurities.com",
+            "GET",
+            "/market-data/1.0/historical/details",
+            true,
+        )
+        .expect("egress splits query off the path");
+        authorize_host_call(
+            "mis.kotaksecurities.com",
+            "GET",
+            path,
+            "ohlcv",
+            AuthMode::Public,
+            false,
+        )
+        .expect_err("historical is consumer_key PrivateRead, not Public");
     }
 
     #[test]

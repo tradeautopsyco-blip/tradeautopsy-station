@@ -345,6 +345,42 @@ pub fn prepare_kotak_file_paths_get(
     })
 }
 
+/// Market-data GET (`historical_data` / later expiries). SDK `get_url_details`:
+/// `{host}/market-data/…` — consumer_key `Authorization` only, **no** session
+/// `/trading` prefix, no Auth/Sid. `historical_data.py` + `test_neo_utility.py`.
+pub fn prepare_kotak_market_data_get(
+    path: &str,
+    credentials: &HostCredentialBlob,
+) -> Result<PreparedHttpRequest, String> {
+    let HostCredentialBlob::KotakSession {
+        consumer_key,
+        base_url,
+        ..
+    } = credentials
+    else {
+        return Err("kotak market-data GET requires Kotak session credentials".into());
+    };
+    let host = host_of(base_url).ok_or_else(|| "kotak baseUrl has no host".to_string())?;
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    Ok(PreparedHttpRequest {
+        method: "GET".into(),
+        url: format!("https://{host}{path}"),
+        headers: vec![
+            ("Authorization".into(), consumer_key.clone()),
+            (
+                "Content-Type".into(),
+                "application/x-www-form-urlencoded".into(),
+            ),
+            ("Accept".into(), "application/json".into()),
+        ],
+        body: None,
+    })
+}
+
 /// One retry after SDK 401/403 / "Complete the 2fa process": attach Auth+Sid, still no `sId`.
 pub fn attach_kotak_file_paths_session(
     mut prepared: PreparedHttpRequest,
@@ -784,6 +820,51 @@ mod tests {
             .headers
             .iter()
             .any(|(n, _)| n.eq_ignore_ascii_case("sId")));
+    }
+
+    #[test]
+    fn kotak_market_data_get_omits_trading_prefix_and_session_headers() {
+        let creds = kotak_creds();
+        let prepared = prepare_kotak_market_data_get(
+            "/market-data/1.0/historical/details?neosymbol=nse_cm%7C1333&interval=15min&fromdate=2026-08-20&todate=2026-09-01",
+            &creds,
+        )
+        .unwrap();
+        assert_eq!(
+            prepared.url,
+            "https://cis.kotaksecurities.com/market-data/1.0/historical/details?neosymbol=nse_cm%7C1333&interval=15min&fromdate=2026-08-20&todate=2026-09-01"
+        );
+        assert!(!prepared.url.contains("/trading/"));
+        assert!(prepared
+            .headers
+            .iter()
+            .any(|(n, v)| n == "Authorization" && v == "ck"));
+        assert!(!prepared
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Auth")));
+        assert!(!prepared
+            .headers
+            .iter()
+            .any(|(n, _)| n.eq_ignore_ascii_case("Sid")));
+        let ported = HostCredentialBlob::KotakSession {
+            consumer_key: "ck".into(),
+            trade_token: "tt".into(),
+            sid: "sid".into(),
+            base_url: "https://e22.kotaksecurities.com:443/trading".into(),
+            hs_server_id: "server4".into(),
+        };
+        let sdk = prepare_kotak_market_data_get(
+            "/market-data/1.0/historical/details?neosymbol=nse_cm%7C1333&interval=10min&fromdate=2026-08-20&todate=2026-09-01",
+            &ported,
+        )
+        .unwrap();
+        assert_eq!(
+            sdk.url,
+            "https://e22.kotaksecurities.com/market-data/1.0/historical/details?neosymbol=nse_cm%7C1333&interval=10min&fromdate=2026-08-20&todate=2026-09-01"
+        );
+        assert!(!sdk.url.contains(":443"));
+        assert!(!sdk.url.contains("/trading/"));
     }
 
     #[test]

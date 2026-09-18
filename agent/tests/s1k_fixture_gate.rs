@@ -186,9 +186,9 @@ async fn planted_fixtures_lock_search_quote_and_obtain_success() {
 }
 
 #[test]
-fn obtain_kotak_history_is_unsupported_without_enrich() {
+fn obtain_kotak_history_is_unavailable_until_fetch() {
     let envelope = obtain(&kotak_neo_s1k_manifest(), "history");
-    assert_eq!(envelope.status, ObtainStatus::Unsupported);
+    assert_eq!(envelope.status, ObtainStatus::Unavailable);
     assert!(envelope.data.is_none());
 }
 
