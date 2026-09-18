@@ -93,6 +93,44 @@ Aligned with [Kotak-neo-api-v2](https://github.com/Kotak-Neo/Kotak-neo-api-v2) `
 
 **Re-verify:** rebuild Station (Xcode Debug) so the agent picks up the fix, then re-run the obtain probes below. Expect `funds` **success** and `positionbook` **success** (empty rows OK on a CNC-only book).
 
+---
+
+## Rebuild re-verify — 19 Sep 2026 ~00:51 IST (NSE shut)
+
+Loopback agent from **TradeAutopsy Station.app** (Xcode Debug). Unsigned loopback obtain + wire-v1 health/sync-state.
+
+**Agent:** `tradeautopsy-agent/0.1.0 (a4f60a0dbabc)` · boot_id `01M2TT8TC38N5QCP7GHDY3YG8W`
+
+| Signal | Value |
+|--------|--------|
+| `syncState` | `synced` |
+| `runtimeStatus` | `syncing` |
+| `lastError` | null |
+| `requiresManualRetry` | false |
+| `capabilities.quote` | **unavailable** (honest — no NSE last after hours; Harness “Quote unavailable” matches) |
+| `capabilities.instruments` | fresh |
+| `capabilities.funds` / `holdings` / `positions` / `orders` / `fills` | fresh |
+
+Harness books popover: Kotak Neo **Live**, Quote **unavailable**, Instruments **fresh**, Account **fresh**, NAV **Eligible**. Do not treat Quote unavailable as an S6 fail.
+
+### Cash `kotak-nse-bse-cash`
+
+| Operation | Result | Notes |
+|-----------|--------|--------|
+| **funds** | **PASS** `success` | INR `free`+`locked` from limits `Net`/`MarginUsed`; `unrealized_pnl` null |
+| **positionbook** | **PASS** `success` | `position_count=0`, empty rows OK |
+| **holdings** | **PASS** `success` | 6 rows |
+| **orderbook** | **PASS** `success` | `order_count=0` |
+
+### NFO `kotak-nse-nfo`
+
+| Operation | Result | Notes |
+|-----------|--------|--------|
+| **funds** | **PASS** `success` | Empty holdings snapshot (`free+locked<=0`); not `unavailable` |
+| **positionbook** | **PASS** `success` | `position_count=0` |
+
+**S6-FO verdict:** **signed** on this rebuild. Options `userTrades` still lock-blocked (not Kotak). S3 leftover (COM gap, options+NFO depth together, glance 20 live) waits for the next NSE weekday session.
+
 ## Recommended next step
 
-Re-run this checklist after rebuild; flip S6-FO to **signed** when live obtain matches the live probe (`limits` stat Ok, `positionbook` empty success).
+Scoped S8 Harness glance + last on a live eapi id (chip stays **unknown**). Do not start N1 until that dogfood, or skip S8 UI and start N1 if founder prefers.

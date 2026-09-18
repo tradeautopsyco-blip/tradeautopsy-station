@@ -775,7 +775,6 @@ public final class NotchViewModel: ObservableObject {
     private var killSwitchCountdownTimer: Timer?
     private var daemonEventsTask: Task<Void, Never>?
     private var toolbarShowCoalesceTask: Task<Void, Never>?
-    private var barLiveStatePollTimer: Timer?
     private var barLiveStateKickoffTask: Task<Void, Never>?
     private var barLiveStateFetchInFlight = false
     /// Consecutive live-state chrome misses — not the hybrid-armed reconcile counter.
@@ -808,9 +807,6 @@ public final class NotchViewModel: ObservableObject {
         static let sideKey = "tradeautopsy.notch.bar.optimisticSide"
         static let qtyKey = "tradeautopsy.notch.bar.optimisticQuantityLabel"
     }
-
-    private let barOptimisticArmedMaxAgeSeconds: TimeInterval = BarOptimisticArmedReconcilePolicy.maxAgeSeconds
-    private let barOptimisticArmedMaxPollFailures = BarOptimisticArmedReconcilePolicy.maxPollFailures
 
     private let barArchetypeStore: BarArchetypeStore
     private let chipCatalogStore: NotchChipCatalogStoring
@@ -910,20 +906,6 @@ public final class NotchViewModel: ObservableObject {
         activeArchetype = archetype
     }
 
-    private func persistOptimisticArmed(_ snapshot: BarOptimisticArmedSnapshot) {
-        let d = UserDefaults.standard
-        d.set(snapshot.declarationId, forKey: BarOptimisticArmedPersistence.declarationIdKey)
-        d.set(snapshot.submittedAt, forKey: BarOptimisticArmedPersistence.submittedAtKey)
-        d.set(snapshot.symbol, forKey: BarOptimisticArmedPersistence.symbolKey)
-        d.set(snapshot.side, forKey: BarOptimisticArmedPersistence.sideKey)
-        d.set(snapshot.quantityLabel, forKey: BarOptimisticArmedPersistence.qtyKey)
-        barOptimisticArmedDisplay = snapshot
-        barPublishedDeclarationId = BarDeclarationIdReducer.apply(
-            event: .declareSucceeded(snapshot.declarationId),
-            state: barPublishedDeclarationId,
-        )
-    }
-
     private func clearOptimisticArmedStorage() {
         let d = UserDefaults.standard
         d.removeObject(forKey: BarOptimisticArmedPersistence.declarationIdKey)
@@ -939,36 +921,9 @@ public final class NotchViewModel: ObservableObject {
         barOptimisticReconcilePollFailures = 0
     }
 
+    /// Drop leftover 45s hybrid-armed UserDefaults from builds before N1.
     private func restoreOptimisticArmedFromDefaults() {
-        let d = UserDefaults.standard
-        guard let id = d.string(forKey: BarOptimisticArmedPersistence.declarationIdKey), !id.isEmpty,
-              let ts = d.object(forKey: BarOptimisticArmedPersistence.submittedAtKey) as? TimeInterval
-        else {
-            barOptimisticArmedDisplay = nil
-            barPublishedDeclarationId = BarDeclarationIdReducer.apply(
-                event: .declarationClosed,
-                state: barPublishedDeclarationId,
-            )
-            return
-        }
-        if Date().timeIntervalSince1970 - ts > barOptimisticArmedMaxAgeSeconds {
-            clearOptimisticArmedStorage()
-            return
-        }
-        let sym = d.string(forKey: BarOptimisticArmedPersistence.symbolKey) ?? "—"
-        let side = d.string(forKey: BarOptimisticArmedPersistence.sideKey) ?? "—"
-        let qty = d.string(forKey: BarOptimisticArmedPersistence.qtyKey) ?? "—"
-        barOptimisticArmedDisplay = BarOptimisticArmedSnapshot(
-            declarationId: id,
-            submittedAt: ts,
-            symbol: sym,
-            side: side,
-            quantityLabel: qty,
-        )
-        barPublishedDeclarationId = BarDeclarationIdReducer.apply(
-            event: .declareSucceeded(id),
-            state: barPublishedDeclarationId,
-        )
+        clearOptimisticArmedStorage()
     }
 
     private func recordOptimisticPollFailure() {
@@ -978,26 +933,6 @@ public final class NotchViewModel: ObservableObject {
 
     private func resetOptimisticPollFailures() {
         barOptimisticReconcilePollFailures = 0
-    }
-
-    private func parseDeclarationPostBodySummary(_ body: Data) -> (symbol: String, side: String, qtyLabel: String)? {
-        guard let o = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-              let sym = o["symbol"] as? String,
-              let side = o["side"] as? String
-        else { return nil }
-        let qtyLabel: String
-        if let q = o["quantity"] as? Double {
-            qtyLabel = q == floor(q) ? String(Int(q)) : String(q)
-        } else if let q = o["quantity"] as? Int {
-            qtyLabel = String(q)
-        } else if let qs = o["quantity"] as? String {
-            qtyLabel = qs
-        } else { return nil }
-        return (sym.uppercased(), upperTrimSide(side), qtyLabel)
-    }
-
-    private func upperTrimSide(_ s: String) -> String {
-        s.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     /// §6.6 Policy C (swift slice): while the draft has non-whitespace text, trade UUID + pending toggle are fixed.
@@ -1015,7 +950,7 @@ public final class NotchViewModel: ObservableObject {
         syncBarLiveStatePollingForVisibility()
     }
 
-    /// Starts the 2s live-state timer when the expanded panel shows the PLAN tab; stops otherwise.
+    /// Extracts live-state once when the expanded panel shows PLAN. No 2s poll spine (N1).
     func syncBarLiveStatePollingForVisibility() {
         if isExpanded, activeTab == .plan {
             startBarPolling()
@@ -1085,15 +1020,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func startBarLiveStatePolling() {
-        guard barLiveStatePollTimer == nil else { return }
-        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isExpanded, self.activeTab == .plan else { return }
-                await self.fetchBarLiveState()
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        barLiveStatePollTimer = t
+        barLiveStateKickoffTask?.cancel()
         barLiveStateKickoffTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard let self, !Task.isCancelled else { return }
@@ -1103,8 +1030,6 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func stopBarLiveStatePolling() {
-        barLiveStatePollTimer?.invalidate()
-        barLiveStatePollTimer = nil
         barLiveStateKickoffTask?.cancel()
         barLiveStateKickoffTask = nil
     }
@@ -1223,16 +1148,12 @@ public final class NotchViewModel: ObservableObject {
             setIfChanged(\.barSurfacePhase, .armed)
             return
         }
-        if let snap = barOptimisticArmedDisplay {
-            if BarOptimisticArmedReconcilePolicy.shouldClearOptimistic(
-                snapshot: snap,
-                pollFailures: barOptimisticReconcilePollFailures
-            ) {
-                clearOptimisticArmedStorage()
-                barDeclarationConfirmWarning = BarOptimisticArmedReconcilePolicy.confirmWarningMessage
-                setIfChanged(\.barSurfacePhase, .declaration)
-                return
-            }
+        // N1: armed is the book. Do not keep a 45s hope after extract, and do not
+        // paint “check web Bar” when the local book has no pending.
+        if barOptimisticArmedDisplay != nil, barLastFetched != nil {
+            clearOptimisticArmedStorage()
+        }
+        if barOptimisticArmedDisplay != nil, barLastFetched == nil {
             setIfChanged(\.barSurfacePhase, .armed)
             return
         }
@@ -2479,7 +2400,6 @@ public final class NotchViewModel: ObservableObject {
 
     func submitBarDeclaration(body: Data) async {
         guard let url = URL(string: baseURL() + "/api/daemon/bar/declare") else { return }
-        let summary = parseDeclarationPostBodySummary(body)
         barDeclarationBusy = true
         barDeclarationLastError = nil
         barDeclarationConfirmWarning = nil
@@ -2497,16 +2417,10 @@ public final class NotchViewModel: ObservableObject {
                 if let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data),
                    let declId = parsed.declarationId, !declId.isEmpty
                 {
-                    let now = Date().timeIntervalSince1970
-                    let snap = BarOptimisticArmedSnapshot(
-                        declarationId: declId,
-                        submittedAt: now,
-                        symbol: summary?.symbol ?? "—",
-                        side: summary?.side ?? "—",
-                        quantityLabel: summary?.qtyLabel ?? "—",
+                    barPublishedDeclarationId = BarDeclarationIdReducer.apply(
+                        event: .declareSucceeded(declId),
+                        state: barPublishedDeclarationId,
                     )
-                    persistOptimisticArmed(snap)
-                    barOptimisticReconcilePollFailures = 0
                 }
                 recomputeBarSurfacePhase()
                 if let follow = barDeclareSuccessFollowUp {

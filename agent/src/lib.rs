@@ -80,16 +80,16 @@ pub use data::{
     extract_index, extract_licensed_history, extract_margin_estimate, extract_open_interest,
     extract_quote, extract_quote_for, extract_quote_for_book, extract_resample,
     fixture_quote_descriptor, infer_capability, inherit, is_kotak_fo_scrip_csv_path,
-    kotak_cash_limits_jdata_body, kotak_nfo_limits_jdata_body, kotak_neo_nfo_manifest,
-    kotak_neo_quote_descriptor, kotak_neo_s1k_manifest,
-    normalize_quote_instrument, obtain, quote_tick_from_binance_json, quote_tick_from_kotak_json,
-    quote_tick_from_options_ticker_json, resolve_desk_instrument, ApplyError, AuthMode,
-    ContractRow, DepthBook, DepthEnvelope, DepthStatus, GlanceEnvelope, GlanceStatus, HistoryBook,
-    HistoryEnvelope, HistoryStatus, HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase,
-    InstrumentMasterStatus, ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope,
-    QuoteStatus, QuoteTick, Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID,
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
+    kotak_cash_limits_jdata_body, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
+    kotak_neo_s1k_manifest, kotak_nfo_limits_jdata_body, normalize_quote_instrument, obtain,
+    quote_tick_from_binance_json, quote_tick_from_kotak_json, quote_tick_from_options_ticker_json,
+    resolve_desk_instrument, ApplyError, AuthMode, ContractRow, DepthBook, DepthEnvelope,
+    DepthStatus, GlanceEnvelope, GlanceStatus, HistoryBook, HistoryEnvelope, HistoryStatus,
+    HonestyStatus, HostRefuse, InputHonesty, InstrumentMasterPhase, InstrumentMasterStatus,
+    ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
+    Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
@@ -1199,6 +1199,35 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let live_book = Arc::new(crate::live_book::LiveBook::new());
     if let Some(planted) = config.live_book_snapshot {
         live_book.hydrate(planted);
+    }
+    {
+        let book = live_book.clone();
+        let mut rx = event_bus.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(crate::event_bus::AgentEvent::ToolbarShow {
+                        symbol,
+                        side,
+                        qty,
+                        broker,
+                        filled_at,
+                        ..
+                    }) => {
+                        book.apply(crate::live_book::LiveBookEvent::Fill {
+                            symbol,
+                            side,
+                            qty,
+                            broker: Some(broker),
+                            filled_at_iso: Some(filled_at),
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     let quote_registry = Arc::new(

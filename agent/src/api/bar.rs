@@ -2,6 +2,7 @@
 
 use crate::api::capture::{forward_daemon_json_with_optional_429_retry, upstream_json_response};
 use crate::api::AppState;
+use crate::live_book::LiveBookEvent;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -118,6 +119,10 @@ pub async fn declare_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+    let local_id = uuid::Uuid::new_v4().to_string();
+    state
+        .live_book
+        .apply(LiveBookEvent::declare_from_body(&body, local_id.clone()));
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
@@ -129,17 +134,23 @@ pub async fn declare_handler(
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
-        Err(msg) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({
-                "error_class": "SERVER_DOWN",
-                "message": msg,
-                "retry_after_ms": Value::Null,
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response(),
+        Ok((st, text)) if st.is_success() => {
+            if let Some(server_id) = declaration_id_from_body(&text) {
+                state.live_book.apply(LiveBookEvent::ReconcileArchive {
+                    local_id,
+                    server_id,
+                });
+            }
+            upstream_json_response(st, text)
+        }
+        Ok((st, text)) if st.is_client_error() => {
+            state.live_book.apply(LiveBookEvent::Cancel {
+                declaration_id: local_id,
+            });
+            upstream_json_response(st, text)
+        }
+        Ok((st, text)) => archive_kept_response(local_id, request_id, st.as_u16(), Some(&text)),
+        Err(msg) => archive_kept_response(local_id, request_id, 502, Some(&msg)),
     }
 }
 
@@ -208,17 +219,31 @@ pub async fn cancel_declaration_handler(
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
-        Err(msg) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({
-                "error_class": "SERVER_DOWN",
-                "message": msg,
-                "retry_after_ms": Value::Null,
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response(),
+        Ok((st, text)) if st.is_success() => {
+            state.live_book.apply(LiveBookEvent::Cancel {
+                declaration_id: declaration_id.to_string(),
+            });
+            upstream_json_response(st, text)
+        }
+        Ok((st, text)) if st.as_u16() == 409 => upstream_json_response(st, text),
+        Ok((st, text)) if st.is_client_error() => upstream_json_response(st, text),
+        Ok((st, text)) => {
+            state.live_book.apply(LiveBookEvent::Cancel {
+                declaration_id: declaration_id.to_string(),
+            });
+            archive_kept_response(
+                declaration_id.to_string(),
+                request_id,
+                st.as_u16(),
+                Some(&text),
+            )
+        }
+        Err(msg) => {
+            state.live_book.apply(LiveBookEvent::Cancel {
+                declaration_id: declaration_id.to_string(),
+            });
+            archive_kept_response(declaration_id.to_string(), request_id, 502, Some(&msg))
+        }
     }
 }
 
@@ -321,6 +346,19 @@ pub async fn protective_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+    let declaration_id = body
+        .get("declaration_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let stop_loss = body
+        .get("stop_loss")
+        .and_then(Value::as_f64)
+        .or_else(|| body.get("sl_price").and_then(Value::as_f64));
+    state.live_book.apply(LiveBookEvent::Protective {
+        declaration_id: declaration_id.clone(),
+        stop_loss,
+    });
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
@@ -332,17 +370,20 @@ pub async fn protective_handler(
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
-        Err(msg) => (
-            StatusCode::BAD_GATEWAY,
-            Json(json!({
-                "error_class": "SERVER_DOWN",
-                "message": msg,
-                "retry_after_ms": Value::Null,
-                "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
-            })),
-        )
-            .into_response(),
+        Ok((st, text)) if st.is_success() => upstream_json_response(st, text),
+        Ok((st, text)) if st.is_client_error() => upstream_json_response(st, text),
+        Ok((st, text)) => archive_kept_response(
+            declaration_id.unwrap_or_default(),
+            request_id,
+            st.as_u16(),
+            Some(&text),
+        ),
+        Err(msg) => archive_kept_response(
+            declaration_id.unwrap_or_default(),
+            request_id,
+            502,
+            Some(&msg),
+        ),
     }
 }
 
@@ -469,4 +510,36 @@ pub async fn loss_limits_post_handler(
         )
             .into_response(),
     }
+}
+
+fn declaration_id_from_body(text: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    v.get("declarationId")
+        .or_else(|| v.get("declaration_id"))
+        .or_else(|| v.get("id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn archive_kept_response(
+    declaration_id: String,
+    request_id: Option<&str>,
+    archive_status: u16,
+    detail: Option<&str>,
+) -> Response {
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ok": true,
+            "declarationId": declaration_id,
+            "archive_error": {
+                "status": archive_status,
+                "message": detail.unwrap_or("console archive failed"),
+            },
+            "request_id": request_id.map(Value::from).unwrap_or(Value::Null),
+        })),
+    )
+        .into_response()
 }
