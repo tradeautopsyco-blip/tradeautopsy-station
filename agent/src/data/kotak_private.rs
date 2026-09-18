@@ -7,6 +7,7 @@ use crate::ubi::{
     kotak_base_host, prepare_request, BrokerCredentialVault, HostCredentialBlob,
     PreparedHttpRequest,
 };
+use serde_json::Value;
 use std::time::Duration;
 
 use super::descriptor::{KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
@@ -15,10 +16,44 @@ pub const KOTAK_ORDERS_PATH: &str = "/quick/user/orders";
 pub const KOTAK_POSITIONS_PATH: &str = "/quick/user/positions";
 pub const KOTAK_HOLDINGS_PATH: &str = "/portfolio/v1/holdings";
 pub const KOTAK_LIMITS_PATH: &str = "/quick/user/limits";
-/// Limits.md default body for the cash book (re-fetched 2026-09-15 IST).
-pub const KOTAK_CASH_LIMITS_BODY: &str = "seg=ALL&exch=ALL&prod=ALL";
-/// Limits.md `segment` enum FO for the NFO book (re-fetched 2026-09-15 IST).
-pub const KOTAK_NFO_LIMITS_BODY: &str = "seg=FO&exch=ALL&prod=ALL";
+
+/// Kotak Neo SDK `rest.py`: `application/x-www-form-urlencoded` POSTs wrap JSON in
+/// form field `jData` (see `limits_api.py` / `margin_api.py`). Raw `seg=…&exch=…`
+/// bodies 500 on live gateways.
+fn url_encode_form_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+pub fn kotak_jdata_form_body(fields: &[(&str, &str)]) -> String {
+    let mut map = serde_json::Map::new();
+    for (key, value) in fields {
+        map.insert(
+            (*key).to_string(),
+            Value::String((*value).to_string()),
+        );
+    }
+    let json = serde_json::to_string(&Value::Object(map)).expect("jData json");
+    format!("jData={}", url_encode_form_component(&json))
+}
+
+/// Limits.md default segment/exchange/product for the cash book (re-fetched 2026-09-15 IST).
+pub fn kotak_cash_limits_jdata_body() -> String {
+    kotak_jdata_form_body(&[("seg", "ALL"), ("exch", "ALL"), ("prod", "ALL")])
+}
+
+/// Limits.md `segment` enum **FO** for the NFO book (re-fetched 2026-09-15 IST).
+pub fn kotak_nfo_limits_jdata_body() -> String {
+    kotak_jdata_form_body(&[("seg", "FO"), ("exch", "ALL"), ("prod", "ALL")])
+}
 
 #[cfg(test)]
 const KOTAK_CHECK_MARGIN_PATH: &str = "/quick/user/check-margin";
@@ -147,7 +182,6 @@ use crate::broker_data_class::{
 };
 use crate::kotak_nfo_scrip::KotakNfoScripMaster;
 use chrono::Utc;
-use serde_json::Value;
 use std::collections::HashMap;
 
 use super::account_split::{
@@ -275,10 +309,21 @@ fn kotak_position_from_row(row: &Value) -> Option<BrokerPositionRow> {
     })
 }
 
+/// Official empty snapshot: HTTP 200 + `stCode` 5203 / `errMsg` "No Data" (trade book parity).
+fn is_kotak_no_data_response(root: &Value) -> bool {
+    if root.get("stCode").and_then(|v| v.as_i64()) == Some(5203) {
+        return true;
+    }
+    string_field(root, "errMsg").is_some_and(|m| m.eq_ignore_ascii_case("No Data"))
+}
+
 pub fn parse_kotak_positions_json(body: &str) -> Result<Vec<BrokerPositionRow>, String> {
     let root: Value = serde_json::from_str(body).map_err(|e| format!("positions json: {e}"))?;
     if root.get("stCode").and_then(|v| v.as_i64()) == Some(1003) {
         return Err("kotak_neo session_expired".into());
+    }
+    if is_kotak_no_data_response(&root) {
+        return Ok(Vec::new());
     }
     if let Some(stat) = string_field(&root, "stat") {
         if !stat.eq_ignore_ascii_case("ok") {
@@ -454,8 +499,8 @@ async fn fetch_and_plant_funds(
     book_id: &str,
 ) -> Result<(), KotakPrivateFetchError> {
     let body = match book_id {
-        KOTAK_NSE_NFO_BOOK_ID => KOTAK_NFO_LIMITS_BODY,
-        _ => KOTAK_CASH_LIMITS_BODY,
+        KOTAK_NSE_NFO_BOOK_ID => kotak_nfo_limits_jdata_body(),
+        _ => kotak_cash_limits_jdata_body(),
     };
     let json = fetch_kotak_private_json(
         state.broker_sync_control.credential_vault().as_ref(),
@@ -464,7 +509,7 @@ async fn fetch_and_plant_funds(
         book_id,
         "POST",
         KOTAK_LIMITS_PATH,
-        Some(body),
+        Some(&body),
         state.kotak_private_base_url.as_deref(),
     )
     .await?;
@@ -670,6 +715,20 @@ pub(crate) async fn fetch_kotak_private_debug(
         ));
     }
     let prepared = prepare_request(method, &host, path, &[], &headers, body, &creds, 0);
+    if std::env::var("KOTAK_PRIVATE_PROBE").is_ok() {
+        if let HostCredentialBlob::KotakSession {
+            base_url,
+            hs_server_id,
+            ..
+        } = &creds
+        {
+            println!("probe base_url: {base_url} hs_server_id: {hs_server_id:?}");
+        }
+        println!("probe url: {}", prepared.url);
+        if let Some(b) = &prepared.body {
+            println!("probe body: {b}");
+        }
+    }
     let resp = crate::egress::shared()
         .send_prepared(
             book_id,
@@ -819,7 +878,7 @@ mod tests {
             "limits",
             "POST",
             KOTAK_LIMITS_PATH,
-            Some("seg=nse_cm&exch=NSE&prod=CNC"),
+            Some(&kotak_cash_limits_jdata_body()),
         )
         .await;
         probe_endpoint(
@@ -877,6 +936,20 @@ mod tests {
             0,
             "fixture day book has no open unFldSz>0 rows"
         );
+    }
+
+    #[test]
+    fn kotak_limits_jdata_body_matches_sdk_rest_py() {
+        assert!(kotak_cash_limits_jdata_body().starts_with("jData="));
+        assert!(kotak_nfo_limits_jdata_body().starts_with("jData="));
+        let cash = kotak_jdata_form_body(&[("seg", "ALL"), ("exch", "ALL"), ("prod", "ALL")]);
+        assert_eq!(cash, kotak_cash_limits_jdata_body());
+    }
+
+    #[test]
+    fn positions_5203_no_data_is_empty_success() {
+        let body = r#"{"stat":"Not_Ok","stCode":5203,"errMsg":"No Data"}"#;
+        assert!(parse_kotak_positions_json(body).expect("5203").is_empty());
     }
 
     #[test]

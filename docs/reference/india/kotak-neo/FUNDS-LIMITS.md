@@ -79,7 +79,7 @@ product  CNC, MIS, NRML, ALL (Default value - ALL)
 
 > **OUR INTERPRETATION**
 >
-> - Station copies the SDK **default** body `seg=ALL&exch=ALL&prod=ALL` for the cash-book funds kick. That is the documented demat-account snapshot, not a per-scrip calculator.
+> - Station copies the SDK **default** keys `seg=ALL`, `exch=ALL`, `prod=ALL` for the cash-book funds kick, wrapped as form field `jData` JSON per `neo_api_client/rest.py` (not raw `seg=…&exch=…` urlencoding). That is the documented demat-account snapshot, not a per-scrip calculator.
 > - Named NFO book `kotak-nse-nfo` sends `seg=FO&exch=ALL&prod=ALL` (Limits.md `segment` enum **FO**, re-fetched **2026-09-15 IST**). Same copy of `Net`/`MarginUsed`. Do not reuse the cash ALL snapshot as NFO funds.
 > - Host fence stays the session Kotak R0 host. This POST is a **private read**, not place/modify/cancel (see `is_mutation` RMS-read exception already in host policy).
 

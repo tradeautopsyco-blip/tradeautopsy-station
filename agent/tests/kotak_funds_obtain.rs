@@ -16,8 +16,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
 use tradeautopsy_agent::{
-    BrokerAdapter, BrokerCredentialVault, CountingPollAdapter, CredentialBlob,
-    MemoryBrokerCredentialVault,
+    kotak_cash_limits_jdata_body, kotak_nfo_limits_jdata_body, BrokerAdapter,
+    BrokerCredentialVault, CountingPollAdapter, CredentialBlob, MemoryBrokerCredentialVault,
 };
 use wiremock::matchers::{body_string, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -97,7 +97,7 @@ async fn obtain_kotak_funds_via_limits_fixture_egress() {
         .and(path("/quick/user/limits"))
         .and(header("Auth", TRADE_TOKEN))
         .and(header("Sid", SID))
-        .and(body_string("seg=FO&exch=ALL&prod=ALL"))
+        .and(body_string(kotak_nfo_limits_jdata_body()))
         .respond_with(ResponseTemplate::new(200).set_body_string(LIMITS_FIXTURE))
         .expect(1)
         .mount(&server)
@@ -106,7 +106,7 @@ async fn obtain_kotak_funds_via_limits_fixture_egress() {
         .and(path("/quick/user/limits"))
         .and(header("Auth", TRADE_TOKEN))
         .and(header("Sid", SID))
-        .and(body_string("seg=ALL&exch=ALL&prod=ALL"))
+        .and(body_string(kotak_cash_limits_jdata_body()))
         .respond_with(ResponseTemplate::new(200).set_body_string(LIMITS_FIXTURE))
         .expect(1)
         .mount(&server)
