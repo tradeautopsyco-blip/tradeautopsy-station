@@ -59,16 +59,20 @@ struct HarnessTopChrome: Equatable {
         quoteStatus: String,
         instrumentsStatus: String,
         accountStatus: String,
-        vendorFenceRows: [VendorFenceRow]
+        vendorFenceRows: [VendorFenceRow],
+        deskHistoryStatus: String,
+        boundInstrumentId: String
     ) -> HarnessTopChrome {
         let books = composeBooks(
             activeSlug: activeSlug,
             brokerSyncClass: brokerSyncClass,
             venuePostureBySlug: venuePostureBySlug
         )
-        let dataRows = vendorFenceRows.map { row in
-            DataRow(nounLabel: dataNounLabel(obtainNoun: row.obtainNoun), eligible: isEligible(row))
-        }
+        let dataRows = composeDataRows(
+            vendorFenceRows: vendorFenceRows,
+            deskHistoryStatus: deskHistoryStatus,
+            boundInstrumentId: boundInstrumentId
+        )
         var holes: [Hole] = []
         if let quoteHole = deskHole(key: "Quote", status: quoteStatus) {
             holes.append(quoteHole)
@@ -122,12 +126,62 @@ struct HarnessTopChrome: Equatable {
         }
     }
 
+    /// Licensed India history is a vendor fill for cash/NFO when the broker has no series.
+    /// COM / dated eapi last never hangs that adapter on Harness.
+    static func usesIndiaVendorHistoryFill(
+        boundInstrumentId: String,
+        deskHistoryStatus: String
+    ) -> Bool {
+        let id = boundInstrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let india = InstrumentTickBookId.isCashIdentity(id) || InstrumentTickBookId.isNfoIdentity(id)
+        guard india else { return false }
+        return deskHistoryStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "success"
+    }
+
+    static func composeDataRows(
+        vendorFenceRows: [VendorFenceRow],
+        deskHistoryStatus: String,
+        boundInstrumentId: String
+    ) -> [DataRow] {
+        var rows: [DataRow] = []
+        if let history = historyDataRow(
+            vendorFenceRows: vendorFenceRows,
+            deskHistoryStatus: deskHistoryStatus,
+            boundInstrumentId: boundInstrumentId
+        ) {
+            rows.append(history)
+        }
+        for row in vendorFenceRows where dataNounLabel(obtainNoun: row.obtainNoun) != "History" {
+            rows.append(DataRow(nounLabel: dataNounLabel(obtainNoun: row.obtainNoun), eligible: isEligible(row)))
+        }
+        return rows
+    }
+
+    static func historyDataRow(
+        vendorFenceRows: [VendorFenceRow],
+        deskHistoryStatus: String,
+        boundInstrumentId: String
+    ) -> DataRow? {
+        let id = boundInstrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return nil }
+        if usesIndiaVendorHistoryFill(
+            boundInstrumentId: id,
+            deskHistoryStatus: deskHistoryStatus
+        ) {
+            let vendor = vendorFenceRows.first { dataNounLabel(obtainNoun: $0.obtainNoun) == "History" }
+            return DataRow(nounLabel: "History", eligible: vendor.map(isEligible) ?? false)
+        }
+        let success = deskHistoryStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "success"
+        return DataRow(nounLabel: "History", eligible: success)
+    }
+
+    /// `unknown` is a freshness claim (C1), not a desk hole. `fresh` is healthy.
     private static func deskHole(key: String, status: String, retryInstruments: Bool = false) -> Hole? {
         let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized != "fresh" else { return nil }
+        guard normalized != "fresh", normalized != "unknown" else { return nil }
         let kind: StatusKind
         switch normalized {
-        case "stale", "unknown", "loading":
+        case "stale", "loading":
             kind = .warn
         default:
             kind = .bad

@@ -76,16 +76,25 @@ struct BarCryptoOptionsDeclareView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            if let entry = entryPrice {
-                Text(usdt(entry))
-                    .font(BarDS.monoFont(15, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-            } else if let honesty = HonestyStatus.fromWire(viewModel.deskLastStatus) {
-                HonestyChip(status: honesty)
-            } else {
-                Text(viewModel.deskLastStatus)
-                    .font(BarDS.monoFont(11, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
+            VStack(alignment: .trailing, spacing: 2) {
+                if let entry = entryPrice {
+                    Text(usdt(entry))
+                        .font(BarDS.monoFont(15, weight: .medium))
+                        .foregroundColor(BarDS.Text.primary)
+                    if let freshness = BarDeskLastFormatting.freshnessBesideLast(
+                        status: viewModel.deskLastStatus
+                    ) {
+                        Text(freshness)
+                            .font(BarDS.monoFont(10, weight: .regular))
+                            .foregroundColor(BarDS.Accent.amber)
+                    }
+                } else if let honesty = HonestyStatus.fromWire(viewModel.deskLastStatus) {
+                    HonestyChip(status: honesty)
+                } else {
+                    Text(viewModel.deskLastStatus)
+                        .font(BarDS.monoFont(11, weight: .regular))
+                        .foregroundColor(BarDS.Text.muted)
+                }
             }
         }
         .padding(11)

@@ -428,7 +428,9 @@ struct BarNotchShell: View {
                 funds: viewModel.deskFundsCapability,
                 fills: viewModel.deskFillsCapability
             ),
-            vendorFenceRows: viewModel.vendorFenceRows
+            vendorFenceRows: viewModel.vendorFenceRows,
+            deskHistoryStatus: viewModel.deskHistoryStatus,
+            boundInstrumentId: viewModel.deskSelectedInstrumentId
         )
     }
 

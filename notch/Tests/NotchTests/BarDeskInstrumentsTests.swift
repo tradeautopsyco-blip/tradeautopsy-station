@@ -313,6 +313,13 @@ struct BarDeskInstrumentsTests {
         #expect(DeskCapabilityChrome.pillLabel(kind: "Instruments", status: "loading") == "Instruments · loading")
     }
 
+    @Test func unknownFreshnessStaysBesideBoundLast() {
+        #expect(BarDeskLastFormatting.freshnessBesideLast(status: "unknown") == "unknown")
+        #expect(BarDeskLastFormatting.freshnessBesideLast(status: " UNKNOWN ") == "unknown")
+        #expect(BarDeskLastFormatting.freshnessBesideLast(status: "fresh") == nil)
+        #expect(BarDeskLastFormatting.freshnessBesideLast(status: "unavailable") == nil)
+    }
+
     @Test func emptyInstrumentSearchHint() {
         #expect(
             DeskCapabilityChrome.emptySearchHint(masterStatus: "loading", connectedInstrumentDesk: false)

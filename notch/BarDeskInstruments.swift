@@ -408,6 +408,13 @@ enum BarDeskLastFormatting {
         }
         return String(format: "%.2f", value)
     }
+
+    /// C1: eapi last has no exchange timestamp. The number may bind; the word `unknown`
+    /// stays beside it. Other statuses are not a second label on the price.
+    static func freshnessBesideLast(status: String) -> String? {
+        let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "unknown" ? "unknown" : nil
+    }
 }
 
     /// What `refreshDeskExtracts` is allowed to ask the agent for on this desk. Pure, so the
