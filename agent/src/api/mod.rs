@@ -100,6 +100,8 @@ pub struct AppState {
     pub depthbook: Arc<Mutex<DepthBook>>,
     /// Licensed historical_series. Not TickBook, not Yahoo.
     pub historybook: Arc<Mutex<HistoryBook>>,
+    /// Forming bars seeded from HistoryBook; ticked from `@trade` / cash ltq.
+    pub candle_builders: Arc<Mutex<crate::data::CandleBuilders>>,
     pub quote_freshness: Duration,
     pub s1_desk_symbol: Option<String>,
     /// Dev default for a Binance options ticker. `None` until that desk is subscribed.

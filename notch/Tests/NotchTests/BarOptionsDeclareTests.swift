@@ -722,6 +722,30 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskHistoryCandles.isEmpty)
     }
 
+    @Test func sessionChartLastNShowsNewestNotSqueezedTwoHundred() {
+        let candles = (0..<200).map { i in
+            DeskSessionCandle(
+                openTimeMs: Int64(i) * 60_000,
+                open: "1",
+                high: "1",
+                low: "1",
+                close: "1",
+                volume: "1"
+            )
+        }
+        let narrow = SessionChartLayout.lastN(candles, width: 36)
+        #expect(narrow.count == 12)
+        #expect(narrow.count != 200)
+        #expect(narrow.first?.openTimeMs == Int64(188) * 60_000)
+        #expect(narrow.last?.openTimeMs == Int64(199) * 60_000)
+        let clampedFloor = SessionChartLayout.lastN(candles, width: 20)
+        #expect(clampedFloor.count == 12)
+        let capped = SessionChartLayout.lastN(candles, width: 400)
+        #expect(capped.count == 80)
+        #expect(capped.last?.openTimeMs == Int64(199) * 60_000)
+        #expect(SessionChartLayout.istLabel(1_787_197_500_000) == "09:15")
+    }
+
     @Test func optionsDeclareDoesNotBindUnderlyingTickerWithoutToken() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "kotak_neo"

@@ -78,6 +78,16 @@ struct VendorHistoryObtainTests {
         )
     }
 
+    @Test func nativeCashPathAlwaysIncludesInstrumentAndIgnoresVendorOff() {
+        let path = VendorHistoryObtain.kotakNativeHistoryPath(instrument: "nse_cm|2885")
+        #expect(path.contains("adapter=kotak_neo"))
+        #expect(path.contains("operation=history"))
+        #expect(path.contains("instrument="))
+        #expect(path.contains("nse_cm"))
+        #expect(!path.contains("licensed_history"))
+        #expect(VendorHistoryObtain.kotakHistoryPath(mode: .off, armed: true) == nil)
+    }
+
     @Test func obtainNowPromotesOffToOnObtainAndArms() {
         let suite = "vendor.fetchMode.obtainNow.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

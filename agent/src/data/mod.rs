@@ -26,6 +26,7 @@ mod binance_usdm_exchange_info;
 mod binance_usdm_private;
 mod binance_usdm_ticker;
 mod book_identity;
+mod candle_builder;
 mod connection;
 mod contracts;
 mod depthbook;
@@ -141,6 +142,10 @@ pub use binance_usdm_ticker::{
     await_binance_usdm_ticker, normalize_usdm_instrument, quote_tick_from_usdm_ticker_json,
 };
 pub use book_identity::{book_accepts_symbol, query_symbol};
+pub use candle_builder::{
+    apply_history_series_and_seed, overlay_forming, overlay_json_candles, seed_builders_from_book,
+    CandleBuilder, CandleBuilders,
+};
 pub use connection::BrokerConnectionRuntime;
 pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};
 pub use depthbook::DepthBook;
@@ -196,8 +201,8 @@ pub use kotak_private::{
 pub use kotak_quotes::{
     kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
     parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
-    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, NfoOiSessionSlice,
-    NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, tick_cash_builders_from_kotak_json,
+    NfoOiSessionSlice, NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
 pub use margin_estimate::extract_margin_estimate;
 pub use market_bind::MarketBind;

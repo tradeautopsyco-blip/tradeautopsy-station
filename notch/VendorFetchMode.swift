@@ -62,6 +62,12 @@ public enum VendorFetchModeStore {
 public enum VendorHistoryObtain {
     public static let kotakHistoryPath = "/api/station/obtain?adapter=kotak_neo&operation=history"
 
+    /// Native cash history. Not gated by `licensed_history` Off.
+    public static func kotakNativeHistoryPath(instrument: String) -> String {
+        let encoded = InstrumentTickBookId.queryEncode(instrument)
+        return "\(kotakHistoryPath)&instrument=\(encoded)"
+    }
+
     public static func kotakHistoryPath(mode: VendorFetchMode, armed: Bool) -> String? {
         switch mode {
         case .off:

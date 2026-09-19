@@ -189,6 +189,33 @@ pub fn quote_ticks_from_kotak_json_for_book(
         .collect()
 }
 
+/// Fold cash LTP + `last_traded_quantity` into the forming 15min bar.
+/// NFO is not ticked. A quote without ltq updates OHLC only.
+pub fn tick_cash_builders_from_kotak_json(
+    builders: &mut super::candle_builder::CandleBuilders,
+    raw: &str,
+    received_at: DateTime<Utc>,
+) {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
+    for obj in quote_objects(&value) {
+        let Some(tick) = tick_from_object_for_book(obj, received_at, KOTAK_NSE_BSE_CASH_BOOK_ID)
+        else {
+            continue;
+        };
+        let qty = obj.get("last_traded_quantity").and_then(json_string);
+        builders.tick(
+            KOTAK_NEO_ADAPTER_ID,
+            &tick.instrument_id,
+            "15min",
+            tick.as_of.timestamp_millis(),
+            &tick.last,
+            qty.as_deref(),
+        );
+    }
+}
+
 pub(crate) fn quote_objects(value: &Value) -> Vec<&Value> {
     if let Some(arr) = value.as_array() {
         return arr.iter().collect();
@@ -862,5 +889,42 @@ mod tests {
             nfo_oi_session_from_kotak_json(all).is_empty(),
             "oi_las without oi_high/oi_low is not a session slice row"
         );
+    }
+
+    #[test]
+    fn cash_ltq_sums_on_forming_bar_and_skips_nfo() {
+        use crate::data::binance_klines::{HistoryCandle, HistorySeries};
+        use crate::data::candle_builder::CandleBuilders;
+        use crate::data::kotak_historical::DEFAULT_INTERVAL;
+        let t = received().timestamp_millis();
+        let mut builders = CandleBuilders::new();
+        builders.seed_from_series(&HistorySeries {
+            instrument_id: "nse_cm|2885".into(),
+            adapter_id: KOTAK_NEO_ADAPTER_ID.into(),
+            interval: DEFAULT_INTERVAL.into(),
+            candles: vec![HistoryCandle {
+                open_time_ms: t,
+                open: "1400".into(),
+                high: "1400".into(),
+                low: "1400".into(),
+                close: "1400".into(),
+                volume: "10".into(),
+                close_time_ms: t + 899_999,
+            }],
+            transport: Transport::Rest,
+        });
+        let cash = r#"[{"exchange":"nse_cm","exchange_token":"2885","ltp":"1402","last_traded_quantity":"3"}]"#;
+        tick_cash_builders_from_kotak_json(&mut builders, cash, received());
+        let forming = builders
+            .forming(KOTAK_NEO_ADAPTER_ID, "nse_cm|2885", DEFAULT_INTERVAL)
+            .expect("cash forming");
+        assert_eq!(forming.open, "1400");
+        assert_eq!(forming.close, "1402");
+        assert_eq!(forming.volume, "13");
+        let nfo = r#"[{"exchange":"nse_fo","exchange_token":"56526","ltp":"10.00","last_traded_quantity":"99"}]"#;
+        tick_cash_builders_from_kotak_json(&mut builders, nfo, received());
+        assert!(builders
+            .forming(KOTAK_NEO_ADAPTER_ID, "nse_fo|56526", DEFAULT_INTERVAL)
+            .is_none());
     }
 }

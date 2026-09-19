@@ -6,8 +6,8 @@
 use crate::api::AppState;
 use crate::data::{
     extract_history, extract_licensed_history, extract_options_history, is_dated_option_contract,
-    normalize_options_instrument, HistoryEnvelope, DEFAULT_HISTORY_INTERVAL,
-    DEFAULT_OPTIONS_HISTORY_INTERVAL,
+    normalize_options_instrument, overlay_json_candles, HistoryEnvelope, BINANCE_COM_ADAPTER_ID,
+    DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -68,7 +68,21 @@ fn extract_station_history(
             .historybook
             .lock()
             .expect("historybook mutex poisoned");
-        return extract_options_history(&book, &instrument, Some(interval), query.limit);
+        let mut env = extract_options_history(&book, &instrument, Some(interval), query.limit);
+        if let Some(data) = env.data.as_mut() {
+            let builders = state
+                .candle_builders
+                .lock()
+                .expect("candle builders mutex poisoned");
+            overlay_json_candles(
+                data,
+                &builders,
+                BINANCE_COM_ADAPTER_ID,
+                &instrument,
+                interval,
+            );
+        }
+        return env;
     }
     if state.is_kotak_neo_desk() {
         return extract_history(instrument, None);
@@ -83,5 +97,19 @@ fn extract_station_history(
         .historybook
         .lock()
         .expect("historybook mutex poisoned");
-    extract_licensed_history(&book, instrument, Some(interval), query.limit)
+    let mut env = extract_licensed_history(&book, instrument, Some(interval), query.limit);
+    if let Some(data) = env.data.as_mut() {
+        let builders = state
+            .candle_builders
+            .lock()
+            .expect("candle builders mutex poisoned");
+        overlay_json_candles(
+            data,
+            &builders,
+            BINANCE_COM_ADAPTER_ID,
+            instrument,
+            interval,
+        );
+    }
+    env
 }

@@ -11,10 +11,13 @@
 //! Refuse `mcx_fo` / `nse_com` (SDK historical_data.md). Cash v1: `nse_cm` / `bse_cm` only.
 //! Empty `candles[]` is unavailable, never a zero candle, never a vendor fill.
 
+use super::binance_klines::{HistoryCandle, HistorySeries};
+use super::candle_builder::interval_ms;
 use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID};
 use super::kotak_quotes::{encode_neo_symbol, is_cash_segment};
 use super::source_manifest::{ObtainEnvelope, ObtainStatus};
-use chrono::NaiveDate;
+use super::tick::Transport;
+use chrono::{DateTime, NaiveDate};
 use serde_json::{json, Value};
 
 pub const HISTORICAL_DETAILS_PATH: &str = "/market-data/1.0/historical/details";
@@ -182,6 +185,15 @@ pub fn query_path(neosymbol: &str, interval: &str, fromdate: &str, todate: &str)
     )
 }
 
+/// SDK ISO `2026-08-20T09:15:00+0530` → UTC ms. IST is a label, never rewritten.
+pub fn open_time_ms_from_iso(ts: &str) -> Option<i64> {
+    let trimmed = ts.trim();
+    DateTime::parse_from_str(trimmed, "%Y-%m-%dT%H:%M:%S%z")
+        .or_else(|_| DateTime::parse_from_rfc3339(trimmed))
+        .ok()
+        .map(|dt| dt.timestamp_millis())
+}
+
 /// Positional row `[timestamp, open, high, low, close, volume, oi]`.
 /// SDK phase-1 note: `oi` may be missing — do not require it.
 pub fn parse_candle_row(row: &Value) -> Option<Value> {
@@ -193,14 +205,52 @@ pub fn parse_candle_row(row: &Value) -> Option<Value> {
     if ts.is_empty() {
         return None;
     }
+    let open_time_ms = open_time_ms_from_iso(ts)?;
     Some(json!({
         "open_time": ts,
+        "open_time_ms": open_time_ms,
         "open": number_or_string(&arr[1])?,
         "high": number_or_string(&arr[2])?,
         "low": number_or_string(&arr[3])?,
         "close": number_or_string(&arr[4])?,
         "volume": number_or_string(&arr[5])?,
     }))
+}
+
+pub fn history_series_from_obtain_candles(
+    instrument_id: &str,
+    interval: &str,
+    candles: &[Value],
+) -> Option<HistorySeries> {
+    if candles.is_empty() {
+        return None;
+    }
+    let step = interval_ms(interval)?;
+    let mut rows = Vec::with_capacity(candles.len());
+    for c in candles {
+        let open_time_ms = c.get("open_time_ms").and_then(|v| v.as_i64())?;
+        let open = c.get("open").and_then(Value::as_str)?.to_string();
+        let high = c.get("high").and_then(Value::as_str)?.to_string();
+        let low = c.get("low").and_then(Value::as_str)?.to_string();
+        let close = c.get("close").and_then(Value::as_str)?.to_string();
+        let volume = c.get("volume").and_then(Value::as_str)?.to_string();
+        rows.push(HistoryCandle {
+            open_time_ms,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            close_time_ms: open_time_ms.saturating_add(step.saturating_sub(1)),
+        });
+    }
+    Some(HistorySeries {
+        instrument_id: instrument_id.to_string(),
+        adapter_id: KOTAK_NEO_ADAPTER_ID.into(),
+        interval: interval.to_string(),
+        candles: rows,
+        transport: Transport::Rest,
+    })
 }
 
 fn number_or_string(v: &Value) -> Option<String> {
@@ -332,6 +382,11 @@ mod tests {
         let candles = data["candles"].as_array().unwrap();
         assert_eq!(candles.len(), 1);
         assert_eq!(candles[0]["close"], "103");
+        assert_eq!(candles[0]["open_time"], "2026-08-20T09:15:00+0530");
+        let ms = candles[0]["open_time_ms"].as_i64().expect("utc ms");
+        assert_eq!(ms, open_time_ms_from_iso("2026-08-20T09:15:00+0530").unwrap());
+        // 09:15 IST is 03:45 UTC — not the wall-clock IST hour as unix.
+        assert_eq!(ms, 1_787_197_500_000);
     }
 
     #[test]

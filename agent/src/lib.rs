@@ -1072,7 +1072,10 @@ fn plant_options_mark_json(mark: &Arc<Mutex<Option<crate::data::CachedMark>>>, j
     });
 }
 
-fn plant_licensed_history_gap(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+fn plant_licensed_history_gap(
+    historybook: &Arc<Mutex<crate::data::HistoryBook>>,
+    builders: &Arc<Mutex<crate::data::CandleBuilders>>,
+) {
     let series = crate::data::HistorySeries {
         instrument_id: "nse_cm|2885".into(),
         adapter_id: crate::data::LICENSED_HISTORY_ADAPTER_ID.into(),
@@ -1088,13 +1091,17 @@ fn plant_licensed_history_gap(historybook: &Arc<Mutex<crate::data::HistoryBook>>
         }],
         transport: crate::data::Transport::Fixture,
     };
-    crate::data::apply_history_series(
+    crate::data::apply_history_series_and_seed(
         &mut historybook.lock().expect("historybook mutex poisoned"),
+        &mut builders.lock().expect("candle builders mutex poisoned"),
         series,
     );
 }
 
-fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+fn plant_binance_s2_history(
+    historybook: &Arc<Mutex<crate::data::HistoryBook>>,
+    builders: &Arc<Mutex<crate::data::CandleBuilders>>,
+) {
     let json = include_str!("../fixtures/binance/klines.json");
     let series = crate::data::series_from_klines_json(
         json,
@@ -1103,13 +1110,17 @@ fn plant_binance_s2_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) 
         crate::data::Transport::Fixture,
     )
     .expect("committed klines fixture must parse");
-    crate::data::apply_history_series(
+    crate::data::apply_history_series_and_seed(
         &mut historybook.lock().expect("historybook mutex poisoned"),
+        &mut builders.lock().expect("candle builders mutex poisoned"),
         series,
     );
 }
 
-fn plant_binance_options_history(historybook: &Arc<Mutex<crate::data::HistoryBook>>) {
+fn plant_binance_options_history(
+    historybook: &Arc<Mutex<crate::data::HistoryBook>>,
+    builders: &Arc<Mutex<crate::data::CandleBuilders>>,
+) {
     let json = include_str!("../fixtures/binance/options_klines.json");
     let series = crate::data::series_from_eapi_klines_json(
         json,
@@ -1118,8 +1129,9 @@ fn plant_binance_options_history(historybook: &Arc<Mutex<crate::data::HistoryBoo
         crate::data::Transport::Fixture,
     )
     .expect("committed eapi klines fixture must parse");
-    crate::data::apply_history_series(
+    crate::data::apply_history_series_and_seed(
         &mut historybook.lock().expect("historybook mutex poisoned"),
+        &mut builders.lock().expect("candle builders mutex poisoned"),
         series,
     );
 }
@@ -1184,6 +1196,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let historybook = Arc::new(std::sync::Mutex::new(crate::data::HistoryBook::open(
         &config.history_db_path,
     )?));
+    let candle_builders = Arc::new(std::sync::Mutex::new(crate::data::CandleBuilders::new()));
     let today_store = TodayStore::open(&config.today_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
     let kill_policy = KillPolicyStore::open(&config.kill_switch_audit_db_path)?;
@@ -1363,13 +1376,13 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         plant_kotak_nfo_oi_session(&nfo_oi_session);
     }
     if config.plant_binance_s2_history {
-        plant_binance_s2_history(&historybook);
+        plant_binance_s2_history(&historybook, &candle_builders);
     }
     if config.plant_binance_options_history {
-        plant_binance_options_history(&historybook);
+        plant_binance_options_history(&historybook, &candle_builders);
     }
     if config.plant_licensed_history_gap {
-        plant_licensed_history_gap(&historybook);
+        plant_licensed_history_gap(&historybook, &candle_builders);
     }
     if config.plant_binance_spot_funds {
         plant_binance_spot_funds(&account_book);
@@ -1492,6 +1505,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         tickbook,
         depthbook,
         historybook,
+        candle_builders,
         quote_freshness: config.quote_freshness,
         s1_desk_symbol: config.s1_desk_symbol.clone(),
         s1_options_symbol: config.s1_options_symbol.clone(),
@@ -1543,6 +1557,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     crate::data::spawn_binance_com_trade_loop(
         state.quote_registry.clone(),
         state.tickbook.clone(),
+        state.candle_builders.clone(),
         state.com_trade.subscribe(),
     );
     crate::data::spawn_binance_com_depth_loop(state.depthbook.clone(), state.com_depth.subscribe());

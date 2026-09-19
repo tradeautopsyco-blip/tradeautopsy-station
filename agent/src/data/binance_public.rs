@@ -3,7 +3,9 @@
 //! CI parses fixture JSON only. Live `wss://` follows runtime subscriptions.
 
 use super::apply::apply_quote;
+use super::binance_klines::DEFAULT_HISTORY_INTERVAL;
 use super::binance_options_public::is_dated_option_contract;
+use super::candle_builder::CandleBuilders;
 use super::descriptor::{BINANCE_COM_ADAPTER_ID, BINANCE_COM_SPOT_BOOK_ID};
 use super::market_bind::{run_bound_com_ws_loop, MarketBind};
 use super::registry::Registry;
@@ -104,17 +106,36 @@ pub fn quote_tick_from_binance_json(raw: &str, received_at: DateTime<Utc>) -> Op
     })
 }
 
+/// `@trade` last-traded quantity (`q`). Not last price. Mini-ticker has none.
+pub fn trade_qty_from_binance_json(raw: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(raw).ok()?;
+    if value.get("e").and_then(Value::as_str) != Some("trade") {
+        return None;
+    }
+    let q = value.get("q")?;
+    match q {
+        Value::String(s) => {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        }
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
 /// One outer loop. Parks on `None`; freeze-stop before `connect_async`.
 /// Does not fall back to REST on disconnect. No keys on the socket.
 pub fn spawn_binance_com_trade_loop(
     registry: Arc<Registry>,
     book: Arc<Mutex<TickBook>>,
+    builders: Arc<Mutex<CandleBuilders>>,
     rx: watch::Receiver<Option<String>>,
 ) {
     tokio::spawn(async move {
         run_bound_com_ws_loop(rx, move |id| {
             let registry = registry.clone();
             let book = book.clone();
+            let builders = builders.clone();
             async move {
                 {
                     let mut guard = book.lock().expect("tickbook mutex poisoned");
@@ -122,7 +143,7 @@ pub fn spawn_binance_com_trade_loop(
                 }
                 let url = binance_public_trade_stream_url(&id);
                 tracing::info!(instrument = %id, url = %url, "s1 desk: binance_com trade stream");
-                run_one_connection(registry.as_ref(), &book, &url).await
+                run_one_connection(registry.as_ref(), &book, &builders, &url).await
             }
         })
         .await;
@@ -146,6 +167,7 @@ pub fn ensure_binance_com_trade_stream(bind: &MarketBind, symbol: &str) {
 async fn run_one_connection(
     registry: &Registry,
     book: &Arc<Mutex<TickBook>>,
+    builders: &Arc<Mutex<CandleBuilders>>,
     url: &str,
 ) -> Result<(), anyhow::Error> {
     let (ws, _response) = connect_async(url).await?;
@@ -164,10 +186,27 @@ async fn run_one_connection(
         if tick.transport != Transport::Stream {
             continue;
         }
-        let mut guard = book.lock().expect("tickbook mutex poisoned");
-        match apply_quote(registry, &mut guard, tick) {
-            Ok(_) => {}
-            Err(err) => tracing::debug!(error = %err, "s1 desk: apply refused"),
+        let qty = trade_qty_from_binance_json(&text);
+        let time_ms = tick.as_of.timestamp_millis();
+        {
+            let mut guard = book.lock().expect("tickbook mutex poisoned");
+            match apply_quote(registry, &mut guard, tick.clone()) {
+                Ok(_) => {}
+                Err(err) => tracing::debug!(error = %err, "s1 desk: apply refused"),
+            }
+        }
+        if tick.book_id == BINANCE_COM_SPOT_BOOK_ID
+            || tick.book_id == binance_com_spot_book_id()
+        {
+            let mut builders = builders.lock().expect("candle builders mutex poisoned");
+            builders.tick(
+                BINANCE_COM_ADAPTER_ID,
+                &tick.instrument_id,
+                DEFAULT_HISTORY_INTERVAL,
+                time_ms,
+                &tick.last,
+                qty.as_deref(),
+            );
         }
     }
     Ok(())
@@ -312,5 +351,16 @@ mod tests {
             binance_public_trade_stream_url("BTCUSDT"),
             "wss://stream.binance.com:9443/ws/btcusdt@trade"
         );
+    }
+
+    #[test]
+    fn trade_qty_is_q_not_last_price() {
+        let json = r#"{
+            "e":"trade","E":1672515782136,"s":"BTCUSDT","t":1,
+            "p":"96450.12","q":"0.01","T":1672515782136,"m":true,"M":true
+        }"#;
+        assert_eq!(trade_qty_from_binance_json(json).as_deref(), Some("0.01"));
+        let ticker = r#"{"e":"24hrMiniTicker","s":"BTCUSDT","c":"96450.12"}"#;
+        assert!(trade_qty_from_binance_json(ticker).is_none());
     }
 }

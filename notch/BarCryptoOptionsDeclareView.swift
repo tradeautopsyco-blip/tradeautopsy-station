@@ -1324,46 +1324,116 @@ private struct BarCryptoLadderRung {
     var honesty: HonestyStatus?
 }
 
-/// Venue OHLC bars for the crypto Options session panel. No demo series.
+/// Last-N density for the Session tile. Gapless logical index — not wall-clock.
+enum SessionChartLayout {
+    static let minSlot: CGFloat = 3
+    static let floorCount = 12
+    static let capCount = 80
+    static let volumeFraction: CGFloat = 0.2
+
+    static func visibleCount(width: CGFloat, total: Int) -> Int {
+        guard total > 0 else { return 0 }
+        let fromWidth = width > 0 ? Int((width / minSlot).rounded(.down)) : floorCount
+        let clamped = min(capCount, max(floorCount, fromWidth))
+        return min(total, max(clamped, 1))
+    }
+
+    static func lastN(_ candles: [DeskSessionCandle], width: CGFloat) -> [DeskSessionCandle] {
+        let n = visibleCount(width: width, total: candles.count)
+        guard n > 0 else { return [] }
+        if candles.count <= n { return candles }
+        return Array(candles.suffix(n))
+    }
+
+    static func istLabel(_ openTimeMs: Int64) -> String {
+        let date = Date(timeIntervalSince1970: TimeInterval(openTimeMs) / 1000)
+        return istTime.string(from: date)
+    }
+
+    private static let istTime: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_IN")
+        f.timeZone = TimeZone(identifier: "Asia/Kolkata") ?? TimeZone(secondsFromGMT: 5 * 3600 + 30 * 60)
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+}
+
+/// Venue OHLC bars for Session. Last-N from tile width, volume overlay, IST labels.
+/// No pan, zoom, interval picker, drawings, or place chrome.
 struct BarOptionsSessionChart: View {
     let candles: [DeskSessionCandle]
 
     var body: some View {
-        Canvas { context, size in
-            let parsed: [(high: Double, low: Double, open: Double, close: Double)] = candles.compactMap { c in
-                guard let h = Double(c.high), let l = Double(c.low),
-                      let o = Double(c.open), let cl = Double(c.close)
-                else { return nil }
-                return (h, l, o, cl)
-            }
-            guard parsed.count >= 1 else { return }
-            let lo = parsed.map(\.low).min() ?? 0
-            let hi = parsed.map(\.high).max() ?? 1
-            var minY = lo
-            var maxY = hi
-            if maxY <= minY { maxY = minY + 1 }
-            let pad = (maxY - minY) * 0.12
-            minY -= pad
-            maxY += pad
-            let n = parsed.count
-            let slot = size.width / CGFloat(max(n, 1))
-            let bodyW = max(2, slot * 0.45)
-            for (i, bar) in parsed.enumerated() {
-                let x = slot * (CGFloat(i) + 0.5)
-                let yHigh = y(bar.high, minY: minY, maxY: maxY, height: size.height)
-                let yLow = y(bar.low, minY: minY, maxY: maxY, height: size.height)
-                let yOpen = y(bar.open, minY: minY, maxY: maxY, height: size.height)
-                let yClose = y(bar.close, minY: minY, maxY: maxY, height: size.height)
-                let up = bar.close >= bar.open
-                let color = up ? BarDS.Accent.teal : BarDS.Accent.red
-                var wick = Path()
-                wick.move(to: CGPoint(x: x, y: yHigh))
-                wick.addLine(to: CGPoint(x: x, y: yLow))
-                context.stroke(wick, with: .color(color), lineWidth: 1)
-                let top = min(yOpen, yClose)
-                let bodyH = max(1, abs(yClose - yOpen))
-                let rect = CGRect(x: x - bodyW / 2, y: top, width: bodyW, height: bodyH)
-                context.fill(Path(rect), with: .color(color.opacity(up ? 0.85 : 1)))
+        GeometryReader { geo in
+            let visible = SessionChartLayout.lastN(candles, width: geo.size.width)
+            let parsed = Self.parse(visible)
+            ZStack(alignment: .topTrailing) {
+                Canvas { context, size in
+                    guard !parsed.isEmpty, size.width > 0, size.height > 0 else { return }
+                    let volumeH = size.height * SessionChartLayout.volumeFraction
+                    let priceH = max(1, size.height - volumeH)
+                    let lo = parsed.map(\.low).min() ?? 0
+                    let hi = parsed.map(\.high).max() ?? 1
+                    var minY = lo
+                    var maxY = hi
+                    if maxY <= minY { maxY = minY + 1 }
+                    let pad = (maxY - minY) * 0.12
+                    minY -= pad
+                    maxY += pad
+                    let maxVol = parsed.map(\.volume).max() ?? 0
+                    let n = parsed.count
+                    let slot = size.width / CGFloat(max(n, 1))
+                    let bodyW = max(2, slot * 0.45)
+                    for (i, bar) in parsed.enumerated() {
+                        let x = slot * (CGFloat(i) + 0.5)
+                        let up = bar.close >= bar.open
+                        let color = up ? BarDS.Accent.teal : BarDS.Accent.red
+                        if maxVol > 0, volumeH > 0 {
+                            let vh = CGFloat(bar.volume / maxVol) * volumeH
+                            let rect = CGRect(
+                                x: x - bodyW / 2,
+                                y: size.height - vh,
+                                width: bodyW,
+                                height: max(1, vh)
+                            )
+                            context.fill(Path(rect), with: .color(BarDS.Text.muted.opacity(0.35)))
+                        }
+                        let yHigh = priceY(bar.high, minY: minY, maxY: maxY, height: priceH)
+                        let yLow = priceY(bar.low, minY: minY, maxY: maxY, height: priceH)
+                        let yOpen = priceY(bar.open, minY: minY, maxY: maxY, height: priceH)
+                        let yClose = priceY(bar.close, minY: minY, maxY: maxY, height: priceH)
+                        var wick = Path()
+                        wick.move(to: CGPoint(x: x, y: yHigh))
+                        wick.addLine(to: CGPoint(x: x, y: yLow))
+                        context.stroke(wick, with: .color(color), lineWidth: 1)
+                        let top = min(yOpen, yClose)
+                        let bodyH = max(1, abs(yClose - yOpen))
+                        let rect = CGRect(x: x - bodyW / 2, y: top, width: bodyW, height: bodyH)
+                        context.fill(Path(rect), with: .color(color.opacity(up ? 0.85 : 1)))
+                    }
+                }
+                if let last = visible.last {
+                    Text(last.close)
+                        .font(BarDS.monoFont(9, weight: .medium))
+                        .foregroundColor(BarDS.Text.primary)
+                        .padding(.trailing, 6)
+                        .padding(.top, 4)
+                }
+                if visible.count >= 2 {
+                    HStack {
+                        ForEach(labelIndices(count: visible.count), id: \.self) { idx in
+                            if idx > 0 { Spacer(minLength: 0) }
+                            Text(SessionChartLayout.istLabel(visible[idx].openTimeMs))
+                                .font(BarDS.monoFont(8, weight: .regular))
+                                .foregroundColor(BarDS.Text.muted)
+                            if idx < visible.count - 1 { Spacer(minLength: 0) }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 2)
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -1371,9 +1441,25 @@ struct BarOptionsSessionChart: View {
         .accessibilityLabel("Session klines")
     }
 
-    private func y(_ value: Double, minY: Double, maxY: Double, height: CGFloat) -> CGFloat {
+    private func labelIndices(count: Int) -> [Int] {
+        if count <= 1 { return [0] }
+        if count == 2 { return [0, 1] }
+        return [0, count / 2, count - 1]
+    }
+
+    private func priceY(_ value: Double, minY: Double, maxY: Double, height: CGFloat) -> CGFloat {
         let t = (value - minY) / (maxY - minY)
         return height - CGFloat(t) * height
+    }
+
+    private static func parse(_ candles: [DeskSessionCandle]) -> [(high: Double, low: Double, open: Double, close: Double, volume: Double)] {
+        candles.compactMap { c in
+            guard let h = Double(c.high), let l = Double(c.low),
+                  let o = Double(c.open), let cl = Double(c.close)
+            else { return nil }
+            let vol = Double(c.volume) ?? 0
+            return (h, l, o, cl, vol)
+        }
     }
 }
 

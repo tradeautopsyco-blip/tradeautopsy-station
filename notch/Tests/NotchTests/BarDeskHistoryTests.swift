@@ -27,6 +27,54 @@ struct BarDeskHistoryTests {
         #expect(vm.deskYahooHistoryStatus == "unavailable")
     }
 
+    @Test func applyStationHistoryEnvelopeSpotKlinesPaintsCandles() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "instrument_id": "btcusdt",
+            "book_id": "binance-com-spot",
+            "ineligible": [] as [String],
+            "data": [
+                "last_close": "0.01590000",
+                "interval": "1m",
+                "source": "binance_klines",
+                "candles": [[
+                    "open_time_ms": 1_499_040_000_000,
+                    "open": "0.01577100",
+                    "high": "0.01577100",
+                    "low": "0.01577100",
+                    "close": "0.01590000",
+                    "volume": "148976.11",
+                ]],
+            ],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].close == "0.01590000")
+        #expect(glanceLine(vm) == "success")
+        #expect(!glanceLine(vm).contains("yahoo"))
+    }
+
+    @Test func applyStationHistoryEnvelopeSpotEmptyCandlesIsUnavailable() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "binance_com"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "instrument_id": "btcusdt",
+            "data": [
+                "source": "binance_klines",
+                "candles": [] as [[String: Any]],
+            ],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+    }
+
     @Test func applyStationHistoryEnvelopeUnavailableIsNoLicensedSeries() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.brokerSyncClass = "synced"
@@ -121,6 +169,60 @@ struct BarDeskHistoryTests {
         #expect(!line.contains("binance"))
     }
 
+    @Test func applyStationHistoryEnvelopeKotakNativePaintsUtcMsAndNotLicensedHistory() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "adapter_id": "kotak_neo",
+            "book_id": "kotak-nse-bse-cash",
+            "provenance_adapter_id": "kotak_neo",
+            "ineligible": [] as [String],
+            "data": [
+                "source": "kotak_neo_historical",
+                "interval": "15min",
+                "candles": [[
+                    "open_time": "2026-08-20T09:15:00+0530",
+                    "open_time_ms": 1_787_197_500_000,
+                    "open": "1400.00",
+                    "high": "1402.00",
+                    "low": "1398.00",
+                    "close": "1401.00",
+                    "volume": "10",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].openTimeMs == 1_787_197_500_000)
+        #expect(vm.deskHistoryCandles[0].close == "1401.00")
+        let line = glanceLine(vm)
+        #expect(line == "success")
+        #expect(!line.contains("licensed_history"))
+        #expect(!line.contains("yahoo"))
+        #expect(!line.contains("binance"))
+    }
+
+    @Test func applyStationHistoryEnvelopeKotakNativeEmptySuccessIsUnavailable() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.brokerSyncClass = "synced"
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "adapter_id": "kotak_neo",
+            "book_id": "kotak-nse-bse-cash",
+            "provenance_adapter_id": "kotak_neo",
+            "data": [
+                "source": "kotak_neo_historical",
+                "candles": [] as [[String: Any]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+        #expect(glanceLine(vm) == "no licensed series")
+    }
+
     @Test func applyStationHistoryEnvelopeKotakVendorUnavailableIsNoLicensedSeries() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.brokerSyncClass = "synced"
@@ -166,6 +268,29 @@ struct BarDeskHistoryTests {
         #expect(line == "success")
         #expect(!line.contains("yahoo"))
         #expect(!line.contains("yahoo-shaped"))
+    }
+
+    @Test func kotakCashBindAsksNativeHistoryWithInstrument() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .equity
+        let path = vm.deskHistoryExtractPath(instrument: "nse_cm|2885", consumeVendorArm: true)
+        #expect(path == VendorHistoryObtain.kotakNativeHistoryPath(instrument: "nse_cm|2885"))
+        #expect(path?.contains("licensed_history") == false)
+    }
+
+    @Test func kotakNfoHistoryStaysVendorGatedHoleWhenOff() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        #expect(vm.deskHistoryExtractPath(instrument: "nse_fo|61466", consumeVendorArm: true) == nil)
+    }
+
+    @Test func usdmHistoryPathStaysNil() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        #expect(vm.deskHistoryExtractPath(instrument: "BTCUSDT", consumeVendorArm: true) == nil)
     }
 
     private func glanceLine(_ vm: NotchViewModel) -> String {

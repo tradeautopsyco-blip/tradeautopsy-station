@@ -58,6 +58,54 @@ fn query_id(raw: Option<&str>) -> Option<&str> {
     raw.map(str::trim).filter(|s| !s.is_empty())
 }
 
+fn land_native_cash_history(state: &AppState, mut env: ObtainEnvelope) -> ObtainEnvelope {
+    if env.status != ObtainStatus::Success {
+        return env;
+    }
+    let Some(data) = env.data.as_ref() else {
+        return env;
+    };
+    let instrument = data
+        .get("instrument_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let interval = data
+        .get("interval")
+        .and_then(Value::as_str)
+        .unwrap_or(crate::data::kotak_historical::DEFAULT_INTERVAL)
+        .to_string();
+    let Some(candles) = data.get("candles").and_then(Value::as_array) else {
+        return env;
+    };
+    let Some(series) =
+        crate::data::kotak_historical::history_series_from_obtain_candles(&instrument, &interval, candles)
+    else {
+        return env;
+    };
+    {
+        let mut book = state
+            .historybook
+            .lock()
+            .expect("historybook mutex poisoned");
+        let mut builders = state
+            .candle_builders
+            .lock()
+            .expect("candle builders mutex poisoned");
+        crate::data::apply_history_series_and_seed(&mut book, &mut builders, series);
+        if let Some(data) = env.data.as_mut() {
+            crate::data::overlay_json_candles(
+                data,
+                &builders,
+                crate::data::KOTAK_NEO_ADAPTER_ID,
+                &instrument,
+                &interval,
+            );
+        }
+    }
+    env
+}
+
 /// Resolve `?adapter=` / `?book=` to one first-party manifest.
 /// Both set and disagree (different manifests, or slug book_id ≠ book) → None.
 pub(crate) fn resolve_manifest<'a>(
@@ -242,7 +290,7 @@ pub async fn obtain_handler(
                 .await
                 {
                     crate::kotak_rest_history::NativeHistory::Answered(env) => {
-                        return Json(env);
+                        return Json(land_native_cash_history(&state, env));
                     }
                     crate::kotak_rest_history::NativeHistory::Unsupported(env) => {
                         return Json(env);

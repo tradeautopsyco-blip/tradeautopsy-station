@@ -8,9 +8,9 @@
 use crate::data::{
     apply_quote, depth_snapshots_from_kotak_json, json_array_first_object_keys,
     json_field_object_keys, json_first_nested_object_keys, json_object_keys, kotak_quote_book_id,
-    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, DepthBook, Registry, TickBook,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH,
-    QUOTE_TYPE_OI,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, tick_cash_builders_from_kotak_json,
+    CandleBuilders, DepthBook, Registry, TickBook, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
 use crate::kotak_scrip_master::KOTAK_NEO;
 use crate::ubi::{
@@ -83,6 +83,7 @@ pub fn ensure_kotak_rest_quote(
     quote_fetch_error: QuoteFetchErrorMap,
     // NFO open interest rides the same body. `None` = do not collect.
     nfo_oi: Option<NfoOpenInterestSlot>,
+    builders: Option<Arc<Mutex<CandleBuilders>>>,
     instrument_id: &str,
 ) {
     let instrument = instrument_id.trim().to_ascii_lowercase();
@@ -109,6 +110,7 @@ pub fn ensure_kotak_rest_quote(
             inflight,
             quote_fetch_error,
             nfo_oi,
+            builders,
             &instrument,
         )
         .await;
@@ -128,6 +130,7 @@ pub async fn await_kotak_rest_quote(
     quote_fetch_error: QuoteFetchErrorMap,
     // NFO open interest rides the same body. `None` = do not collect.
     nfo_oi: Option<NfoOpenInterestSlot>,
+    builders: Option<Arc<Mutex<CandleBuilders>>>,
     instrument_id: &str,
 ) {
     let instrument = instrument_id.trim().to_ascii_lowercase();
@@ -175,6 +178,7 @@ pub async fn await_kotak_rest_quote(
         &environment,
         &connection_id,
         nfo_oi.as_ref(),
+        builders.as_ref(),
         &instrument,
     )
     .await;
@@ -442,6 +446,7 @@ async fn fetch_and_apply(
     connection_id: &str,
     // NFO open interest off the same body. `None` = do not collect.
     nfo_oi: Option<&NfoOpenInterestSlot>,
+    builders: Option<&Arc<Mutex<CandleBuilders>>>,
     instrument_id: &str,
 ) -> Result<(usize, String), QuoteFetchError> {
     let body = fetch_quotes_json(
@@ -460,6 +465,12 @@ async fn fetch_and_apply(
         let mut guard = book.lock().expect("tickbook mutex poisoned");
         apply_kotak_quote_body_for_book(registry, &mut guard, &body, received_at, book_id)
     };
+    if let Some(builders) = builders {
+        if book_id == KOTAK_NSE_BSE_CASH_BOOK_ID {
+            let mut builders = builders.lock().expect("candle builders mutex poisoned");
+            tick_cash_builders_from_kotak_json(&mut builders, &body, received_at);
+        }
+    }
     // Open interest off the SAME body — one GET serves last and OI. Only the NFO
     // book names `open_int`; cash rows simply produce no reading.
     if let Some(slot) = nfo_oi {
@@ -775,6 +786,7 @@ mod tests {
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
             None,
+            None,
             "nse_cm|2885",
         )
         .await;
@@ -798,6 +810,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             None,
             "nse_cm|2885",
         )
@@ -918,6 +931,7 @@ mod tests {
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
             None,
+            None,
             "nse_fo|12345",
         )
         .await;
@@ -941,6 +955,7 @@ mod tests {
             Arc::new(Mutex::new(None)),
             Arc::new(Mutex::new(HashSet::new())),
             errors.clone(),
+            None,
             None,
             "nse_fo|12345",
         )

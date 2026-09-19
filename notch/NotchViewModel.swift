@@ -1899,8 +1899,8 @@ public final class NotchViewModel: ObservableObject {
 
     /// Bind History from a Station history extract (testable without network).
     /// Crypto Options session chart consumes eapi candles.
-    /// Kotak broker history stays unsupported. A declared gap vendor may paint labs series.
-    /// Spot `/api/station/history` never paints a dated contract.
+    /// Spot paints `binance_klines`. Kotak cash paints native Neo; COM klines stay unsupported.
+    /// A declared gap vendor may paint labs series. Spot `/api/station/history` never paints a dated contract.
     func applyStationHistoryEnvelope(_ json: [String: Any]) {
         deskYahooHistoryStatus = "unavailable"
         deskYahooHistoryIneligible = []
@@ -1941,6 +1941,14 @@ public final class NotchViewModel: ObservableObject {
             let vendorGap = provenanceAdapter == "licensed_history"
                 || envelopeAdapter == "licensed_history"
                 || bookId == "licensed-history"
+            let nativeNeo = !vendorGap && (
+                provenanceAdapter == "kotak_neo"
+                || envelopeAdapter == "kotak_neo"
+                || adapter == "kotak_neo"
+                || dataSource == "kotak_neo"
+                || dataSource == "kotak_neo_historical"
+                || bookId == BarDeskTemplate.kotakCashBookId
+            )
             if binanceShaped && !vendorGap {
                 deskHistoryStatus = "unsupported"
                 deskHistoryIneligible = []
@@ -1951,6 +1959,10 @@ public final class NotchViewModel: ObservableObject {
             }
             if vendorGap {
                 applyKotakVendorHistory(json: json, status: status)
+                return
+            }
+            if nativeNeo {
+                applyKotakNativeHistory(json: json, status: status)
                 return
             }
             deskHistoryStatus = "unsupported"
@@ -1979,9 +1991,46 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
-        deskHistoryCandles = []
         deskHistoryProductUse = nil
-        deskHistoryBookId = nil
+        deskHistoryBookId = (json["book_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let spotKlines = dataSource == "binance_klines"
+            || bookId == BarDeskTemplate.binanceComSpotBookId
+        let rawCandles = (json["data"] as? [String: Any])?["candles"]
+        if spotKlines {
+            let candles = Self.parseSessionCandles(rawCandles)
+            if status == "success", !candles.isEmpty {
+                deskHistoryCandles = candles
+                return
+            }
+            if status == "success", rawCandles != nil {
+                deskHistoryStatus = "unavailable"
+            }
+        }
+        deskHistoryCandles = []
+    }
+
+    /// Native Neo cash series. Never COM klines. Empty success is a hole.
+    private func applyKotakNativeHistory(json: [String: Any], status: String) {
+        deskHistoryProductUse = (json["product_use"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        deskHistoryBookId = (json["book_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
+        if status == "success", !candles.isEmpty {
+            deskHistoryStatus = "success"
+            deskHistoryIneligible = []
+            deskHistoryCandles = candles
+            return
+        }
+        deskHistoryStatus = status.isEmpty ? "unavailable" : status
+        if deskHistoryStatus == "success" {
+            deskHistoryStatus = "unavailable"
+        }
+        deskHistoryIneligible = stringList(json["ineligible"]).filter {
+            $0 != "rights_forbid_canonical"
+        }
+        deskHistoryCandles = []
     }
 
     /// Declared-gap vendor series on a Kotak desk. Never Kotak last. Never COM klines.
@@ -2588,7 +2637,6 @@ public final class NotchViewModel: ObservableObject {
         } else {
             raw = symbol
         }
-        let encoded = InstrumentTickBookId.queryEncode(raw)
         let plan = DeskExtractPlan.resolve(
             slug: resolvedDeskSlug,
             assetClass: declareAssetClass,
@@ -2603,18 +2651,7 @@ public final class NotchViewModel: ObservableObject {
         let depthPath = plan.fetchesGlance && !plan.defersComSpotDepth
             ? deskDepthExtractPath(symbol: symbol)
             : nil
-        let historyPath: String?
-        if plan.usesKotakHistoryObtain {
-            let mode = VendorFetchModeStore.mode(for: "licensed_history")
-            let armed = mode == .onObtain && VendorFetchModeStore.consumeArmed("licensed_history")
-            historyPath = VendorHistoryObtain.kotakHistoryPath(mode: mode, armed: armed)
-        } else if plan.usesOptionsHistoryObtain {
-            historyPath = deskOptionsHistoryExtractPath()
-        } else if declareAssetClass == .options || declareAssetClass.isNamedComFutures {
-            historyPath = nil
-        } else {
-            historyPath = "/api/station/history?instrument=\(encoded)"
-        }
+        let historyPath = deskHistoryExtractPath(instrument: raw, consumeVendorArm: true)
         let generation = deskExtractGeneration
         Task { [weak self] in
             guard let self else { return }
@@ -2634,6 +2671,7 @@ public final class NotchViewModel: ObservableObject {
                 // instrument/book that is no longer selected. Leave the holes dark.
                 guard generation == self.deskExtractGeneration else { return }
                 self.applyStationHistoryEnvelope(licensedJSON ?? [:])
+                self.scheduleSessionHistoryRefresh()
                 // A skipped glance writes nothing: the hole keeps what invalidate set.
                 guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
@@ -2645,6 +2683,67 @@ public final class NotchViewModel: ObservableObject {
                 if !plan.defersComSpotDepth {
                     self.applyStationDepthEnvelope(depthJSON ?? [:])
                 }
+            }
+        }
+    }
+
+    /// Cash native obtain always carries `instrument=`. NFO stays the vendor-gated hole.
+    func deskHistoryExtractPath(instrument: String, consumeVendorArm: Bool) -> String? {
+        let encoded = InstrumentTickBookId.queryEncode(instrument)
+        let plan = DeskExtractPlan.resolve(
+            slug: resolvedDeskSlug,
+            assetClass: declareAssetClass,
+            instrumentId: instrument
+        )
+        if plan.usesKotakHistoryObtain {
+            if InstrumentTickBookId.isCashIdentity(instrument) {
+                return VendorHistoryObtain.kotakNativeHistoryPath(instrument: instrument)
+            }
+            let mode = VendorFetchModeStore.mode(for: "licensed_history")
+            let armed = consumeVendorArm
+                && mode == .onObtain
+                && VendorFetchModeStore.consumeArmed("licensed_history")
+            return VendorHistoryObtain.kotakHistoryPath(mode: mode, armed: armed)
+        }
+        if plan.usesOptionsHistoryObtain {
+            return deskOptionsHistoryExtractPath()
+        }
+        if declareAssetClass == .options || declareAssetClass.isNamedComFutures {
+            return nil
+        }
+        return "/api/station/history?instrument=\(encoded)"
+    }
+
+    /// Re-read history so the forming bar can land after klines/quotes seed.
+    /// Spot and Kotak cash only — NFO Session and USDM stay unnamed.
+    func scheduleSessionHistoryRefresh() {
+        let instrument = deskSelectedInstrumentId.isEmpty ? barDeclarationSymbol : deskSelectedInstrumentId
+        let cash = InstrumentTickBookId.isCashIdentity(instrument)
+        let spot = declareAssetClass == .spot && !BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: declareAssetClass,
+            instrumentId: instrument
+        )
+        guard cash || spot else { return }
+        guard let path = deskHistoryExtractPath(instrument: instrument, consumeVendorArm: false) else {
+            return
+        }
+        let generation = deskExtractGeneration
+        Task { [weak self] in
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline {
+                guard let self else { return }
+                guard generation == self.deskExtractGeneration else { return }
+                let json = await self.getExtractJSON(path)
+                guard generation == self.deskExtractGeneration else { return }
+                guard let json else {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    continue
+                }
+                await MainActor.run {
+                    guard generation == self.deskExtractGeneration else { return }
+                    self.applyStationHistoryEnvelope(json)
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
             }
         }
     }

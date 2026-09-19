@@ -3,7 +3,7 @@
 
 use crate::api::AppState;
 use crate::data::{
-    apply_history_series, await_binance_options_ticker, await_bound_com_depth_row,
+    apply_history_series_and_seed, await_binance_options_ticker, await_bound_com_depth_row,
     chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
     expiration_from_dated_contract, extract_chain_from, extract_depth_on_book,
     extract_greeks_from_mark, extract_index, extract_open_interest, extract_open_interest_for_book,
@@ -427,11 +427,15 @@ pub(crate) async fn ensure_options_klines(state: &AppState, instrument: &str) {
     else {
         return;
     };
-    apply_history_series(
+    apply_history_series_and_seed(
         &mut state
             .historybook
             .lock()
             .expect("historybook mutex poisoned"),
+        &mut state
+            .candle_builders
+            .lock()
+            .expect("candle builders mutex poisoned"),
         series,
     );
 }

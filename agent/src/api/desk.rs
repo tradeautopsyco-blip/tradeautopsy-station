@@ -5,7 +5,7 @@ use super::quote_selection::{
 };
 use super::AppState;
 use crate::data::{
-    apply_history_series, binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
+    binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
     ensure_binance_com_options_quote, ensure_binance_com_trade_stream, ensure_coinm_exchange_info,
     ensure_usdm_exchange_info, extract_quote_for_book, is_dated_option_contract,
     kotak_quote_book_id, normalize_coinm_instrument, normalize_options_instrument,
@@ -375,7 +375,12 @@ impl AppState {
         match next {
             Some(spot) if !spot.is_empty() => {
                 self.com_klines.bind(Some(spot.to_string()));
-                ensure_binance_klines(self.historybook.clone(), &self.klines_inflight, spot);
+                ensure_binance_klines(
+                    self.historybook.clone(),
+                    self.candle_builders.clone(),
+                    &self.klines_inflight,
+                    spot,
+                );
             }
             _ => self.com_klines.bind(None),
         }
@@ -404,6 +409,7 @@ impl AppState {
             &self.kotak_quote_inflight,
             self.quote_fetch_error.clone(),
             Some(self.nfo_open_interest.clone()),
+            Some(self.candle_builders.clone()),
             &id,
         );
         crate::kotak_rest_quotes::ensure_kotak_rest_depth(
@@ -438,6 +444,7 @@ impl AppState {
             self.kotak_quote_inflight.clone(),
             self.quote_fetch_error.clone(),
             Some(self.nfo_open_interest.clone()),
+            Some(self.candle_builders.clone()),
             &id,
         )
         .await;
@@ -1182,6 +1189,7 @@ pub fn spawn_exchange_info_refresh(
 /// Never TickBook. Never Yahoo. Kotak desk never reaches this (not `is_binance_path`).
 pub fn ensure_binance_klines(
     book: Arc<Mutex<HistoryBook>>,
+    builders: Arc<Mutex<crate::data::CandleBuilders>>,
     inflight: &Arc<Mutex<HashSet<String>>>,
     symbol: &str,
 ) {
@@ -1197,11 +1205,15 @@ pub fn ensure_binance_klines(
             return;
         }
     }
-    spawn_binance_klines_refresh(book, instrument);
+    spawn_binance_klines_refresh(book, builders, instrument);
 }
 
 /// Public unsigned klines → HistoryBook. Never HMAC. CI tests leave `s1_desk_symbol` unset.
-pub fn spawn_binance_klines_refresh(book: Arc<Mutex<HistoryBook>>, symbol: String) {
+pub fn spawn_binance_klines_refresh(
+    book: Arc<Mutex<HistoryBook>>,
+    builders: Arc<Mutex<crate::data::CandleBuilders>>,
+    symbol: String,
+) {
     tokio::spawn(async move {
         match fetch_com_klines(&symbol, DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT).await {
             Ok(series) => {
@@ -1210,8 +1222,9 @@ pub fn spawn_binance_klines_refresh(book: Arc<Mutex<HistoryBook>>, symbol: Strin
                     candles = series.candles.len(),
                     "s2 desk: unsigned klines series stored"
                 );
-                let mut guard = book.lock().expect("historybook mutex poisoned");
-                apply_history_series(&mut guard, series);
+                let mut history = book.lock().expect("historybook mutex poisoned");
+                let mut builders = builders.lock().expect("candle builders mutex poisoned");
+                crate::data::apply_history_series_and_seed(&mut history, &mut builders, series);
             }
             Err(err) => {
                 tracing::warn!(error = %err, "s2 desk: klines fetch failed");
