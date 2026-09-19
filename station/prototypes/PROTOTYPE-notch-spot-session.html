@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: live Notch sidebar + Options as data (OI charts of venue rows). Spot/Equity form stays.
+  Open: open station/prototypes/PROTOTYPE-notch-spot-session.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch · Options data (sidebar 1:1)</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --sec: rgba(245,245,247,.62); --ter: rgba(245,245,247,.38);
+      --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --teal: #64d2ff;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --glass: blur(48px) saturate(180%);
+      --side: #0b0b0c;
+      --panel: #111113;
+      --elev: #1c1c1e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 400 13px/1.35 var(--sans); letter-spacing: -.01em; font-optical-sizing: auto;
+      color: var(--label); -webkit-font-smoothing: antialiased; overflow: hidden; background: #1a1a1c;
+    }
+    button, input { font: inherit; color: inherit; background: none; border: 0; }
+    button { cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 8px; }
+    .press { transition: transform 90ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+    .up { color: var(--green); } .dn { color: var(--red); } .dim { color: var(--ter); } .sec { color: var(--sec); }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+    .osbar {
+      height: 24px; display: grid; grid-template-columns: 1fr 244px 1fr;
+      background: rgba(22,22,24,.72); backdrop-filter: var(--glass);
+      border-bottom: .5px solid rgba(255,255,255,.1);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+    }
+    .osbar .l, .osbar .r { display: flex; align-items: center; font-size: 13px; color: var(--sec); padding: 0 10px; }
+    .osbar .r { justify-content: flex-end; }
+    .osbar span { padding: 0 8px; }
+    .island {
+      height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 14px; color: #fff; background: #000;
+      clip-path: path("M0,0 Q6,0 6,6 L6,10 Q6,24 20,24 L224,24 Q238,24 238,10 L238,6 Q238,0 244,0 Z");
+    }
+    .island .mark { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,.14); display: grid; place-items: center; font: 700 9px/1 var(--sans); }
+    .island .pnl { margin-left: auto; font: 600 11px/1 var(--mono); }
+
+    .desk { height: calc(100% - 24px); padding: 10px 10px 88px; }
+    .sheet {
+      width: 100%; height: 100%; border-radius: 12px; overflow: hidden; display: flex;
+      background: #0b0b0c; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 24px 80px rgba(0,0,0,.5);
+    }
+
+    /* Live Notch sidebar — 176px, SESSION, More analysis, Hide, archetype pill */
+    .rail {
+      width: 176px; flex-shrink: 0; display: flex; flex-direction: column;
+      background: rgba(11,11,12,.88); backdrop-filter: blur(40px) saturate(160%);
+      border-right: .5px solid rgba(255,255,255,.08); padding: 4px 0 8px;
+    }
+    .rail .k {
+      font-size: 11px; font-weight: 500; letter-spacing: .066em; text-transform: uppercase;
+      color: rgba(255,255,255,.5); padding: 12px 16px 6px;
+    }
+    .nav {
+      display: flex; align-items: center; gap: 10px; width: calc(100% - 24px); margin: 0 12px;
+      padding: 7px 10px; border-radius: 8px; text-align: left; color: rgba(245,245,247,.62);
+    }
+    .nav.on { background: rgba(255,255,255,.08); color: var(--label); font-weight: 500; }
+    .nav svg { width: 16px; height: 16px; flex-shrink: 0; opacity: .85; }
+    .more {
+      display: flex; align-items: center; gap: 8px; width: calc(100% - 24px); margin: 8px 12px 0;
+      padding: 6px 8px; border-radius: 8px; font-size: 11px; font-weight: 500; letter-spacing: .066em;
+      text-transform: uppercase; color: rgba(255,255,255,.45);
+    }
+    .more.on { background: rgba(255,255,255,.04); color: var(--label); }
+    .more svg { width: 14px; height: 14px; transition: transform 180ms ease; }
+    .more.open svg { transform: rotate(180deg); }
+    .hide {
+      margin-top: auto; display: flex; align-items: center; gap: 10px;
+      padding: 7px 18px; color: rgba(245,245,247,.42); font-size: 13px;
+    }
+    .pill {
+      margin: 8px 8px 0; padding: 7px 10px; border-radius: 8px;
+      background: rgba(255,255,255,.04); display: flex; align-items: center; gap: 7px;
+    }
+    .pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+    .pill span { flex: 1; font-size: 11px; color: rgba(245,245,247,.5); }
+    .gear { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--ter); }
+    .gear.on { background: rgba(255,255,255,.08); color: var(--label); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #0b0b0c; }
+    .top {
+      flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px;
+    }
+    .top h1 { font-size: 15px; font-weight: 600; letter-spacing: -.016em; }
+    .sp { flex: 1; }
+    .wait { font-size: 12px; color: var(--ter); font-variant-numeric: tabular-nums; font-family: var(--mono); }
+    .bookchip { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sec); }
+    .bookchip i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .holes { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: rgba(255,69,58,.18); color: var(--red); }
+    .tabs { display: flex; gap: 6px; padding: 0 16px 8px; flex-wrap: wrap; }
+    .tab { padding: 5px 12px; border-radius: 999px; background: #1c1c1e; color: var(--sec); font-size: 12px; font-weight: 500; }
+    .tab.on { background: rgba(255,255,255,.12); color: var(--label); }
+
+    .scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 16px 20px; }
+    .sec-l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ter); margin: 12px 0 8px; font-weight: 600; }
+    .card {
+      background: var(--elev); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.06);
+    }
+    .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .feel { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; margin: 8px 0 12px; }
+    .feel button {
+      padding: 14px 6px; border-radius: 10px; background: #111113; text-align: center;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .feel button.on { background: rgba(255,255,255,.1); }
+    .feel b { display: block; font-size: 16px; }
+    .feel span { font-size: 11px; color: var(--ter); }
+    .field { margin-bottom: 8px; }
+    .field input {
+      width: 100%; padding: 11px 12px; border-radius: 10px; background: #111113;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .extracts { font-size: 12px; color: var(--ter); }
+    .extracts .row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .extracts .v { font-family: var(--mono); font-size: 11px; color: var(--ter); }
+    .hole {
+      margin-top: 8px; padding: 12px; border-radius: 10px; background: #111113; color: var(--ter); font-size: 11px;
+      font-family: var(--mono);
+    }
+
+    .zones { display: grid; grid-template-columns: 1.35fr .95fr; gap: 12px; align-items: start; }
+    .panel {
+      background: #111113; border-radius: 12px; padding: 12px; margin-bottom: 10px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .panel .ph { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+    .panel .ph b { font-size: 12px; font-weight: 600; }
+    .panel .ph span { font-size: 11px; color: var(--ter); font-family: var(--mono); }
+    .oiplot { width: 100%; height: 168px; display: block; }
+    .pay { width: 100%; height: 120px; display: block; }
+    .sess { width: 100%; height: 88px; display: block; }
+    table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+    th { text-align: left; font: 500 10px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); padding: 4px 6px; }
+    td { padding: 6px; border-top: .5px solid rgba(255,255,255,.06); }
+    tr.on td { background: rgba(255,255,255,.06); }
+    .greeks { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: rgba(255,255,255,.06); border-radius: 10px; overflow: hidden; }
+    .greeks div { background: #1c1c1e; padding: 8px 10px; }
+    .greeks .k { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--ter); }
+    .greeks .v { font-family: var(--mono); font-size: 12px; margin-top: 2px; }
+    .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .buy, .sell { height: 34px; border-radius: 10px; font-weight: 700; }
+    .buy { background: var(--green); color: #04210c; }
+    .sell { background: var(--red); color: #2a0404; }
+    .buy.on, .sell.on { outline: 2px solid #fff; outline-offset: 1px; }
+    .cta { width: 100%; height: 36px; border-radius: 10px; font-weight: 700; background: var(--green); color: #04210c; margin-top: 8px; }
+    .cta.ghost { background: rgba(255,255,255,.1); color: var(--label); }
+    .cta.kill { background: var(--red); color: #fff; }
+    .mpill { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .mpill > div { padding: 8px; border-radius: 10px; background: rgba(255,255,255,.04); }
+    .mpill .k { font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: var(--ter); }
+    .mpill .v { font-family: var(--mono); font-size: 13px; font-weight: 600; margin-top: 3px; }
+    .tog { display: flex; gap: 8px; align-items: flex-start; width: 100%; text-align: left; padding: 6px 0; }
+    .dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ter); flex-shrink: 0; }
+    .dot.yes { background: var(--teal); border-color: var(--teal); }
+    .dot.no { background: var(--red); border-color: var(--red); }
+    .note { font-size: 11px; color: var(--ter); margin-top: 8px; font-family: var(--mono); }
+
+    .toast {
+      position: absolute; left: 50%; top: 40px; transform: translateX(-50%); z-index: 20;
+      padding: 8px 14px; border-radius: 999px; background: rgba(44,44,46,.92); font-size: 13px; opacity: 0; pointer-events: none;
+    }
+    .toast.on { opacity: 1; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.45); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 280px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    .q { position: fixed; left: 12px; top: 28px; z-index: 40; max-width: 340px; font-size: 11px; color: var(--sec); pointer-events: none; }
+    .q b { color: var(--label); }
+    .dump { position: fixed; right: 12px; bottom: 16px; z-index: 40; max-width: 260px; font: 500 10px/1.4 var(--mono); color: var(--sec); }
+
+    @media (prefers-reduced-motion: reduce) { .press { transition: none; } .press:active { transform: none; } .more svg { transition: none; } }
+    @media (prefers-reduced-transparency: reduce) { .osbar, .rail { background: #1c1c1e; backdrop-filter: none; } }
+  </style>
+</head>
+<body>
+  <div class="q"><b>PROTOTYPE</b> · live Notch sidebar · Options OI as venue bars · no PCR / max pain</div>
+  <div class="osbar" id="osbar"></div>
+  <div class="desk"><div class="sheet" id="app"></div></div>
+  <div class="switcher" id="switcher"></div>
+  <pre class="dump" id="dump"></pre>
+<script>
+const VARIANTS = [
+  { key: "A", name: "Pre-trade", blurb: "Options analytics · OI chart of LatestState rows" },
+  { key: "B", name: "Live trade", blurb: "Working · OI still in view" },
+  { key: "C", name: "Post-trade", blurb: "Moments A–C" },
+];
+const OI_ROWS = [
+  { id: "BTC-260925-85000-C", strike: "85000", right: "C", last: "1,840.2", oi: 820.4, usd: 138800, delta: "0.82" },
+  { id: "BTC-260925-85000-P", strike: "85000", right: "P", last: "112.4", oi: 2100.0, usd: 355200, delta: "−0.18" },
+  { id: "BTC-260925-90000-C", strike: "90000", right: "C", last: "412.80", oi: 12448.21, usd: 2104412.80, delta: "0.41" },
+  { id: "BTC-260925-90000-P", strike: "90000", right: "P", last: "388.20", oi: 9102.40, usd: 1540088.00, delta: "−0.59" },
+  { id: "BTC-260925-95000-C", strike: "95000", right: "C", last: "188.40", oi: 4220.00, usd: 714180.00, delta: "0.22" },
+  { id: "BTC-260925-95000-P", strike: "95000", right: "P", last: "612.10", oi: 6800.00, usd: 1150200.00, delta: "−0.78" },
+  { id: "BTC-260925-100000-C", strike: "100000", right: "C", last: "74.20", oi: 1900.00, usd: 321500.00, delta: "0.09" },
+  { id: "BTC-260925-100000-P", strike: "100000", right: "P", last: "980.40", oi: 3400.00, usd: 575600.00, delta: "−0.91" },
+];
+const SPOT = ["BTCUSDT","ETHUSDT","SOLUSDT"];
+const EQ = ["RELIANCE","TCS","HDFCBANK"];
+const S = {
+  variant: "A", asset: "options", arch: "intraday", symbol: "BTC-260925-90000-C",
+  side: "buy", qty: "2", entry: "412.80", sl: "280", target: "720",
+  calm: 0, conf: 0, analysis: false, settings: false, toast: "",
+  kill: "idle", momentA: false, momentB: { stop:0, size:0, inv:0, exit:0, add:0 },
+};
+
+const ICO = {
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.4"/><path d="M12 3.4v1.7M12 18.9v1.7M5 5l1.2 1.2M17.8 17.8l1.2 1.2M3.4 12h1.7M18.9 12h1.7M5 19l1.2-1.2M17.8 6.2l1.2-1.2"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7.5" y="5.5" width="9" height="14" rx="2"/><path d="M9.6 11h4.8M9.6 14h3.2"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 3.4 6.4 13.2h5L10.2 20.6l7.2-10.4h-5.2z"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8.8 8h9M8.8 12h9M8.8 16h7"/><circle cx="5.8" cy="8" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="12" r=".7" fill="currentColor" stroke="none"/><circle cx="5.8" cy="16" r=".7" fill="currentColor" stroke="none"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 9 6 6 6-6"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6 19 20M6 8C4.6 9 3.5 10.4 3 12c1.2 4 4.7 7 9 7 1.2 0 2.3-.2 3.4-.7"/><path d="M10.2 10.3A3.2 3.2 0 0 0 12 15.2"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="2.7"/><path d="M12 4.2v1.6M12 18.2v1.6M4.2 12h1.6M18.2 12h1.6M6.1 6.1l1.15 1.15M16.75 16.75l1.15 1.15M6.1 17.9l1.15-1.15M16.75 7.25l1.15-1.15"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3.6 19 6.4v5.2c0 4.4-3.1 7.4-7 8.8-3.9-1.4-7-4.4-7-8.8V6.4z"/></svg>',
+  wave: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3.6 12.5c1.6-3.4 3.2-3.4 4.8 0s3.2 3.4 4.8 0 3.2-3.4 4.8 0 3.2 3.4 4.8 0"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6.6 18.4V11M12 18.4V6.8M17.4 18.4v-8"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="7.4"/><path d="M12 8.4v7.2M8.8 13.2 12 16.4 15.2 13.2"/></svg>',
+};
+
+function row() { return OI_ROWS.find(r => r.id === S.symbol) || OI_ROWS[2]; }
+function book() {
+  if (S.asset === "equity") return { name: "Kotak Neo", ccy: "INR", pnl: "−₹2,400", tone: "dn", holes: "2 holes" };
+  if (S.asset === "spot") return { name: "Binance.com", ccy: "USDT", pnl: "$0.00", tone: "", holes: "2 holes" };
+  return { name: "Binance.com", ccy: "USDT", pnl: "$0.00", tone: "", holes: "2 holes" };
+}
+function archLabel() {
+  return S.arch === "scalper" ? "Scalper · F&O" : S.arch === "swing" ? "Swing · Equity" : "Intraday · F&O";
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function osbar() {
+  const b = book();
+  return `<div class="l"><span></span><span>TradeAutopsy</span><span>View</span></div>
+    <div class="island"><span class="mark">T</span><span class="pnl ${b.tone}">${b.pnl}</span></div>
+    <div class="r"><span>01:08</span></div>`;
+}
+function railOn(id) {
+  if (S.settings) return id === "settings";
+  if (id === "pretrade") return S.variant === "A";
+  if (id === "live") return S.variant === "B";
+  if (id === "posttrade") return S.variant === "C";
+  return false;
+}
+function rail() {
+  const items = [
+    ["morning","sun","Morning brief","morning"],
+    ["pretrade","clip","Pre-trade","A"],
+    ["live","bolt","Live trade","B"],
+    ["posttrade","list","Post-trade","C"],
+  ];
+  return `<div class="rail">
+    <div class="k">Session</div>
+    ${items.map(([id,g,lab,v]) => `<button class="nav press ${railOn(id)?"on":""}" data-act="${id==="morning"?"morning":"screen"}" data-id="${v}">${ICO[g]}${lab}</button>`).join("")}
+    <button class="more press ${S.analysis?"on open":""}" data-act="analysis">${ICO.chev} More · analysis</button>
+    ${S.analysis ? `
+      <button class="nav press" data-act="aux" data-id="escrow">${ICO.shield} Escrow match</button>
+      <button class="nav press" data-act="aux" data-id="patterns">${ICO.wave} Patterns</button>
+      <button class="nav press" data-act="aux" data-id="fidelity">${ICO.chart} Fidelity score</button>
+      <button class="nav press" data-act="aux" data-id="triage">${ICO.down} Triage</button>
+    ` : ""}
+    <button class="hide press" data-act="hide">${ICO.eye} Hide notch · ⌥Space</button>
+    <div class="pill"><i></i><span>${archLabel()}</span><button class="gear press ${S.settings?"on":""}" data-act="settings">${ICO.gear}</button></div>
+  </div>`;
+}
+
+function oiChart() {
+  const max = Math.max(...OI_ROWS.map(r => r.oi));
+  const n = OI_ROWS.length;
+  const bars = OI_ROWS.map((r, i) => {
+    const h = Math.max(6, (r.oi / max) * 118);
+    const x = 28 + i * 48;
+    const y = 132 - h;
+    const on = r.id === S.symbol;
+    const fill = r.right === "C" ? (on ? "#30d158" : "rgba(48,209,88,.45)") : (on ? "#ff453a" : "rgba(255,69,58,.45)");
+    return `<rect x="${x}" y="${y}" width="28" height="${h}" rx="3" fill="${fill}" data-act="sym" data-id="${r.id}"/>
+      <text x="${x+14}" y="148" fill="rgba(245,245,247,.4)" font-size="8" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">${r.right}${String(r.strike).slice(0,3)}</text>`;
+  }).join("");
+  return `<svg class="oiplot" viewBox="0 0 420 160" role="img" aria-label="Open interest by contract">
+    <text x="8" y="14" fill="rgba(245,245,247,.4)" font-size="10" font-family="ui-monospace,Menlo,monospace">sumOpenInterest · this expiry · not a total · not max pain</text>
+    ${bars}
+    <text x="8" y="158" fill="rgba(245,245,247,.35)" font-size="9" font-family="ui-monospace,Menlo,monospace">Call = green · Put = red · bar = venue row</text>
+  </svg>`;
+}
+function sessionChart() {
+  return `<svg class="sess" viewBox="0 0 420 88" aria-label="Contract klines">
+    <rect width="420" height="88" fill="#0b0b0c"/>
+    <path d="M8 50 L70 42 L130 48 L190 36 L250 40 L310 28 L410 32" fill="none" stroke="#64d2ff" stroke-width="1.6"/>
+    <path d="M8 50 L70 42 L130 48 L190 36 L250 40 L310 28 L410 32 L410 88 L8 88 Z" fill="rgba(100,210,255,.12)"/>
+    <text x="8" y="14" fill="rgba(245,245,247,.4)" font-size="10" font-family="ui-monospace,Menlo,monospace">GET /eapi/v1/klines · this contract · not spot BTCUSDT</text>
+  </svg>`;
+}
+function payoff() {
+  const r = row();
+  const call = r.right === "C";
+  const buy = S.side === "buy";
+  const path = call
+    ? (buy ? "M12 70 L160 70 L390 18" : "M12 28 L160 28 L390 78")
+    : (buy ? "M12 18 L160 70 L390 70" : "M12 78 L160 28 L390 28");
+  return `<svg class="pay" viewBox="0 0 420 100" aria-label="At expiry settlement">
+    <line x1="12" y1="50" x2="408" y2="50" stroke="rgba(255,255,255,.12)"/>
+    <path d="${path}" fill="none" stroke="${buy?"#30d158":"#ff453a"}" stroke-width="2"/>
+    <circle cx="160" cy="50" r="3" fill="#ff9f0a"/>
+    <text x="8" y="14" fill="rgba(245,245,247,.4)" font-size="10" font-family="ui-monospace,Menlo,monospace">European cash settle · S from eapi index · premium ${r.last} · short-call wing unbounded</text>
+    <text x="148" y="92" fill="#ff9f0a" font-size="9" font-family="ui-monospace,Menlo,monospace">K ${r.strike}</text>
+  </svg>`;
+}
+
+function optionsAnalytics() {
+  const r = row();
+  return `<div class="panel">
+      <div class="ph"><b>Analytics</b><span>market/open_interest · option_chain · ohlcv · order_book</span></div>
+      <div class="ph"><b>Session</b><span>last ${r.last} · unknown</span></div>
+      ${sessionChart()}
+      <div class="ph" style="margin-top:10px"><b>Open interest</b><span>GET /eapi/v1/openInterest</span></div>
+      ${oiChart()}
+      <p class="note">Selected ${r.id} · sumOpenInterest ${r.oi} · Usd ${r.usd} · LatestState. Click a bar to bind. Never {oi:0}. Never a PCR total.</p>
+      <div class="ph" style="margin-top:10px"><b>Chain · catalog</b><span>showsStrikeGrid = false</span></div>
+      <table>
+        <thead><tr><th>Contract</th><th>Strike</th><th>Right</th><th>Last</th><th>OI</th></tr></thead>
+        <tbody>${OI_ROWS.map(x => `<tr class="${S.symbol===x.id?"on":""}"><td><button data-act="sym" data-id="${x.id}">${x.id}</button></td><td>${x.strike}</td><td>${x.right==="C"?"Call":"Put"}</td><td>${x.last}</td><td>${x.oi}</td></tr>`).join("")}</tbody>
+      </table>
+    </div>`;
+}
+function optionsConsequence() {
+  const r = row();
+  return `<div class="panel">
+      <div class="ph"><b>Consequence</b><span>derived/greeks · venue_published</span></div>
+      <div class="greeks">
+        <div><div class="k">Delta</div><div class="v">${r.delta}</div></div>
+        <div><div class="k">Gamma</div><div class="v">0.000031</div></div>
+        <div><div class="k">Theta</div><div class="v">−18.4</div></div>
+        <div><div class="k">Vega</div><div class="v">42.1</div></div>
+      </div>
+      <p class="note">GET /eapi/v1/mark · Station copies the table. Not Black-76. NFO greeks stay dark.</p>
+      <div class="ph" style="margin-top:10px"><b>At expiry</b><span>per contract · unit not applied</span></div>
+      ${payoff()}
+      <p class="note">Buyer max loss = premium paid. σ rungs 2–5 stay dark.</p>
+    </div>`;
+}
+function optionsPlan() {
+  const r = row();
+  return `<div class="panel">
+      <div class="ph"><b>Plan</b><span>what you are declaring</span></div>
+      <div class="sides">
+        <button class="buy press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+        <button class="sell press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+      </div>
+      <label class="field"><input data-act="qty" value="${esc(S.qty)}" placeholder="Contracts"></label>
+      <label class="field"><input data-act="entry" value="${esc(S.entry)}" placeholder="Premium · last prefills"></label>
+      <label class="field"><input data-act="sl" value="${esc(S.sl)}" placeholder="Stop · exact price"></label>
+      <label class="field"><input data-act="target" value="${esc(S.target)}" placeholder="Target"></label>
+      <p class="note">${r.id} · European · ${S.arch} · DualNoBlend USDT. No lot. No NRML.</p>
+      <button class="cta press" data-act="declare">Confirm — enter trade →</button>
+    </div>`;
+}
+
+function spotEquityForm() {
+  const extracts = S.asset === "spot"
+    ? [["Last","unavailable"],["History","no licensed series"],["Depth","unavailable"]]
+    : [["Last","unavailable"],["History","no licensed series"],["Depth","unavailable"]];
+  const ph = S.asset === "spot" ? "Symbol (e.g. BTC or RELIANCE)" : "Symbol (e.g. RELIANCE)";
+  return `<div class="sec-l">State check</div>
+    <div class="card">
+      <h2>How are you feeling?</h2>
+      <p class="sec">Two readings. Answer honestly — it changes what the system flags.</p>
+      <div class="sec-l">Psychological calm — 1 is best</div>
+      <div class="feel">${[["1","Calm"],["2","Focused"],["3","Tense"],["4","Anxious"],["5","Angry"]].map(([n,l]) =>
+        `<button class="press ${S.calm===+n?"on":""}" data-act="calm" data-id="${n}"><b>${n}</b><span>${l}</span></button>`).join("")}</div>
+      <div class="sec-l">Confidence — 5 is best</div>
+      <div class="feel">${[["1","Low"],["2","Flat"],["3","Neutral"],["4","Good"],["5","Sharp"]].map(([n,l]) =>
+        `<button class="press ${S.conf===+n?"on":""}" data-act="conf" data-id="${n}"><b>${n}</b><span>${l}</span></button>`).join("")}</div>
+    </div>
+    <div class="sec-l">Numbers</div>
+    <div class="card">
+      <label class="field"><input placeholder="Entry price" data-act="entry" value="${esc(S.entry)}"></label>
+      <div class="extracts">
+        <div class="sec-l" style="margin-top:0">Desk extracts</div>
+        ${extracts.map(([k,v]) => `<div class="row"><span>${k}</span><span class="v">${v}</span></div>`).join("")}
+      </div>
+      <div class="hole">unavailable<br>COM REST snapshot plus @depth deltas. Physics bounded_snapshot. Sequence gap stamps Unusable — never last-good, never synced.</div>
+      <label class="field" style="margin-top:8px"><input placeholder="Stop loss — exact price" data-act="sl" value="${esc(S.sl)}"></label>
+      <label class="field"><input placeholder="Target price" data-act="target" value="${esc(S.target)}"></label>
+      <label class="field"><input placeholder="${ph}" value="${S.asset==="spot"?"BTCUSDT":"RELIANCE"}"></label>
+    </div>`;
+}
+
+function liveBody() {
+  const r = row();
+  return S.asset === "options" ? `<div class="zones">
+      <div>${optionsAnalytics()}</div>
+      <div>
+        <div class="panel">
+          <div class="ph"><b>Working</b><span>${r.id}</span></div>
+          <div class="mpill">
+            <div><div class="k">Unrealised</div><div class="v dn">−$18.40</div></div>
+            <div><div class="k">Max loss declared</div><div class="v">$82</div></div>
+            <div><div class="k">Risk used</div><div class="v" style="color:var(--orange)">22%</div></div>
+            <div><div class="k">Time in trade</div><div class="v" style="color:var(--orange)">11m</div></div>
+          </div>
+          <p class="note">Live SL matches the plan. This trade only. Theta is the clock — not a session bar.</p>
+          <button class="cta ghost press" data-act="movesl">Move SL to entry</button>
+          <button class="cta kill press" data-act="kill">${S.kill==="warn"?"Confirm Kill":"Kill"}</button>
+        </div>
+        ${optionsConsequence()}
+      </div>
+    </div>` : `<div class="card"><h2>Working · ${S.asset}</h2><p class="sec">Declaration on file · waiting for fill. Templates unchanged.</p>
+      <button class="cta kill press" data-act="kill">Kill</button></div>`;
+}
+function postBody() {
+  return `<div class="card">
+    <h2>Trade closed</h2>
+    <p class="sec">Three beats — finish in order.</p>
+    <div class="sec-l">Moment A — outcome</div>
+    <p class="sec">Did the market prove the thesis wrong, or did you exit early? Options: expired vs closed.</p>
+    <button class="cta ghost press" data-act="ma">${S.momentA?"Recorded":"Continue"}</button>
+    <div class="sec-l">Moment B — process</div>
+    ${[["stop","Stop as declared"],["size","Size as declared"],["inv","Invalidation respected"],["exit","Exit per plan"],["add","No impulsive add"]].map(([k,l]) =>
+      `<button class="tog press" data-act="mb" data-id="${k}"><i class="dot ${S.momentB[k]===1?"yes":S.momentB[k]===2?"no":""}"></i>${l}</button>`).join("")}
+    <button class="cta press" data-act="save">Save debrief</button>
+  </div>`;
+}
+
+function preBody() {
+  if (S.asset !== "options") return spotEquityForm();
+  return `<div class="zones">
+    <div>${optionsAnalytics()}</div>
+    <div>${optionsConsequence()}${optionsPlan()}</div>
+  </div>`;
+}
+
+function paint() {
+  const b = book();
+  const title = S.settings ? "Settings" : VARIANTS.find(v => v.key === S.variant).name;
+  document.getElementById("osbar").innerHTML = osbar();
+  const body = S.settings
+    ? `<div class="card"><h2>Settings</h2><p class="sec">Grouped form in the live Notch. Out of this prototype’s question.</p></div>`
+    : S.variant==="B" ? liveBody() : S.variant==="C" ? postBody() : preBody();
+  document.getElementById("app").innerHTML = `${rail()}
+    <div class="main">
+      <div class="top">
+        <h1>${title}</h1>
+        <span class="sp"></span>
+        <span class="wait">0.00</span>
+        <span class="wait">Waiting</span>
+        <span class="bookchip"><i></i>${b.name}</span>
+        <span class="holes">${b.holes}</span>
+      </div>
+      ${S.settings?"":`<div class="tabs">
+        ${["spot","equity","options"].map(a => `<button class="tab press ${S.asset===a?"on":""}" data-act="asset" data-id="${a}">${a[0].toUpperCase()+a.slice(1)}</button>`).join("")}
+        ${["intraday","scalper","swing"].map(a => `<button class="tab press ${S.arch===a?"on":""}" data-act="arch" data-id="${a}">${a[0].toUpperCase()+a.slice(1)}</button>`).join("")}
+      </div>`}
+      <div class="scroll">${body}</div>
+    </div>
+    <div class="toast ${S.toast?"on":""}">${S.toast||""}</div>`;
+  const v = VARIANTS.find(x => x.key === S.variant);
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next">→</button>`;
+  const state = {
+    variant: S.variant, asset: S.asset, symbol: S.symbol, oiChart: S.asset==="options",
+    pcrInvented: false, strikeGrid: false, dualNoBlend: true, sidebar: "BarNotchShell"
+  };
+  document.getElementById("app").dataset.state = JSON.stringify(state);
+  document.getElementById("dump").textContent = JSON.stringify(state, null, 2);
+}
+function setVariant(k) {
+  S.variant = k; S.settings = false; S.toast = "";
+  const u = new URL(location.href); u.searchParams.set("variant", k); history.replaceState(null,"",u);
+  paint();
+}
+function cycle(d) { const i = VARIANTS.findIndex(v => v.key === S.variant); setVariant(VARIANTS[(i+d+3)%3].key); }
+function say(m) { S.toast = m; paint(); setTimeout(()=>{ S.toast=""; paint(); }, 1600); }
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]"); if (!el || el.tagName==="INPUT") return;
+  const act = el.getAttribute("data-act"), id = el.getAttribute("data-id");
+  if (act==="prev") cycle(-1);
+  if (act==="next") cycle(1);
+  if (act==="screen") setVariant(id);
+  if (act==="morning") say("Morning brief · live Notch destination. Out of this question.");
+  if (act==="analysis") { S.analysis = !S.analysis; paint(); }
+  if (act==="aux") say(id + " · analysis drawer. Same as live Notch.");
+  if (act==="hide") say("⌥Space hides the island. Close is not on Notch.");
+  if (act==="settings") { S.settings = !S.settings; paint(); }
+  if (act==="asset") { S.asset = id; if (id==="options") S.symbol = "BTC-260925-90000-C"; paint(); }
+  if (act==="arch") { S.arch = id; paint(); }
+  if (act==="sym") { S.symbol = id; const r = row(); S.entry = r.last.replace(/,/g,""); paint(); }
+  if (act==="side") { S.side = id; paint(); }
+  if (act==="calm") { S.calm = +id; paint(); }
+  if (act==="conf") { S.conf = +id; paint(); }
+  if (act==="declare") { say("Declaration on file · " + S.symbol); setVariant("B"); return; }
+  if (act==="movesl") say("Move SL needs broker order handle.");
+  if (act==="kill") { S.kill = S.kill==="idle"?"warn":"idle"; say(S.kill==="warn"?"Kill always-on. Confirm.":"Kill latched · Stop ≠ Kill."); paint(); }
+  if (act==="ma") { S.momentA = true; paint(); }
+  if (act==="mb") { const v = S.momentB[id]; S.momentB[id] = v===0?1:v===1?2:0; paint(); }
+  if (act==="save") say("Debrief PATCH · TradeAutopsy.");
+});
+document.addEventListener("input", (e) => {
+  const act = e.target.getAttribute("data-act");
+  if (act==="qty") S.qty = e.target.value;
+  if (act==="entry") S.entry = e.target.value;
+  if (act==="sl") S.sl = e.target.value;
+  if (act==="target") S.target = e.target.value;
+});
+document.addEventListener("pointerdown", (e) => { const el=e.target.closest(".press"); if (el) el.classList.add("is-down"); }, true);
+document.addEventListener("pointerup", () => document.querySelectorAll(".press.is-down").forEach(el=>el.classList.remove("is-down")));
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowLeft") cycle(-1);
+  if (e.key==="ArrowRight") cycle(1);
+});
+const boot = new URLSearchParams(location.search).get("variant") || "A";
+S.variant = VARIANTS.some(v=>v.key===boot) ? boot : "A";
+paint();
+</script>
+</body>
+</html>

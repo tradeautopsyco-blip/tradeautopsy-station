@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: broker + TradingView density/nouns, WWDC 2026 Liquid Glass + HIG, DualNoBlend. Not WhatsApp.
+  Open: open station/prototypes/PROTOTYPE-station-threads.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Station · desk (brokers × WWDC 26)</title>
+  <style>
+    :root {
+      --label: #f5f5f7;
+      --secondary: rgba(245,245,247,.62);
+      --tertiary: rgba(245,245,247,.36);
+      --blue: #0a84ff;
+      --green: #30d158;
+      --red: #ff453a;
+      --orange: #ff9f0a;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --win-r: 18px;
+      --pane-r: 12px;
+      --glass: blur(48px) saturate(190%);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 400 12px/1.35 var(--sans);
+      letter-spacing: -.008em;
+      font-optical-sizing: auto;
+      color: var(--label);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+      background:
+        radial-gradient(1100px 640px at 18% 8%, rgba(28,72,48,.38), transparent 55%),
+        radial-gradient(900px 560px at 92% 88%, rgba(20,36,72,.4), transparent 50%),
+        #10140f;
+    }
+    button, input, select { font: inherit; color: inherit; background: none; border: 0; }
+    button { cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 8px; }
+    .press { transition: transform 90ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .up { color: var(--green); } .dn { color: var(--red); } .dim { color: var(--tertiary); } .sec { color: var(--secondary); }
+
+    .osbar {
+      height: 24px; display: grid; grid-template-columns: 1fr 244px 1fr; align-items: stretch;
+      background: rgba(16,20,16,.55); backdrop-filter: var(--glass);
+      border-bottom: .5px solid rgba(255,255,255,.12);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+    }
+    .osbar .l, .osbar .r { display: flex; align-items: center; font-size: 13px; color: var(--secondary); padding: 0 10px; }
+    .osbar .r { justify-content: flex-end; }
+    .osbar span { padding: 0 9px; }
+    .island {
+      height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 14px; color: #fff; background: #000;
+      clip-path: path("M0,0 Q6,0 6,6 L6,10 Q6,24 20,24 L224,24 Q238,24 238,10 L238,6 Q238,0 244,0 Z");
+    }
+    .island .mark { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,.14); display: grid; place-items: center; font: 700 9px/1 var(--sans); }
+    .island .pnl { margin-left: auto; font: 600 11px/1 var(--mono); font-variant-numeric: tabular-nums; }
+    .island .bars { display: flex; gap: 2px; align-items: center; height: 12px; width: 16px; }
+    .island .bars i { width: 2px; border-radius: 99px; background: currentColor; display: block; }
+
+    .desk { height: calc(100% - 24px); display: grid; place-items: center; padding: 16px 16px 88px; }
+    .app {
+      width: min(1320px, 100%); height: 100%; border-radius: var(--win-r); overflow: hidden;
+      display: flex; flex-direction: column; position: relative;
+      background: rgba(14,16,14,.44); backdrop-filter: var(--glass);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 0 0 .5px rgba(255,255,255,.18), 0 40px 100px rgba(0,0,0,.55);
+    }
+    .tb {
+      flex-shrink: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px 0 78px;
+      background: rgba(18,20,18,.5); backdrop-filter: blur(40px) saturate(180%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 .5px 0 rgba(255,255,255,.08);
+    }
+    .lights { position: absolute; top: 16px; left: 14px; z-index: 8; display: flex; gap: 8px; }
+    .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; box-shadow: inset 0 -.5px 0 rgba(0,0,0,.35); }
+    .lights .c { background: #ff5f57; } .lights .m { background: #febc2e; } .lights .e { background: #28c840; }
+    .brand { font-size: 13px; font-weight: 600; letter-spacing: -.016em; margin-right: 4px; }
+    .books { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: rgba(255,255,255,.06); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+    .book {
+      padding: 5px 10px; border-radius: 8px; font-size: 11px; font-weight: 590; color: var(--secondary);
+    }
+    .book.on { background: rgba(255,255,255,.14); color: var(--label); }
+    .book .ccy { font-family: var(--mono); font-size: 10px; margin-left: 6px; color: var(--tertiary); }
+    .book.on .ccy { color: var(--secondary); }
+    .sp { flex: 1; }
+    .chip {
+      font-size: 11px; font-weight: 590; padding: 4px 9px; border-radius: 999px;
+      background: rgba(255,255,255,.08); color: var(--secondary);
+    }
+    .chip.warn { color: var(--orange); }
+
+    .cols { flex: 1; min-height: 0; display: flex; }
+    .watch {
+      width: 268px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0;
+      background: rgba(12,14,12,.78); backdrop-filter: blur(56px) saturate(180%);
+      border-right: .5px solid rgba(255,255,255,.08);
+    }
+    .watch-h { padding: 10px 12px 4px; display: flex; align-items: baseline; justify-content: space-between; }
+    .watch-h h1 { font-size: 20px; font-weight: 700; letter-spacing: -.028em; line-height: 1.1; }
+    .search {
+      margin: 6px 10px 8px; display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 12px;
+      background: rgba(255,255,255,.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+    }
+    .search svg { width: 13px; height: 13px; opacity: .45; flex-shrink: 0; }
+    .search input { flex: 1; min-width: 0; }
+    .search input::placeholder { color: var(--tertiary); }
+    .whd {
+      display: grid; grid-template-columns: 1fr 72px 56px; gap: 6px;
+      padding: 0 12px 4px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary);
+    }
+    .wrows { flex: 1; overflow: auto; }
+    .wrow {
+      width: 100%; display: grid; grid-template-columns: 1fr 72px 56px; gap: 6px; align-items: center;
+      padding: 8px 12px; text-align: left; border-radius: 0;
+    }
+    .wrow:hover { background: rgba(255,255,255,.04); }
+    .wrow.on { background: rgba(255,255,255,.1); }
+    .wrow .sym { font-size: 13px; font-weight: 600; letter-spacing: -.016em; }
+    .wrow .ex { display: block; font-size: 10px; color: var(--tertiary); font-weight: 400; }
+    .wrow .ltp, .wrow .chg { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; }
+    .happened {
+      flex-shrink: 0; padding: 10px 12px 12px; border-top: .5px solid rgba(255,255,255,.08);
+    }
+    .happened .k { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); }
+    .happened .v { font-size: 22px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .happened .s { font-size: 11px; color: var(--secondary); margin-top: 2px; }
+
+    .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #0c0e0c; }
+    .ticker {
+      flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+      background: rgba(16,18,16,.55); backdrop-filter: blur(32px) saturate(170%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.1);
+    }
+    .ticker .name { font-size: 16px; font-weight: 700; letter-spacing: -.022em; }
+    .ticker .last { font-size: 22px; font-weight: 600; letter-spacing: -.028em; font-variant-numeric: tabular-nums; }
+    .ticker .chg { font-family: var(--mono); font-size: 13px; }
+    .ticker .meta { font-family: var(--mono); font-size: 11px; color: var(--secondary); }
+    .sep { width: 1px; height: 18px; background: rgba(255,255,255,.1); }
+
+    .plot { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px 0; }
+    .tf { display: flex; gap: 2px; align-items: center; }
+    .tf button { padding: 4px 8px; border-radius: 6px; font-family: var(--mono); font-size: 11px; color: var(--tertiary); }
+    .tf button.on { background: rgba(255,255,255,.1); color: var(--label); }
+    .canvas {
+      flex: 1; min-height: 160px; margin-top: 6px; border-radius: var(--pane-r);
+      background: #080908; position: relative; overflow: hidden;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.06);
+    }
+    .canvas svg { display: block; width: 100%; height: 100%; }
+    .metrics { display: grid; grid-template-columns: repeat(4,1fr); margin-top: 6px; }
+    .metrics div { padding: 8px 6px; }
+    .metrics .k { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); }
+    .metrics .n { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; margin-top: 2px; }
+
+    .blotter { flex-shrink: 0; height: 148px; display: flex; flex-direction: column; border-top: .5px solid rgba(255,255,255,.08); background: #101210; }
+    .blotter .hd { display: flex; align-items: center; padding: 6px 12px; font-size: 11px; font-weight: 600; color: var(--secondary); }
+    .table { flex: 1; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; }
+    th { text-align: left; font: 500 10px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary); padding: 4px 12px; }
+    td { padding: 6px 12px; border-top: .5px solid rgba(255,255,255,.05); }
+    tr.on td { background: rgba(255,255,255,.06); }
+
+    .side {
+      width: 280px; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0;
+      background: rgba(14,16,14,.62); backdrop-filter: blur(40px) saturate(180%);
+      border-left: .5px solid rgba(255,255,255,.08);
+    }
+    .side h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--tertiary); padding: 10px 12px 4px; }
+    .depth { padding: 0 12px 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 11px; }
+    .drow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; position: relative; padding: 3px 0; }
+    .drow .ask { text-align: right; color: var(--red); }
+    .drow .bid { color: var(--green); }
+    .drow .bar { position: absolute; top: 1px; bottom: 1px; opacity: .16; border-radius: 2px; }
+    .drow .bar.a { right: 0; background: var(--red); }
+    .drow .bar.b { left: 0; background: var(--green); }
+    .spread { text-align: center; font-size: 10px; color: var(--tertiary); padding: 4px 0 6px; }
+
+    .ticket { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .buy, .sell {
+      height: 34px; border-radius: 10px; font-weight: 700; font-size: 13px; letter-spacing: -.01em;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    .buy { background: var(--green); color: #04210c; }
+    .sell { background: var(--red); color: #2a0404; }
+    .buy.on, .sell.on { outline: 2px solid #fff; outline-offset: 1px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--tertiary); }
+    .field input, .field select {
+      padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.08);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.1); font-family: var(--mono);
+    }
+    .prod { display: flex; gap: 4px; }
+    .prod button {
+      flex: 1; padding: 6px; border-radius: 8px; background: rgba(255,255,255,.06); color: var(--secondary); font-size: 11px; font-weight: 590;
+    }
+    .prod button.on { background: rgba(255,255,255,.14); color: var(--label); }
+    .send {
+      height: 36px; border-radius: 10px; font-weight: 700;
+      background: var(--green); color: #04210c;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 4px 14px rgba(48,209,88,.22);
+    }
+    .send.ask { background: var(--red); color: #2a0404; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 4px 14px rgba(255,69,58,.22); }
+    .note { font-size: 11px; color: var(--tertiary); }
+
+    .oms { flex: 1; min-width: 0; display: grid; grid-template-columns: 1.15fr .85fr; min-height: 0; background: #0c0e0c; }
+    .panel { display: flex; flex-direction: column; min-height: 0; border-right: .5px solid rgba(255,255,255,.08); }
+    .panel:last-child { border-right: 0; }
+    .panel .ph { padding: 10px 12px 6px; font-size: 13px; font-weight: 600; letter-spacing: -.014em; }
+
+    .mosaic { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; padding: 8px; background: #0c0e0c; min-height: 0; }
+    .tile {
+      border-radius: var(--pane-r); background: #101210; overflow: hidden; display: flex; flex-direction: column; min-height: 0;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .tile .th { padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--secondary); border-bottom: .5px solid rgba(255,255,255,.06); }
+    .tile .tbod { flex: 1; overflow: auto; padding: 10px 12px; }
+    .hero { font-size: 32px; font-weight: 700; letter-spacing: -.034em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat { margin-top: 8px; font-size: 12px; color: var(--secondary); }
+
+    .toast {
+      position: absolute; left: 50%; top: 52px; transform: translateX(-50%); z-index: 20;
+      padding: 8px 14px; border-radius: 999px; background: rgba(44,44,46,.92);
+      backdrop-filter: blur(20px); font-size: 13px; font-weight: 500; opacity: 0; pointer-events: none;
+    }
+    .toast.on { opacity: 1; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.45); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 300px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    .q {
+      position: fixed; left: 12px; top: 32px; z-index: 40; max-width: 320px;
+      font-size: 11px; color: var(--secondary); pointer-events: none; text-shadow: 0 1px 8px #000;
+    }
+    .q b { color: var(--label); }
+    .dump {
+      position: fixed; right: 12px; bottom: 16px; z-index: 40; max-width: 280px;
+      font: 500 10px/1.4 var(--mono); color: var(--secondary); text-shadow: 0 1px 8px #000;
+    }
+
+    @media (prefers-reduced-motion: reduce) { .press { transition: none; } .press:active { transform: none; } }
+    @media (prefers-reduced-transparency: reduce) {
+      .osbar, .app, .tb, .watch, .ticker, .side { background: #1c1c1e; backdrop-filter: none; }
+      body { background: #1a1a1c; }
+    }
+  </style>
+</head>
+<body>
+  <div class="q"><b>PROTOTYPE</b> · WWDC 26 Liquid Glass · brokers / TradingView density · DualNoBlend · not WhatsApp</div>
+  <div class="osbar" id="osbar"></div>
+  <div class="desk"><div class="app" id="app"></div></div>
+  <div class="switcher" id="switcher"></div>
+  <pre class="dump" id="dump"></pre>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Watch · Chart · Blotter", blurb: "TradingView density · Station nouns" },
+  { key: "B", name: "Watch · Depth · Ticket", blurb: "Broker OMS · Neo / Kite / TWS" },
+  { key: "C", name: "Mosaic", blurb: "IB / Bloomberg tiles · two clocks" },
+];
+const BOOKS = {
+  kotak: {
+    id: "kotak", name: "Kotak Neo", ccy: "INR", venue: "NSE", pnl: "−₹2,400", pnlTone: "dn",
+    happened: "−₹2,400", now: "1 open", floor: "This day only",
+    product: ["MIS", "CNC"], defaultProduct: "MIS",
+    trips: [
+      { time: "10:14", sym: "RELIANCE", side: "SELL", qty: 50, px: "1,252.40", pnl: "−₹820", tone: "dn", note: "RT 1" },
+      { time: "11:02", sym: "TCS", side: "SELL", qty: 10, px: "4,118.00", pnl: "+₹310", tone: "up", note: "RT 2" },
+      { time: "14:41", sym: "RELIANCE", side: "SELL", qty: 25, px: "1,244.10", pnl: "−₹1,890", tone: "dn", note: "RT 3" },
+    ],
+    pos: [{ sym: "RELIANCE", side: "LONG", qty: 50, avg: "1,248.00", ltp: "1,248.60", mtm: "— row", beh: "Overnight" }],
+    watch: [
+      { id: "RELIANCE", ltp: "1,248.60", chg: "−0.42%", tone: "dn", bid: "1,248.50", ask: "1,248.70", vol: "2.1M" },
+      { id: "TCS", ltp: "4,112.35", chg: "+0.18%", tone: "up", bid: "4,112.00", ask: "4,112.55", vol: "890k" },
+      { id: "HDFCBANK", ltp: "1,672.10", chg: "−0.11%", tone: "dn", bid: "1,672.00", ask: "1,672.20", vol: "3.4M" },
+      { id: "INFY", ltp: "1,508.90", chg: "+0.06%", tone: "up", bid: "1,508.80", ask: "1,509.05", vol: "1.6M" },
+      { id: "SBIN", ltp: "812.45", chg: "−0.27%", tone: "dn", bid: "812.40", ask: "812.55", vol: "5.8M" },
+    ],
+  },
+  binance: {
+    id: "binance", name: "Binance.com", ccy: "USD", venue: "SPOT", pnl: "$0.00", pnlTone: "",
+    happened: "$0.00", now: "0 open", floor: "This day only",
+    product: ["SPOT"], defaultProduct: "SPOT",
+    trips: [],
+    pos: [],
+    watch: [
+      { id: "BTCUSDT", ltp: "64,210.12", chg: "+0.00%", tone: "", bid: "64,210.01", ask: "64,210.24", vol: "12.4k" },
+      { id: "ETHUSDT", ltp: "2,448.60", chg: "+0.00%", tone: "", bid: "2,448.55", ask: "2,448.66", vol: "88k" },
+      { id: "SOLUSDT", ltp: "148.22", chg: "+0.00%", tone: "", bid: "148.21", ask: "148.23", vol: "210k" },
+    ],
+  },
+};
+const S = { variant: "A", book: "kotak", symbol: "RELIANCE", tf: "1D", side: "buy", product: "MIS", qty: "50", price: "", query: "", toast: "" };
+
+const ICO = { search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg>' };
+
+function book() { return BOOKS[S.book]; }
+function watch() { return book().watch; }
+function sym() { return watch().find(w => w.id === S.symbol) || watch()[0]; }
+function filteredWatch() {
+  const q = S.query.toLowerCase();
+  return watch().filter(w => !q || w.id.toLowerCase().includes(q));
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function bars() { return `<span class="bars">${[5,10,7,12,6].map(n=>`<i style="height:${n}px"></i>`).join("")}</span>`; }
+function osbar() {
+  const b = book();
+  return `<div class="l"><span></span><span>TradeAutopsy</span><span>File</span><span>View</span><span>Book</span></div>
+    <div class="island"><span class="mark">T</span><span class="pnl ${b.pnlTone}">${b.pnl}</span>${bars()}</div>
+    <div class="r"><span>01:08</span></div>`;
+}
+function lights() { return `<div class="lights"><i class="c"></i><i class="m"></i><i class="e"></i></div>`; }
+function toolbar() {
+  const b = book();
+  return `<div class="tb">
+    <span class="brand">Station</span>
+    <div class="books">${Object.values(BOOKS).map(x => `
+      <button class="book press ${S.book===x.id?"on":""}" data-act="book" data-id="${x.id}">${x.name}<span class="ccy">${x.ccy}</span></button>
+    `).join("")}</div>
+    <span class="sp"></span>
+    <span class="chip warn">Demo · not live</span>
+    <span class="chip">${b.venue} · ${b.ccy}</span>
+  </div>`;
+}
+function watchPane() {
+  const b = book();
+  return `<div class="watch">
+    <div class="watch-h"><h1>Watch</h1><span class="dim">${b.venue}</span></div>
+    <label class="search">${ICO.search}<input placeholder="Filter this book" value="${esc(S.query)}" data-act="q"></label>
+    <div class="whd"><span>Symbol</span><span style="text-align:right">LTP</span><span style="text-align:right">Chg</span></div>
+    <div class="wrows">${filteredWatch().map(w => `
+      <button class="wrow press ${S.symbol===w.id?"on":""}" data-act="sym" data-id="${w.id}">
+        <span><span class="sym">${w.id}</span><span class="ex">${b.name} · ${b.ccy}</span></span>
+        <span class="ltp ${w.tone}">${w.ltp}</span>
+        <span class="chg ${w.tone}">${w.chg}</span>
+      </button>`).join("")}</div>
+    <div class="happened">
+      <div class="k">Happened · closed only</div>
+      <div class="v ${b.pnlTone}">${b.happened}</div>
+      <div class="s">${b.now} · MTM on the row · DualNoBlend ${b.ccy}</div>
+    </div>
+  </div>`;
+}
+function candles(w) {
+  const dn = w.tone === "dn";
+  const stroke = dn ? "#ff453a" : "#30d158";
+  const fill = dn ? "rgba(255,69,58,.18)" : "rgba(48,209,88,.16)";
+  const bars = Array.from({length: 42}, (_, i) => {
+    const x = 18 + i * 10;
+    const h = 20 + ((i * 17 + w.id.length * 3) % 70);
+    const y = 28 + ((i * 13) % 40);
+    const down = (i + (dn?1:0)) % 3 === 0;
+    return `<rect x="${x}" y="${y}" width="6" height="${h}" rx="1" fill="${down?"#ff453a":"#30d158"}" opacity=".85"/>`;
+  }).join("");
+  return `<svg viewBox="0 0 440 180" preserveAspectRatio="none" aria-label="Demo LTP">
+    <defs><pattern id="g" width="40" height="36" patternUnits="userSpaceOnUse">
+      <path d="M40 0v36M0 36h40" stroke="rgba(255,255,255,.05)" stroke-width="1"/>
+    </pattern></defs>
+    <rect width="440" height="180" fill="url(#g)"/>
+    ${bars}
+    <path d="M12 48 L90 70 L160 62 L240 96 L320 88 L420 110" fill="none" stroke="${stroke}" stroke-width="1.6"/>
+    <path d="M12 48 L90 70 L160 62 L240 96 L320 88 L420 110 L420 180 L12 180 Z" fill="${fill}"/>
+    <text x="16" y="16" fill="rgba(245,245,247,.4)" font-size="10" font-family="ui-monospace,Menlo,monospace">DEMO LTP · not venue last · ${esc(w.id)}</text>
+  </svg>`;
+}
+function floorChart() {
+  const b = book();
+  const stroke = b.pnlTone === "dn" ? "#ff453a" : "#30d158";
+  return `<svg viewBox="0 0 440 180" preserveAspectRatio="none" aria-label="Closed P&L vs floor">
+    <defs><pattern id="g2" width="40" height="36" patternUnits="userSpaceOnUse">
+      <path d="M40 0v36M0 36h40" stroke="rgba(255,255,255,.05)" stroke-width="1"/>
+    </pattern></defs>
+    <rect width="440" height="180" fill="url(#g2)"/>
+    <line x1="12" y1="52" x2="428" y2="52" stroke="rgba(255,159,10,.55)" stroke-dasharray="5 5"/>
+    <path d="M12 40 L110 78 L210 118 L310 132 L428 132" fill="none" stroke="${stroke}" stroke-width="2"/>
+    <path d="M12 40 L110 78 L210 118 L310 132 L428 132 L428 180 L12 180 Z" fill="${b.pnlTone==="dn"?"rgba(255,69,58,.2)":"rgba(48,209,88,.16)"}"/>
+    <text x="16" y="16" fill="rgba(245,245,247,.4)" font-size="10" font-family="ui-monospace,Menlo,monospace">THIS DAY · closed P&amp;L vs floor · open MTM not on this line</text>
+    <text x="338" y="46" fill="#ff9f0a" font-size="10" font-family="ui-monospace,Menlo,monospace">floor T8</text>
+    <text x="338" y="128" fill="${stroke}" font-size="11" font-family="ui-monospace,Menlo,monospace">${b.happened}</text>
+  </svg>`;
+}
+function ticker() {
+  const w = sym(); const b = book();
+  return `<div class="ticker">
+    <div><div class="name">${w.id}</div><div class="meta">${b.name} · ${b.venue} · lot 1</div></div>
+    <div class="last ${w.tone}">${w.ltp}</div>
+    <div class="chg ${w.tone}">${w.chg}</div>
+    <span class="sep"></span>
+    <div class="meta">Bid ${w.bid}<br>Ask ${w.ask}</div>
+    <div class="meta">Vol ${w.vol}</div>
+    <span class="sp"></span>
+    <span class="chip">Demo quotes</span>
+  </div>`;
+}
+function blotter() {
+  const b = book();
+  const rows = b.trips.length ? b.trips.map((t,i) => `
+    <tr class="${i===0?"on":""}"><td>${t.time}</td><td>${t.sym}</td><td class="${t.side==="SELL"?"dn":"up"}">${t.side}</td><td>${t.qty}</td><td>${t.px}</td><td class="${t.tone}">${t.pnl}</td><td class="dim">${t.note}</td></tr>
+  `).join("") : `<tr><td colspan="7" class="dim">No round trips this book · session ${b.happened}</td></tr>`;
+  return `<div class="blotter">
+    <div class="hd">Blotter · closed round-trips · ${b.ccy} only</div>
+    <div class="table"><table>
+      <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Avg</th><th>Net</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
+}
+function depth() {
+  const w = sym();
+  const asks = [["1,248.90","120"],["1,248.80","80"],["1,248.75","40"],[w.ask,"25"],["1,248.65","60"]];
+  const bids = [[w.bid,"55"],["1,248.40","90"],["1,248.30","140"],["1,248.20","70"],["1,248.10","200"]];
+  if (S.book === "binance") {
+    asks.splice(0, asks.length, ...[["64,210.40","0.4"],["64,210.32","1.1"],["64,210.28","0.2"],[w.ask,"0.8"],["64,210.18","2.0"]]);
+    bids.splice(0, bids.length, ...[[w.bid,"0.6"],["64,209.90","1.4"],["64,209.70","0.9"],["64,209.40","2.2"],["64,209.10","3.1"]]);
+  }
+  return `<div class="depth">
+    ${asks.map((a,i)=>`<div class="drow"><span class="bar a" style="width:${18+i*10}%"></span><span></span><span class="ask">${a[0]} · ${a[1]}</span></div>`).join("")}
+    <div class="spread">Spread · demo book · ${book().ccy}</div>
+    ${bids.map((a,i)=>`<div class="drow"><span class="bar b" style="width:${22+i*9}%"></span><span class="bid">${a[0]} · ${a[1]}</span><span></span></div>`).join("")}
+  </div>`;
+}
+function ticket() {
+  const b = book(); const w = sym();
+  const px = S.price || w.ltp;
+  const ask = S.side === "sell";
+  return `<form class="ticket" data-act="send">
+    <div class="sides">
+      <button type="button" class="buy press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+      <button type="button" class="sell press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+    </div>
+    <div class="prod">${b.product.map(p => `
+      <button type="button" class="press ${S.product===p?"on":""}" data-act="prod" data-id="${p}">${p}</button>
+    `).join("")}</div>
+    <label class="field"><span>Qty · shares</span><input name="qty" value="${esc(S.qty)}" data-act="qty" inputmode="numeric"></label>
+    <label class="field"><span>Price · ${b.ccy}</span><input name="price" value="${esc(px)}" data-act="price"></label>
+    <button type="submit" class="send press ${ask?"ask":""}">${ask?"Sell":"Buy"} ${esc(w.id)} · Notch PLAN</button>
+    <p class="note">Orders declare on Notch. ${S.product} ${b.ccy}. Other book stays ${S.book==="kotak"?"USD":"INR"}.</p>
+  </form>`;
+}
+function inspector() {
+  const b = book();
+  const pos = b.pos.length ? b.pos.map(p => `
+    <div style="padding:8px 12px;border-top:.5px solid rgba(255,255,255,.06)">
+      <b>${p.sym}</b> · ${p.side} ${p.qty}<div class="sec">${p.beh} · avg ${p.avg} · LTP ${p.ltp}</div>
+      <div class="dim">MTM stays on the row</div>
+    </div>`).join("") : `<div style="padding:8px 12px" class="dim">No open · ${b.happened}</div>`;
+  return `<div class="side">
+    <h2>Depth · ${sym().id}</h2>
+    ${depth()}
+    <h2>Ticket</h2>
+    ${ticket()}
+    <h2>Open now</h2>
+    ${pos}
+  </div>`;
+}
+
+function paintA() {
+  const b = book(); const w = sym();
+  const day = S.tf === "1D";
+  return `${lights()}${toolbar()}
+    <div class="cols">
+      ${watchPane()}
+      <div class="stage">
+        ${ticker()}
+        <div class="plot">
+          <div class="tf">
+            ${["1m","5m","15m","1H","1D"].map(t => `<button class="press ${S.tf===t?"on":""}" data-act="tf" data-id="${t}">${t}</button>`).join("")}
+            <span class="sp"></span>
+            <span class="dim">1D = closed P&amp;L vs floor · other TF = demo LTP · not TradingView</span>
+          </div>
+          <div class="canvas">${day ? floorChart() : candles(w)}</div>
+          <div class="metrics">
+            <div><div class="k">Happened</div><div class="n ${b.pnlTone}">${b.happened}</div></div>
+            <div><div class="k">Now</div><div class="n">${b.now}</div></div>
+            <div><div class="k">Bid / Ask</div><div class="n">${w.bid} / ${w.ask}</div></div>
+            <div><div class="k">This book</div><div class="n">${b.ccy}</div></div>
+          </div>
+        </div>
+        ${blotter()}
+      </div>
+      ${inspector()}
+    </div>
+    <div class="toast ${S.toast?"on":""}">${S.toast||""}</div>`;
+}
+
+function paintB() {
+  const b = book();
+  const posRows = b.pos.length ? b.pos.map(p => `
+    <tr><td>${p.sym}</td><td class="up">${p.side}</td><td>${p.qty}</td><td>${p.avg}</td><td>${p.ltp}</td><td>${p.beh}</td></tr>
+  `).join("") : `<tr><td colspan="6" class="dim">No open on ${b.name}</td></tr>`;
+  return `${lights()}${toolbar()}
+    <div class="cols">
+      ${watchPane()}
+      <div class="oms">
+        <div class="panel">
+          <div class="ph">Market depth · ${sym().id}</div>
+          ${depth()}
+          <div class="ph">Ticket · ${b.product.join(" / ")}</div>
+          ${ticket()}
+        </div>
+        <div class="panel">
+          <div class="ph">Positions · MTM on the row</div>
+          <div class="table"><table>
+            <thead><tr><th>Sym</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>Behavior</th></tr></thead>
+            <tbody>${posRows}</tbody>
+          </table></div>
+          <div class="ph">Orders / working</div>
+          <div class="table"><table>
+            <thead><tr><th>Time</th><th>Sym</th><th>Side</th><th>Qty</th><th>Net</th></tr></thead>
+            <tbody>${b.trips.length ? b.trips.map(t=>`<tr><td>${t.time}</td><td>${t.sym}</td><td class="${t.side==="SELL"?"dn":"up"}">${t.side}</td><td>${t.qty}</td><td class="${t.tone}">${t.pnl}</td></tr>`).join("") : `<tr><td colspan="5" class="dim">Working is empty · ${b.happened}</td></tr>`}</tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+    <div class="toast ${S.toast?"on":""}">${S.toast||""}</div>`;
+}
+
+function paintC() {
+  const b = book();
+  const other = S.book === "kotak" ? BOOKS.binance : BOOKS.kotak;
+  return `${lights()}${toolbar()}
+    <div class="cols">
+      <div class="mosaic" style="flex:1">
+        <div class="tile">
+          <div class="th">Happened · ${b.name} · ${b.ccy}</div>
+          <div class="tbod">
+            <div class="hero ${b.pnlTone}">${b.happened}</div>
+            <div class="stat">${S.book==="kotak"?"3 RTs · 1 win · 2 loss · closed only":"0 RTs this session · closed only"}</div>
+            <div class="canvas" style="height:88px;margin-top:10px">${floorChart()}</div>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="th">Open now · MTM on the row</div>
+          <div class="tbod">${b.pos.length ? b.pos.map(p => `
+            <div style="margin-bottom:10px"><b>${p.sym}</b> ${p.side} ${p.qty}
+              <div class="stat">${p.beh} · avg ${p.avg} · LTP ${p.ltp} · demo</div></div>`).join("") : `<div class="dim">Flat on ${b.name}</div>`}
+            <div class="note" style="margin-top:12px">Fill inventory — not obtain holdings.</div>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="th">Tape · ${b.venue}</div>
+          <div class="tbod">
+            <table>${(b.trips.length?b.trips:[{time:"—",sym:"—",side:"—",qty:"—",pnl:b.happened,tone:b.pnlTone}]).map(t=>`
+              <tr><td>${t.time}</td><td>${t.sym}</td><td class="${t.tone||""}">${t.side||t.pnl}</td><td>${t.qty||""}</td><td class="${t.tone||""}">${t.pnl||""}</td></tr>`).join("")}</table>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="th">Books · DualNoBlend</div>
+          <div class="tbod">
+            ${Object.values(BOOKS).map(x => `
+              <button class="wrow press ${S.book===x.id?"on":""}" data-act="book" data-id="${x.id}" style="border-radius:10px;margin-bottom:6px">
+                <span><span class="sym">${x.name}</span><span class="ex">${x.venue}</span></span>
+                <span class="ltp ${x.pnlTone}">${x.pnl}</span>
+                <span class="chg">${x.ccy}</span>
+              </button>`).join("")}
+            <p class="note">Selecting ${b.name} does not add ${other.pnl}. Island shows ${b.pnl} only.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast ${S.toast?"on":""}">${S.toast||""}</div>`;
+}
+
+function paint() {
+  if (!watch().some(w => w.id === S.symbol)) S.symbol = watch()[0].id;
+  if (!book().product.includes(S.product)) S.product = book().defaultProduct;
+  document.getElementById("osbar").innerHTML = osbar();
+  const fn = S.variant==="B"?paintB:S.variant==="C"?paintC:paintA;
+  document.getElementById("app").innerHTML = fn();
+  const b = book(); const w = sym();
+  const v = VARIANTS.find(x => x.key === S.variant);
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next">→</button>`;
+  const state = {
+    variant: S.variant, book: b.name, ccy: b.ccy, symbol: w.id, tf: S.tf,
+    product: S.product, side: S.side, happened: b.happened, island: b.pnl,
+    dualNoBlend: true, demo: true, otherBookHiddenFromHero: true
+  };
+  document.getElementById("app").dataset.state = JSON.stringify(state);
+  document.getElementById("dump").textContent = JSON.stringify(state, null, 2);
+}
+function setVariant(k) {
+  S.variant = k; S.toast = "";
+  const u = new URL(location.href); u.searchParams.set("variant", k); history.replaceState(null,"",u);
+  paint();
+}
+function cycle(d) { const i = VARIANTS.findIndex(v => v.key === S.variant); setVariant(VARIANTS[(i+d+3)%3].key); }
+function say(m) { S.toast = m; paint(); setTimeout(()=>{ S.toast=""; paint(); }, 1600); }
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]"); if (!el || el.tagName==="INPUT") return;
+  const act = el.getAttribute("data-act"), id = el.getAttribute("data-id");
+  if (act==="prev") cycle(-1);
+  if (act==="next") cycle(1);
+  if (act==="book") { S.book = id; S.query = ""; paint(); }
+  if (act==="sym") { S.symbol = id; paint(); }
+  if (act==="tf") { S.tf = id; paint(); }
+  if (act==="side") { S.side = id; paint(); }
+  if (act==="prod") { S.product = id; paint(); }
+});
+document.addEventListener("input", (e) => {
+  const act = e.target.getAttribute("data-act");
+  if (act==="q") {
+    S.query = e.target.value; paint();
+    const n = document.querySelector("input[data-act=q]");
+    if (n) { n.focus(); n.setSelectionRange(S.query.length, S.query.length); }
+  }
+  if (act==="qty") S.qty = e.target.value;
+  if (act==="price") S.price = e.target.value;
+});
+document.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const w = sym(); const b = book();
+  say(`⌥Space · PLAN ${S.side.toUpperCase()} ${S.qty} ${w.id} ${S.product} · ${b.ccy} · Demo`);
+});
+document.addEventListener("pointerdown", (e) => { const el=e.target.closest(".press"); if (el) el.classList.add("is-down"); }, true);
+document.addEventListener("pointerup", () => document.querySelectorAll(".press.is-down").forEach(el=>el.classList.remove("is-down")));
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName==="INPUT") return;
+  if (e.key==="ArrowLeft") cycle(-1);
+  if (e.key==="ArrowRight") cycle(1);
+});
+const boot = new URLSearchParams(location.search).get("variant") || "A";
+S.variant = VARIANTS.some(v=>v.key===boot) ? boot : "A";
+paint();
+</script>
+</body>
+</html>

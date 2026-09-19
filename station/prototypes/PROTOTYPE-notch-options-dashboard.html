@@ -1,0 +1,3269 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway. UI sub-shape A on this cockpit.
+  Question: Live/Post as Notch chrome (escrow · capture · Moments A–C), ticket-keyed,
+  DualNoBlend, TRADE parked — with TradingView card language on the board.
+  Three layouts via ?flow=A|B|C. Ticket chrome still ?ticket=A|B|C.
+  Run: ./serve-prototype.sh → ?asset=usdm&board=cockpit&ticket=A&flow=A
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch · Live / Post</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --sec: rgba(245,245,247,.62); --ter: rgba(245,245,247,.38);
+      --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --teal: #64d2ff;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 400 13px/1.35 var(--sans); letter-spacing: -.01em; color: var(--label);
+      -webkit-font-smoothing: antialiased; overflow: hidden; background: #1a1a1c;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 8px; }
+    .press { transition: transform 90ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+
+    .osbar {
+      height: 24px; display: grid; grid-template-columns: 1fr 244px 1fr;
+      background: rgba(22,22,24,.72); backdrop-filter: blur(40px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.1);
+    }
+    .osbar .l, .osbar .r { display: flex; align-items: center; color: var(--sec); padding: 0 10px; font-size: 13px; }
+    .osbar .r { justify-content: flex-end; }
+    .osbar span { padding: 0 8px; }
+    .island {
+      height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #000; color: #fff;
+      clip-path: path("M0,0 Q6,0 6,6 L6,10 Q6,24 20,24 L224,24 Q238,24 238,10 L238,6 Q238,0 244,0 Z");
+      font: 600 11px/1 var(--mono);
+    }
+    .island .mark { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,.14); display: grid; place-items: center; font: 700 9px/1 var(--sans); }
+    .island b { margin-left: auto; }
+
+    .desk { height: calc(100% - 24px); padding: 10px 10px 88px; }
+    body.is-edit .desk, body.phase-plan .desk { padding-bottom: 148px; }
+    .sheet {
+      width: 100%; height: 100%; border-radius: 12px; overflow: hidden; display: flex; background: #0b0b0c;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 24px 80px rgba(0,0,0,.5);
+    }
+    .rail {
+      width: 176px; flex-shrink: 0; display: flex; flex-direction: column;
+      background: rgba(11,11,12,.92); backdrop-filter: blur(40px);
+      border-right: .5px solid rgba(255,255,255,.08);
+    }
+    .rail .k { font-size: 11px; letter-spacing: .066em; text-transform: uppercase; color: rgba(255,255,255,.5); padding: 12px 16px 6px; }
+    .nav { display: flex; align-items: center; gap: 10px; margin: 0 12px; padding: 7px 10px; border-radius: 8px; color: var(--sec); text-align: left; width: calc(100% - 24px); }
+    .nav.on { background: rgba(255,255,255,.08); color: var(--label); font-weight: 500; }
+    .nav svg { width: 16px; height: 16px; }
+    .hide { margin-top: auto; padding: 8px 18px; color: var(--ter); font-size: 13px; }
+    .apill { margin: 8px; padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: 11px; color: var(--sec); display: flex; align-items: center; gap: 7px; }
+    .apill i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .top { display: flex; align-items: center; gap: 8px; padding: 10px 16px 6px; }
+    .top h1 { font-size: 15px; font-weight: 600; }
+    .sp { flex: 1; }
+    .chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--sec); }
+    .chip.warn { color: var(--orange); background: rgba(255,159,10,.12); }
+    .chip.on { color: var(--label); background: rgba(255,255,255,.16); }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 8px; }
+    .tab { padding: 5px 12px; border-radius: 999px; background: #1c1c1e; color: var(--sec); font-size: 12px; flex-shrink: 0; }
+    .tab.on { background: rgba(255,255,255,.12); color: var(--label); }
+
+    .strip {
+      display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px;
+      padding: 0 12px 8px;
+    }
+    .strip.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cell {
+      background: #111113; border-radius: 10px; padding: 7px 9px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .cell .k { font: 500 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); }
+    .cell .v { font: 500 13px/1.3 var(--mono); margin-top: 3px; }
+    .cell .s { font: 400 10px/1.2 var(--mono); color: var(--ter); margin-top: 2px; }
+    .dark { color: var(--ter); }
+
+    .work { flex: 1; min-height: 0; display: flex; padding: 0 12px 12px; gap: 10px; }
+    .work.col { flex-direction: column; }
+    .board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+    .mosaic {
+      flex: 1; min-height: 0; position: relative;
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: repeat(var(--rows, 5), minmax(96px, 1fr));
+      gap: 8px;
+      overflow: auto;
+    }
+    .mosaic.empty::after {
+      content: "Add a tile from the catalog. Plan stays.";
+      position: absolute; inset: 0; display: grid; place-items: center;
+      font: 500 12px/1.4 var(--mono); color: var(--ter);
+      border-radius: 12px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08);
+      pointer-events: none;
+    }
+    .tile {
+      background: #111113; border-radius: 12px; overflow: hidden;
+      display: flex; flex-direction: column; min-width: 0; min-height: 0;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+      grid-column: var(--x) / span var(--w);
+      grid-row: var(--y) / span var(--h);
+      position: relative;
+    }
+    body.is-edit .tile { box-shadow: inset 0 0 0 .5px rgba(255,255,255,.14); }
+    .tile.ghost {
+      box-shadow: inset 0 0 0 1.5px rgba(100,210,255,.55);
+      background: rgba(100,210,255,.08);
+    }
+    .tile.bad { box-shadow: inset 0 0 0 1.5px rgba(255,69,58,.7); }
+    .ph {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 10px 0; gap: 8px; flex-shrink: 0;
+    }
+    body.is-edit .ph { cursor: grab; }
+    body.is-edit .ph:active { cursor: grabbing; }
+    .ph b { font-size: 12px; font-weight: 600; }
+    .ph span { font: 400 10px/1.2 var(--mono); color: var(--ter); }
+    .ph .rm {
+      width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+      background: rgba(255,255,255,.08); color: var(--sec); font-size: 14px; line-height: 1;
+    }
+    .body { flex: 1; min-height: 0; position: relative; }
+    body.is-edit .body { pointer-events: none; }
+    canvas { display: block; width: 100%; height: 100%; }
+    .oiplot, .pay, .depthsvg { width: 100%; height: 100%; display: block; }
+    .hover { position: absolute; left: 10px; bottom: 8px; font: 500 10px/1.3 var(--mono); color: var(--teal); pointer-events: none; }
+    .handle {
+      position: absolute; right: 4px; bottom: 4px; width: 12px; height: 12px;
+      border-radius: 2px; cursor: nwse-resize; z-index: 3;
+      background: linear-gradient(135deg, transparent 50%, rgba(245,245,247,.45) 50%);
+    }
+    .chainbox { height: 100%; overflow-x: hidden; overflow-y: scroll; }
+    table { width: 100%; border-collapse: collapse; font: 400 11px/1.3 var(--mono); }
+    th { text-align: left; color: var(--ter); font-weight: 500; padding: 4px 8px; }
+    td { padding: 4px 8px; border-top: .5px solid rgba(255,255,255,.06); }
+    tr.on td { background: rgba(100,210,255,.08); }
+    td button { font: inherit; color: var(--label); }
+
+    .greeks {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+      background: rgba(255,255,255,.06); border-radius: 10px; overflow: hidden; margin: 8px;
+    }
+    .greeks div { background: #111113; padding: 8px 10px; }
+    .greeks .k { font: 500 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); }
+    .greeks .v { font: 500 13px/1.3 var(--mono); margin-top: 4px; }
+    .scroll { height: 100%; overflow-x: hidden; overflow-y: scroll; padding: 4px 10px 10px; }
+    .riskbody { height: 100%; display: flex; flex-direction: column; padding: 8px 12px 10px; }
+    .riskbody .v { font: 600 22px/1.05 var(--sans); letter-spacing: -.03em; margin-top: 6px; }
+    .riskbody .s { font: 400 10px/1.3 var(--mono); color: var(--ter); margin-top: auto; padding-top: 6px; }
+    .detect {
+      margin: 0 12px 8px; padding: 7px 12px; border-radius: 10px;
+      background: #111113; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+      display: flex; align-items: center; gap: 10px; font-size: 12px;
+    }
+    .detect.bad { box-shadow: inset 0 0 0 .5px rgba(255,69,58,.55); }
+    .detect.warn { box-shadow: inset 0 0 0 .5px rgba(255,159,10,.45); }
+    .pathwrap { height: 100%; background: #111113; position: relative; overflow: hidden; min-height: 0; }
+    .pathwrap canvas { width: 100%; height: 100%; display: block; }
+    .pathmeta { position: absolute; left: 14px; top: 12px; z-index: 2; pointer-events: none; }
+    .pathmeta .k { font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); }
+    .pathmeta .v { font: 600 24px/1 var(--sans); letter-spacing: -.03em; margin-top: 4px; }
+    .pathmeta .v.dn { color: var(--red); }
+    .pathmeta .v.up { color: var(--green); }
+    .pathmeta .s { font: 400 11px/1.3 var(--mono); color: var(--ter); margin-top: 6px; }
+    body.is-risk .edit-tray { display: none; }
+
+    .side {
+      width: min(320px, 34vw); flex-shrink: 0; overflow-x: hidden; overflow-y: scroll; background: rgba(14,14,16,.78); backdrop-filter: blur(32px);
+      border-radius: 12px; padding: 12px 12px 16px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .floor {
+      height: 210px; flex-shrink: 0; display: grid; grid-template-columns: 1.1fr 1.1fr 1fr 1.2fr; gap: 8px;
+      overflow: hidden;
+    }
+    .floor .pane {
+      background: #111113; border-radius: 12px; overflow-x: hidden; overflow-y: scroll; padding: 8px 10px 10px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .zone { font-size: 13px; font-weight: 600; }
+    .znote { font-size: 10px; font-family: var(--mono); color: var(--ter); margin: 2px 0 10px; }
+    .side h2, .floor h2 { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ter); margin: 10px 0 6px; font-weight: 600; }
+    .srow { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; font-family: var(--mono); }
+    .cta { width: 100%; height: 36px; border-radius: 10px; font-weight: 700; margin-top: 8px; background: var(--green); color: #04210c; }
+    .cta.ghost { background: rgba(255,255,255,.1); color: var(--label); }
+    .cta:disabled { opacity: .3; cursor: default; }
+    .note { font-size: 11px; color: var(--ter); margin-top: 6px; font-family: var(--mono); }
+    .feel { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 6px; }
+    .feel button {
+      padding: 7px 2px; border-radius: 8px; text-align: center; background: #111113;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .feel button.on { background: rgba(100,210,255,.1); box-shadow: inset 0 0 0 .5px rgba(100,210,255,.4); }
+    .feel b { display: block; font-size: 13px; }
+    .feel span { font-size: 9px; color: var(--ter); }
+    .field { margin-bottom: 6px; }
+    .field span { display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--ter); margin-bottom: 3px; }
+    .field input, .field textarea {
+      width: 100%; padding: 7px 9px; border-radius: 10px; background: #111113; color: var(--label);
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); font: 400 12px/1.35 var(--mono); border: 0;
+    }
+    .field textarea { min-height: 52px; resize: vertical; font-family: var(--sans); }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .chipbtn { padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--sec); font-size: 12px; font-weight: 590; }
+    .chipbtn.on { background: rgba(255,255,255,.14); color: var(--label); }
+    .leg { display: flex; justify-content: space-between; align-items: center; padding: 7px 9px; border-radius: 10px; background: #111113; margin-bottom: 5px; font-size: 12px; }
+    .leg b { font-family: var(--mono); }
+    .ready { font-size: 11px; color: var(--ter); text-align: right; margin-top: 4px; font-family: var(--mono); }
+    .rung { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: .5px solid rgba(255,255,255,.06); font-size: 12px; }
+    .rung .sub { font: 400 10px/1.2 var(--mono); color: var(--ter); }
+    .chip.darkish { color: var(--ter); }
+
+    .toast {
+      position: absolute; left: 50%; top: 44px; transform: translateX(-50%); z-index: 20;
+      padding: 8px 14px; border-radius: 999px; background: rgba(44,44,46,.92); font-size: 13px; opacity: 0; pointer-events: none;
+    }
+    .toast.on { opacity: 1; }
+    .switchers {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .switcher {
+      display: flex; align-items: center; gap: 8px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.45); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { height: 32px; min-width: 32px; padding: 0 10px; border-radius: 999px; background: #111; color: #fff; }
+    .switcher button.round { width: 32px; padding: 0; border-radius: 50%; }
+    .switcher button.ghost { background: transparent; color: #111; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.2); }
+    .switcher .lab { min-width: 180px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    .switcher.ticketbar { background: #111; color: #f4f4f5; box-shadow: 0 8px 32px rgba(0,0,0,.55), inset 0 0 0 1px #fff; }
+    .switcher.ticketbar button { background: #f4f4f5; color: #111; }
+    .switcher.ticketbar button.ghost { background: transparent; color: #f4f4f5; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.4); }
+    .switcher.ticketbar .lab span { color: #aaa; }
+    .switcher.flowbar { background: #0a84ff; color: #fff; }
+    .switcher.flowbar button { background: #fff; color: #0a84ff; }
+    .switcher.flowbar .lab span { color: rgba(255,255,255,.75); }
+    .ledger { height: 100%; overflow: auto; padding: 10px 12px; background: #111113; border-radius: 12px; }
+    .ledger .row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: .5px solid rgba(255,255,255,.06); font: 500 12px/1.3 var(--mono); }
+    .ledger .k { color: var(--ter); }
+    .miss { color: var(--orange); }
+    .forbid { color: var(--red); }
+    .postgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; height: 100%; }
+    .postgrid .pane { background: #111113; border-radius: 12px; padding: 10px; overflow: auto; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07); }
+    .join { font: 500 11px/1.4 var(--mono); color: var(--sec); word-break: break-all; }
+
+    /* TradingView extract — card language on this cockpit */
+    .tvhero { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+    .tvhead { padding: 8px 12px 0; display: flex; align-items: baseline; gap: 10px; }
+    .tvbadge { font: 700 10px/1 var(--sans); letter-spacing: .04em; padding: 3px 7px; border-radius: 999px; background: #2962ff; color: #fff; }
+    .tvlast { font: 600 22px/1.1 var(--sans); }
+    .tvchg { font: 600 12px/1 var(--sans); }
+    .tvchg.up { color: #089981; }
+    .tvchg.dn { color: #f23645; }
+    .tvhero canvas { flex: 1; min-height: 0; }
+    .tvrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: .5px solid rgba(255,255,255,.06); }
+    .tvrow .dot { width: 28px; height: 28px; border-radius: 50%; background: #1c1c1e; display: grid; place-items: center; font: 700 10px/1 var(--sans); flex-shrink: 0; }
+    .tvrow .nm { flex: 1; min-width: 0; }
+    .tvrow .nm b { display: block; font-size: 13px; font-weight: 600; }
+    .tvrow .nm span { font: 500 10px/1.2 var(--mono); color: var(--ter); }
+    .tvrow .px { font: 500 12px/1 var(--mono); text-align: right; }
+    .tvpct { font: 600 11px/1 var(--sans); padding: 3px 7px; border-radius: 6px; }
+    .tvpct.up { background: rgba(8,153,129,.18); color: #089981; }
+    .tvpct.dn { background: rgba(242,54,69,.18); color: #f23645; }
+    .seeall { color: #2962ff; font-size: 12px; font-weight: 600; padding: 8px 10px; }
+    .livecol { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+    .cardn { background: #111113; border-radius: 12px; padding: 12px 14px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08); }
+    .intact { background: rgba(94,234,212,.08); box-shadow: inset 0 0 0 .5px rgba(94,234,212,.28); }
+    .intact .k { font: 700 10px/1 var(--sans); letter-spacing: .08em; color: #5eead4; }
+    .intact p { margin-top: 4px; color: var(--sec); font-size: 12px; }
+    .declarebox p { color: var(--sec); margin-bottom: 10px; }
+    .declarecta { width: 100%; height: 40px; border-radius: 10px; background: #5eead4; color: #042f2e; font-weight: 700; font-size: 13px; }
+    .capture h2 { color: #5eead4; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .caprow { display: flex; gap: 8px; margin-top: 10px; }
+    .caprow button { flex: 1; height: 36px; border-radius: 10px; background: rgba(255,255,255,.04); color: var(--sec); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); }
+    .caprow button.on { background: rgba(255,255,255,.1); color: var(--label); }
+    .unpost { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: .5px solid rgba(255,255,255,.06); }
+    .unpost .thumb { width: 40px; height: 28px; border-radius: 6px; background: #1c1c1e; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12); }
+    .linkfld { margin-top: 10px; }
+    .linkfld input { width: 100%; height: 32px; border-radius: 8px; border: 0; background: rgba(255,255,255,.06); color: var(--label); padding: 0 10px; font: inherit; }
+    .escrowhead { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+    .escrowhead .grow { flex: 1; }
+    .fidtag { font: 700 9px/1 var(--sans); letter-spacing: .08em; padding: 6px 8px; border-radius: 8px; background: rgba(255,159,10,.12); color: var(--orange); }
+    .fidring { width: 56px; height: 56px; border-radius: 50%; box-shadow: inset 0 0 0 3px rgba(255,159,10,.35); display: grid; place-items: center; font: 700 12px/1 var(--mono); flex-shrink: 0; }
+    .escrowrow { padding: 8px 0; border-top: .5px solid rgba(255,255,255,.06); }
+    .escrowrow .lab { font: 700 9px/1 var(--sans); letter-spacing: .08em; color: var(--ter); margin-bottom: 4px; }
+    .escrowcols { display: grid; grid-template-columns: 1fr 18px 1fr; align-items: center; gap: 8px; }
+    .escrowcols .act { text-align: right; }
+    .escrowcols .tiny { font: 700 8px/1 var(--sans); letter-spacing: .06em; color: var(--ter); margin-bottom: 2px; }
+    .escrowcols .val { font: 500 11px/1.3 var(--mono); word-break: break-word; }
+    .track { width: 2px; height: 28px; background: rgba(255,255,255,.12); margin: 0 auto; position: relative; }
+    .track i { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); transform: translate(-50%,-50%); }
+    .track.ok i { background: #5eead4; }
+    .track.miss i { background: var(--orange); }
+    .track.bad i { background: var(--red); }
+    .killbtn { color: var(--red); font-weight: 600; font-size: 13px; padding: 8px 0; text-align: left; }
+    .playstrip { display: flex; flex-wrap: wrap; gap: 6px; }
+    .playstrip button { height: 32px; padding: 0 10px; border-radius: 8px; background: rgba(255,255,255,.06); font-size: 11px; }
+    .moment h2 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .moment .hint { color: var(--sec); font-size: 12px; margin-bottom: 10px; }
+    .readwin { color: #5eead4; font: 600 12px/1 var(--mono); margin-bottom: 8px; }
+    .moment input, .moment textarea { width: 100%; border: 0; border-radius: 8px; background: rgba(255,255,255,.06); color: var(--label); padding: 8px 10px; font: inherit; margin-bottom: 8px; }
+    .cont { width: 100%; height: 36px; border-radius: 10px; background: rgba(255,255,255,.08); color: var(--ter); font-weight: 600; }
+    .cont.on { background: #5eead4; color: #042f2e; }
+    .radio { display: flex; gap: 10px; padding: 8px 0; border-top: .5px solid rgba(255,255,255,.06); text-align: left; width: 100%; }
+    .radio i { width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.28); flex-shrink: 0; margin-top: 2px; }
+    .radio.on i { background: #5eead4; box-shadow: none; }
+    .radio .t { font-weight: 600; font-size: 13px; }
+    .radio .s { font-size: 11px; color: var(--ter); }
+    .ctxchip { height: 28px; padding: 0 10px; border-radius: 8px; background: rgba(255,255,255,.06); font-size: 12px; }
+    .ctxchip.on { background: rgba(94,234,212,.18); color: #5eead4; }
+    .nfo3 { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .nfoz { min-height: 0; overflow-x: hidden; overflow-y: scroll; background: #111113; border-radius: 12px; padding: 10px 12px; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08); }
+    .mq { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0; }
+    .mq .cell { padding: 8px; }
+    .tstack { margin: 8px 0 10px; padding: 8px; border-radius: 12px; background: #111113; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.1); }
+    .tstack .tabs-mini { display: flex; gap: 4px; margin-bottom: 8px; }
+    .tstack .tabs-mini button { flex: 1; padding: 7px 4px; border-radius: 8px; font-size: 11px; font-weight: 600; background: #0b0b0c; color: var(--sec); }
+    .tstack .tabs-mini button.on { background: rgba(100,210,255,.14); color: var(--label); box-shadow: inset 0 0 0 .5px rgba(100,210,255,.45); }
+    .trow { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin: 6px 0 8px; }
+    .trow .field { flex: 1; min-width: 88px; margin-bottom: 0; }
+    .ttile { padding: 8px 10px; }
+    .ttile .v { font: 600 16px/1.2 var(--sans); margin: 4px 0; }
+    .rochip { padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--ter); font: 500 10px/1.2 var(--mono); }
+    .illegal { color: var(--red); font: 500 11px/1.3 var(--mono); margin-top: 6px; }
+    .edit-tray {
+      position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 49;
+      display: none; align-items: center; gap: 8px; max-width: calc(100% - 24px);
+      max-height: 88px; flex-wrap: wrap; overflow-x: hidden; overflow-y: scroll;
+      background: rgba(22,22,24,.86); backdrop-filter: blur(40px) saturate(180%);
+      color: var(--label); padding: 10px 14px; border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4), inset 0 0 0 .5px rgba(255,255,255,.12);
+      font-size: 12px;
+    }
+    body.is-edit .edit-tray, body.phase-plan .edit-tray { display: flex; }
+    .edit-tray .lab { font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); white-space: nowrap; }
+    .edit-tray .add {
+      padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.1); color: var(--label); font-weight: 590;
+    }
+    .edit-tray .add.on { background: rgba(100,210,255,.18); box-shadow: inset 0 0 0 .5px rgba(100,210,255,.45); }
+    .edit-tray .muted { color: var(--ter); font-size: 11px; }
+    .namebox {
+      position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); z-index: 60;
+      display: none; gap: 8px; align-items: center;
+      background: #f4f4f5; color: #111; padding: 10px 12px; border-radius: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+    }
+    .namebox.on { display: flex; }
+    .namebox input {
+      width: 200px; padding: 7px 10px; border-radius: 10px; border: 0;
+      background: #fff; font: 500 13px/1.3 var(--sans);
+    }
+    .namebox button { height: 32px; padding: 0 12px; border-radius: 999px; background: #111; color: #fff; font-weight: 600; }
+    .q { position: fixed; left: 12px; top: 28px; z-index: 40; max-width: 460px; font-size: 11px; color: var(--sec); pointer-events: none; }
+    .q b { color: var(--label); }
+    .dump { position: fixed; right: 12px; bottom: 16px; z-index: 40; max-width: 280px; font: 500 10px/1.4 var(--mono); color: var(--sec); pointer-events: none; }
+
+    .side, .floor .pane, .chainbox, .scroll, .nfoz, .mosaic, .board, .edit-tray, .livecol, .ledger, .postgrid .pane {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(245,245,247,.55) rgba(255,255,255,.08);
+    }
+    .side::-webkit-scrollbar,
+    .floor .pane::-webkit-scrollbar,
+    .chainbox::-webkit-scrollbar,
+    .scroll::-webkit-scrollbar,
+    .nfoz::-webkit-scrollbar,
+    .mosaic::-webkit-scrollbar,
+    .board::-webkit-scrollbar,
+    .edit-tray::-webkit-scrollbar,
+    .livecol::-webkit-scrollbar,
+    .ledger::-webkit-scrollbar,
+    .postgrid .pane::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .side::-webkit-scrollbar-track,
+    .floor .pane::-webkit-scrollbar-track,
+    .chainbox::-webkit-scrollbar-track,
+    .scroll::-webkit-scrollbar-track,
+    .nfoz::-webkit-scrollbar-track,
+    .mosaic::-webkit-scrollbar-track,
+    .board::-webkit-scrollbar-track,
+    .edit-tray::-webkit-scrollbar-track,
+    .livecol::-webkit-scrollbar-track,
+    .ledger::-webkit-scrollbar-track,
+    .postgrid .pane::-webkit-scrollbar-track {
+      background: rgba(255,255,255,.08);
+      border-radius: 99px;
+    }
+    .side::-webkit-scrollbar-thumb,
+    .floor .pane::-webkit-scrollbar-thumb,
+    .chainbox::-webkit-scrollbar-thumb,
+    .scroll::-webkit-scrollbar-thumb,
+    .nfoz::-webkit-scrollbar-thumb,
+    .mosaic::-webkit-scrollbar-thumb,
+    .board::-webkit-scrollbar-thumb,
+    .edit-tray::-webkit-scrollbar-thumb,
+    .livecol::-webkit-scrollbar-thumb,
+    .ledger::-webkit-scrollbar-thumb,
+    .postgrid .pane::-webkit-scrollbar-thumb {
+      background: rgba(245,245,247,.5);
+      border-radius: 99px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .press { transition: none; }
+      .tile { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="q"><b>PROTOTYPE</b> · plan stays · Confirm → Live → Post · flow A/B/C · DualNoBlend · TRADE parked · not live Notch</div>
+  <div class="osbar">
+    <div class="l"><span></span><span>TradeAutopsy</span><span>View</span></div>
+    <div class="island"><span class="mark">T</span><b id="island">—</b></div>
+    <div class="r"><span>02:11</span></div>
+  </div>
+  <div class="desk"><div class="sheet" id="app"></div></div>
+  <div class="edit-tray" id="tray"></div>
+  <div class="switchers">
+    <div class="switcher" id="switcher"></div>
+    <div class="switcher ticketbar" id="ticketbar"></div>
+    <div class="switcher flowbar" id="flowbar"></div>
+  </div>
+  <div class="namebox" id="namebox">
+    <input id="namein" placeholder="Board name" maxlength="40" />
+    <button type="button" data-act="saveas-ok">Save as</button>
+    <button type="button" class="press" data-act="saveas-cancel" style="background:#ddd;color:#111">Cancel</button>
+  </div>
+  <pre class="dump" id="dump"></pre>
+
+<script type="module">
+import { ROLES, size, withTarget } from "./risk-demo-logic.mjs";
+const STORE_KEY = "ta.notch.pretrade.boards";
+const STORE_KEY_LEGACY = "ta.notch.options.boards";
+const COLS = 4;
+const MAX_W = 4;
+const MAX_H = 3;
+const SETUP_CHIPS = [
+  ["breakout", "Breakout"], ["pullback", "Pullback"], ["reversal", "Reversal"],
+  ["gapFill", "Gap fill"], ["meanReversion", "Mean reversion"], ["supportBounce", "Support bounce"],
+];
+function makeBars(start, n) {
+  const out = [];
+  let c = start;
+  for (let i = 0; i < n; i++) {
+    const o = c;
+    c = c + (Math.sin(i / 6) * (start * 0.002)) + ((i % 7) - 3) * (start * 0.0004);
+    const h = Math.max(o, c) + start * 0.0015 + (i % 4);
+    const l = Math.min(o, c) - start * 0.0015 - (i % 3);
+    out.push({ t: i, o, h, l, c, v: 40 + (i * 13) % 120 });
+  }
+  return out;
+}
+const CASH_SEEDS = [
+  {
+    id: "cockpit", name: "Session + depth", seed: true, planDock: "rail",
+    blurb: "Session owns · Depth follows · Plan rail",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+      { kind: "depth", x: 0, y: 3, w: 4, h: 2 },
+    ],
+  },
+  {
+    id: "hero", name: "Session owns", seed: true, planDock: "rail",
+    blurb: "Session fills the board · Depth as a twin",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+      { kind: "depth", x: 0, y: 3, w: 2, h: 1 },
+    ],
+  },
+  {
+    id: "focus", name: "Focus + floor", seed: true, planDock: "floor",
+    blurb: "Large session · Depth thumb · Plan as a floor",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+      { kind: "depth", x: 0, y: 3, w: 4, h: 1 },
+    ],
+  },
+];
+const LAST_SEEDS = [
+  {
+    id: "cockpit", name: "Session + last", seed: true, planDock: "rail",
+    blurb: "Session owns · Last-only glance · Plan rail",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+    ],
+  },
+  {
+    id: "hero", name: "Session owns", seed: true, planDock: "rail",
+    blurb: "Session fills the board · Last-only glance",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 4 },
+    ],
+  },
+  {
+    id: "focus", name: "Focus + floor", seed: true, planDock: "floor",
+    blurb: "Large session · Plan as a floor",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 4 },
+    ],
+  },
+];
+const OPTIONS_SEEDS = [
+  {
+    id: "cockpit", name: "Cockpit mosaic", seed: true, planDock: "rail",
+    blurb: "Session · OI · Payoff · Depth at once + Plan rail",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 2, h: 2 },
+      { kind: "oi", x: 2, y: 0, w: 2, h: 2 },
+      { kind: "payoff", x: 0, y: 2, w: 2, h: 2 },
+      { kind: "depth", x: 2, y: 2, w: 2, h: 2 },
+      { kind: "chain", x: 0, y: 4, w: 4, h: 1 },
+    ],
+  },
+  {
+    id: "hero", name: "Hero + twins", seed: true, planDock: "rail",
+    blurb: "Session owns · OI and Payoff follow · chain strip",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+      { kind: "oi", x: 0, y: 3, w: 2, h: 1 },
+      { kind: "payoff", x: 2, y: 3, w: 2, h: 1 },
+      { kind: "chain", x: 0, y: 4, w: 4, h: 1 },
+    ],
+  },
+  {
+    id: "focus", name: "Focus + floor", seed: true, planDock: "floor",
+    blurb: "One large chart · live thumbs · Plan as a floor",
+    tiles: [
+      { kind: "session", x: 0, y: 0, w: 4, h: 3 },
+      { kind: "oi", x: 0, y: 3, w: 1, h: 1 },
+      { kind: "payoff", x: 1, y: 3, w: 1, h: 1 },
+      { kind: "depth", x: 2, y: 3, w: 1, h: 1 },
+      { kind: "chain", x: 3, y: 3, w: 1, h: 1 },
+    ],
+  },
+];
+const ASSETS = {
+  spot: {
+    id: "spot", label: "Spot", book: "binance-com-spot", money: "USDT",
+    chip: "Binance.com · USDT", glance: ["last", "history", "depth"],
+    sessionNote: "GET /api/v3/klines · this pair · not eapi",
+    catalog: [
+      { kind: "session", title: "Session", note: "GET /api/v3/klines · this pair", addW: 4, addH: 2 },
+      { kind: "depth", title: "Depth", note: "market/order_book · not placed", addW: 2, addH: 1 },
+    ],
+    seeds: CASH_SEEDS,
+    symbol: "BTCUSDT", last: 91240, entry: 91240, sl: 89000, tp: 94000, qty: 0.01,
+    equity: 10000, qtyStep: 0.001,
+    available: "1 240 USDT free",
+    bars: makeBars(91000, 80),
+    depth: {
+      asks: [[91380, 1.1], [91320, 0.8], [91290, 2.0], [91270, 1.4], [91255, 0.6], [91248, 0.9]],
+      bids: [[91230, 0.7], [91210, 1.5], [91180, 2.2], [91140, 0.9], [91090, 1.8], [91020, 3.0]],
+    },
+  },
+  equity: {
+    id: "equity", label: "Equity", book: "kotak-nse-bse-cash", money: "INR",
+    chip: "Kotak Neo · INR", glance: ["last", "history", "depth"],
+    sessionNote: "licensed history · Yahoo never the product line",
+    catalog: [
+      { kind: "session", title: "Session", note: "licensed history · not Yahoo product", addW: 4, addH: 2 },
+      { kind: "depth", title: "Depth", note: "market/order_book · not placed", addW: 2, addH: 1 },
+    ],
+    seeds: CASH_SEEDS,
+    symbol: "RELIANCE", last: 1384.5, entry: 1384.5, sl: 1360, tp: 1420, qty: 10,
+    equity: 200000, qtyStep: 1,
+    bars: makeBars(1380, 80),
+    depth: {
+      asks: [[1388.4, 120], [1387.2, 80], [1386.5, 200], [1385.9, 140], [1385.2, 60], [1384.8, 90]],
+      bids: [[1384.1, 70], [1383.5, 150], [1382.8, 220], [1381.9, 90], [1380.4, 180], [1378.0, 300]],
+    },
+  },
+  options: {
+    id: "options", label: "Options", book: "binance-com-options", money: "USDT",
+    chip: "Binance.com · USDT", glance: ["last", "history", "chain", "openInterest", "depth"],
+    sessionNote: "GET /eapi/v1/klines · this contract",
+    catalog: [
+      { kind: "session", title: "Session", note: "GET /eapi/v1/klines · this contract", addW: 2, addH: 1 },
+      { kind: "oi", title: "Open interest", note: "sumOpenInterest · click a bar", addW: 2, addH: 1 },
+      { kind: "payoff", title: "At expiry", note: "settlement identity · hover S", addW: 2, addH: 1 },
+      { kind: "depth", title: "Depth", note: "same snapshot · not placed", addW: 2, addH: 1 },
+      { kind: "chain", title: "Chain · catalog", note: "showsStrikeGrid = false", addW: 4, addH: 1 },
+      { kind: "greeks", title: "Greeks", note: "VenuePublished mark · not Black-76", addW: 2, addH: 1 },
+      { kind: "legs", title: "Legs", note: "local plan", addW: 2, addH: 1 },
+      { kind: "ladder", title: "Ladder", note: "rung 1 typed · σ 2–5 dark", addW: 2, addH: 1 },
+    ],
+    seeds: OPTIONS_SEEDS,
+    symbol: "BTC-260925-90000-C", last: 412.8, entry: 412.8, sl: 380, tp: 448, qty: 2,
+    equity: 10000, qtyStep: 1,
+    margin: { mode: "Cross", lev: "50x", liq: "none" },
+    bars: makeBars(400, 80),
+    depth: {
+      asks: [[448, 1.1], [440, 0.8], [432, 2.0], [424, 1.4], [418, 0.6], [414, 0.9]],
+      bids: [[411, 0.7], [406, 1.5], [398, 2.2], [390, 0.9], [382, 1.8], [374, 3.0]],
+    },
+  },
+  usdm: {
+    id: "usdm", label: "USDM", book: "binance-com-usdm", money: "USDT",
+    chip: "Binance.com · USDM", glance: ["last"],
+    sessionNote: "GET /fapi/v1/ticker/price · field price",
+    catalog: [
+      { kind: "session", title: "Session", note: "this pair · named USDM book", addW: 4, addH: 2 },
+    ],
+    seeds: LAST_SEEDS,
+    symbol: "CATIUSDT", last: 0.0482, entry: 0.0482, sl: 0.0400, tp: 0.0560, qty: 2,
+    equity: 10000, qtyStep: 1,
+    available: null,
+    margin: { mode: "Cross", lev: "50x", liq: "0.0312" },
+    bars: makeBars(0.048, 80),
+    depth: { asks: [], bids: [] },
+  },
+  coinm: {
+    id: "coinm", label: "Coin-M", book: "binance-com-coinm", money: "USD",
+    chip: "Binance.com · Coin-M", glance: ["last"],
+    sessionNote: "GET /dapi/v1/ticker/price · field price",
+    catalog: [
+      { kind: "session", title: "Session", note: "this pair · named Coin-M book", addW: 4, addH: 2 },
+    ],
+    seeds: LAST_SEEDS,
+    symbol: "BTCUSD_PERP", last: 91240, entry: 91240, sl: 89000, tp: 94000, qty: 1,
+    equity: 10000, qtyStep: 1,
+    available: null,
+    margin: { mode: "Cross", lev: "50x", liq: "84210" },
+    bars: makeBars(91000, 80),
+    depth: { asks: [], bids: [] },
+  },
+  nfo: {
+    id: "nfo", label: "NFO", book: "kotak-nse-nfo", money: "INR",
+    chip: "Kotak Neo · NSE F&O", glance: ["last", "history", "chain", "openInterest", "depth"],
+    sessionNote: "nse_fo kline · this contract · DualNoBlend INR",
+    catalog: [
+      { kind: "session", title: "Session", note: "this contract · named NSE F&O book", addW: 2, addH: 1 },
+      { kind: "oi", title: "Open interest", note: "sumOpenInterest · click a bar", addW: 2, addH: 1 },
+      { kind: "payoff", title: "At expiry", note: "settlement identity · hover S", addW: 2, addH: 1 },
+      { kind: "depth", title: "Depth", note: "same snapshot · not placed", addW: 2, addH: 1 },
+      { kind: "chain", title: "Chain · catalog", note: "showsStrikeGrid = false", addW: 4, addH: 1 },
+      { kind: "greeks", title: "Greeks", note: "published mark · not Black-76", addW: 2, addH: 1 },
+      { kind: "legs", title: "Legs", note: "local plan", addW: 2, addH: 1 },
+      { kind: "ladder", title: "Ladder", note: "rung 1 typed · σ 2–5 dark", addW: 2, addH: 1 },
+    ],
+    seeds: OPTIONS_SEEDS,
+    symbol: "NIFTY-260925-24500-C", last: 186.4, entry: 186.4, sl: 140, tp: 240, qty: 1,
+    equity: 200000, qtyStep: 1,
+    lotSize: 25,
+    bars: makeBars(180, 80),
+    depth: {
+      asks: [[240, 40], [220, 28], [210, 55], [198, 32], [192, 18], [188, 24]],
+      bids: [[185, 22], [178, 41], [168, 60], [156, 28], [148, 45], [140, 80]],
+    },
+  },
+};
+function A() {
+  if (S.asset === "options" && S.optionsDesk === "nfo") return ASSETS.nfo;
+  return ASSETS[S.asset] || ASSETS.options;
+}
+function isNfo() { return S.asset === "options" && S.optionsDesk === "nfo"; }
+function isNfoFut() { return isNfo() && S.nfoKind === "fut"; }
+function isNfoOpt() { return isNfo() && S.nfoKind !== "fut"; }
+function catalog() { return A().catalog; }
+function seeds() { return A().seeds; }
+function kindMeta(kind) {
+  if (kind === "ticket") return { title: "Ticket", note: A().book, addW: 2, addH: 1 };
+  return catalog().find(c => c.kind === kind);
+}
+function bars() { return A().bars; }
+function depthBook() { return A().depth; }
+function money() { return A().money; }
+const OI_ROWS = [
+  { id: "BTC-260925-85000-C", strike: "85000", right: "C", last: 1840.2, oi: 820.4, usd: "138800", delta: "0.82", gamma: "0.000018", theta: "−42.1", vega: "28.4" },
+  { id: "BTC-260925-85000-P", strike: "85000", right: "P", last: 112.4, oi: 2100.0, usd: "355200", delta: "−0.18", gamma: "0.000018", theta: "−11.2", vega: "28.4" },
+  { id: "BTC-260925-90000-C", strike: "90000", right: "C", last: 412.80, oi: 12448.21, usd: "2104412.80", delta: "0.41", gamma: "0.000031", theta: "−18.4", vega: "42.1" },
+  { id: "BTC-260925-90000-P", strike: "90000", right: "P", last: 388.20, oi: 9102.40, usd: "1540088.00", delta: "−0.59", gamma: "0.000031", theta: "−19.1", vega: "42.1" },
+  { id: "BTC-260925-95000-C", strike: "95000", right: "C", last: 188.40, oi: 4220.00, usd: "714180.00", delta: "0.22", gamma: "0.000024", theta: "−14.8", vega: "36.0" },
+  { id: "BTC-260925-95000-P", strike: "95000", right: "P", last: 612.10, oi: 6800.00, usd: "1150200.00", delta: "−0.78", gamma: "0.000024", theta: "−21.0", vega: "36.0" },
+  { id: "BTC-260925-100000-C", strike: "100000", right: "C", last: 74.20, oi: 1900.00, usd: "321500.00", delta: "0.09", gamma: "0.000012", theta: "−8.2", vega: "22.6" },
+  { id: "BTC-260925-100000-P", strike: "100000", right: "P", last: 980.40, oi: 3400.00, usd: "575600.00", delta: "−0.91", gamma: "0.000012", theta: "−16.4", vega: "22.6" },
+];
+const INDEX_S = 91240;
+const NFO_INDEX_S = 24812;
+const NFO_OI_ROWS = [
+  { id: "NIFTY-260925-24000-C", strike: "24000", right: "C", last: 412.0, oi: 820.4, usd: "138800", delta: "0.82", gamma: "0.00018", theta: "−42.1", vega: "28.4" },
+  { id: "NIFTY-260925-24000-P", strike: "24000", right: "P", last: 48.2, oi: 2100.0, usd: "355200", delta: "−0.18", gamma: "0.00018", theta: "−11.2", vega: "28.4" },
+  { id: "NIFTY-260925-24500-C", strike: "24500", right: "C", last: 186.40, oi: 12448.21, usd: "2104412.80", delta: "0.41", gamma: "0.00031", theta: "−18.4", vega: "42.1" },
+  { id: "NIFTY-260925-24500-P", strike: "24500", right: "P", last: 168.20, oi: 9102.40, usd: "1540088.00", delta: "−0.59", gamma: "0.00031", theta: "−19.1", vega: "42.1" },
+  { id: "NIFTY-260925-24800-C", strike: "24800", right: "C", last: 92.40, oi: 4220.00, usd: "714180.00", delta: "0.22", gamma: "0.00024", theta: "−14.8", vega: "36.0" },
+  { id: "NIFTY-260925-24800-P", strike: "24800", right: "P", last: 214.10, oi: 6800.00, usd: "1150200.00", delta: "−0.78", gamma: "0.00024", theta: "−21.0", vega: "36.0" },
+  { id: "NIFTY-260925-25000-C", strike: "25000", right: "C", last: 41.20, oi: 1900.00, usd: "321500.00", delta: "0.09", gamma: "0.00012", theta: "−8.2", vega: "22.6" },
+  { id: "NIFTY-260925-25000-P", strike: "25000", right: "P", last: 312.40, oi: 3400.00, usd: "575600.00", delta: "−0.91", gamma: "0.00012", theta: "−16.4", vega: "22.6" },
+];
+function chainRows() { return isNfo() ? NFO_OI_ROWS : OI_ROWS; }
+function indexS() { return isNfo() ? NFO_INDEX_S : INDEX_S; }
+const ICO = {
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7.5" y="5.5" width="9" height="14" rx="2"/><path d="M9.6 11h4.8M9.6 14h3.2"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 3.4 6.4 13.2h5L10.2 20.6l7.2-10.4h-5.2z"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8.8 8h9M8.8 12h9M8.8 16h7"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.4"/></svg>',
+};
+
+const S = {
+  asset: "options",
+  store: null,
+  edit: false,
+  boardId: "cockpit",
+  boards: {},
+  order: [],
+  symbol: "BTC-260925-90000-C",
+  entry: 412.8, sl: 380, tp: 448, qty: 2, side: "buy",
+  dragging: null, ghost: null, toast: "", declared: false,
+  calm: 2, conf: 2,
+  role: "intraday",
+  hasStop: true,
+  fill: "none",
+  qtyOverride: null,
+  tripsUsed: 1,
+  floor: 12000,
+  floorUsed: 2400,
+  und: "BTC", expiry: "260925", strike: "90000", right: "CE",
+  maxLoss: "250", horizon: "three", days: 3, dte: 7,
+  inv: "Stop taken — the setup is invalid.", legs: [], payHover: "",
+  setup: "breakout", protectSL: true,
+  tileDrag: null, tileResize: null, dropBad: false,
+  naming: false,
+  ticket: "A",
+  orderType: "LIMIT",
+  sizeMode: "base",
+  tif: "GTC",
+  reduceOnly: false,
+  postOnly: false,
+  quoteQty: null,
+  triggerPrice: "",
+  byBook: {},
+  phase: "plan",
+  flow: "A",
+  fillBook: null,
+  foreignFill: false,
+  positionCount: 0,
+  spotInventoryTick: 0,
+  flattenAttempt: false,
+  debriefArmed: false,
+  chartBook: null,
+  adherence: { stop: null, size: null, invalidation: null, exit: null, impulsive: null },
+  captureOn: null,
+  unposted: true,
+  momentA: false,
+  momentB: false,
+  cooling: true,
+  noteA: "",
+  noteC: "",
+  killWarn: false,
+  optionsDesk: "crypto",
+  nfoKind: "opt",
+};
+const TICKET_IDS = ["A", "B", "C"];
+const TICKET_LABEL = {
+  A: "A (Venue stack)",
+  B: "B (Compact dock)",
+  C: "C (Ticket tile)",
+};
+const FLOW_IDS = ["A", "B", "C"];
+const FLOW_LABEL = {
+  A: "A (Notch Live chrome)",
+  B: "B (TV detect mosaic)",
+  C: "C (Book ledger)",
+};
+function resetLive() {
+  S.phase = "plan";
+  S.fillBook = null;
+  S.foreignFill = false;
+  S.positionCount = 0;
+  S.spotInventoryTick = 0;
+  S.flattenAttempt = false;
+  S.debriefArmed = false;
+  S.chartBook = null;
+  S.adherence = { stop: null, size: null, invalidation: null, exit: null, impulsive: null };
+  S.fill = "none";
+  S.captureOn = null;
+  S.momentA = false;
+  S.momentB = false;
+  S.cooling = true;
+  S.noteA = "";
+  S.noteC = "";
+  S.killWarn = false;
+}
+
+function seedClone(seed) {
+  return {
+    id: seed.id,
+    name: seed.name,
+    seed: true,
+    planDock: seed.planDock,
+    blurb: seed.blurb,
+    tiles: seed.tiles.map(t => ({ kind: t.kind, x: t.x, y: t.y, w: t.w, h: t.h })),
+  };
+}
+function cloneTiles(tiles) {
+  return (tiles || []).map(t => ({ kind: t.kind, x: +t.x, y: +t.y, w: +t.w, h: +t.h }));
+}
+function overlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function rowCount(tiles) {
+  const max = Math.max(0, ...(tiles || []).map(t => t.y + t.h));
+  return Math.max(5, max);
+}
+function canPlace(tiles, x, y, w, h, ignoreKind) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(w) || !Number.isInteger(h)) return false;
+  if (x < 0 || y < 0 || w < 1 || h < 1 || w > MAX_W || h > MAX_H || x + w > COLS) return false;
+  const next = { x, y, w, h };
+  return !(tiles || []).some(t => t.kind !== ignoreKind && overlap(t, next));
+}
+function firstHole(tiles, w, h) {
+  const rows = rowCount(tiles) + 4;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x <= COLS - w; x++) {
+      if (canPlace(tiles, x, y, w, h)) return { x, y, w, h };
+    }
+  }
+  return { x: 0, y: rowCount(tiles), w, h };
+}
+function validateBoard(raw, assetId) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = String(raw.id || "").trim();
+  const name = String(raw.name || "").trim();
+  if (!id || !name) return null;
+  const planDock = raw.planDock === "floor" ? "floor" : "rail";
+  const kinds = Object.fromEntries((ASSETS[assetId] || A()).catalog.map(c => [c.kind, c]));
+  const seedList = (ASSETS[assetId] || A()).seeds;
+  const seen = new Set();
+  const tiles = [];
+  for (const t of Array.isArray(raw.tiles) ? raw.tiles : []) {
+    if (!t || !kinds[t.kind] || seen.has(t.kind)) continue;
+    const tile = { kind: t.kind, x: +t.x, y: +t.y, w: +t.w, h: +t.h };
+    if (!canPlace(tiles, tile.x, tile.y, tile.w, tile.h)) continue;
+    seen.add(t.kind);
+    tiles.push(tile);
+  }
+  const seed = seedList.find(s => s.id === id);
+  const origin = Array.isArray(raw.origin)
+    ? raw.origin.map(t => ({ kind: t.kind, x: +t.x, y: +t.y, w: +t.w, h: +t.h })).filter(t => kinds[t.kind])
+    : null;
+  return {
+    id, name,
+    seed: !!(raw.seed || seed),
+    planDock,
+    blurb: String(raw.blurb || (seed && seed.blurb) || ""),
+    tiles,
+    origin,
+    originDock: raw.originDock === "floor" ? "floor" : (origin ? (raw.originDock === "rail" ? "rail" : planDock) : null),
+  };
+}
+function emptyAssetStore(assetId) {
+  const list = ASSETS[assetId].seeds;
+  const boards = {};
+  list.forEach(s => { boards[s.id] = seedClone(s); });
+  return { current: "cockpit", boards, order: list.map(s => s.id) };
+}
+function hydrateAssetStore(raw, assetId) {
+  const store = emptyAssetStore(assetId);
+  if (!raw || typeof raw !== "object" || typeof raw.boards !== "object") return store;
+  const extra = [];
+  Object.keys(raw.boards).forEach(id => {
+    const b = validateBoard(raw.boards[id], assetId);
+    if (!b) return;
+    if (store.boards[id] && store.boards[id].seed) {
+      /* Seed boards always rehydrate from OPTIONS_SEEDS / CASH_SEEDS.
+         Never restore a stale risk mosaic into the planning cockpit. */
+    } else if (!ASSETS[assetId].seeds.some(s => s.id === id)) {
+      store.boards[id] = { ...b, seed: false };
+      extra.push(id);
+    }
+  });
+  const order = ASSETS[assetId].seeds.map(s => s.id);
+  (Array.isArray(raw.order) ? raw.order : extra).forEach(id => {
+    if (store.boards[id] && !order.includes(id)) order.push(id);
+  });
+  extra.forEach(id => { if (!order.includes(id)) order.push(id); });
+  store.order = order;
+  store.current = store.boards[raw.current] ? raw.current : "cockpit";
+  return store;
+}
+function emptyStore() {
+  return {
+    v: 3,
+    asset: "options",
+    optionsDesk: "crypto",
+    nfoKind: "opt",
+    byAsset: {
+      spot: emptyAssetStore("spot"),
+      equity: emptyAssetStore("equity"),
+      options: emptyAssetStore("options"),
+      usdm: emptyAssetStore("usdm"),
+      coinm: emptyAssetStore("coinm"),
+      nfo: emptyAssetStore("nfo"),
+    },
+  };
+}
+function loadStore() {
+  let parsed = null;
+  let fromLegacy = false;
+  try {
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(STORE_KEY_LEGACY);
+    fromLegacy = !localStorage.getItem(STORE_KEY) && !!localStorage.getItem(STORE_KEY_LEGACY);
+    if (raw) parsed = JSON.parse(raw);
+  } catch (e) {
+    return { store: emptyStore(), corrupt: true };
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return { store: emptyStore(), corrupt: !!(localStorage.getItem(STORE_KEY) || localStorage.getItem(STORE_KEY_LEGACY)) };
+  }
+  const store = emptyStore();
+  if (parsed.v >= 2 && parsed.byAsset && typeof parsed.byAsset === "object") {
+    ["spot", "equity", "options", "usdm", "coinm", "nfo"].forEach(id => {
+      store.byAsset[id] = hydrateAssetStore(parsed.byAsset && parsed.byAsset[id], id);
+    });
+    store.asset = parsed.asset === "nfo" ? "options" : (ASSETS[parsed.asset] ? parsed.asset : "options");
+    store.optionsDesk = parsed.asset === "nfo" || parsed.optionsDesk === "nfo" ? "nfo" : "crypto";
+    store.nfoKind = parsed.nfoKind === "fut" ? "fut" : "opt";
+    return { store, corrupt: false };
+  }
+  if (parsed.boards) {
+    store.byAsset.options = hydrateAssetStore(parsed, "options");
+    store.asset = "options";
+    return { store, corrupt: false, migrated: fromLegacy };
+  }
+  return { store, corrupt: true };
+}
+function persist() {
+  if (!S.store) S.store = emptyStore();
+  S.store.asset = S.asset === "nfo" ? "options" : S.asset;
+  S.store.optionsDesk = S.asset === "options" ? S.optionsDesk : (S.store.optionsDesk || "crypto");
+  S.store.nfoKind = S.nfoKind === "fut" ? "fut" : "opt";
+  const sliceId = S.store.asset;
+  S.store.byAsset[sliceId] = { current: S.boardId, boards: S.boards, order: S.order };
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S.store)); } catch (e) { /* private mode */ }
+}
+function adoptAssetSlice(assetId) {
+  const slice = S.store.byAsset[assetId] || emptyAssetStore(assetId);
+  S.asset = assetId;
+  S.boards = slice.boards;
+  S.order = slice.order;
+  S.boardId = slice.boards[slice.current] ? slice.current : "cockpit";
+}
+function applyQuote(assetId) {
+  const a = ASSETS[assetId];
+  S.symbol = a.symbol;
+  S.entry = a.entry;
+  S.sl = a.sl;
+  S.tp = a.tp;
+  S.qty = a.qty;
+  S.qtyOverride = null;
+  S.hasStop = true;
+  S.fill = "none";
+  S.declared = false;
+  S.legs = [];
+  if (assetId === "options") {
+    S.optionsDesk = "crypto";
+    S.und = "BTC"; S.expiry = "260925"; S.strike = "90000"; S.right = "CE";
+  }
+  adoptTicket(a.book);
+  resetLive();
+}
+function applyNfoProduct() {
+  S.optionsDesk = "nfo";
+  S.asset = "options";
+  S.und = "NIFTY";
+  S.expiry = "260925";
+  S.right = "CE";
+  S.qtyOverride = null;
+  S.hasStop = true;
+  S.fill = "none";
+  S.declared = false;
+  S.legs = [];
+  if (S.nfoKind === "fut") {
+    S.symbol = "nse_fo|26000";
+    S.entry = 24812; S.sl = 24600; S.tp = 25200; S.qty = 1;
+    S.strike = "";
+  } else {
+    S.nfoKind = "opt";
+    S.symbol = "NIFTY-260925-24500-C";
+    S.entry = 186.4; S.sl = 140; S.tp = 240; S.qty = 1;
+    S.strike = "24500";
+  }
+}
+function switchAsset(id) {
+  if (id === "nfo") {
+    S.nfoKind = S.nfoKind || "opt";
+    applyNfoProduct();
+    resetLive();
+    persist();
+    paint();
+    return;
+  }
+  if (!ASSETS[id] || id === S.asset) return;
+  persist();
+  applyQuote(id);
+  adoptAssetSlice(id);
+  persist();
+  paint();
+}
+function board() { return S.boards[S.boardId] || S.boards.cockpit; }
+function moneyFmt(n, digits) {
+  if (n == null || Number.isNaN(n)) return "none";
+  const d = digits != null ? digits : (money() === "INR" ? 0 : 2);
+  return n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d === 0 ? 0 : Math.min(2, d) });
+}
+function signedMoney(n, digits) {
+  if (n == null || Number.isNaN(n)) return "none";
+  const sign = n > 0 ? "+" : n < 0 ? "−" : "";
+  return sign + moneyFmt(Math.abs(n), digits);
+}
+function qtyFmt(n) {
+  if (n == null) return "none";
+  const step = A().qtyStep || 1;
+  const d = step >= 1 ? 0 : 3;
+  return n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 });
+}
+function engine() {
+  const a = A();
+  const seller = S.asset === "options" && S.side === "sell";
+  const sized = size({
+    role: S.role,
+    equity: a.equity,
+    entry: S.entry,
+    stop: S.hasStop ? S.sl : S.entry,
+    hasStop: S.hasStop,
+    qtyStep: a.qtyStep,
+    calm: S.calm,
+    tripsUsed: S.tripsUsed,
+    floor: S.asset === "equity" ? S.floor : a.equity * 0.06,
+    floorUsed: S.asset === "equity" ? S.floorUsed : 0,
+    overrideQty: S.qtyOverride,
+    seller,
+    fillOpen: S.fill !== "none",
+  });
+  const live = sized.liveQty != null ? sized.liveQty : sized.authoredQty;
+  if (S.qtyOverride == null) S.qty = sized.authoredQty;
+  else S.qty = live;
+  return withTarget(sized, { side: S.side, tp: S.tp, entry: S.entry, equity: a.equity });
+}
+function venueHost() {
+  if (S.asset === "usdm") return "fapi.binance.com";
+  if (S.asset === "coinm") return "dapi.binance.com";
+  if (S.asset === "options") return "eapi.binance.com";
+  if (S.asset === "spot") return "api.binance.com";
+  return "Kotak";
+}
+function detectHTML() {
+  if (S.phase !== "live") return "";
+  if (S.flow === "A") return "";
+  const live = S.phase === "live" || S.declared;
+  if (!live) return "";
+  const size = detectSizeCopy();
+  if (S.fill === "none" && !S.fillBook) {
+    return `<div class="detect">
+      <span class="chip">Detect · ${esc(size.mode)}</span>
+      <span>${esc(size.line)} · join ${esc(joinKeyLabel(A().book, contractId()))}</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillbook">Fill this book</button>
+      <button class="chip press" data-act="fillother">Fill other book</button>
+    </div>`;
+  }
+  if (S.foreignFill) {
+    return `<div class="detect warn">
+      <span class="chip warn">No join</span>
+      <span>Fill on ${esc(S.fillBook || "other")} did not match ${esc(joinKeyLabel(A().book, contractId()))}. DualNoBlend.</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillclear">Clear fill</button>
+    </div>`;
+  }
+  if (S.asset === "usdm" || S.asset === "coinm") {
+    return `<div class="detect">
+      <span class="chip">Contracts filled</span>
+      <span>Plan SL ${S.sl} · venue STOP_MARKET not placed · path ${esc(ticketPath())}</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillclear">Clear fill</button>
+    </div>`;
+  }
+  if (isNfo()) {
+    return `<div class="detect">
+      <span class="chip">${S.nfoKind === "fut" ? "NSE futures lots" : "NSE options lots"}</span>
+      <span>kotak-nse-nfo · DualNoBlend INR · TRADE parked</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillclear">Clear fill</button>
+    </div>`;
+  }
+  if (S.asset === "options") {
+    const hole = ticketIllegal();
+    return `<div class="detect ${hole ? "bad" : ""}">
+      <span class="chip ${hole ? "warn" : ""}">${hole ? "Bind hole" : "Contracts"}</span>
+      <span>${hole ? esc(hole) : "Dated id · plan premium stop · Cross/50x when positionbook open"}</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillclear">Clear fill</button>
+    </div>`;
+  }
+  if (S.asset === "spot") {
+    const xor = S.sizeMode === "quote" ? `quoteOrderQty ${S.quoteQty ?? "—"}` : `base ${qtyFmt(S.qty)}`;
+    return `<div class="detect">
+      <span class="chip">${esc(xor)}</span>
+      <span>Protective may exist · TRADE parked · not placed</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fillclear">Clear fill</button>
+    </div>`;
+  }
+  const e = engine();
+  const warn = e.pct != null && e.pct >= 0.13;
+  return `<div class="detect ${warn ? "warn" : ""}">
+    <span class="chip ${warn ? "warn" : ""}">Equity cash Detect</span>
+    <span>This trade ${e.atStop == null ? "none" : moneyFmt(e.atStop) + " " + money()}</span>
+    <span class="sp"></span>
+    <button class="chip press" data-act="fillclear">Clear fill</button>
+  </div>`;
+}
+function detectSizeCopy() {
+  if (S.asset === "spot") {
+    return S.sizeMode === "quote"
+      ? { mode: "quote XOR", line: "quoteOrderQty · not base" }
+      : { mode: "base XOR", line: "base qty · not quoteOrderQty" };
+  }
+  if (S.asset === "usdm" || S.asset === "coinm") return { mode: "contracts", line: "no quoteOrderQty" };
+  if (isNfo()) {
+    return S.nfoKind === "fut"
+      ? { mode: "lots", line: "NSE futures lots · DualNoBlend INR" }
+      : { mode: "lots", line: "NSE options lots on dated id · leftover pair is a hole" };
+  }
+  if (S.asset === "options") return { mode: "contracts", line: "dated id · leftover pair is a hole" };
+  return { mode: "cash qty", line: "Kotak cash Detect stays" };
+}
+function joinKey(book, symbol) { return `${book}\0${symbol}`; }
+function joinKeyLabel(book, symbol) { return `${book}\\0${symbol}`; }
+function otherBookId() {
+  if (S.asset === "usdm" || S.asset === "coinm") return "binance-com-spot";
+  if (S.asset === "spot") return "binance-com-usdm";
+  if (isNfo()) return "kotak-nse-bse-cash";
+  if (S.asset === "options") return "binance-com-spot";
+  return "binance-com-spot";
+}
+function pnlOwner() {
+  if (S.asset === "spot") return "round-trip / WAC";
+  if (S.asset === "usdm") return "usdm_realized_pnl";
+  if (S.asset === "coinm") return "coinm_realized_pnl";
+  if (isNfo()) return "INR cash";
+  if (S.asset === "options") return "none";
+  return "INR cash";
+}
+function realizedDump() {
+  if (S.asset === "options") return null;
+  if (!S.debriefArmed) return null;
+  return null;
+}
+function marginReadout() {
+  if (isNfo()) return { mode: null, lev: null, liq: null };
+  if (S.asset !== "usdm" && S.asset !== "coinm" && S.asset !== "options") return { mode: null, lev: null, liq: null };
+  if (S.positionCount <= 0) return { mode: null, lev: null, liq: null };
+  const m = A().margin;
+  return m ? { mode: m.mode, lev: m.lev, liq: m.liq } : { mode: null, lev: null, liq: null };
+}
+function liveMarginQuote() {
+  if (S.asset === "spot" || S.asset === "equity" || isNfo()) return null;
+  const qty = +S.qty || 0;
+  const px = +S.entry || 0;
+  const lev = 50;
+  const notional = qty * px;
+  const initial = S.asset === "options" ? notional : (notional / lev);
+  return { cost: initial, max: A().equity, initialMargin: initial, lev };
+}
+
+function row() { const rows = chainRows(); return rows.find(r => r.id === S.symbol) || rows[2]; }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c])); }
+function contractId() {
+  if (isNfo() && S.nfoKind === "fut") return `${S.und}-FUT-${S.expiry}`;
+  if (!isNfo() && S.asset !== "options") return S.symbol;
+  return `${S.und}-${S.expiry}-${S.strike}-${S.right === "PE" ? "P" : "C"}`;
+}
+function planReady() {
+  const e = engine();
+  if (e.gate === "deny") return e.reasons[0];
+  if (!(S.calm >= 1 && S.conf >= 1)) return "Need calm and confidence";
+  if (isNfo()) {
+    if (!(+S.qty > 0 && S.und)) return "Need NFO underlying and lots";
+    if (S.nfoKind === "opt" && !S.strike) return "Need NFO strike";
+  } else if (S.asset === "options") {
+    if (!(+S.qty > 0 && S.und && S.strike)) return "Need contract and size";
+    if (ticketIllegal()) return ticketIllegal();
+  } else {
+    if (!(+S.qty > 0 && S.symbol)) return "Need symbol and size";
+  }
+  if (!String(S.inv).trim()) return "Write the invalidation";
+  return null;
+}
+function bindSym(id) {
+  if (S.asset !== "options") return;
+  const r = OI_ROWS.concat(NFO_OI_ROWS).find(x => x.id === id);
+  if (!r) return;
+  S.symbol = id;
+  const parts = id.split("-");
+  S.und = parts[0];
+  S.expiry = parts[1];
+  S.strike = r.strike;
+  S.right = r.right === "P" ? "PE" : "CE";
+  S.entry = r.last;
+}
+function payoffAt(spot, K, prem, right, side, count) {
+  const intrinsic = right === "C" ? Math.max(spot - K, 0) : Math.max(K - spot, 0);
+  const unit = side === "buy" ? intrinsic - prem : prem - intrinsic;
+  return unit * count;
+}
+function rung1() {
+  const q = +S.qty || 0;
+  if (!q) return null;
+  const loss = S.side === "buy" ? (S.entry - S.sl) * q : (S.sl - S.entry) * q;
+  return -Math.abs(loss);
+}
+
+function strip() {
+  if (isNfoFut()) {
+    return `<div class="strip n3">
+      <div class="cell"><div class="k">Last</div><div class="v">${Number(S.entry).toFixed(2)}</div><div class="s">NSE futures · DualNoBlend INR</div></div>
+      <div class="cell"><div class="k">Chain / OI</div><div class="v dark">unavailable</div><div class="s">futures · no option chain</div></div>
+      <div class="cell"><div class="k">Greeks</div><div class="v dark">none</div><div class="s">index future · no premium greeks</div></div>
+    </div>`;
+  }
+  if (S.asset === "usdm" || S.asset === "coinm") {
+    const m = A().margin;
+    return `<div class="strip n3">
+      <div class="cell"><div class="k">Last · your entry</div><div class="v">${Number(S.entry).toFixed(S.asset === "usdm" ? 4 : 2)}</div><div class="s">${esc(A().sessionNote)} · ${esc(A().book)}</div></div>
+      <div class="cell"><div class="k">History</div><div class="v dark">Not eligible</div><div class="s">no History tile on this book</div></div>
+      <div class="cell"><div class="k">Margin</div><div class="v">${m ? m.mode + " · " + m.lev : "none"}</div><div class="s">fake positionRisk · read-only · liq ${m ? m.liq : "none"}</div></div>
+    </div>`;
+  }
+  if (S.asset !== "options") {
+    const series = bars() || [];
+    const last = series.length ? series[series.length - 1].c : S.entry;
+    const hist = A().sessionNote;
+    const d = depthBook() || { bids: [], asks: [] };
+    const bid = d.bids && d.bids[0] ? d.bids[0][0] : "none";
+    const ask = d.asks && d.asks.length ? d.asks[d.asks.length - 1][0] : "none";
+    return `<div class="strip n3">
+      <div class="cell"><div class="k">Last · your entry</div><div class="v">${Number(S.entry).toFixed(2)}</div><div class="s">market/quote · ${esc(A().book)}</div></div>
+      <div class="cell"><div class="k">History</div><div class="v">${Number(last).toFixed(2)}</div><div class="s">${esc(hist)}</div></div>
+      <div class="cell"><div class="k">Depth</div><div class="v">${bid} / ${ask}</div><div class="s">same snapshot · not placed</div></div>
+    </div>`;
+  }
+  const r = row();
+  const series = bars() || [];
+  const last = series.length ? series[series.length - 1].c.toFixed(2) : Number(S.entry).toFixed(2);
+  const idx = indexS();
+  const idxNote = isNfo() ? "NIFTY index · DualNoBlend INR" : "eapi index · European";
+  return `<div class="strip">
+    <div class="cell"><div class="k">Last · your entry</div><div class="v">${r.last.toFixed(2)}</div><div class="s">market/quote · kline ${last}</div></div>
+    <div class="cell"><div class="k">Index S</div><div class="v">${idx.toLocaleString()}</div><div class="s">${idxNote}</div></div>
+    <div class="cell"><div class="k">Delta</div><div class="v">${r.delta}</div><div class="s">VenuePublished mark</div></div>
+    <div class="cell"><div class="k">Gamma · Theta</div><div class="v">${r.gamma} · ${r.theta}</div><div class="s">not Black-76</div></div>
+    <div class="cell"><div class="k">OI</div><div class="v">${r.oi}</div><div class="s">sumOpenInterest · this row</div></div>
+    <div class="cell"><div class="k">Margin</div><div class="v dark">unavailable</div><div class="s">venue engine, not ours</div></div>
+  </div>`;
+}
+
+function oiSVG(compact) {
+  const rows = chainRows();
+  const max = Math.max(...rows.map(r => r.oi));
+  const w = compact ? 280 : 420, h = compact ? 90 : 140;
+  const bars = rows.map((r, i) => {
+    const bw = (w - 24) / rows.length;
+    const bh = Math.max(5, (r.oi / max) * (h - 28));
+    const x = 8 + i * bw;
+    const y = h - 16 - bh;
+    const on = r.id === S.symbol;
+    const fill = r.right === "C" ? (on ? "#30d158" : "rgba(48,209,88,.45)") : (on ? "#ff453a" : "rgba(255,69,58,.45)");
+    return `<rect x="${x}" y="${y}" width="${bw - 4}" height="${bh}" rx="3" fill="${fill}" data-act="sym" data-id="${r.id}" style="cursor:pointer"/>
+      <text x="${x + (bw - 4) / 2}" y="${h - 4}" fill="rgba(245,245,247,.4)" font-size="8" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">${r.right}${String(r.strike).slice(0, 3)}</text>`;
+  }).join("");
+  return `<svg class="oiplot" viewBox="0 0 ${w} ${h}" role="img" aria-label="Open interest by contract">
+    <text x="8" y="12" fill="rgba(245,245,247,.4)" font-size="9" font-family="ui-monospace,Menlo,monospace">sumOpenInterest · this expiry · not a total · not max pain</text>
+    ${bars}
+  </svg>`;
+}
+
+function paySVG(compact) {
+  const r = row();
+  const K = +r.strike;
+  const prem = r.last;
+  const q = +S.qty || 1;
+  const right = r.right;
+  const lo = K * 0.72, hi = K * 1.28;
+  const pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const spot = lo + (hi - lo) * i / 48;
+    pts.push([spot, payoffAt(spot, K, prem, right, S.side, q)]);
+  }
+  const min = Math.min(...pts.map(p => p[1]), 0);
+  const max = Math.max(...pts.map(p => p[1]), 0);
+  const w = compact ? 280 : 420, h = compact ? 90 : 140;
+  const pad = 16;
+  const xOf = s => pad + ((s - lo) / (hi - lo)) * (w - pad * 2);
+  const yOf = v => pad + (1 - (v - min) / (max - min || 1)) * (h - pad * 2);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${xOf(p[0]).toFixed(1)},${yOf(p[1]).toFixed(1)}`).join(" ");
+  const kx = xOf(K), sx = xOf(indexS());
+  const z = yOf(0);
+  const color = S.side === "buy" ? "#30d158" : "#ff453a";
+  const openWing = right === "C" && S.side === "sell";
+  const settle = isNfo() ? "NSE F&O cash settle" : "European cash settle";
+  return `<svg class="pay" viewBox="0 0 ${w} ${h}" role="img" aria-label="At expiry settlement" data-pay="1">
+    <line x1="${pad}" y1="${z}" x2="${w - pad}" y2="${z}" stroke="rgba(255,255,255,.12)"/>
+    <path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>
+    <circle cx="${kx}" cy="${z}" r="3" fill="#ff9f0a"/>
+    <line x1="${sx}" y1="${pad}" x2="${sx}" y2="${h - pad}" stroke="rgba(100,210,255,.45)" stroke-dasharray="3 3"/>
+    <text x="8" y="12" fill="rgba(245,245,247,.4)" font-size="9" font-family="ui-monospace,Menlo,monospace">${settle} · S ${indexS()} · K ${K} · prem ${prem}${openWing ? " · short-call wing unbounded" : ""}</text>
+  </svg>`;
+}
+
+function depthSVG() {
+  const book = depthBook();
+  const rows = [...book.asks].reverse().concat([{ mid: true }], book.bids);
+  const h = 140, w = 280, rh = h / rows.length;
+  let y = 0;
+  const bits = [];
+  book.asks.slice().reverse().forEach(([p, q]) => {
+    bits.push(`<rect x="0" y="${y}" width="${w}" height="${rh - 1}" fill="rgba(255,69,58,${0.12 + Math.min(q, 3) / 3 * 0.35})" data-act="depth" data-id="${p}"/>
+      <text x="10" y="${y + rh * 0.7}" fill="#ff453a" font-size="10" font-family="ui-monospace,Menlo,monospace">${p}  ${q}</text>`);
+    y += rh;
+  });
+  bits.push(`<rect x="0" y="${y}" width="${w}" height="${rh - 1}" fill="rgba(255,255,255,.08)"/>
+    <text x="90" y="${y + rh * 0.7}" fill="#f5f5f7" font-size="10" font-family="ui-monospace,Menlo,monospace">spread</text>`);
+  y += rh;
+  book.bids.forEach(([p, q]) => {
+    bits.push(`<rect x="0" y="${y}" width="${w}" height="${rh - 1}" fill="rgba(48,209,88,${0.12 + Math.min(q, 3) / 3 * 0.35})" data-act="depth" data-id="${p}"/>
+      <text x="10" y="${y + rh * 0.7}" fill="#30d158" font-size="10" font-family="ui-monospace,Menlo,monospace">${p}  ${q}</text>`);
+    y += rh;
+  });
+  return `<svg class="depthsvg" viewBox="0 0 ${w} ${h}">${bits.join("")}</svg>`;
+}
+
+function chainTable() {
+  return `<div class="chainbox"><table>
+    <thead><tr><th>Contract</th><th>Strike</th><th>Right</th><th>Last</th><th>OI</th></tr></thead>
+    <tbody>${chainRows().map(x => `<tr class="${S.symbol === x.id ? "on" : ""}">
+      <td><button data-act="sym" data-id="${x.id}">${x.id}</button></td>
+      <td>${x.strike}</td><td>${x.right === "C" ? "Call" : "Put"}</td>
+      <td>${x.last.toFixed(2)}</td><td>${x.oi}</td></tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
+function greeksHTML() {
+  const r = row();
+  return `<div class="greeks">
+    <div><div class="k">Delta</div><div class="v">${r.delta}</div></div>
+    <div><div class="k">Gamma</div><div class="v">${r.gamma}</div></div>
+    <div><div class="k">Theta</div><div class="v">${r.theta}</div></div>
+    <div><div class="k">Vega</div><div class="v">${r.vega}</div></div>
+  </div>
+  <p class="note" style="margin:0 10px 10px">${isNfo() ? "published mark · DualNoBlend INR · not Black-76 · no rho" : "GET /eapi/v1/mark · VenuePublished strings · not Black-76 · no rho"}</p>`;
+}
+
+function legsHTML() {
+  const legs = S.legs.length ? S.legs.map((L, i) => `
+    <div class="leg"><span><b>${L.side}</b> ${L.und} ${L.strike} ${L.right === "PE" ? "Put" : "Call"} · ${L.qty}</span>
+      <button class="press" data-act="rmleg" data-id="${i}">×</button></div>`).join("")
+    : `<p class="note">No legs yet. Pick strike, side, contracts in Plan — then add.</p>`;
+  return `<div class="scroll">${legs}<p class="note">local plan · payoff uses the first leg</p></div>`;
+}
+
+function ladderHTML() {
+  const r = rung1();
+  const max = parseFloat(S.maxLoss);
+  const over = r != null && max && Math.abs(r) > max;
+  const unit = money();
+  return `<div class="scroll">
+    <div class="rung"><div>At your stop<div class="sub">typed numbers · no market data</div></div>
+      <b style="color:${over ? "var(--red)" : "var(--label)"}">${r == null ? "—" : r.toFixed(1) + " " + unit}</b></div>
+    <div class="rung"><div>1σ adverse<div class="sub">σ scaled from chain IV</div></div><span class="chip darkish">unavailable</span></div>
+    <div class="rung"><div>2σ / gap<div class="sub">σ scaled from chain IV</div></div><span class="chip darkish">unavailable</span></div>
+    <div class="rung"><div>Terminal at expiry<div class="sub">identity in the payoff pane</div></div><span class="chip darkish">see chart</span></div>
+    <div class="rung"><div>Margin<div class="sub">venue engine, not ours</div></div><span class="chip darkish">unavailable</span></div>
+    <p class="note">Rung 1 only. DualNoBlend ${unit}. σ rungs 2–5 stay dark.</p>
+  </div>`;
+}
+
+function hasVenueTicket() {
+  return !isNfo() && (S.asset === "spot" || S.asset === "usdm" || S.asset === "coinm" || S.asset === "options");
+}
+function datedContract(raw) {
+  return /^[A-Z0-9]+-\d{6}-\d+-[CP]$/i.test(String(raw || ""));
+}
+function ticketSpec() {
+  const a = S.asset;
+  if (a === "spot") {
+    return {
+      types: ["MARKET", "LIMIT", "LIMIT_MAKER"],
+      defaultType: "LIMIT",
+      sizeModes: ["base", "quote"],
+      defaultSizeMode: "base",
+      tifOn: ["LIMIT"],
+      reduce: false,
+      postOnly: false,
+      sides: [["buy", "Buy"], ["sell", "Sell"]],
+      qtyLabel: "Quantity · base",
+      pathOrder: "/api/v3/order",
+      pathAlgo: null,
+      condLabel: null,
+    };
+  }
+  if (a === "usdm") {
+    return {
+      types: ["LIMIT", "MARKET", "CONDITIONAL"],
+      defaultType: "LIMIT",
+      sizeModes: ["contracts"],
+      defaultSizeMode: "contracts",
+      tifOn: ["LIMIT", "CONDITIONAL"],
+      reduce: true,
+      postOnly: false,
+      sides: [["buy", "Buy / Long"], ["sell", "Sell / Short"]],
+      qtyLabel: "Contracts",
+      pathOrder: "/fapi/v1/order",
+      pathAlgo: "/fapi/v1/algoOrder",
+      condLabel: "Conditional · algoOrder",
+    };
+  }
+  if (a === "coinm") {
+    return {
+      types: ["LIMIT", "MARKET", "CONDITIONAL"],
+      defaultType: "LIMIT",
+      sizeModes: ["contracts"],
+      defaultSizeMode: "contracts",
+      tifOn: ["LIMIT", "CONDITIONAL"],
+      reduce: true,
+      postOnly: false,
+      sides: [["buy", "Buy / Long"], ["sell", "Sell / Short"]],
+      qtyLabel: "Contracts",
+      pathOrder: "/dapi/v1/order",
+      pathAlgo: "/dapi/v1/algoOrder",
+      condLabel: "Conditional · dapi algoOrder",
+    };
+  }
+  return {
+    types: ["LIMIT"],
+    defaultType: "LIMIT",
+    sizeModes: ["contracts"],
+    defaultSizeMode: "contracts",
+    tifOn: ["LIMIT"],
+    reduce: false,
+    postOnly: true,
+    sides: [["buy", "Buy"], ["sell", "Sell"]],
+    qtyLabel: "Contracts",
+    pathOrder: "/eapi/v1/order",
+    pathAlgo: null,
+    condLabel: null,
+  };
+}
+function defaultTicket(book) {
+  const spec = ticketSpec();
+  return {
+    book,
+    type: spec.defaultType,
+    sizeMode: spec.defaultSizeMode,
+    tif: "GTC",
+    reduceOnly: false,
+    postOnly: false,
+    quoteQty: null,
+    triggerPrice: "",
+  };
+}
+function persistTicket() {
+  const book = A().book;
+  S.byBook[book] = {
+    book,
+    type: S.orderType,
+    sizeMode: S.sizeMode,
+    tif: S.tif,
+    reduceOnly: S.reduceOnly,
+    postOnly: S.postOnly,
+    quoteQty: S.quoteQty,
+    triggerPrice: S.triggerPrice,
+  };
+}
+function adoptTicket(book) {
+  if (!hasVenueTicket()) {
+    S.orderType = "LIMIT";
+    S.sizeMode = "base";
+    S.tif = "GTC";
+    S.reduceOnly = false;
+    S.postOnly = false;
+    S.quoteQty = null;
+    S.triggerPrice = "";
+    return;
+  }
+  const fresh = defaultTicket(book);
+  const prev = S.byBook[book];
+  const t = prev && prev.book === book ? { ...fresh, ...prev, book } : fresh;
+  S.byBook[book] = t;
+  S.orderType = t.type;
+  S.sizeMode = t.sizeMode;
+  S.tif = t.tif;
+  S.reduceOnly = !!t.reduceOnly;
+  S.postOnly = !!t.postOnly;
+  S.quoteQty = t.quoteQty;
+  S.triggerPrice = t.triggerPrice || "";
+  coerceTicket();
+}
+function coerceTicket() {
+  const spec = ticketSpec();
+  if (!spec.types.includes(S.orderType)) S.orderType = spec.defaultType;
+  if (!spec.sizeModes.includes(S.sizeMode)) S.sizeMode = spec.defaultSizeMode;
+  if (S.asset !== "spot") S.quoteQty = null;
+  if (S.asset === "spot" && S.sizeMode === "quote") S.qtyOverride = S.quoteQty;
+  persistTicket();
+}
+function ticketPath() {
+  const spec = ticketSpec();
+  if (S.orderType === "CONDITIONAL" && spec.pathAlgo) return spec.pathAlgo;
+  return spec.pathOrder;
+}
+function ticketIllegal() {
+  const reasons = [];
+  if (!hasVenueTicket()) return null;
+  if (S.asset === "options" && S.orderType !== "LIMIT") reasons.push("Market on Options");
+  if (S.asset === "options") {
+    const id = contractId();
+    const leftover = /CATIUSDT/i.test(S.symbol) || /CATIUSDT/i.test(S.und) || S.und === "CATI";
+    if (leftover || !datedContract(id)) reasons.push("leftover CATIUSDT refuses bind");
+  }
+  if ((S.asset === "usdm" || S.asset === "coinm") && S.sizeMode === "quote") reasons.push("no quoteOrderQty");
+  if (S.asset === "spot" && S.sizeMode === "quote" && S.sizeMode === "base") reasons.push("size XOR");
+  if (S.asset === "spot" && S.sizeMode === "quote" && !(+S.quoteQty > 0) && !(+S.qty > 0)) reasons.push("need quoteOrderQty");
+  return reasons.length ? reasons.join(" · ") : null;
+}
+function typeLabel(t) {
+  const spec = ticketSpec();
+  if (t === "CONDITIONAL") return spec.condLabel || "Conditional";
+  if (t === "LIMIT_MAKER") return "Limit maker";
+  return t.charAt(0) + t.slice(1).toLowerCase();
+}
+function marginChips() {
+  const m = A().margin;
+  if (!m) return "";
+  return `<span class="rochip">${esc(m.mode)}</span><span class="rochip">${esc(m.lev)} read-only</span><span class="rochip">liq ${esc(m.liq)}</span>`;
+}
+function ticketFieldsInner() {
+  const spec = ticketSpec();
+  const illegal = ticketIllegal();
+  const showTif = spec.tifOn.includes(S.orderType);
+  const showCond = S.orderType === "CONDITIONAL";
+  const showQuote = S.asset === "spot" && S.sizeMode === "quote";
+  const sides = spec.sides.map(([id, lab]) =>
+    `<button class="chipbtn press ${S.side===id?"on":""}" data-act="side" data-id="${id}">${lab}</button>`
+  ).join("");
+  const types = spec.types.map(t =>
+    `<button class="chipbtn press ${S.orderType===t?"on":""}" data-act="ordertype" data-id="${t}">${esc(typeLabel(t))}</button>`
+  ).join("");
+  const sizeModes = S.asset === "spot"
+    ? `<div class="chips">
+        <button class="chipbtn press ${S.sizeMode==="base"?"on":""}" data-act="sizemode" data-id="base">base qty</button>
+        <button class="chipbtn press ${S.sizeMode==="quote"?"on":""}" data-act="sizemode" data-id="quote">quoteOrderQty</button>
+      </div>`
+    : "";
+  const qtyField = showQuote
+    ? `<label class="field"><span>quoteOrderQty · USDT</span><input data-act="quoteqty" value="${esc(S.quoteQty ?? "")}"></label>`
+    : `<label class="field"><span>${esc(spec.qtyLabel)}</span><input data-act="qty" value="${esc(S.qty)}"></label>`;
+  const price = (S.orderType === "MARKET")
+    ? `<p class="note">Market · no limit price</p>`
+    : `<label class="field"><span>Limit price</span><input data-act="entry" value="${Number(S.entry).toFixed(S.asset==="usdm"?4:2)}"></label>`;
+  const tif = showTif
+    ? `<div class="chips">
+        ${["GTC","IOC","FOK"].map(t => `<button class="chipbtn press ${S.tif===t?"on":""}" data-act="tif" data-id="${t}">${t}</button>`).join("")}
+      </div>`
+    : "";
+  const cond = showCond
+    ? `<label class="field"><span>triggerPrice · algoOrder</span><input data-act="trigger" value="${esc(S.triggerPrice)}"></label>`
+    : "";
+  const reduce = spec.reduce
+    ? `<div class="chips"><button class="chipbtn press ${S.reduceOnly?"on":""}" data-act="reduce">Reduce-only</button></div>`
+    : "";
+  const post = spec.postOnly
+    ? `<div class="chips"><button class="chipbtn press ${S.postOnly?"on":""}" data-act="postonly">Post-only</button></div>`
+    : "";
+  const avail = A().available ? `<p class="note">available = ${esc(A().available)}</p>` : "";
+  const mq = liveMarginQuote();
+  const quote = mq
+    ? `<div class="mq">
+        <div class="cell"><div class="k">Cost</div><div class="v">${moneyFmt(mq.cost)} ${esc(money())}</div></div>
+        <div class="cell"><div class="k">Max</div><div class="v">${moneyFmt(mq.max, 0)} ${esc(money())}</div></div>
+        <div class="cell"><div class="k">Initial Margin</div><div class="v">${moneyFmt(mq.initialMargin)} ${esc(money())}</div></div>
+      </div>
+      <p class="note">Live preview numbers · not a venue POST · ${mq.lev}x used for USDM/Coin-M/Options</p>`
+    : "";
+  const dark = `<p class="note">venue TP/SL that would POST STOP_MARKET stays dark · Confirm is LiveBook intent, not ${esc(ticketPath())}</p>`;
+  return `
+    <div class="chips">${sides}</div>
+    <div class="chips">${types}</div>
+    ${sizeModes}
+    ${price}
+    ${tif}
+    ${cond}
+    ${qtyField}
+    ${reduce}
+    ${post}
+    ${marginChips() ? `<div class="chips">${marginChips()}</div>` : ""}
+    ${quote}
+    ${avail}
+    ${illegal ? `<p class="illegal">${esc(illegal)}</p>` : ""}
+    ${dark}`;
+}
+function venueTicketHTML(compact) {
+  if (!hasVenueTicket()) return "";
+  if (S.ticket === "C") {
+    return `<p class="note">Ticket lives on the mosaic. Plan dock has mood / setup / Confirm only.</p>`;
+  }
+  if (S.ticket === "B") {
+    const spec = ticketSpec();
+    const showTif = spec.tifOn.includes(S.orderType);
+    const showCond = S.orderType === "CONDITIONAL";
+    const showQuote = S.asset === "spot" && S.sizeMode === "quote";
+    return `<div class="trow">
+      <div class="field"><span>Type</span>
+        <div class="chips">${spec.types.map(t => `<button class="chipbtn press ${S.orderType===t?"on":""}" data-act="ordertype" data-id="${t}">${esc(typeLabel(t))}</button>`).join("")}</div>
+      </div>
+      <label class="field"><span>${showQuote ? "quoteOrderQty" : spec.qtyLabel}</span>
+        <input data-act="${showQuote ? "quoteqty" : "qty"}" value="${esc(showQuote ? (S.quoteQty ?? "") : S.qty)}">
+      </label>
+      ${showTif ? `<div class="field"><span>TIF</span><div class="chips">${["GTC","IOC","FOK"].map(t => `<button class="chipbtn press ${S.tif===t?"on":""}" data-act="tif" data-id="${t}">${t}</button>`).join("")}</div></div>` : ""}
+      ${A().margin ? `<div class="field"><span>Margin</span><div class="chips">${marginChips()}</div></div>` : ""}
+    </div>
+    ${showCond ? `<label class="field"><span>triggerPrice · algoOrder</span><input data-act="trigger" value="${esc(S.triggerPrice)}"></label>` : ""}
+    ${spec.reduce ? `<div class="chips"><button class="chipbtn press ${S.reduceOnly?"on":""}" data-act="reduce">Reduce-only</button></div>` : ""}
+    ${spec.postOnly ? `<div class="chips"><button class="chipbtn press ${S.postOnly?"on":""}" data-act="postonly">Post-only</button></div>` : ""}
+    ${S.asset === "spot" ? `<div class="chips"><button class="chipbtn press ${S.sizeMode==="base"?"on":""}" data-act="sizemode" data-id="base">base</button><button class="chipbtn press ${S.sizeMode==="quote"?"on":""}" data-act="sizemode" data-id="quote">quote</button></div>` : ""}
+    ${ticketIllegal() ? `<p class="illegal">${esc(ticketIllegal())}</p>` : ""}
+    <p class="note">path ${esc(ticketPath())} · not posted · DualNoBlend ${esc(A().book)}</p>`;
+  }
+  return `<div class="tstack">
+    <div class="tabs-mini">${ticketSpec().types.map(t => `<button class="press ${S.orderType===t?"on":""}" data-act="ordertype" data-id="${t}">${esc(typeLabel(t))}</button>`).join("")}</div>
+    ${ticketFieldsInner()}
+  </div>`;
+}
+function ticketTileInner() {
+  if (!hasVenueTicket()) return `<div class="ttile"><div class="s">Equity has no COM ticket</div></div>`;
+  return `<div class="ttile">
+    <div class="chips">${ticketSpec().types.map(t => `<button class="chipbtn press ${S.orderType===t?"on":""}" data-act="ordertype" data-id="${t}">${esc(typeLabel(t))}</button>`).join("")}</div>
+    <div class="v">${esc(S.orderType)} · ${S.sizeMode === "quote" ? "quote " + (S.quoteQty ?? "—") : qtyFmt(S.qty)} · ${esc(S.tif)}</div>
+    <div class="s">${esc(A().book)} · ${esc(ticketPath())} · not posted</div>
+    ${A().margin ? `<div class="chips">${marginChips()}</div>` : ""}
+    ${ticketIllegal() ? `<p class="illegal">${esc(ticketIllegal())}</p>` : ""}
+  </div>`;
+}
+function cycleTicket(d) {
+  const i = TICKET_IDS.indexOf(S.ticket);
+  S.ticket = TICKET_IDS[(i + d + TICKET_IDS.length) % TICKET_IDS.length];
+  paint();
+}
+function cycleFlow(d) {
+  const i = FLOW_IDS.indexOf(S.flow);
+  S.flow = FLOW_IDS[(i + d + FLOW_IDS.length) % FLOW_IDS.length];
+  paint();
+}
+
+function cashPlan(compact) {
+  const hint = planReady();
+  const calmL = ["", "Calm", "Focused", "Tense", "Anxious", "Angry"];
+  const confL = ["", "Low", "Flat", "Neutral", "Good", "Sharp"];
+  const unit = money();
+  const state = `<h2>State check</h2>
+    <div class="note" style="margin-top:0">PSYCHOLOGICAL CALM — 1 IS BEST</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.calm===n?"on":""}" data-act="calm" data-id="${n}"><b>${n}</b><span>${calmL[n]}</span></button>`).join("")}</div>
+    ${S.calm>=4?`<p class="note" style="color:var(--red)">State ${S.calm} — size halved. Wired on the sizer, not copy.</p>`:""}
+    <div class="note">CONFIDENCE — 5 IS BEST</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.conf===n?"on":""}" data-act="conf" data-id="${n}"><b>${n}</b><span>${confL[n]}</span></button>`).join("")}</div>`;
+  const numbers = `<h2>${hasVenueTicket() ? "Ticket" : "Numbers"}</h2>
+    ${hasVenueTicket() ? venueTicketHTML(compact) : ""}
+    ${hasVenueTicket() && S.ticket === "C" ? "" : `
+    ${hasVenueTicket() ? "" : `<label class="field"><span>Symbol</span><input data-act="symbol" value="${esc(S.symbol)}"></label>
+    <label class="field"><span>Quantity · authored ${qtyFmt(engine().authoredQty)}</span><input data-act="qty" value="${esc(S.qty)}"></label>
+    <p class="note">${S.asset === "equity" ? "No lot. No NRML. DualNoBlend INR." : "No lot. DualNoBlend USDT. Not a dated option."} Override above authored blocks Confirm.</p>
+    <div class="chips">
+      <button class="chipbtn press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+      <button class="chipbtn press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+    </div>`}
+    <p class="note">Drag BUY / SL / TP on Session in Use. Commit on release. Plan SL/TP are not venue STOP_MARKET.</p>
+    <label class="field"><span>Entry — ${unit}</span><input data-act="entry" value="${S.entry.toFixed(S.asset==="usdm"?4:2)}"></label>
+    <label class="field"><span>Stop — exact price</span><input data-act="sl" value="${S.sl.toFixed(S.asset==="usdm"?4:2)}"></label>
+    <label class="field"><span>Target</span><input data-act="tp" value="${S.tp.toFixed(S.asset==="usdm"?4:2)}"></label>
+    <div class="srow"><span>Max planned loss</span><span>${rung1() == null ? "—" : Math.abs(rung1()).toFixed(1) + " " + unit}</span></div>
+    ${S.asset === "spot" || S.asset === "equity" ? `<div class="chips">
+      <button class="chipbtn press ${S.protectSL?"on":""}" data-act="protect">Protective SL on fill</button>
+    </div>` : `<p class="note">Auto-place SL on USDM/Coin-M stays dark · no POST STOP_MARKET</p>`}`}`;
+  const rest = `<h2>Setup</h2>
+    <div class="chips">${SETUP_CHIPS.map(([id, lab]) => `<button class="chipbtn press ${S.setup===id?"on":""}" data-act="setup" data-id="${id}">${lab}</button>`).join("")}</div>
+    <h2>Invalidation</h2>
+    <label class="field"><span>Premortem</span><textarea data-act="inv" placeholder="It failed because…">${esc(S.inv)}</textarea></label>
+    <button class="cta press" data-act="declare" ${hint && !S.declared ? "disabled" : ""}>${S.declared ? "Declared" : "Confirm — enter trade"}</button>
+    ${hint && !S.declared ? `<div class="ready">${hint}</div>` : ""}
+    <p class="note">Demo · not live. Kill still lives on Live trade. Plan cannot be removed.</p>`;
+  if (compact) {
+    return `<div class="pane"><div class="ph"><b>Plan</b><span>what you are declaring</span></div>${state}</div>
+      <div class="pane"><div class="ph"><b>Numbers</b><span>${esc(contractId())}</span></div>${numbers}</div>
+      <div class="pane"><div class="ph"><b>Confirm</b><span>clientToken</span></div>${rest}</div>`;
+  }
+  return `<div class="zone">Plan</div>
+    <div class="znote">what you are declaring · ${esc(contractId())} · ${unit}</div>
+    ${state}${numbers}${rest}`;
+}
+
+function nfoPlanColumn() {
+  const hint = planReady();
+  const lot = A().lotSize || 25;
+  const calmL = ["", "Calm", "Focused", "Tense", "Anxious", "Angry"];
+  const confL = ["", "Low", "Flat", "Neutral", "Good", "Sharp"];
+  const stopLab = S.nfoKind === "fut" ? "Stop — index INR" : "Stop — premium INR";
+  return `<div class="zone">Plan</div>
+    <div class="znote">mood / setup / Confirm · ${esc(contractId())} · lots ${lot}</div>
+    <h2>State check</h2>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.calm===n?"on":""}" data-act="calm" data-id="${n}"><b>${n}</b><span>${calmL[n]}</span></button>`).join("")}</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.conf===n?"on":""}" data-act="conf" data-id="${n}"><b>${n}</b><span>${confL[n]}</span></button>`).join("")}</div>
+    <h2>Setup</h2>
+    <div class="chips">${SETUP_CHIPS.map(([id, lab]) => `<button class="chipbtn press ${S.setup===id?"on":""}" data-act="setup" data-id="${id}">${lab}</button>`).join("")}</div>
+    <label class="field"><span>Lots · ${lot} qty/lot</span><input data-act="qty" value="${esc(S.qty)}"></label>
+    <label class="field"><span>${stopLab}</span><input data-act="sl" value="${S.sl.toFixed(2)}"></label>
+    <h2>Invalidation</h2>
+    <label class="field"><span>Premortem</span><textarea data-act="inv">${esc(S.inv)}</textarea></label>
+    <button class="cta press" data-act="declare" ${hint && !S.declared ? "disabled" : ""}>${S.declared ? "Declared" : "Confirm — enter trade"}</button>
+    ${hint && !S.declared ? `<div class="ready">${hint}</div>` : ""}
+    <p class="note">Plan dock stays. Confirm is LiveBook. NSE F&amp;O · no COM ticket. TRADE parked.</p>`;
+}
+function nfoThreeZone() {
+  const lot = A().lotSize || 25;
+  const fut = S.nfoKind === "fut";
+  const legs = S.legs.length
+    ? S.legs.map((L, i) => `<div class="leg"><span><b>${L.side}</b> ${L.kind === "fut" ? (L.und + " FUT") : (L.und + " " + L.strike + " " + (L.right === "PE" ? "Put" : "Call"))} · ${L.qty} lot</span><button class="press" data-act="rmleg" data-id="${i}">×</button></div>`).join("")
+    : `<p class="note">No legs. Consequence stays empty until you add.</p>`;
+  const product = fut
+    ? `<p class="note">Index future · lots · no strike · no CE/PE.</p>
+      <label class="field"><span>Underlying</span><input data-act="und" value="${esc(S.und)}"></label>
+      <label class="field"><span>Expiry · YYMMDD</span><input data-act="expiry" value="${esc(S.expiry)}"></label>
+      <div class="chips">
+        <button class="chipbtn press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy / Long</button>
+        <button class="chipbtn press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell / Short</button>
+      </div>`
+    : `<label class="field"><span>Underlying</span><input data-act="und" value="${esc(S.und)}"></label>
+      <div class="row2">
+        <label class="field"><span>Expiry</span><input data-act="expiry" value="${esc(S.expiry)}"></label>
+        <label class="field"><span>Strike</span><input data-act="strike" value="${esc(S.strike)}"></label>
+      </div>
+      <div class="chips">
+        <button class="chipbtn press ${S.right==="CE"?"on":""}" data-act="right" data-id="CE">Call</button>
+        <button class="chipbtn press ${S.right==="PE"?"on":""}" data-act="right" data-id="PE">Put</button>
+        <button class="chipbtn press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+        <button class="chipbtn press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+      </div>`;
+  return `<div class="nfo3">
+    <div class="nfoz">
+      <div class="zone">Analytics</div>
+      <div class="znote">NSE F&amp;O · futures and options share kotak-nse-nfo</div>
+      <div class="srow"><span>book_id</span><span>kotak-nse-nfo</span></div>
+      <div class="srow"><span>token</span><span>${esc(S.symbol)}</span></div>
+      <div class="srow"><span>Product</span><span>${fut ? "Futures" : "Options"}</span></div>
+      <div class="srow"><span>Session / chain / OI</span><span>honest-dark until declared</span></div>
+      <p class="note">Equity cash is kotak-nse-bse-cash. This book is F&amp;O only. DualNoBlend INR.</p>
+    </div>
+    <div class="nfoz">
+      <div class="zone">Consequence</div>
+      <div class="znote">one book · two products</div>
+      <div class="chips">
+        <button class="chipbtn press ${fut?"on":""}" data-act="nfokind" data-id="fut">Futures</button>
+        <button class="chipbtn press ${!fut?"on":""}" data-act="nfokind" data-id="opt">Options</button>
+      </div>
+      ${product}
+      <button class="cta ghost press" data-act="addleg">＋ Add this leg</button>
+      ${legs}
+      <div class="srow"><span>Greeks</span><span>${fut ? "futures · no premium greeks" : "chip only · never Δ/Γ/Θ"}</span></div>
+      ${ladderHTML()}
+    </div>
+    <div class="nfoz">${nfoPlanColumn()}</div>
+  </div>`;
+}
+function planBlock(compact) {
+  if (isNfoFut()) return nfoPlanColumn();
+  if (S.asset !== "options") return cashPlan(compact);
+  const hint = planReady();
+  const calmL = ["", "Calm", "Focused", "Tense", "Anxious", "Angry"];
+  const confL = ["", "Low", "Flat", "Neutral", "Good", "Sharp"];
+  const nfoOpt = isNfoOpt();
+  const unit = money();
+  const qtyLabel = nfoOpt
+    ? `Lots · ${A().lotSize} qty/lot · authored ${qtyFmt(engine().authoredQty)}`
+    : `Contracts · authored ${qtyFmt(engine().authoredQty)}`;
+  const lotNote = nfoOpt
+    ? `Lot size ${A().lotSize}. DualNoBlend INR. No COM ticket. Override above authored blocks Confirm.`
+    : `No lot size. No NRML. DualNoBlend USDT. Override above authored blocks Confirm.`;
+  const legsEmpty = nfoOpt
+    ? "No legs yet. Pick strike, side, lots — then add."
+    : "No legs yet. Pick strike, side, contracts — then add.";
+  const legs = S.legs.length ? S.legs.map((L, i) => `
+    <div class="leg"><span><b>${L.side}</b> ${L.und} ${L.strike} ${L.right === "PE" ? "Put" : "Call"} · ${L.qty}</span>
+      <button class="press" data-act="rmleg" data-id="${i}">×</button></div>`).join("")
+    : `<p class="note">${legsEmpty}</p>`;
+  const state = `<h2>State check</h2>
+    <div class="note" style="margin-top:0">PSYCHOLOGICAL CALM — 1 IS BEST</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.calm===n?"on":""}" data-act="calm" data-id="${n}"><b>${n}</b><span>${calmL[n]}</span></button>`).join("")}</div>
+    ${S.calm>=4?`<p class="note" style="color:var(--red)">State ${S.calm} — size halved. Wired on the sizer, not copy.</p>`:""}
+    <div class="note">CONFIDENCE — 5 IS BEST</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.conf===n?"on":""}" data-act="conf" data-id="${n}"><b>${n}</b><span>${confL[n]}</span></button>`).join("")}</div>`;
+  const contract = `<h2>Contract</h2>
+    <label class="field"><span>Underlying</span><input data-act="und" value="${esc(S.und)}"></label>
+    <div class="row2">
+      <label class="field"><span>Expiry · YYMMDD</span><input data-act="expiry" value="${esc(S.expiry)}"></label>
+      <label class="field"><span>Strike</span><input data-act="strike" value="${esc(S.strike)}"></label>
+    </div>
+    <label class="field"><span>${qtyLabel}</span><input data-act="qty" value="${esc(S.qty)}"></label>
+    <p class="note">${lotNote}</p>
+    <div class="chips">
+      <button class="chipbtn press ${S.right==="CE"?"on":""}" data-act="right" data-id="CE">Call</button>
+      <button class="chipbtn press ${S.right==="PE"?"on":""}" data-act="right" data-id="PE">Put</button>
+      <button class="chipbtn press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+      <button class="chipbtn press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+    </div>
+    <button class="cta ghost press" data-act="addleg">＋ Add this leg</button>
+    ${legs}`;
+  const ticket = hasVenueTicket() ? `<h2>Ticket</h2>${venueTicketHTML(compact)}` : "";
+  const risk = `<h2>Risk</h2>
+    <p class="note" style="margin-top:0">Drag BUY / SL / TP on Session in Use. Commit on release.</p>
+    <label class="field"><span>Entry — premium ${unit}</span><input data-act="entry" value="${S.entry.toFixed(2)}"></label>
+    <label class="field"><span>Stop — exact premium</span><input data-act="sl" value="${S.sl.toFixed(2)}"></label>
+    <label class="field"><span>Target</span><input data-act="tp" value="${S.tp.toFixed(2)}"></label>
+    <label class="field"><span>Max planned loss ${unit}</span><input data-act="maxLoss" value="${esc(S.maxLoss)}"></label>
+    ${ladderHTML()}`;
+  const rest = `<h2>Horizon</h2>
+    <div class="chips">
+      <button class="chipbtn press ${S.horizon==="today"?"on":""}" data-act="horizon" data-id="today">Today</button>
+      <button class="chipbtn press ${S.horizon==="three"?"on":""}" data-act="horizon" data-id="three">3 sessions</button>
+      <button class="chipbtn press ${S.horizon==="expiry"?"on":""}" data-act="horizon" data-id="expiry">Expiry</button>
+    </div>
+    <div class="srow"><span>Days</span><span>${S.days}</span></div>
+    <div class="srow"><span>DTE</span><span>${S.dte}</span></div>
+    <h2>Invalidation</h2>
+    <label class="field"><span>Premortem</span><textarea data-act="inv" placeholder="It failed because…">${esc(S.inv)}</textarea></label>
+    <button class="cta press" data-act="declare" ${hint && !S.declared ? "disabled" : ""}>${S.declared ? "Declared" : "Confirm — enter trade"}</button>
+    ${hint && !S.declared ? `<div class="ready">${hint}</div>` : ""}
+    <p class="note">Demo · not live. Kill still lives on Live trade. Plan cannot be removed.</p>`;
+  if (compact) {
+    return `<div class="pane"><div class="ph"><b>Plan</b><span>what you are declaring</span></div>${state}</div>
+      <div class="pane"><div class="ph"><b>Contract</b><span>${contractId()}</span></div>${contract}${ticket}</div>
+      <div class="pane"><div class="ph"><b>Risk</b><span>sizer · rung 1</span></div>${risk}</div>
+      <div class="pane"><div class="ph"><b>Confirm</b><span>clientToken</span></div>${rest}</div>`;
+  }
+  return `<div class="zone">Plan</div>
+    <div class="znote">what you are declaring · ${contractId()}</div>
+    ${state}${contract}${ticket}${risk}${rest}`;
+}
+
+function riskTileInner(kind) {
+  const e = engine();
+  const unit = money();
+  if (kind === "atStop") {
+    return `<div class="riskbody"><div class="v" style="color:${e.gate==="deny"?"var(--red)":"var(--label)"}">${e.atStop == null ? "none" : moneyFmt(e.atStop) + " " + unit}</div><div class="s">Authored from budget · not typed qty first</div></div>`;
+  }
+  if (kind === "atTarget") {
+    const c = e.atTarget == null ? "var(--label)" : e.atTarget >= 0 ? "var(--green)" : "var(--red)";
+    const val = e.atTarget == null ? "none" : signedMoney(e.atTarget) + " " + unit;
+    const r = e.rMultiple == null ? "" : e.rMultiple.toFixed(2) + "R";
+    let note = `If this take profit fills · DualNoBlend ${unit}`;
+    if (e.targetDark) note = e.targetNote || note;
+    else if (e.wrongSideTp) note = e.targetWarning;
+    else if (r) note = r + " · DualNoBlend " + unit;
+    return `<div class="riskbody"><div class="v" style="color:${c}">${val}</div><div class="s">${esc(note)}</div></div>`;
+  }
+  if (kind === "accountPct") {
+    return `<div class="riskbody"><div class="v">${e.pct == null ? "none" : (e.pct * 100).toFixed(2) + "%"}</div><div class="s">DualNoBlend ${unit} · not a blended desk</div></div>`;
+  }
+  if (kind === "authoredQty") {
+    return `<div class="riskbody"><div class="v">${qtyFmt(e.authoredQty)}</div><div class="s">${esc(ROLES[S.role].label)} · ${((e.riskFrac || 0) * 100).toFixed(2)}% · step ${A().qtyStep}</div></div>`;
+  }
+  return `<div class="riskbody"><div class="v" style="color:${e.gate==="ok"?"var(--green)":"var(--red)"}">${e.gate === "ok" ? "Confirm" : "Blocked"}</div><div class="s">${esc(e.reasons[0] || "Inside budget")}</div></div>`;
+}
+function sessionHero() {
+  const last = A().last != null ? A().last : S.entry;
+  const d = S.asset === "usdm" ? 4 : (last >= 1000 ? 0 : 2);
+  return `<div class="tvhero">
+    <div class="tvhead">
+      <span class="tvbadge">${esc(contractId())}</span>
+      <div class="tvlast">${Number(last).toLocaleString(undefined, { maximumFractionDigits: d })}</div>
+      <div class="tvchg up">last-only</div>
+    </div>
+    <canvas id="cv"></canvas>
+  </div>`;
+}
+function tileInner(kind, compact) {
+  if (kind === "session") return sessionHero();
+  if (kind === "oi") return oiSVG(compact);
+  if (kind === "payoff") return `${paySVG(compact)}${S.payHover ? `<div class="hover">${esc(S.payHover)}</div>` : ""}`;
+  if (kind === "depth") return depthSVG();
+  if (kind === "chain") return chainTable();
+  if (kind === "greeks") return greeksHTML();
+  if (kind === "legs") return legsHTML();
+  if (kind === "ladder") return ladderHTML();
+  if (kind === "atStop" || kind === "atTarget" || kind === "accountPct" || kind === "authoredQty" || kind === "gate") return riskTileInner(kind);
+  if (kind === "ticket") return ticketTileInner();
+  return "";
+}
+
+function tileHTML(t) {
+  const meta = kindMeta(t.kind) || { title: t.kind, note: "not on this class" };
+  const compact = t.w === 1 || t.h === 1;
+  const rm = S.edit ? `<button class="rm press" data-act="rmtile" data-id="${t.kind}" aria-label="Remove ${esc(meta.title)}">×</button>` : "";
+  const handle = S.edit ? `<div class="handle" data-resize="${t.kind}"></div>` : "";
+  const drag = S.tileDrag && S.tileDrag.kind === t.kind;
+  const cls = `tile${drag ? (S.dropBad ? " bad" : " ghost") : ""}`;
+  return `<article class="${cls}" data-kind="${t.kind}" style="--x:${t.x + 1};--y:${t.y + 1};--w:${t.w};--h:${t.h}">
+    <div class="ph" data-move="${t.kind}"><b>${esc(meta.title)}</b><span>${esc(meta.note)}</span>${rm}</div>
+    <div class="body">${tileInner(t.kind, compact)}</div>
+    ${handle}
+  </article>`;
+}
+
+function mosaicHTML() {
+  const b = board();
+  const tiles = b.tiles.slice();
+  if (S.ticket === "C" && hasVenueTicket() && !tiles.some(t => t.kind === "ticket")) {
+    const hole = firstHole(tiles, 2, 1);
+    tiles.push({ kind: "ticket", x: hole.x, y: hole.y, w: 2, h: 1 });
+  }
+  const rows = rowCount(tiles);
+  const empty = tiles.length === 0 ? " empty" : "";
+  return `<div class="mosaic${empty}" id="mosaic" style="--rows:${rows}">
+    ${tiles.map(tileHTML).join("")}
+  </div>`;
+}
+function riskFlipHTML() {
+  const e = engine();
+  const unit = money();
+  const deco = S.asset === "options"
+    ? `<article class="tile" style="--x:3;--y:5;--w:2;--h:1"><div class="ph"><b>Open interest</b><span>decoration</span></div><div class="body">${oiSVG(true)}</div></article>`
+    : (S.asset === "usdm" || S.asset === "coinm")
+      ? `<article class="tile" style="--x:3;--y:5;--w:2;--h:1"><div class="ph"><b>Last</b><span>${esc(A().book)}</span></div><div class="body"><div class="riskbody"><div class="v">${Number(S.entry).toFixed(S.asset==="usdm"?4:2)}</div><div class="s">${esc(A().sessionNote)}</div></div></div></article>`
+      : `<article class="tile" style="--x:3;--y:5;--w:2;--h:1"><div class="ph"><b>Depth</b><span>decoration</span></div><div class="body">${depthSVG()}</div></article>`;
+  const slTxt = e.atStop == null ? "none" : "−" + moneyFmt(e.atStop) + " " + unit;
+  const tpTxt = e.atTarget == null ? "none" : signedMoney(e.atTarget) + " " + unit;
+  return `<div class="mosaic" id="mosaic" style="--rows:5">
+    <article class="tile" style="--x:1;--y:1;--w:2;--h:1"><div class="ph"><b>At the stop</b><span>this declared plan</span></div><div class="body">${riskTileInner("atStop")}</div></article>
+    <article class="tile" style="--x:3;--y:1;--w:2;--h:1"><div class="ph"><b>At the target</b><span>${e.targetDark ? "measurement dark" : e.wrongSideTp ? "wrong-side TP" : "if take profit hits"}</span></div><div class="body">${riskTileInner("atTarget")}</div></article>
+    <article class="tile" style="--x:1;--y:2;--w:2;--h:1"><div class="ph"><b>Authored qty</b><span>${esc(ROLES[S.role].label)}</span></div><div class="body">${riskTileInner("authoredQty")}</div></article>
+    <article class="tile" style="--x:3;--y:2;--w:2;--h:1"><div class="ph"><b>Gate</b><span>after declare</span></div><div class="body">${riskTileInner("gate")}</div></article>
+    <article class="tile" style="--x:1;--y:3;--w:2;--h:2">
+      <div class="ph"><b>Equity if this stop hits</b><span>the box is the account</span></div>
+      <div class="body"><div class="pathwrap">
+        <div class="pathmeta">
+          <div class="k">This plan</div>
+          <div class="v dn">${slTxt}</div>
+          <div class="s">${e.pct == null ? "" : (e.pct * 100).toFixed(2) + "% of " + unit + " equity"} · qty ${qtyFmt(e.authoredQty)}</div>
+        </div>
+        <canvas id="pathcv"></canvas>
+      </div></div>
+    </article>
+    <article class="tile" style="--x:3;--y:3;--w:2;--h:2">
+      <div class="ph"><b>Equity if this take profit hits</b><span>same qty · DualNoBlend ${unit}</span></div>
+      <div class="body"><div class="pathwrap">
+        <div class="pathmeta">
+          <div class="k">This plan</div>
+          <div class="v ${e.atTarget != null && e.atTarget >= 0 ? "up" : "dn"}">${tpTxt}</div>
+          <div class="s">${e.targetDark ? esc(e.targetNote || "none") : (e.wrongSideTp ? esc(e.targetWarning) + " · " : "") + (e.targetPct == null ? "" : (e.targetPct * 100).toFixed(2) + "% of " + unit + " equity") + (e.rMultiple == null ? "" : " · " + e.rMultiple.toFixed(2) + "R")} · qty ${qtyFmt(e.authoredQty)}</div>
+        </div>
+        <canvas id="pathcv-tp"></canvas>
+      </div></div>
+    </article>
+    <article class="tile" style="--x:1;--y:5;--w:2;--h:1"><div class="ph"><b>Session</b><span>decoration</span></div><div class="body"><canvas id="cv"></canvas></div></article>
+    ${deco}
+  </div>`;
+}
+function declaredTicket() {
+  return liveDockA();
+}
+function venueFeedLabel() {
+  if (S.asset === "usdm") return "fapi.binance.com /fapi/";
+  if (S.asset === "coinm") return "dapi.binance.com /dapi/";
+  if (S.asset === "options") return "eapi.binance.com /eapi/";
+  if (S.asset === "spot") return "api.binance.com /api/v3/";
+  return "Kotak cash";
+}
+function stopActualCopy() {
+  if (S.asset === "usdm" || S.asset === "coinm") return "not placed · no STOP_MARKET";
+  if (S.asset === "options") {
+    const m = marginReadout();
+    return m.lev ? ("plan premium · " + m.mode + " " + m.lev) : "plan premium · Cross/x none while flat";
+  }
+  if (isNfo()) return S.nfoKind === "fut" ? "plan stop · NSE futures lots" : "plan premium · NSE options lots";
+  return "TRADE parked · not placed";
+}
+function escrowSlots() {
+  const book = A().book;
+  const join = joinKeyLabel(book, contractId());
+  const size = detectSizeCopy();
+  const filled = S.fillBook === book && !S.foreignFill;
+  const m = marginReadout();
+  const qtyDec = S.sizeMode === "quote" ? "quote " + (S.quoteQty ?? "none") : qtyFmt(S.qty);
+  const typeDec = hasVenueTicket() ? S.orderType + " · " + ticketPath() : S.side.toUpperCase();
+  const condNote = S.orderType === "CONDITIONAL";
+  return [
+    { lab: "Venue / feed", dec: book, act: filled ? venueFeedLabel() : "—", tone: filled ? "ok" : "" },
+    { lab: "Symbol", dec: join, act: S.foreignFill ? joinKeyLabel(S.fillBook, contractId()) : (filled ? join : "—"), tone: S.foreignFill ? "miss" : (filled ? "ok" : "") },
+    { lab: "Side / product", dec: typeDec, act: filled ? (condNote ? "algo path · /order last ≠ algo" : ticketPath()) : "—", tone: filled && condNote ? "miss" : (filled ? "ok" : "") },
+    { lab: "Quantity", dec: size.mode + " · " + qtyDec, act: filled ? size.line : "—", tone: filled ? "ok" : "" },
+    { lab: "Entry", dec: String(S.entry), act: filled ? "fill this book" : "—", tone: filled ? "ok" : "" },
+    { lab: "Stop / protect", dec: (S.hasStop ? String(S.sl) : "none") + " plan", act: stopActualCopy(), tone: "" },
+    { lab: "Target / policy", dec: String(S.tp) + " · TIF " + S.tif + (S.reduceOnly ? " · reduce" : ""), act: (m.lev ? m.mode + " " + m.lev : "none") + (S.flattenAttempt ? " · flatten refused" : ""), tone: S.flattenAttempt ? "bad" : "" },
+  ];
+}
+function escrowCard() {
+  const rows = escrowSlots().map(r => `<div class="escrowrow">
+      <div class="lab">${esc(r.lab).toUpperCase()}</div>
+      <div class="escrowcols">
+        <div class="dec"><div class="tiny">DECLARED</div><div class="val">${esc(r.dec)}</div></div>
+        <div class="track ${r.tone}"><i></i></div>
+        <div class="act"><div class="tiny">ACTUAL</div><div class="val ${r.tone==="miss"?"miss":""}">${esc(r.act)}</div></div>
+      </div>
+    </div>`).join("");
+  return `<div class="cardn">
+    <div class="escrowhead">
+      <div class="grow">
+        <div class="lab" style="font:700 10px/1 var(--sans);letter-spacing:.08em;color:var(--ter)">ESCROW — declared vs actual</div>
+        <p class="note" style="margin-top:4px">Join is {book_id}\\0{symbol}. Same letters on spot vs USDM are two lives. Seven slots stay reserved.</p>
+      </div>
+      <span class="fidtag">FIDELITY<br>—</span>
+      <div class="fidring">—</div>
+    </div>
+    ${rows}
+    <p class="note">${(S.asset === "usdm" || S.asset === "coinm" || S.asset === "options") ? (S.positionCount > 0 ? "positionbook " + S.positionCount + " on " + A().book + (marginReadout().lev ? " · " + marginReadout().mode + " " + marginReadout().lev : "") : "Flat · Cross/x/liq none · never invent 50x") : "PnL owner " + pnlOwner() + " · realized none"}</p>
+  </div>`;
+}
+function captureCard() {
+  return `<div class="cardn capture">
+    <h2>Live capture</h2>
+    <p class="note">Ctrl+⌘+Shift+4 a chart, or Screenshot and drag a region on the still. It stays on this Mac until you tap a trade.</p>
+    <div class="caprow">
+      <button class="press ${S.captureOn==="voice"?"on":""}" data-act="capturevoice">Voice</button>
+      <button class="press ${S.captureOn==="shot"?"on":""}" data-act="captureshot">Screenshot</button>
+    </div>
+    <div class="unpost">
+      <div class="thumb"></div>
+      <div><b>Chart</b><div class="note">Unposted · 1 · this Mac only</div></div>
+      <span class="sp"></span>
+      <span class="note">15:09</span>
+      <button class="press" data-act="delchart">Delete</button>
+    </div>
+    <div class="linkfld">
+      <div class="lab" style="font:600 12px/1.3 var(--sans);margin-bottom:6px">Link to today’s trade</div>
+      <p class="note">Needs this book_id or a USDM shot attaches to a spot close.</p>
+      <div class="chips" style="margin-top:6px">
+        <button class="chipbtn press ${S.chartBook===A().book?"on":""}" data-act="chartbook" data-id="${esc(A().book)}">This book</button>
+        <button class="chipbtn press ${S.chartBook===otherBookId()?"on":""}" data-act="chartbook" data-id="${esc(otherBookId())}">Other book</button>
+      </div>
+      ${S.chartBook && S.chartBook !== A().book ? `<p class="illegal">Refuse · chart book ${esc(S.chartBook)} ≠ ${esc(A().book)}</p>` : ""}
+    </div>
+  </div>`;
+}
+function intactCard() {
+  return `<div class="cardn intact">
+    <div class="k">● PLAN INTACT</div>
+    <p>Plan intact. Nothing to do.</p>
+  </div>`;
+}
+function declareCta() {
+  return `<div class="cardn declarebox">
+    <p>No active trade — declare your plan before entering.</p>
+    <button class="declarecta press" data-act="declarecta">Declare before trade →</button>
+  </div>`;
+}
+function livePlayStrip() {
+  const named = S.asset === "usdm" || S.asset === "coinm" || S.asset === "options";
+  return `<div class="cardn">
+    <div class="lab" style="font:700 10px/1 var(--sans);letter-spacing:.08em;color:var(--ter);margin-bottom:8px">FREE-PLAY · DualNoBlend</div>
+    <div class="playstrip">
+      <button class="press" data-act="fillbook">Fill this book</button>
+      <button class="press" data-act="fillother">Fill other book</button>
+      <button class="press" data-act="closebook">${named ? "Close this book’s positionbook" : "Close this position"}</button>
+      ${named ? `<button class="press" data-act="spotinv">Change spot inventory</button>
+      <button class="press" data-act="flatten">Flatten · MutationForbidden</button>` : ""}
+      <button class="press" data-act="cancelintent">${named ? "Exit trade · cancel intent" : "Exit trade · cancel declaration"}</button>
+    </div>
+    <p class="note" style="margin-top:8px">Exit is not flatten. Named futures flatten stays parked until TRADE is named.</p>
+    ${S.foreignFill ? `<p class="illegal">Foreign fill on ${esc(S.fillBook)} · join miss</p>` : ""}
+    ${S.flattenAttempt ? `<p class="illegal">Flatten refused · MutationForbidden</p>` : ""}
+  </div>`;
+}
+function killRow() {
+  return S.killWarn
+    ? `<div class="cardn"><h2 style="color:var(--red)">Kill</h2><p class="note">Locks the desk. Overlay stays until I'm Calm. TRADE parked — this does not POST.</p>
+        <button class="press" data-act="killno">Cancel</button>
+        <button class="killbtn press" data-act="killyes">Confirm</button></div>`
+    : `<button class="killbtn press" data-act="kill">Kill</button>`;
+}
+function liveScroll() {
+  const empty = !S.declared;
+  return `<div class="livecol">
+    ${intactCard()}
+    ${empty ? declareCta() : ""}
+    ${planDockLive()}
+    ${captureCard()}
+    ${escrowCard()}
+    ${empty ? "" : livePlayStrip()}
+    ${killRow()}
+  </div>`;
+}
+function planDockLive() {
+  const calmL = ["", "Calm", "Focused", "Tense", "Anxious", "Angry"];
+  const setup = (SETUP_CHIPS.find(c => c[0] === S.setup) || ["", S.setup])[1];
+  return `<div class="cardn">
+    <div class="lab" style="font:700 10px/1 var(--sans);letter-spacing:.08em;color:var(--ter)">PLAN DOCK · mood / setup / Confirm</div>
+    <p class="note">Plan stays. Confirm is LiveBook intent. This dock is not removed on Live.</p>
+    <div class="srow"><span>Calm</span><span>${S.calm} · ${calmL[S.calm] || ""}</span></div>
+    <div class="srow"><span>Confidence</span><span>${S.conf}</span></div>
+    <div class="srow"><span>Setup</span><span>${esc(setup)}</span></div>
+    <div class="srow"><span>Invalidation</span><span>${esc(S.inv)}</span></div>
+    <div class="srow"><span>Confirm</span><span>${S.declared ? "Declared · clientToken held" : "lives on Pre-trade"}</span></div>
+  </div>`;
+}
+function momentBRows() {
+  const sizeQ = S.asset === "spot"
+    ? (S.sizeMode === "quote" ? "Stayed on quote, not both." : "Stayed on base, not both.")
+    : (isNfo() ? (S.nfoKind === "fut" ? "Futures lots as declared." : "Options lots on the dated id, not leftover pair qty.") : (S.asset === "options" ? "Contracts on the dated id, not leftover pair qty." : (S.asset === "equity" ? "Cash size as declared." : "Contracts, not lots.")));
+  const keys = [
+    ["stop", "Stop as declared", "Plan stop you wrote — missing broker SL is not a fail."],
+    ["size", "Size as declared", sizeQ],
+    ["invalidation", "Invalidation respected", "You honored the invalidation you wrote."],
+    ["exit", "Exit per plan", "Cancel intent ≠ flatten."],
+    ["impulsive", "No impulsive add / scale-in", "No unplanned adds while stressed."],
+  ];
+  return keys.map(([id, t, s]) => {
+    const on = S.adherence[id] === true;
+    return `<button class="radio ${on?"on":""}" data-act="adh" data-id="${id}" data-val="yes">
+      <i></i><span><div class="t">${esc(t)}</div><div class="s">${esc(s)}</div></span></button>`;
+  }).join("");
+}
+function postScroll() {
+  const allYes = ["stop","size","invalidation","exit","impulsive"].every(k => S.adherence[k] === true);
+  return `<div class="livecol">
+    <div class="cardn moment">
+      <h2>Moment A — outcome</h2>
+      <p class="hint">Win or loss aside: did the market prove your thesis wrong, or did you exit early?</p>
+      <div class="srow"><span>book_id</span><span>${esc(A().book)}</span></div>
+      <div class="srow"><span>type / path</span><span>${hasVenueTicket() ? esc(S.orderType + " · " + ticketPath()) : "equity"}</span></div>
+      <div class="srow"><span>PnL owner</span><span>${esc(pnlOwner())} · realized none</span></div>
+      <div class="readwin">Read window 1:56</div>
+      <input data-act="notea" placeholder="Optional note" value="${esc(S.noteA)}" />
+      <button class="cont ${S.momentA?"on":""} press" data-act="momenta">${S.momentA ? "Recorded" : "Continue"}</button>
+    </div>
+    <div class="cardn moment" style="opacity:${S.momentA?1:.45}">
+      <h2>Moment B — process</h2>
+      <p class="hint">Affirm each line — only honest yes advances. Venue STOP_MARKET stays out.</p>
+      ${momentBRows()}
+      <button class="cont ${allYes?"on":""} press" data-act="momentb">${S.momentB ? "Recorded" : "Continue"}</button>
+    </div>
+    <div class="cardn moment" style="opacity:${S.momentB?1:.45}">
+      <h2>Moment C — one sentence</h2>
+      <p class="hint">One line: what will you do differently next time in the same emotional state?</p>
+      <div class="chips">
+        <button class="ctxchip press ${S.cooling?"on":""}" data-act="cooling" data-id="1">Cooling / scratch</button>
+        <button class="ctxchip press ${!S.cooling?"on":""}" data-act="cooling" data-id="0">Clean win</button>
+      </div>
+      <textarea data-act="notec" placeholder="Required note">${esc(S.noteC)}</textarea>
+      <button class="cont press" data-act="undeclare">Continue</button>
+    </div>
+    <button class="press" data-act="undeclare" style="color:var(--ter);text-align:left">Dismiss (no save)</button>
+  </div>`;
+}
+function liveActions() {
+  const named = S.asset === "usdm" || S.asset === "coinm" || S.asset === "options";
+  const flatten = named
+    ? `<button class="cta ghost press" data-act="flatten">Flatten · MutationForbidden</button>`
+    : "";
+  return `
+    <button class="cta ghost press" data-act="fillbook">Fill this book</button>
+    <button class="cta ghost press" data-act="fillother">Fill other book (${esc(otherBookId())})</button>
+    ${named ? `<button class="cta ghost press" data-act="closebook">Close this book’s positionbook</button>
+    <button class="cta ghost press" data-act="spotinv">Change spot inventory</button>` : `<button class="cta ghost press" data-act="closebook">Close this position</button>`}
+    ${flatten}
+    <button class="cta ghost press" data-act="cancelintent">Cancel declaration · not flatten</button>
+    <button class="cta ghost press" data-act="undeclare">Back to plan</button>`;
+}
+function ticketReceiptRows() {
+  const m = marginReadout();
+  const size = detectSizeCopy();
+  return `
+    <div class="srow"><span>book_id</span><span>${esc(A().book)}</span></div>
+    <div class="srow"><span>type</span><span>${hasVenueTicket() ? esc(S.orderType) : "—"}</span></div>
+    <div class="srow"><span>sizeMode</span><span>${esc(size.mode)}</span></div>
+    <div class="srow"><span>TIF</span><span>${hasVenueTicket() ? esc(S.tif) : "—"}</span></div>
+    <div class="srow"><span>path</span><span>${hasVenueTicket() ? esc(ticketPath()) : "none"}</span></div>
+    <div class="srow"><span>reduce-only</span><span>${hasVenueTicket() && S.reduceOnly ? "true" : "false"}</span></div>
+    <div class="srow"><span>join</span><span class="join">${esc(joinKeyLabel(A().book, contractId()))}</span></div>
+    <div class="srow"><span>Plan SL</span><span>${S.hasStop ? S.sl : "none"} · not venue STOP_MARKET</span></div>
+    <div class="srow"><span>Cross / x / liq</span><span>${m.mode || "none"} / ${m.lev || "none"} / ${m.liq || "none"}</span></div>
+    <div class="srow"><span>positionbook</span><span>${S.positionCount}</span></div>
+    ${S.orderType === "CONDITIONAL" ? `<p class="note">Conditional names ${esc(ticketPath())}. A working /order last does not mean the algo is working.</p>` : ""}
+    ${S.flattenAttempt ? `<p class="illegal">Flatten refused · MutationForbidden</p>` : ""}
+    ${S.foreignFill ? `<p class="note miss">Foreign fill on ${esc(S.fillBook)} · no join</p>` : ""}`;
+}
+function liveDockA() {
+  return `<div class="zone">Live · ticket</div>
+    <div class="znote">${esc(contractId())} · ${esc(A().book)} · Confirm did not POST</div>
+    ${ticketReceiptRows()}
+    ${liveActions()}
+    <p class="note">Exit cancels LiveBook intent. Named futures flatten stays parked.</p>`;
+}
+function liveDockB() {
+  return `<div class="zone">Live · detect</div>
+    <div class="znote">Detect owns the board · ticket is chips</div>
+    <div class="chips">
+      <span class="rochip">${esc(A().book)}</span>
+      <span class="rochip">${hasVenueTicket() ? esc(S.orderType) : "equity"}</span>
+      <span class="rochip">${hasVenueTicket() ? esc(ticketPath()) : "none"}</span>
+    </div>
+    <div class="srow"><span>Plan stop</span><span>${S.hasStop ? S.sl : "none"}</span></div>
+    <div class="srow"><span>Venue SL</span><span>${(S.asset === "usdm" || S.asset === "coinm") ? "dark · not placed" : "TRADE parked · not placed"}</span></div>
+    ${liveActions()}`;
+}
+function liveDockC() {
+  const m = marginReadout();
+  return `<div class="zone">Live · ledger</div>
+    <div class="znote">Named book only · DualNoBlend money</div>
+    <div class="srow"><span>PnL owner</span><span>${esc(pnlOwner())}</span></div>
+    <div class="srow"><span>realized</span><span>none</span></div>
+    <div class="srow"><span>spot inventory tick</span><span>${S.spotInventoryTick} · does not arm USDM debrief</span></div>
+    <div class="srow"><span>Cross/x/liq</span><span>${m.lev ? esc(m.mode + " " + m.lev) : "none"}</span></div>
+    ${liveActions()}`;
+}
+function liveMosaicB() {
+  const size = detectSizeCopy();
+  const m = marginReadout();
+  const rows = [
+    [contractId(), A().book, Number(A().last || S.entry), true],
+    [size.mode, size.line, S.sizeMode === "quote" ? (S.quoteQty ?? "none") : qtyFmt(S.qty), true],
+    ["Join", joinKeyLabel(A().book, contractId()), S.foreignFill ? "miss" : (S.fillBook ? "matched" : "waiting"), !S.foreignFill],
+    ["Plan stop", String(S.hasStop ? S.sl : "none"), stopActualCopy(), true],
+  ];
+  return `<div class="cardn" style="height:100%;overflow:auto">
+    <div class="tvsec">${esc(A().chip)} ›</div>
+    ${rows.map((r,i) => `<div class="tvrow">
+      <div class="dot">${esc(String(r[0]).slice(0,3))}</div>
+      <div class="nm"><b>${esc(r[0])}</b><span>${esc(String(r[1]))}</span></div>
+      <div class="px">${esc(String(r[2]))}</div>
+      <span class="tvpct ${r[3]?"up":"dn"}">${r[3]?"ok":"miss"}</span>
+    </div>`).join("")}
+    <div class="seeall">See all books · DualNoBlend ›</div>
+    <p class="note">Cross/x/liq ${m.lev || "none"} · Conditional ${S.orderType === "CONDITIONAL" ? ticketPath() : S.orderType}</p>
+  </div>`;
+}
+function liveLedgerC() {
+  const m = marginReadout();
+  return `<div class="ledger">
+    <div class="row"><span class="k">book_id</span><span>${esc(A().book)}</span></div>
+    <div class="row"><span class="k">join</span><span>${esc(joinKeyLabel(A().book, contractId()))}</span></div>
+    <div class="row"><span class="k">type / TIF / path</span><span>${hasVenueTicket() ? esc(S.orderType + " · " + S.tif + " · " + ticketPath()) : "no COM ticket"}</span></div>
+    <div class="row"><span class="k">positionbook (this book)</span><span>${S.positionCount}</span></div>
+    <div class="row"><span class="k">Cross / x / liq</span><span>${m.mode || "none"} / ${m.lev || "none"} / ${m.liq || "none"}</span></div>
+    <div class="row"><span class="k">PnL owner</span><span>${esc(pnlOwner())}</span></div>
+    <div class="row"><span class="k">realized</span><span>none</span></div>
+    <div class="row"><span class="k">fill</span><span class="${S.foreignFill ? "miss" : ""}">${S.foreignFill ? "miss " + esc(S.fillBook) : (S.fillBook || "none")}</span></div>
+    <div class="row"><span class="k">spot inventory tick</span><span>${S.spotInventoryTick}</span></div>
+    <div class="row"><span class="k">debrief armed</span><span>${S.debriefArmed ? "this book 1→0" : "no"}</span></div>
+    ${S.flattenAttempt ? `<div class="row forbid"><span class="k">flatten</span><span>MutationForbidden</span></div>` : ""}
+  </div>`;
+}
+function postAdherenceRows() {
+  const sizeQ = S.asset === "spot"
+    ? (S.sizeMode === "quote" ? "Stayed on quote, not both?" : "Stayed on base, not both?")
+    : (S.asset === "options" ? "Contracts on the dated id, not leftover pair qty?" : (S.asset === "equity" ? "Cash size as declared?" : "Contracts, not lots?"));
+  const stopQ = "Plan stop you wrote — not broker SL";
+  const keys = [
+    ["stop", stopQ],
+    ["size", sizeQ],
+    ["invalidation", "Invalidation respected"],
+    ["exit", "Exit per plan — cancel intent ≠ flatten"],
+    ["impulsive", "No impulsive add"],
+  ];
+  return keys.map(([id, lab]) => {
+    const v = S.adherence[id];
+    return `<div class="srow"><span>${esc(lab)}</span>
+      <span>
+        <button class="chipbtn press ${v===true?"on":""}" data-act="adh" data-id="${id}" data-val="yes">yes</button>
+        <button class="chipbtn press ${v===false?"on":""}" data-act="adh" data-id="${id}" data-val="no">no</button>
+      </span></div>`;
+  }).join("");
+}
+function postBoardA() {
+  return `<div class="work"><div class="board"><div class="ledger">
+      <div class="row"><span class="k">book_id</span><span>${esc(A().book)}</span></div>
+      <div class="row"><span class="k">ticket type</span><span>${hasVenueTicket() ? esc(S.orderType) : "—"}</span></div>
+      <div class="row"><span class="k">path</span><span>${hasVenueTicket() ? esc(ticketPath()) : "none"}</span></div>
+      <div class="row"><span class="k">Conditional story</span><span>${S.orderType === "CONDITIONAL" ? "algo never fired ≠ Limit fill" : "Limit/Market"}</span></div>
+      <div class="row"><span class="k">PnL owner</span><span>${esc(pnlOwner())}</span></div>
+      <div class="row"><span class="k">realized</span><span>none</span></div>
+    </div></div>
+    <div class="side">
+      <div class="zone">Post · Moment B</div>
+      <div class="znote">Size mode is part of the question</div>
+      ${postAdherenceRows()}
+      <p class="note">Venue TP/SL that would POST STOP_MARKET stays out.</p>
+      ${chartAttach()}
+      <button class="cta ghost press" data-act="undeclare">Back to plan</button>
+    </div></div>`;
+}
+function postBoardB() {
+  return `<div class="work"><div class="board"><div class="postgrid">
+      <div class="pane"><h2>Plan stop</h2><div class="v" style="font:600 22px/1.1 var(--sans);margin:8px 0">${S.hasStop ? S.sl : "none"}</div><p class="note">This is what Moment B scores. Missing broker SL is not a fail.</p></div>
+      <div class="pane"><h2>Venue SL</h2><div class="v" style="font:600 22px/1.1 var(--sans);margin:8px 0;color:var(--ter)">dark</div><p class="note">${(S.asset === "usdm" || S.asset === "coinm") ? "Never implied STOP_MARKET / algoOrder went out." : "TRADE parked · not placed."}</p></div>
+    </div></div>
+    <div class="side">
+      <div class="zone">Post · plan vs venue</div>
+      ${postAdherenceRows()}
+      ${chartAttach()}
+      <button class="cta ghost press" data-act="undeclare">Back to plan</button>
+    </div></div>`;
+}
+function postBoardC() {
+  const attachOk = S.chartBook === A().book;
+  return `<div class="work"><div class="board"><div class="ledger">
+      <div class="row"><span class="k">Close trigger</span><span>${S.debriefArmed ? "this book positionbook 1→0" : "not armed"}</span></div>
+      <div class="row"><span class="k">spot inventory tick</span><span>${S.spotInventoryTick} · did not open this debrief</span></div>
+      <div class="row"><span class="k">PnL owner</span><span>${esc(pnlOwner())}</span></div>
+      <div class="row"><span class="k">realized</span><span>none</span></div>
+      <div class="row"><span class="k">chart book</span><span class="${attachOk || !S.chartBook ? "" : "miss"}">${S.chartBook || "none"}</span></div>
+    </div></div>
+    <div class="side">
+      <div class="zone">Post · book receipt</div>
+      <div class="znote">${esc(A().book)} · ${hasVenueTicket() ? esc(S.orderType) : "equity"}</div>
+      ${postAdherenceRows()}
+      ${chartAttach()}
+      <button class="cta ghost press" data-act="undeclare">Back to plan</button>
+    </div></div>`;
+}
+function chartAttach() {
+  return `<h2>Unposted chart</h2>
+    <p class="note">Send needs this book_id or a USDM shot attaches to a spot close.</p>
+    <div class="chips">
+      <button class="chipbtn press ${S.chartBook===A().book?"on":""}" data-act="chartbook" data-id="${esc(A().book)}">This book</button>
+      <button class="chipbtn press ${S.chartBook===otherBookId()?"on":""}" data-act="chartbook" data-id="${esc(otherBookId())}">Other book</button>
+    </div>
+    ${S.chartBook && S.chartBook !== A().book ? `<p class="illegal">Refuse · chart book ${esc(S.chartBook)} ≠ ${esc(A().book)}</p>` : ""}`;
+}
+function liveWork() {
+  if (S.flow === "B") {
+    return `<div class="work"><div class="board">${liveMosaicB()}</div><div class="side"><div class="livecol" style="overflow:auto">${intactCard()}${escrowCard()}${livePlayStrip()}${killRow()}</div></div></div>`;
+  }
+  if (S.flow === "C") {
+    return `<div class="work"><div class="board">${liveLedgerC()}</div><div class="side"><div class="livecol" style="overflow:auto">${captureCard()}${livePlayStrip()}${killRow()}</div></div></div>`;
+  }
+  return `<div class="work"><div class="board">${liveScroll()}</div></div>`;
+}
+function postWork() {
+  if (S.flow === "B") return postBoardB();
+  if (S.flow === "C") return postBoardC();
+  return `<div class="work"><div class="board">${postScroll()}</div></div>`;
+}
+
+function urlSync() {
+  const u = new URL(location.href);
+  u.searchParams.set("asset", S.asset);
+  u.searchParams.set("board", S.boardId);
+  u.searchParams.set("ticket", S.ticket);
+  u.searchParams.set("flow", S.flow);
+  u.searchParams.set("phase", S.phase);
+  if (S.asset === "options") {
+    u.searchParams.set("desk", S.optionsDesk);
+    if (isNfo()) u.searchParams.set("kind", S.nfoKind);
+    else u.searchParams.delete("kind");
+  } else {
+    u.searchParams.delete("desk");
+    u.searchParams.delete("kind");
+  }
+  if (S.edit) u.searchParams.set("edit", "1");
+  else u.searchParams.delete("edit");
+  history.replaceState(null, "", u);
+}
+
+function dump() {
+  const b = board();
+  const r = S.asset === "options" ? row() : { oi: null };
+  const state = {
+    asset: S.asset, book: A().book, money: money(),
+    board: b.id, name: b.name, planDock: b.planDock,
+    tiles: b.tiles.map(t => t.kind),
+    edit: S.edit, seed: !!b.seed,
+    contract: contractId(),
+    calm: S.calm, conf: S.conf, side: S.side, right: (S.asset === "options" && !(isNfo() && S.nfoKind === "fut")) ? S.right : null,
+    entry: +S.entry.toFixed(2), sl: +S.sl.toFixed(2), tp: +S.tp.toFixed(2),
+    qty: S.qty, authoredQty: engine().authoredQty, atTarget: engine().atTarget, rMultiple: engine().rMultiple, wrongSideTp: engine().wrongSideTp, targetDark: engine().targetDark, gate: engine().gate,
+    role: S.role, hasStop: S.hasStop, fill: S.fill, legs: S.legs.length, oi: r.oi, indexS: S.asset === "options" ? indexS() : null,
+    declared: S.declared, openAlgoFeed: false, dualNoBlend: true, pcr: false,
+    book_id: A().book,
+    type: hasVenueTicket() ? S.orderType : null,
+    sizeMode: hasVenueTicket() ? S.sizeMode : null,
+    tif: hasVenueTicket() ? S.tif : null,
+    reduceOnly: hasVenueTicket() ? !!S.reduceOnly : null,
+    quoteOrderQty: hasVenueTicket() && S.sizeMode === "quote" ? S.quoteQty : null,
+    path: hasVenueTicket() ? ticketPath() : null,
+    illegal: hasVenueTicket() ? ticketIllegal() : null,
+    ticket: S.ticket,
+    postOnly: hasVenueTicket() ? !!S.postOnly : null,
+    triggerPrice: hasVenueTicket() && S.orderType === "CONDITIONAL" ? S.triggerPrice : null,
+    phase: S.phase,
+    flow: S.flow,
+    join: joinKeyLabel(A().book, contractId()),
+    fillBook: S.fillBook,
+    foreignFill: S.foreignFill,
+    positionCount: S.positionCount,
+    spotInventoryTick: S.spotInventoryTick,
+    flattenAttempt: S.flattenAttempt,
+    debriefArmed: S.debriefArmed,
+    chartBook: S.chartBook,
+    pnlOwner: pnlOwner(),
+    realized: realizedDump(),
+    margin: marginReadout(),
+    stopChrome: (S.asset === "usdm" || S.asset === "coinm") ? "plan-only" : (isNfo() ? (S.nfoKind === "fut" ? "plan-index" : "plan-premium") : (S.asset === "options" ? "plan-premium" : "protective-parked")),
+    exitMeans: (S.asset === "usdm" || S.asset === "coinm") ? "cancel-intent" : "cancel-declaration",
+    adherence: S.adherence,
+    mutationForbidden: true,
+    captureOn: S.captureOn,
+    momentA: S.momentA,
+    momentB: S.momentB,
+    escrowJoin: joinKeyLabel(A().book, contractId()),
+    stopActual: stopActualCopy(),
+    nfoThreeZone: isNfoFut(),
+    nfoKind: isNfo() ? S.nfoKind : null,
+    optionsDesk: S.asset === "options" ? S.optionsDesk : null,
+    lotSize: A().lotSize || null,
+    liveMargin: liveMarginQuote(),
+    optionsCross: (S.asset === "options" && !isNfo()) ? (marginReadout().lev || "none-while-flat") : null,
+    planDockKept: true,
+  };
+  document.getElementById("app").dataset.state = JSON.stringify(state);
+  document.getElementById("dump").textContent = JSON.stringify(state, null, 2);
+}
+
+function paint() {
+  const b = board();
+  document.getElementById("island").textContent = moneyFmt(A().equity, 0) + " " + money();
+  document.body.classList.toggle("is-edit", S.edit && S.phase === "plan");
+  document.body.classList.toggle("phase-plan", S.phase === "plan");
+  document.body.classList.toggle("is-risk", false);
+  const floor = b.planDock === "floor";
+  let work;
+  if (S.phase === "live") work = liveWork();
+  else if (S.phase === "post") work = postWork();
+  else if (isNfoFut()) work = `<div class="work">${nfoThreeZone()}</div>`;
+  else work = `<div class="work ${floor ? "col" : ""}">
+        <div class="board">${mosaicHTML()}</div>
+        ${floor ? `<div class="floor">${planBlock(true)}</div>` : `<div class="side">${planBlock(false)}</div>`}
+      </div>`;
+  const liveOn = S.phase === "live";
+  const postOn = S.phase === "post";
+  const planOn = S.phase === "plan";
+  document.getElementById("app").innerHTML = `
+    <div class="rail">
+      <div class="k">Session</div>
+      <button class="nav press">${ICO.sun} Morning brief</button>
+      <button class="nav press ${planOn?"on":""}" data-act="phase" data-id="plan">${ICO.clip} Pre-trade</button>
+      <button class="nav press ${liveOn?"on":""}" data-act="phase" data-id="live">${ICO.bolt} Live trade</button>
+      <button class="nav press ${postOn?"on":""}" data-act="phase" data-id="post">${ICO.list} Post-trade</button>
+      <button class="hide press" data-act="hide">Hide notch · ⌥Space</button>
+      <div class="apill"><i></i>${planOn ? esc(ROLES[S.role].label) + " · plan" : (liveOn ? "live · " + A().book : "post · " + pnlOwner())}</div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <h1>${planOn ? "Pre-trade" : (liveOn ? "Live trade" : "Post-trade")}</h1>
+        <span class="sp"></span>
+        ${planOn ? `<button class="chip press ${S.edit ? "on" : ""}" data-act="edit">${S.edit ? "Done" : "Edit board"}</button>` : ""}
+        <span class="chip">${esc(b.name)}</span>
+        <span class="chip">${contractId()}</span>
+        <span class="chip">${esc(A().chip)}</span>
+        <span class="chip warn">Demo · TRADE parked</span>
+      </div>
+      <div class="tabs">
+        <button class="tab press ${S.asset==="spot"?"on":""}" data-act="asset" data-id="spot">Spot</button>
+        <button class="tab press ${S.asset==="equity"?"on":""}" data-act="asset" data-id="equity">Equity</button>
+        <button class="tab press ${S.asset==="options"?"on":""}" data-act="asset" data-id="options">Options</button>
+        <button class="tab press ${S.asset==="usdm"?"on":""}" data-act="asset" data-id="usdm">USDM</button>
+        <button class="tab press ${S.asset==="coinm"?"on":""}" data-act="asset" data-id="coinm">Coin-M</button>
+        ${S.asset==="options" ? `<button class="tab press ${!isNfo()?"on":""}" data-act="optdesk" data-id="crypto">Crypto</button>
+        <button class="tab press ${isNfo()?"on":""}" data-act="optdesk" data-id="nfo">NSE F&amp;O</button>` : ""}
+        ${isNfo() ? `<button class="tab press ${isNfoFut()?"on":""}" data-act="nfokind" data-id="fut">Futures</button>
+        <button class="tab press ${isNfoOpt()?"on":""}" data-act="nfokind" data-id="opt">Options</button>` : ""}
+        ${planOn ? Object.values(ROLES).map(r => `<button class="tab press ${S.role===r.id?"on":""}" data-act="role" data-id="${r.id}">${r.label}</button>`).join("") : ""}
+      </div>
+      ${liveOn && S.flow !== "A" ? detectHTML() : ""}
+      ${planOn ? strip() : ""}
+      ${work}
+    </div>
+    <div class="toast ${S.toast ? "on" : ""}">${S.toast || ""}</div>`;
+  if (!planOn) {
+    document.getElementById("tray").innerHTML = "";
+  } else if (isNfoFut()) {
+    document.getElementById("tray").innerHTML = `<span class="lab">NSE futures</span><span class="muted">lots · three-zone · DualNoBlend INR</span>`;
+  } else {
+    const unused = catalog().filter(c => !b.tiles.some(t => t.kind === c.kind));
+    document.getElementById("tray").innerHTML = `<span class="lab">Catalog</span>
+    ${unused.length
+      ? unused.map(c => `<button class="add press" data-act="addtile" data-id="${c.kind}">＋ ${esc(c.title)}</button>`).join("")
+      : `<span class="muted">All tiles on the board · Plan stays</span>`}
+    <span class="lab">Plan dock</span>
+    <button class="add press ${b.planDock === "rail" ? "on" : ""}" data-act="dock" data-id="rail">Rail</button>
+    <button class="add press ${b.planDock === "floor" ? "on" : ""}" data-act="dock" data-id="floor">Floor</button>`;
+  }
+  const blurb = planOn ? (b.blurb || `${b.tiles.length} tiles · Plan ${b.planDock}`) : (liveOn ? FLOW_LABEL[S.flow] : "Debrief · " + pnlOwner());
+  document.getElementById("switcher").innerHTML = planOn
+    ? `<button type="button" class="round" data-act="prev">←</button>
+    <div class="lab">${esc(b.name)}<span>${esc(blurb)} · catalog tray</span></div>
+    <button type="button" class="round" data-act="next">→</button>
+    <button type="button" data-act="save">Save</button>
+    <button type="button" data-act="saveas">Save as</button>
+    <button type="button" class="ghost" data-act="reset">Reset</button>
+    <button type="button" class="ghost" data-act="delete" ${b.seed ? "disabled" : ""}>Delete</button>`
+    : `<div class="lab">${esc(liveOn ? "Live" : "Post")}<span>${esc(A().book)}</span></div>`;
+  const tlab = TICKET_LABEL[S.ticket] || S.ticket;
+  document.getElementById("ticketbar").style.display = planOn ? "" : "none";
+  document.getElementById("ticketbar").innerHTML = hasVenueTicket()
+    ? `<button type="button" class="round" data-act="ticketprev">←</button>
+       <div class="lab">${esc(tlab)}<span>ticket · ${esc(A().book)} · Shift ← →</span></div>
+       <button type="button" class="round" data-act="ticketnext">→</button>`
+    : `<div class="lab">${isNfoFut() ? "NSE futures three-zone" : "No COM ticket"}<span>${isNfoFut() ? "lots · Analytics · Consequence · Plan" : (isNfoOpt() ? "kotak-nse-nfo · mosaic + Plan" : "Equity stays Kotak cash")}</span></div>`;
+  const flab = FLOW_LABEL[S.flow] || S.flow;
+  document.getElementById("flowbar").style.display = planOn ? "none" : "";
+  document.getElementById("flowbar").innerHTML = `<button type="button" class="round" data-act="flowprev">←</button>
+       <div class="lab">${esc(flab)}<span>Live/Post layout · Shift ← →</span></div>
+       <button type="button" class="round" data-act="flownext">→</button>`;
+  dump();
+  urlSync();
+  try {
+    drawSession();
+    if (liveOn && S.flow === "A") drawDeclaredPaths();
+    bindSession();
+    bindPayoff();
+    if (planOn) bindEdit();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function layout() {
+  const cv = document.getElementById("cv");
+  const wrap = cv && cv.parentElement;
+  if (!cv || !wrap) return null;
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w < 8 || h < 8) return null;
+  cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr);
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const volH = Math.round(h * 0.2);
+  const plot = { x: 8, y: 8, w: w - 16, h: h - 16 - volH };
+  const vol = { x: 8, y: h - volH - 4, w: plot.w, h: volH };
+  return { ctx, w, h, plot, vol, volH };
+}
+function yRange() {
+  const series = bars();
+  let lo = Math.min(...series.map(b => b.l), S.sl, S.entry, S.tp);
+  let hi = Math.max(...series.map(b => b.h), S.sl, S.entry, S.tp);
+  const pad = (hi - lo) * 0.08;
+  return { lo: lo - pad, hi: hi + pad };
+}
+function yAt(price, box, rng) { return box.y + (1 - (price - rng.lo) / (rng.hi - rng.lo)) * box.h; }
+function priceAt(py, box, rng) { return rng.lo + (1 - (py - box.y) / box.h) * (rng.hi - rng.lo); }
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x + w, y, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function drawLine(ctx, plot, rng, price, color, label, dashed) {
+  const y = yAt(price, plot, rng);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash(dashed ? [5, 4] : []);
+  ctx.beginPath(); ctx.moveTo(plot.x, y); ctx.lineTo(plot.x + plot.w * 0.7, y); ctx.stroke();
+  ctx.setLineDash([]);
+  const pillX = plot.x + plot.w * 0.7;
+  ctx.fillStyle = color;
+  ctx.beginPath(); roundRect(ctx, pillX, y - 8, 72, 16, 7); ctx.fill();
+  ctx.fillStyle = color === "#30d158" ? "#04210c" : "#fff";
+  ctx.font = "600 10px ui-monospace, Menlo, monospace";
+  ctx.fillText(label + " " + price.toFixed(1), pillX + 5, y + 3);
+}
+function drawPath(id, signedDelta, endLabel) {
+  const cv = document.getElementById(id);
+  const wrap = cv && cv.parentElement;
+  if (!cv || !wrap) return;
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w < 8 || h < 8) return;
+  cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr);
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const eq = A().equity;
+  const end = eq + signedDelta;
+  const span = Math.max(Math.abs(signedDelta) * 2.2, eq * 0.03);
+  const top = Math.max(eq, end) + span * 0.12;
+  const bot = Math.min(eq, end) - span * 0.12;
+  const y = v => 28 + (1 - (v - bot) / (top - bot || 1)) * (h - 56);
+  const x0 = 36, x1 = w - 28;
+  ctx.strokeStyle = "rgba(255,255,255,.12)";
+  ctx.beginPath(); ctx.moveTo(x0, y(eq)); ctx.lineTo(x1, y(eq)); ctx.stroke();
+  ctx.strokeStyle = signedDelta >= 0 ? "#30d158" : "#ff453a";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(x0, y(eq));
+  ctx.lineTo(x0 + (x1 - x0) * 0.35, y(eq));
+  ctx.lineTo(x1, y(end));
+  ctx.stroke();
+  ctx.fillStyle = "rgba(245,245,247,.62)";
+  ctx.font = "500 11px ui-monospace, Menlo, monospace";
+  ctx.fillText("now " + moneyFmt(eq, 0), x0, y(eq) - 8);
+  const endY = y(end);
+  ctx.fillText(endLabel + " " + moneyFmt(end, 0), Math.max(x0, x1 - 118), endY + (signedDelta >= 0 ? -8 : 14));
+}
+function drawDeclaredPaths() {
+  if (S.phase !== "live" || S.flow !== "A") return;
+  const e = engine();
+  drawPath("pathcv", e.atStop == null ? 0 : -e.atStop, "if SL");
+  drawPath("pathcv-tp", e.atTarget == null ? 0 : e.atTarget, "if TP");
+}
+function drawSession() {
+  const L = layout(); if (!L) return;
+  const { ctx, w, h, plot, volH } = L;
+  ctx.clearRect(0, 0, w, h);
+  const rng = yRange();
+  ctx.strokeStyle = "rgba(255,255,255,.06)";
+  for (let i = 1; i < 4; i++) {
+    const y = plot.y + (plot.h * i) / 4;
+    ctx.beginPath(); ctx.moveTo(plot.x, y); ctx.lineTo(plot.x + plot.w, y); ctx.stroke();
+  }
+  const series = bars();
+  const slot = plot.w / series.length;
+  const bodyW = Math.max(2, slot * 0.55);
+  series.forEach((b, i) => {
+    const x = plot.x + slot * (i + 0.5);
+    const up = b.c >= b.o;
+    ctx.strokeStyle = up ? "#30d158" : "#ff453a";
+    ctx.beginPath(); ctx.moveTo(x, yAt(b.h, plot, rng)); ctx.lineTo(x, yAt(b.l, plot, rng)); ctx.stroke();
+    const top = Math.min(yAt(b.o, plot, rng), yAt(b.c, plot, rng));
+    ctx.fillStyle = up ? "rgba(48,209,88,.9)" : "#ff453a";
+    ctx.fillRect(x - bodyW / 2, top, bodyW, Math.max(1, Math.abs(yAt(b.c, plot, rng) - yAt(b.o, plot, rng))));
+  });
+  if (volH > 0) {
+    const vmax = Math.max(...series.map(b => b.v));
+    series.forEach((b, i) => {
+      const x = L.vol.x + slot * (i + 0.5);
+      const vh = (b.v / vmax) * (L.vol.h - 4);
+      ctx.fillStyle = b.c >= b.o ? "rgba(48,209,88,.35)" : "rgba(255,69,58,.35)";
+      ctx.fillRect(x - bodyW / 2, L.vol.y + L.vol.h - vh, bodyW, vh);
+    });
+  }
+  if (S.ghost != null && S.dragging) {
+    const gy = yAt(S.ghost, plot, rng);
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = "rgba(245,245,247,.28)";
+    ctx.beginPath(); ctx.moveTo(plot.x, gy); ctx.lineTo(plot.x + plot.w * 0.7, gy); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  drawLine(ctx, plot, rng, S.entry, "#0a84ff", S.side === "buy" ? "BUY" : "SELL", false);
+  drawLine(ctx, plot, rng, S.sl, "#ff453a", "SL", true);
+  drawLine(ctx, plot, rng, S.tp, "#30d158", "TP", true);
+}
+function hitLine(py, L) {
+  const rng = yRange();
+  for (const [id, px] of [["sl", S.sl], ["tp", S.tp], ["entry", S.entry]]) {
+    if (Math.abs(py - yAt(px, L.plot, rng)) < 8) return id;
+  }
+  return null;
+}
+function bindSession() {
+  const cv = document.getElementById("cv");
+  if (!cv || S.edit) return;
+  cv.onpointerdown = (e) => {
+    const L = layout(); if (!L) return;
+    const y = e.clientY - cv.getBoundingClientRect().top;
+    const id = hitLine(y, L);
+    if (!id) return;
+    cv.setPointerCapture(e.pointerId);
+    S.dragging = id; S.ghost = S[id];
+    cv.style.cursor = "ns-resize";
+    dump(); drawSession();
+  };
+  cv.onpointermove = (e) => {
+    const L = layout(); if (!L) return;
+    const y = e.clientY - cv.getBoundingClientRect().top;
+    if (!S.dragging) { cv.style.cursor = hitLine(y, L) ? "ns-resize" : "default"; return; }
+    const rng = yRange();
+    S[S.dragging] = Math.max(rng.lo, Math.min(rng.hi, priceAt(y, L.plot, rng)));
+    dump(); drawSession();
+  };
+  cv.onpointerup = () => {
+    if (S.dragging) say("Commit " + S.dragging.toUpperCase() + " " + S[S.dragging].toFixed(2));
+    S.dragging = null; S.ghost = null;
+    cv.style.cursor = "default";
+    const e = document.querySelector("input[data-act=entry]");
+    const sl = document.querySelector("input[data-act=sl]");
+    const tp = document.querySelector("input[data-act=tp]");
+    if (e) e.value = S.entry.toFixed(2);
+    if (sl) sl.value = S.sl.toFixed(2);
+    if (tp) tp.value = S.tp.toFixed(2);
+    paint();
+  };
+}
+
+function bindPayoff() {
+  if (S.edit) return;
+  document.querySelectorAll("svg.pay").forEach(svg => {
+    svg.onmousemove = (e) => {
+      const r = row();
+      const box = svg.getBoundingClientRect();
+      const t = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+      const K = +r.strike;
+      const spot = K * 0.72 + t * (K * 1.28 - K * 0.72);
+      const pnl = payoffAt(spot, K, r.last, r.right, S.side, +S.qty || 1);
+      const label = `S ${spot.toFixed(0)} · ${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)} ${money()} at expiry`;
+      S.payHover = label;
+      const hov = svg.parentElement.querySelector(".hover");
+      if (hov) hov.textContent = label;
+      else {
+        const d = document.createElement("div");
+        d.className = "hover"; d.textContent = label;
+        svg.parentElement.appendChild(d);
+      }
+    };
+    svg.onmouseleave = () => { S.payHover = ""; const h = svg.parentElement.querySelector(".hover"); if (h) h.remove(); };
+  });
+}
+
+function cellAt(px, py) {
+  const mosaic = document.getElementById("mosaic");
+  if (!mosaic) return null;
+  const r = mosaic.getBoundingClientRect();
+  const tiles = board().tiles;
+  const rows = rowCount(tiles);
+  const gap = 8;
+  const colW = (r.width - gap * (COLS - 1)) / COLS;
+  const rowH = (r.height - gap * (rows - 1)) / rows;
+  const x = Math.max(0, Math.min(COLS - 1, Math.floor((px - r.left) / (colW + gap))));
+  const y = Math.max(0, Math.floor((py - r.top) / (rowH + gap)));
+  return { x, y };
+}
+
+function bindEdit() {
+  if (!S.edit) return;
+  const mosaic = document.getElementById("mosaic");
+  if (!mosaic) return;
+  mosaic.querySelectorAll("[data-move]").forEach(el => {
+    el.onpointerdown = (e) => {
+      if (e.target.closest("[data-act=rmtile]")) return;
+      const kind = el.getAttribute("data-move");
+      const t = board().tiles.find(x => x.kind === kind);
+      if (!t) return;
+      el.setPointerCapture(e.pointerId);
+      S.tileDrag = { kind, ox: t.x, oy: t.y, w: t.w, h: t.h };
+      S.dropBad = false;
+    };
+  });
+  mosaic.querySelectorAll("[data-resize]").forEach(el => {
+    el.onpointerdown = (e) => {
+      e.stopPropagation();
+      const kind = el.getAttribute("data-resize");
+      const t = board().tiles.find(x => x.kind === kind);
+      if (!t) return;
+      el.setPointerCapture(e.pointerId);
+      S.tileResize = { kind, ox: t.x, oy: t.y, ow: t.w, oh: t.h, px: e.clientX, py: e.clientY };
+    };
+  });
+}
+
+function commitGeometry() {
+  persist();
+  paint();
+}
+
+function addTile(kind) {
+  const meta = kindMeta(kind);
+  if (!meta) { say("Not on this class"); return; }
+  const b = board();
+  if (b.tiles.some(t => t.kind === kind)) { say("Already on the board"); return; }
+  const hole = firstHole(b.tiles, meta.addW, meta.addH);
+  b.tiles.push({ kind, x: hole.x, y: hole.y, w: hole.w, h: hole.h });
+  persist();
+  paint();
+}
+
+function removeTile(kind) {
+  const b = board();
+  b.tiles = b.tiles.filter(t => t.kind !== kind);
+  persist();
+  paint();
+}
+
+function setDock(dock) {
+  board().planDock = dock === "floor" ? "floor" : "rail";
+  persist();
+  paint();
+}
+
+function slugName(name) {
+  const s = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return s || "board";
+}
+function uniqueId(base) {
+  let id = base, n = 2;
+  while (S.boards[id]) { id = base + "-" + n; n++; }
+  return id;
+}
+
+function saveAs(name) {
+  const label = String(name || "").trim();
+  if (!label) { say("Name the board"); return; }
+  const id = uniqueId(slugName(label));
+  const src = board();
+  S.boards[id] = {
+    id, name: label, seed: false, planDock: src.planDock,
+    blurb: `${src.tiles.length} tiles · Plan ${src.planDock}`,
+    tiles: cloneTiles(src.tiles),
+    origin: cloneTiles(src.tiles),
+    originDock: src.planDock,
+  };
+  S.order.push(id);
+  S.boardId = id;
+  persist();
+  S.naming = false;
+  document.getElementById("namebox").classList.remove("on");
+  say("Saved " + label);
+  paint();
+}
+
+function resetBoard() {
+  const cur = board();
+  const seed = seeds().find(s => s.id === cur.id);
+  if (seed) {
+    S.boards[cur.id] = seedClone(seed);
+  } else if (cur.origin) {
+    cur.tiles = cloneTiles(cur.origin);
+    cur.planDock = cur.originDock || cur.planDock;
+  } else {
+    say("Nothing to reset");
+    return;
+  }
+  persist();
+  say("Reset " + S.boards[S.boardId].name);
+  paint();
+}
+
+function deleteBoard() {
+  const cur = board();
+  if (cur.seed) { say("Seeds cannot be deleted"); return; }
+  delete S.boards[cur.id];
+  S.order = S.order.filter(id => id !== cur.id);
+  S.boardId = "cockpit";
+  persist();
+  say("Deleted");
+  paint();
+}
+
+function switchBoard(id) {
+  if (!S.boards[id]) { say("Unknown board"); S.boardId = "cockpit"; persist(); paint(); return; }
+  S.boardId = id;
+  S.declared = false;
+  resetLive();
+  persist();
+  paint();
+}
+
+function cycle(d) {
+  const i = S.order.indexOf(S.boardId);
+  const n = S.order.length;
+  switchBoard(S.order[(i + d + n) % n]);
+}
+
+function setEdit(on) {
+  S.edit = !!on;
+  S.tileDrag = null;
+  S.tileResize = null;
+  S.dragging = null;
+  paint();
+}
+
+function say(m) {
+  S.toast = m;
+  const t = document.querySelector(".toast");
+  if (t) { t.textContent = m; t.classList.add("on"); }
+  setTimeout(() => { S.toast = ""; const x = document.querySelector(".toast"); if (x) x.classList.remove("on"); }, 1400);
+}
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]"); if (!el || el.tagName === "INPUT" || el.tagName === "TEXTAREA") return;
+  const act = el.getAttribute("data-act"), id = el.getAttribute("data-id");
+  if (act === "prev") cycle(-1);
+  if (act === "next") cycle(1);
+  if (act === "hide") say("⌥Space hides the island. This is not live Notch.");
+  if (act === "edit") setEdit(!S.edit);
+  if (act === "asset") switchAsset(id);
+  if (act === "optdesk") {
+    if (id === "nfo") {
+      S.nfoKind = S.nfoKind || "opt";
+      applyNfoProduct();
+      S.declared = false;
+      resetLive();
+    } else {
+      applyQuote("options");
+      adoptAssetSlice("options");
+    }
+    persist();
+    paint();
+  }
+  if (act === "nfokind") {
+    S.nfoKind = id === "fut" ? "fut" : "opt";
+    applyNfoProduct();
+    S.declared = false;
+    resetLive();
+    persist();
+    paint();
+  }
+  if (act === "ticketprev") cycleTicket(-1);
+  if (act === "ticketnext") cycleTicket(1);
+  if (act === "flowprev") cycleFlow(-1);
+  if (act === "flownext") cycleFlow(1);
+  if (act === "phase") {
+    S.phase = id;
+    if (id === "plan") S.edit = false;
+    paint();
+  }
+  if (act === "fillbook") {
+    S.fillBook = A().book;
+    S.foreignFill = false;
+    S.fill = S.hasStop ? "withStop" : "noStop";
+    if (S.asset === "usdm" || S.asset === "coinm" || S.asset === "options") S.positionCount = 1;
+    say("Fill joined " + joinKeyLabel(A().book, contractId()));
+    paint();
+  }
+  if (act === "fillother") {
+    S.fillBook = otherBookId();
+    S.foreignFill = true;
+    S.fill = "none";
+    say("Fill on " + otherBookId() + " · no join");
+    paint();
+  }
+  if (act === "fillclear") {
+    S.fillBook = null;
+    S.foreignFill = false;
+    S.fill = "none";
+    paint();
+  }
+  if (act === "closebook") {
+    if (S.asset === "usdm" || S.asset === "coinm" || S.asset === "options") {
+      if (S.positionCount > 0) {
+        S.positionCount = 0;
+        S.debriefArmed = true;
+        S.phase = "post";
+        say("positionbook 1→0 · debrief this book only");
+      } else {
+        say("Already flat · Cross/x/liq none");
+      }
+    } else {
+      S.debriefArmed = true;
+      S.phase = "post";
+      say("Close this book · debrief armed");
+    }
+    paint();
+  }
+  if (act === "spotinv") {
+    S.spotInventoryTick += 1;
+    say(S.asset === "usdm" || S.asset === "coinm"
+      ? "Spot inventory changed · this book’s debrief not armed"
+      : "Spot inventory tick " + S.spotInventoryTick);
+    paint();
+  }
+  if (act === "flatten") {
+    S.flattenAttempt = true;
+    say("Flatten refused · MutationForbidden · TRADE parked");
+    paint();
+  }
+  if (act === "cancelintent") {
+    S.declared = false;
+    resetLive();
+    S.hasStop = true;
+    say("Cancelled LiveBook declaration · not flatten");
+    paint();
+  }
+  if (act === "adh") {
+    S.adherence[id] = S.adherence[id] === true ? null : true;
+    paint();
+  }
+  if (act === "chartbook") {
+    S.chartBook = id;
+    paint();
+  }
+  if (act === "declarecta") { S.phase = "plan"; paint(); }
+  if (act === "capturevoice") { S.captureOn = S.captureOn === "voice" ? null : "voice"; paint(); }
+  if (act === "captureshot") { S.captureOn = "shot"; S.unposted = true; say("Screenshot on this Mac"); paint(); }
+  if (act === "delchart") { S.unposted = false; paint(); }
+  if (act === "kill") { S.killWarn = true; paint(); }
+  if (act === "killno") { S.killWarn = false; paint(); }
+  if (act === "killyes") { S.killWarn = false; say("Kill · TRADE parked · no POST"); paint(); }
+  if (act === "momenta") { S.momentA = true; paint(); }
+  if (act === "momentb") {
+    const all = ["stop","size","invalidation","exit","impulsive"].every(k => S.adherence[k] === true);
+    if (!S.momentA) { say("Finish Moment A first"); return; }
+    if (!all) { say("Only honest yes advances"); return; }
+    S.momentB = true; paint();
+  }
+  if (act === "cooling") { S.cooling = id === "1"; paint(); }
+  if (act === "ordertype") { S.orderType = id; coerceTicket(); paint(); }
+  if (act === "sizemode") { S.sizeMode = id; coerceTicket(); paint(); }
+  if (act === "tif") { S.tif = id; persistTicket(); paint(); }
+  if (act === "reduce") { S.reduceOnly = !S.reduceOnly; persistTicket(); paint(); }
+  if (act === "postonly") { S.postOnly = !S.postOnly; persistTicket(); paint(); }
+  if (act === "role") { S.role = id; S.declared = false; resetLive(); paint(); }
+  if (act === "togglestop") { S.hasStop = !S.hasStop; S.declared = false; paint(); }
+  if (act === "fill") {
+    S.fill = id;
+    if (id === "noStop") S.hasStop = false;
+    if (id === "withStop") S.hasStop = true;
+    if (id === "none") S.hasStop = true;
+    paint();
+  }
+  if (act === "setup") { S.setup = id; paint(); }
+  if (act === "protect") { S.protectSL = !S.protectSL; paint(); }
+  if (act === "sym") { bindSym(id); paint(); }
+  if (act === "depth") { S.entry = +id; say("Limit " + id + " · not placed"); paint(); }
+  if (act === "side") { S.side = id; paint(); }
+  if (act === "calm") { S.calm = +id; paint(); }
+  if (act === "conf") { S.conf = +id; paint(); }
+  if (act === "right") { S.right = id; bindSym(contractId()); paint(); }
+  if (act === "horizon") {
+    S.horizon = id;
+    S.days = id === "today" ? 1 : id === "expiry" ? S.dte : 3;
+    paint();
+  }
+  if (act === "addleg") {
+    const fut = isNfo() && S.nfoKind === "fut";
+    const ok = fut ? (+S.qty > 0 && S.und) : (+S.qty > 0 && S.und && S.strike);
+    if (ok) {
+      S.legs.push({ kind: fut ? "fut" : "opt", und: S.und, expiry: S.expiry, strike: S.strike, right: S.right, side: S.side.toUpperCase(), qty: +S.qty });
+      paint();
+    } else say(fut ? "Need underlying and lots" : (isNfo() ? "Need underlying, strike, lots" : "Need underlying, strike, contracts"));
+  }
+  if (act === "rmleg") { S.legs.splice(+id, 1); paint(); }
+  if (act === "declare") {
+    const h = planReady();
+    if (h) { say(h); return; }
+    if (S.declared) { say("clientToken held · no second send"); return; }
+    S.declared = true;
+    S.phase = "live";
+    say("Declared · LiveBook intent · no POST");
+    paint();
+  }
+  if (act === "undeclare") {
+    S.declared = false;
+    resetLive();
+    S.hasStop = true;
+    say("Back to plan");
+    paint();
+  }
+  if (act === "addtile") addTile(id);
+  if (act === "rmtile") { e.preventDefault(); removeTile(id); }
+  if (act === "dock") setDock(id);
+  if (act === "save") { persist(); say("Saved " + board().name); }
+  if (act === "saveas") {
+    S.naming = true;
+    document.getElementById("namebox").classList.add("on");
+    const inp = document.getElementById("namein");
+    inp.value = "";
+    inp.focus();
+  }
+  if (act === "saveas-ok") saveAs(document.getElementById("namein").value);
+  if (act === "saveas-cancel") {
+    S.naming = false;
+    document.getElementById("namebox").classList.remove("on");
+  }
+  if (act === "reset") resetBoard();
+  if (act === "delete") deleteBoard();
+});
+document.addEventListener("input", (e) => {
+  const act = e.target.getAttribute("data-act");
+  if (!act) return;
+  if (act === "und") S.und = e.target.value.toUpperCase();
+  if (act === "symbol") S.symbol = e.target.value.toUpperCase();
+  if (act === "expiry") S.expiry = e.target.value;
+  if (act === "strike") S.strike = e.target.value;
+  if (act === "qty") {
+    const n = parseFloat(e.target.value);
+    S.qtyOverride = Number.isFinite(n) ? n : null;
+    S.qty = S.qtyOverride;
+    persistTicket();
+  }
+  if (act === "quoteqty") {
+    const n = parseFloat(e.target.value);
+    S.quoteQty = Number.isFinite(n) ? n : null;
+    persistTicket();
+  }
+  if (act === "trigger") { S.triggerPrice = e.target.value; persistTicket(); }
+  if (act === "maxLoss") S.maxLoss = e.target.value;
+  if (act === "inv") S.inv = e.target.value;
+  if (act === "notea") S.noteA = e.target.value;
+  if (act === "notec") S.noteC = e.target.value;
+  if (act === "entry") { S.entry = parseFloat(e.target.value) || S.entry; drawSession(); }
+  if (act === "sl") {
+    const n = parseFloat(e.target.value);
+    if (Number.isFinite(n) && n > 0) { S.sl = n; S.hasStop = true; }
+    else { S.hasStop = false; }
+    S.declared = false;
+    drawSession();
+  }
+  if (act === "tp") { S.tp = parseFloat(e.target.value) || S.tp; drawSession(); }
+  dump();
+});
+document.addEventListener("change", (e) => {
+  const act = e.target.getAttribute("data-act");
+  if (act === "qty" || act === "sl") paint();
+});
+document.addEventListener("pointerdown", (e) => { const el = e.target.closest(".press"); if (el) el.classList.add("is-down"); }, true);
+document.addEventListener("pointerup", () => document.querySelectorAll(".press.is-down").forEach(el => el.classList.remove("is-down")));
+document.addEventListener("pointermove", (e) => {
+  if (S.tileDrag) {
+    const cell = cellAt(e.clientX, e.clientY);
+    const t = board().tiles.find(x => x.kind === S.tileDrag.kind);
+    if (!cell || !t) return;
+    const nx = Math.max(0, Math.min(COLS - t.w, cell.x));
+    const ny = Math.max(0, cell.y);
+    const ok = canPlace(board().tiles, nx, ny, t.w, t.h, t.kind);
+    S.dropBad = !ok;
+        t.x = nx; t.y = ny;
+    const el = document.querySelector(`.tile[data-kind="${t.kind}"]`);
+    if (el) {
+      el.style.setProperty("--x", nx + 1);
+      el.style.setProperty("--y", ny + 1);
+      el.classList.toggle("bad", !ok);
+      el.classList.toggle("ghost", ok);
+    }
+    const mosaic = document.getElementById("mosaic");
+    if (mosaic) mosaic.style.setProperty("--rows", String(Math.max(5, ny + t.h, rowCount(board().tiles))));
+  }
+  if (S.tileResize) {
+    const mosaic = document.getElementById("mosaic");
+    if (!mosaic) return;
+    const r = mosaic.getBoundingClientRect();
+    const tiles = board().tiles;
+    const rows = rowCount(tiles);
+    const gap = 8;
+    const colW = (r.width - gap * (COLS - 1)) / COLS;
+    const rowH = (r.height - gap * (rows - 1)) / rows;
+    const t = tiles.find(x => x.kind === S.tileResize.kind);
+    if (!t) return;
+    const dw = Math.round((e.clientX - S.tileResize.px) / (colW + gap));
+    const dh = Math.round((e.clientY - S.tileResize.py) / (rowH + gap));
+    const nw = Math.max(1, Math.min(MAX_W, S.tileResize.ow + dw));
+    const nh = Math.max(1, Math.min(MAX_H, S.tileResize.oh + dh));
+    const clampedW = Math.min(nw, COLS - t.x);
+    const ok = canPlace(tiles, t.x, t.y, clampedW, nh, t.kind);
+    if (ok) { t.w = clampedW; t.h = nh; }
+    S.dropBad = !ok;
+    const el = document.querySelector(`.tile[data-kind="${t.kind}"]`);
+    if (el) {
+      el.style.setProperty("--w", t.w);
+      el.style.setProperty("--h", t.h);
+      el.classList.toggle("bad", !ok);
+    }
+  }
+});
+document.addEventListener("pointerup", () => {
+  if (S.tileDrag) {
+    const t = board().tiles.find(x => x.kind === S.tileDrag.kind);
+    if (t && !canPlace(board().tiles.filter(x => x.kind !== t.kind), t.x, t.y, t.w, t.h)) {
+      t.x = S.tileDrag.ox; t.y = S.tileDrag.oy;
+      say("That cell is occupied");
+    }
+    S.tileDrag = null; S.dropBad = false;
+    commitGeometry();
+  }
+  if (S.tileResize) {
+    S.tileResize = null; S.dropBad = false;
+    commitGeometry();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+    if (e.key === "Enter" && S.naming) saveAs(document.getElementById("namein").value);
+    return;
+  }
+  if (e.key === "ArrowLeft") {
+    if (e.shiftKey) {
+      if (S.phase === "plan") cycleTicket(-1);
+      else cycleFlow(-1);
+      return;
+    }
+    cycle(-1);
+  }
+  if (e.key === "ArrowRight") {
+    if (e.shiftKey) {
+      if (S.phase === "plan") cycleTicket(1);
+      else cycleFlow(1);
+      return;
+    }
+    cycle(1);
+  }
+  if (e.key === "[") {
+    if (S.phase === "plan") cycleTicket(-1);
+    else cycleFlow(-1);
+  }
+  if (e.key === "]") {
+    if (S.phase === "plan") cycleTicket(1);
+    else cycleFlow(1);
+  }
+  if (e.key === "e" || e.key === "E") setEdit(!S.edit);
+});
+window.addEventListener("resize", () => { drawSession(); drawDeclaredPaths(); });
+
+(function boot() {
+  const params = new URLSearchParams(location.search);
+  const loaded = loadStore();
+  S.store = loaded.store;
+  const rawAsset = params.get("asset") === "nfo" ? "options" : params.get("asset");
+  const asset = ASSETS[rawAsset] ? rawAsset : (ASSETS[loaded.store.asset] && loaded.store.asset !== "nfo" ? loaded.store.asset : "options");
+  applyQuote(asset);
+  adoptAssetSlice(asset);
+  const wantDesk = params.get("desk") || loaded.store.optionsDesk;
+  const wantKind = params.get("kind") || loaded.store.nfoKind;
+  if (asset === "options" && (params.get("asset") === "nfo" || wantDesk === "nfo")) {
+    S.nfoKind = wantKind === "fut" ? "fut" : "opt";
+    applyNfoProduct();
+  }
+  const want = params.get("board") || S.boardId;
+  if (want && S.boards[want]) S.boardId = want;
+  else if (want && !S.boards[want]) say("Unknown board · cockpit");
+  if (loaded.corrupt) say("Board store reset · cockpit");
+  S.edit = params.get("edit") === "1";
+  const wantTicket = String(params.get("ticket") || "").toUpperCase();
+  if (TICKET_IDS.includes(wantTicket)) S.ticket = wantTicket;
+  const wantFlow = String(params.get("flow") || "").toUpperCase();
+  if (FLOW_IDS.includes(wantFlow)) S.flow = wantFlow;
+  const wantPhase = String(params.get("phase") || "").toLowerCase();
+  if (wantPhase === "live") {
+    S.phase = "live";
+  } else if (wantPhase === "post") {
+    S.declared = true;
+    S.phase = "post";
+  } else if (wantPhase === "plan") {
+    S.phase = "plan";
+  }
+  persist();
+  paint();
+})();
+window.S = S;
+window.paint = paint;
+window.engine = engine;
+</script>
+</body>
+</html>

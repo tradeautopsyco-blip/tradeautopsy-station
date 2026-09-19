@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: If the cockpit is the risk product (sizer owns the board, Plan is a thin ticket),
+  what should that look like?
+  Three variants via ?variant= on live Notch chrome.
+  Open: open station/prototypes/PROTOTYPE-notch-risk-engine.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Notch · Risk engine cockpit</title>
+  <style>
+    :root {
+      --label: #f5f5f7; --sec: rgba(245,245,247,.62); --ter: rgba(245,245,247,.38);
+      --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --teal: #64d2ff;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font: 400 13px/1.35 var(--sans); letter-spacing: -.01em; color: var(--label);
+      -webkit-font-smoothing: antialiased; overflow: hidden; background: #1a1a1c;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 8px; }
+    .press { transition: transform 90ms ease-out; }
+    .press:active, .press.is-down { transform: scale(.97); }
+
+    .osbar {
+      height: 24px; display: grid; grid-template-columns: 1fr 244px 1fr;
+      background: rgba(22,22,24,.72); backdrop-filter: blur(40px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.1);
+    }
+    .osbar .l, .osbar .r { display: flex; align-items: center; color: var(--sec); padding: 0 10px; font-size: 13px; }
+    .osbar .r { justify-content: flex-end; }
+    .osbar span { padding: 0 8px; }
+    .island {
+      height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #000; color: #fff;
+      clip-path: path("M0,0 Q6,0 6,6 L6,10 Q6,24 20,24 L224,24 Q238,24 238,10 L238,6 Q238,0 244,0 Z");
+      font: 600 11px/1 var(--mono);
+    }
+    .island .mark { width: 14px; height: 14px; border-radius: 50%; background: rgba(255,255,255,.14); display: grid; place-items: center; font: 700 9px/1 var(--sans); }
+    .island b { margin-left: auto; }
+
+    .desk { height: calc(100% - 24px); padding: 10px 10px 88px; }
+    .sheet {
+      width: 100%; height: 100%; border-radius: 12px; overflow: hidden; display: flex; background: #0b0b0c;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 24px 80px rgba(0,0,0,.5);
+    }
+    .rail {
+      width: 176px; flex-shrink: 0; display: flex; flex-direction: column;
+      background: rgba(11,11,12,.92); backdrop-filter: blur(40px);
+      border-right: .5px solid rgba(255,255,255,.08);
+    }
+    .rail .k { font-size: 11px; letter-spacing: .066em; text-transform: uppercase; color: rgba(255,255,255,.5); padding: 12px 16px 6px; }
+    .nav { display: flex; align-items: center; gap: 10px; margin: 0 12px; padding: 7px 10px; border-radius: 8px; color: var(--sec); text-align: left; width: calc(100% - 24px); }
+    .nav.on { background: rgba(255,255,255,.08); color: var(--label); font-weight: 500; }
+    .nav svg { width: 16px; height: 16px; }
+    .hide { margin-top: auto; padding: 8px 18px; color: var(--ter); font-size: 13px; }
+    .apill { margin: 8px; padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,.04); font-size: 11px; color: var(--sec); display: flex; align-items: center; gap: 7px; }
+    .apill i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .top { display: flex; align-items: center; gap: 8px; padding: 10px 16px 6px; }
+    .top h1 { font-size: 15px; font-weight: 600; }
+    .sp { flex: 1; }
+    .chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--sec); }
+    .chip.warn { color: var(--orange); background: rgba(255,159,10,.12); }
+    .chip.bad { color: var(--red); background: rgba(255,69,58,.14); }
+    .chip.ok { color: var(--green); background: rgba(48,209,88,.14); }
+    .chip.on { color: var(--label); background: rgba(255,255,255,.16); }
+    .tabs { display: flex; gap: 6px; padding: 0 16px 8px; flex-wrap: wrap; }
+    .tab { padding: 5px 12px; border-radius: 999px; background: #1c1c1e; color: var(--sec); font-size: 12px; }
+    .tab.on { background: rgba(255,255,255,.12); color: var(--label); }
+
+    .work { flex: 1; min-height: 0; display: flex; padding: 0 12px 12px; gap: 10px; }
+    .work.col { flex-direction: column; }
+
+    .mosaic {
+      flex: 1; min-width: 0; min-height: 0;
+      display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr auto;
+      gap: 8px;
+    }
+    .cell {
+      background: #111113; border-radius: 12px; padding: 12px 14px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+      display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    }
+    .cell .k { font: 500 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ter); }
+    .cell .v { font: 600 28px/1.1 var(--sans); margin-top: 8px; letter-spacing: -.03em; }
+    .cell .s { font: 400 11px/1.3 var(--mono); color: var(--ter); margin-top: auto; padding-top: 8px; }
+    .cell.hero .v { font-size: 36px; }
+    .film {
+      grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; height: 88px;
+    }
+    .thumb {
+      background: #111113; border-radius: 10px; overflow: hidden; position: relative;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .thumb b { position: absolute; left: 8px; top: 6px; font-size: 10px; color: var(--ter); font-weight: 500; z-index: 1; }
+    .thumb canvas, .thumb svg { width: 100%; height: 100%; display: block; }
+
+    .ticket {
+      width: 200px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;
+      background: #111113; border-radius: 12px; padding: 12px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+      overflow: auto; min-height: 0;
+    }
+    .ticket h2 { font-size: 12px; font-weight: 600; color: var(--ter); letter-spacing: .04em; text-transform: uppercase; }
+    .ticket .sym { font: 600 16px/1.2 var(--sans); margin: 4px 0 8px; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+    .field span { font-size: 10px; color: var(--ter); letter-spacing: .04em; text-transform: uppercase; }
+    .field input {
+      background: #1c1c1e; color: var(--label); border: 0; border-radius: 8px;
+      padding: 7px 9px; font: 500 13px/1.2 var(--mono);
+    }
+    .feel { display: flex; gap: 4px; margin: 6px 0; }
+    .feel button {
+      flex: 1; padding: 6px 0; border-radius: 8px; background: #1c1c1e; color: var(--sec); font-size: 11px;
+    }
+    .feel button.on { background: rgba(255,255,255,.12); color: var(--label); font-weight: 600; }
+    .cta {
+      margin-top: auto; padding: 11px 12px; border-radius: 10px;
+      background: var(--blue); color: #fff; font-weight: 600; width: 100%;
+    }
+    .cta[disabled] { background: #2c2c2e; color: var(--ter); cursor: not-allowed; }
+    .ready { margin-top: 8px; font-size: 11px; color: var(--red); }
+    .note { font-size: 11px; color: var(--ter); margin-top: 6px; }
+
+    .pathwrap { flex: 1; min-height: 0; background: #111113; border-radius: 12px; position: relative; overflow: hidden;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07); }
+    .pathwrap canvas { width: 100%; height: 100%; display: block; }
+    .pathmeta { position: absolute; left: 16px; top: 14px; z-index: 2; }
+    .pathmeta .v { font: 600 32px/1 var(--sans); letter-spacing: -.03em; }
+    .floor {
+      display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+      background: #111113; border-radius: 12px;
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+    }
+    .floor .qty { font: 600 22px/1 var(--sans); }
+    .step { display: flex; gap: 6px; }
+    .step button { width: 32px; height: 32px; border-radius: 8px; background: #1c1c1e; font-weight: 600; }
+
+    .stage { flex: 1; min-width: 0; min-height: 0; position: relative; border-radius: 12px; overflow: hidden;
+      background: #111113; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07); }
+    .stage canvas { width: 100%; height: 100%; display: block; }
+    .ghosts {
+      position: absolute; right: 10px; top: 10px; bottom: 10px; width: 132px;
+      display: flex; flex-direction: column; gap: 8px; opacity: .42; pointer-events: none;
+    }
+    .ghosts .g { flex: 1; border-radius: 10px; background: rgba(0,0,0,.35);
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12); padding: 8px; font-size: 10px; color: var(--ter); }
+    .hud {
+      position: absolute; left: 14px; bottom: 14px; width: 280px; padding: 12px 14px;
+      border-radius: 14px; background: rgba(22,22,24,.78); backdrop-filter: blur(28px) saturate(180%);
+      box-shadow: inset 0 0 0 .5px rgba(255,255,255,.16), 0 12px 40px rgba(0,0,0,.4);
+    }
+    .hud .row { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0; }
+    .hud .big { font: 600 26px/1 var(--sans); letter-spacing: -.03em; }
+
+    .detect {
+      margin: 0 12px 8px; padding: 8px 12px; border-radius: 10px;
+      background: #111113; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07);
+      display: flex; align-items: center; gap: 10px; font-size: 12px;
+    }
+    .detect.bad { box-shadow: inset 0 0 0 .5px rgba(255,69,58,.55); }
+    .detect.warn { box-shadow: inset 0 0 0 .5px rgba(255,159,10,.45); }
+
+    .toast {
+      position: absolute; left: 50%; top: 44px; transform: translateX(-50%); z-index: 20;
+      padding: 8px 14px; border-radius: 999px; background: rgba(44,44,46,.92); font-size: 13px; opacity: 0; pointer-events: none;
+    }
+    .toast.on { opacity: 1; }
+    .switcher {
+      position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50;
+      display: flex; align-items: center; gap: 10px; background: #f4f4f5; color: #111;
+      padding: 8px 10px; border-radius: 999px; box-shadow: 0 8px 32px rgba(0,0,0,.45); font-size: 12px; font-weight: 600;
+    }
+    .switcher button { width: 32px; height: 32px; border-radius: 50%; background: #111; color: #fff; }
+    .switcher .lab { min-width: 340px; text-align: center; }
+    .switcher .lab span { display: block; font-size: 10px; color: #666; font-weight: 500; }
+    .q { position: fixed; left: 196px; top: 28px; z-index: 40; max-width: 520px; font-size: 11px; color: var(--sec); pointer-events: none; }
+    .q b { color: var(--label); }
+    .dump {
+      position: fixed; right: 16px; bottom: 64px; z-index: 40; max-width: 240px; max-height: 120px;
+      overflow: auto; font: 500 10px/1.35 var(--mono); color: var(--ter); pointer-events: none;
+      background: rgba(11,11,12,.72); padding: 8px; border-radius: 8px;
+    }
+
+    @media (prefers-reduced-motion: reduce) { .press { transition: none; } }
+  </style>
+</head>
+<body>
+  <div class="q"><b>PROTOTYPE</b> · cockpit is the risk product · sizer owns the board · not live Notch · DualNoBlend</div>
+  <div class="osbar">
+    <div class="l"><span></span><span>TradeAutopsy</span><span>View</span></div>
+    <div class="island"><span class="mark">T</span><b id="island">—</b></div>
+    <div class="r"><span>20:49</span></div>
+  </div>
+  <div class="desk"><div class="sheet" id="app"></div></div>
+  <div class="switcher" id="switcher"></div>
+  <pre class="dump" id="dump"></pre>
+
+<script>
+const VARIANTS = [
+  { key: "A", name: "Risk mosaic", blurb: "Four risk cells own the grid · charts are a filmstrip · thin ticket" },
+  { key: "B", name: "Account path", blurb: "One chart: equity if SL · ticket is a floor · no OI" },
+  { key: "C", name: "HUD on session", blurb: "Session full-bleed · sizer is glass · OI/payoff ghosts" },
+];
+
+const ROLES = {
+  scalper:  { id: "scalper",  label: "Scalper",  risk: 0.005, maxTrips: 8, overnight: false },
+  intraday: { id: "intraday", label: "Intraday", risk: 0.01,  maxTrips: 5, overnight: false },
+  swing:    { id: "swing",    label: "Swing",    risk: 0.01,  maxTrips: 3, overnight: true },
+  investor: { id: "investor", label: "Investor", risk: 0.02,  maxTrips: null, overnight: true },
+};
+
+function makeBars(start, n) {
+  const out = [];
+  let c = start;
+  for (let i = 0; i < n; i++) {
+    const o = c;
+    c = c + (Math.sin(i / 6) * (start * 0.002)) + ((i % 7) - 3) * (start * 0.0004);
+    const h = Math.max(o, c) + start * 0.0015 + (i % 4);
+    const l = Math.min(o, c) - start * 0.0015 - (i % 3);
+    out.push({ t: i, o, h, l, c });
+  }
+  return out;
+}
+
+const BOOKS = {
+  equity: {
+    id: "equity", label: "Equity", money: "INR", book: "kotak-nse-bse-cash",
+    symbol: "RELIANCE", equity: 200000, entry: 1384.5, sl: 1360, tp: 1420,
+    qtyStep: 1, side: "buy", bars: makeBars(1380, 80), seller: false,
+  },
+  spot: {
+    id: "spot", label: "Spot", money: "USDT", book: "binance-com-spot",
+    symbol: "BTCUSDT", equity: 10000, entry: 91240, sl: 89000, tp: 94000,
+    qtyStep: 0.001, side: "buy", bars: makeBars(91000, 80), seller: false,
+  },
+  options: {
+    id: "options", label: "Options", money: "USDT", book: "binance-com-options",
+    symbol: "BTC-260925-90000-C", equity: 10000, entry: 412.8, sl: 380, tp: 448,
+    qtyStep: 1, side: "buy", bars: makeBars(400, 80), seller: false,
+  },
+};
+
+/** Demo sizer. Nautilus-shaped fixed risk. Not a docs/reference source. */
+const RiskDemo = {
+  size(input) {
+    const reasons = [];
+    const role = ROLES[input.role] || ROLES.intraday;
+    if (input.seller) {
+      return {
+        authoredQty: 0, riskMoney: 0, atStop: null, pct: null,
+        gate: "deny", reasons: ["Option seller — this measurement is dark. Not a fake max-loss."],
+        riskFrac: role.risk, calmCap: false,
+      };
+    }
+    if (!input.hasStop || input.entry === input.stop) {
+      return {
+        authoredQty: 0, riskMoney: 0, atStop: null, pct: null,
+        gate: "deny", reasons: ["No stop — this card does not invent one. Declare a stop to size."],
+        riskFrac: role.risk, calmCap: false,
+      };
+    }
+    let riskFrac = role.risk;
+    const calmCap = input.calm >= 4;
+    if (calmCap) {
+      riskFrac = riskFrac * 0.5;
+      reasons.push("Calm ≥ 4 — risk fraction halved (wired, not copy).");
+    }
+    if (role.maxTrips != null && input.tripsUsed >= role.maxTrips) {
+      return {
+        authoredQty: 0, riskMoney: 0, atStop: null, pct: 0,
+        gate: "deny", reasons: ["Max trips for this role. Size zero."],
+        riskFrac, calmCap,
+      };
+    }
+    const dist = Math.abs(input.entry - input.stop);
+    let riskMoney = input.equity * riskFrac;
+    const floorLeft = input.floor - input.floorUsed;
+    if (floorLeft <= 0) {
+      return {
+        authoredQty: 0, riskMoney: 0, atStop: null, pct: 0,
+        gate: "deny", reasons: ["Daily floor spent. Size zero."],
+        riskFrac, calmCap,
+      };
+    }
+    if (riskMoney > floorLeft) riskMoney = floorLeft;
+    let qty = riskMoney / dist;
+    qty = Math.floor(qty / input.qtyStep) * input.qtyStep;
+    if (qty <= 0) {
+      return {
+        authoredQty: 0, riskMoney, atStop: 0, pct: 0,
+        gate: "deny", reasons: ["Stop too wide for this budget — rounds to zero."],
+        riskFrac, calmCap,
+      };
+    }
+    const atStop = qty * dist;
+    const pct = atStop / input.equity;
+    let gate = "ok";
+    const liveQty = input.overrideQty != null ? input.overrideQty : qty;
+    if (liveQty * dist - riskMoney > 1e-9) {
+      gate = "deny";
+      reasons.push("Override is above authored size. Confirm blocked.");
+    }
+    if (input.fillOpen && !input.hasStop) {
+      gate = "deny";
+      reasons.push("Open fill with no SL — cannot add.");
+    }
+    return {
+      authoredQty: qty, liveQty, riskMoney, atStop, pct, gate, reasons, riskFrac, calmCap,
+    };
+  },
+};
+
+const ICO = {
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7.5" y="5.5" width="9" height="14" rx="2"/><path d="M9.6 11h4.8M9.6 14h3.2"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 3.4 6.4 13.2h5L10.2 20.6l7.2-10.4h-5.2z"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8.8 8h9M8.8 12h9M8.8 16h7"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.4"/></svg>',
+};
+
+function bookDefaults(id) {
+  const b = BOOKS[id] || BOOKS.equity;
+  return {
+    asset: b.id, symbol: b.symbol, entry: b.entry, sl: b.sl, tp: b.tp,
+    side: b.side, seller: b.seller, overrideQty: null,
+  };
+}
+
+const S = {
+  variant: "A",
+  role: "intraday",
+  calm: 2,
+  hasStop: true,
+  fill: "none",
+  tripsUsed: 1,
+  floor: 12000,
+  floorUsed: 2400,
+  declared: false,
+  toast: "",
+  ...bookDefaults("equity"),
+};
+
+function book() { return BOOKS[S.asset] || BOOKS.equity; }
+function money() { return book().money; }
+function moneyFmt(n, digits) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const d = digits != null ? digits : (money() === "INR" ? 0 : 2);
+  return n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d === 0 ? 0 : Math.min(2, d) });
+}
+function qtyFmt(n) {
+  if (n == null) return "—";
+  const step = book().qtyStep;
+  const d = step >= 1 ? 0 : 3;
+  return n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 });
+}
+
+function engine() {
+  const b = book();
+  return RiskDemo.size({
+    role: S.role,
+    equity: b.equity,
+    entry: S.entry,
+    stop: S.hasStop ? S.sl : S.entry,
+    hasStop: S.hasStop,
+    qtyStep: b.qtyStep,
+    calm: S.calm,
+    tripsUsed: S.tripsUsed,
+    floor: S.asset === "equity" ? S.floor : b.equity * 0.06,
+    floorUsed: S.asset === "equity" ? S.floorUsed : 0,
+    overrideQty: S.overrideQty,
+    seller: S.seller,
+    fillOpen: S.fill !== "none",
+  });
+}
+
+function detectKind() {
+  if (S.fill === "none") return null;
+  if (S.fill === "noStop" || !S.hasStop) return "noForm";
+  const e = engine();
+  if (e.pct != null && e.pct >= 0.13) return "sizeWarning";
+  return "holds";
+}
+
+function moneyUnit() { return money(); }
+
+function ticketHTML(compact) {
+  const e = engine();
+  const hint = e.gate === "deny" ? e.reasons[0] : (S.calm === 0 ? "Need calm to confirm" : null);
+  const blocked = !!(hint || S.declared);
+  const qty = e.liveQty != null ? e.liveQty : e.authoredQty;
+  return `
+    <h2>Ticket</h2>
+    <div class="sym">${esc(S.symbol)}</div>
+    <div class="feel">
+      <button class="press ${S.side==="buy"?"on":""}" data-act="side" data-id="buy">Buy</button>
+      <button class="press ${S.side==="sell"?"on":""}" data-act="side" data-id="sell">Sell</button>
+    </div>
+    ${S.asset === "options" ? `<div class="feel">
+      <button class="press ${!S.seller?"on":""}" data-act="seller" data-id="0">Buyer</button>
+      <button class="press ${S.seller?"on":""}" data-act="seller" data-id="1">Seller</button>
+    </div>` : ""}
+    <div class="note">Qty is authored. Override to feel the gate.</div>
+    <label class="field"><span>Qty · authored ${qtyFmt(e.authoredQty)}</span>
+      <input data-act="qty" value="${qtyFmt(qty)}"></label>
+    <label class="field"><span>Stop · exact ${moneyUnit()}</span>
+      <input data-act="sl" value="${S.hasStop ? S.sl : ""}" placeholder="none — will not invent"></label>
+    <div class="note" style="margin-top:0">Calm — 1 is best</div>
+    <div class="feel">${[1,2,3,4,5].map(n => `<button class="press ${S.calm===n?"on":""}" data-act="calm" data-id="${n}">${n}</button>`).join("")}</div>
+    ${compact ? "" : `<p class="note">${e.reasons.map(esc).join(" ")}</p>`}
+    <button class="cta press" data-act="declare" ${blocked && !S.declared ? "disabled" : ""}>${S.declared ? "Declared" : "Confirm"}</button>
+    ${hint && !S.declared ? `<div class="ready">${esc(hint)}</div>` : ""}
+    <p class="note">Plan cannot be removed. Kill still lives on Live trade. Demo.</p>`;
+}
+
+function detectHTML() {
+  const k = detectKind();
+  if (!k) {
+    return `<div class="detect">
+      <span class="chip">Planning</span>
+      <span>No fill yet — sizer is the desk. Detect waits.</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fill" data-id="withStop">Fill + SL</button>
+      <button class="chip press" data-act="fill" data-id="noStop">Fill, no SL</button>
+    </div>`;
+  }
+  if (k === "noForm") {
+    return `<div class="detect bad">
+      <span class="chip bad">No stop on this fill</span>
+      <span>Plan in Notch. This card does not invent a stop. Cannot add.</span>
+      <span class="sp"></span>
+      <button class="chip press" data-act="fill" data-id="none">Clear fill</button>
+    </div>`;
+  }
+  const e = engine();
+  const cls = k === "sizeWarning" ? "warn" : "";
+  return `<div class="detect ${cls}">
+    <span class="chip ${k === "sizeWarning" ? "warn" : "ok"}">${k === "sizeWarning" ? "≥ 13% of account" : "Stop on fill"}</span>
+    <span>This trade ${moneyFmt(e.atStop)} ${moneyUnit()} · ${pctTxt(e.pct)} · not remaining-risk.</span>
+    <span class="sp"></span>
+    <button class="chip press" data-act="fill" data-id="none">Clear fill</button>
+  </div>`;
+}
+
+function pctTxt(p) {
+  if (p == null) return "—";
+  return (p * 100).toFixed(2) + "% of " + moneyUnit() + " equity";
+}
+
+function sparkSVG(bars, compact) {
+  const w = compact ? 120 : 280, h = compact ? 48 : 80;
+  const ys = bars.map(b => b.c);
+  const min = Math.min(...ys), max = Math.max(...ys);
+  const pts = ys.map((y, i) => {
+    const x = (i / (ys.length - 1)) * w;
+    const yy = h - 4 - ((y - min) / (max - min || 1)) * (h - 8);
+    return x + "," + yy;
+  }).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline fill="none" stroke="#64d2ff" stroke-width="1.4" points="${pts}"/></svg>`;
+}
+
+function boardA() {
+  const e = engine();
+  const b = book();
+  return `<div class="work">
+    <div class="mosaic">
+      <div class="cell hero">
+        <div class="k">At the stop</div>
+        <div class="v" style="color:${e.gate==="deny"? "var(--red)":"var(--label)"}">${e.atStop == null ? "none" : moneyFmt(e.atStop) + " " + moneyUnit()}</div>
+        <div class="s">Authored from budget · not typed qty first</div>
+      </div>
+      <div class="cell">
+        <div class="k">Of this account</div>
+        <div class="v">${e.pct == null ? "none" : (e.pct * 100).toFixed(2) + "%"}</div>
+        <div class="s">DualNoBlend ${moneyUnit()} · not a blended desk</div>
+      </div>
+      <div class="cell">
+        <div class="k">Authored qty</div>
+        <div class="v">${qtyFmt(e.authoredQty)}</div>
+        <div class="s">${ROLES[S.role].label} · ${(e.riskFrac * 100).toFixed(2)}% · step ${b.qtyStep}</div>
+      </div>
+      <div class="cell">
+        <div class="k">Gate</div>
+        <div class="v" style="color:${e.gate==="ok"?"var(--green)":"var(--red)"}">${e.gate === "ok" ? "Confirm" : "Blocked"}</div>
+        <div class="s">${esc(e.reasons[0] || "Inside budget")}</div>
+      </div>
+      <div class="film">
+        <div class="thumb"><b>Session · decoration</b>${sparkSVG(b.bars, true)}</div>
+        <div class="thumb"><b>${S.asset==="options"?"OI · decoration":"Depth · decoration"}</b>${sparkSVG(b.bars.slice().reverse(), true)}</div>
+        <div class="thumb"><b>${S.asset==="options"?"Payoff · decoration":"History · decoration"}</b>${sparkSVG(b.bars.slice(20), true)}</div>
+      </div>
+    </div>
+    <aside class="ticket">${ticketHTML(false)}</aside>
+  </div>`;
+}
+
+function boardB() {
+  const e = engine();
+  return `<div class="work col">
+    <div class="pathwrap">
+      <div class="pathmeta">
+        <div class="k" style="font:500 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ter)">Equity if this stop hits</div>
+        <div class="v">${e.atStop == null ? "—" : "−" + moneyFmt(e.atStop) + " " + moneyUnit()}</div>
+        <div class="s" style="color:var(--ter);margin-top:6px;font:400 12px/1.3 var(--mono)">${pctTxt(e.pct)} · qty ${qtyFmt(e.authoredQty)} · charts that are not this path are gone</div>
+      </div>
+      <canvas id="pathcv"></canvas>
+    </div>
+    <div class="floor">
+      <div>
+        <div class="k" style="font:500 10px var(--mono);color:var(--ter);letter-spacing:.06em;text-transform:uppercase">Ticket</div>
+        <div style="font-weight:600">${esc(S.symbol)} · ${S.side}</div>
+      </div>
+      <div class="step">
+        <button class="press" data-act="step" data-id="-1">−</button>
+        <div class="qty">${qtyFmt(e.liveQty != null ? e.liveQty : e.authoredQty)}</div>
+        <button class="press" data-act="step" data-id="1">+</button>
+      </div>
+      <span class="chip">${ROLES[S.role].label}</span>
+      <span class="sp"></span>
+      <button class="cta press" data-act="declare" style="width:auto;margin:0;padding:10px 18px" ${e.gate==="deny"||S.declared?"disabled":""}>${S.declared ? "Declared" : "Confirm"}</button>
+    </div>
+    ${e.gate==="deny" ? `<div class="ready" style="padding:0 4px">${esc(e.reasons[0])}</div>` : ""}
+  </div>`;
+}
+
+function boardC() {
+  const e = engine();
+  const b = book();
+  return `<div class="work">
+    <div class="stage">
+      <canvas id="cv"></canvas>
+      <div class="ghosts">
+        <div class="g">OI · decoration<br><b style="color:var(--sec);font-size:16px">—</b></div>
+        <div class="g">Payoff · decoration<br><b style="color:var(--sec);font-size:16px">identity</b></div>
+      </div>
+      <div class="hud">
+        <div class="row"><span class="k" style="color:var(--ter);font-size:10px;letter-spacing:.06em;text-transform:uppercase">At stop</span>
+          <span class="big">${e.atStop == null ? "—" : moneyFmt(e.atStop)}</span></div>
+        <div class="row"><span style="color:var(--ter)">${pctTxt(e.pct)}</span><span>${qtyFmt(e.authoredQty)} ${S.asset==="options"?"ct":"qty"}</span></div>
+        <div class="row"><span style="color:var(--ter)">Stop</span><span>${S.hasStop ? S.sl : "none"}</span></div>
+        <div class="feel" style="margin-top:8px">
+          <button class="press ${S.calm===1?"on":""}" data-act="calm" data-id="1">1</button>
+          <button class="press ${S.calm===2?"on":""}" data-act="calm" data-id="2">2</button>
+          <button class="press ${S.calm===3?"on":""}" data-act="calm" data-id="3">3</button>
+          <button class="press ${S.calm===4?"on":""}" data-act="calm" data-id="4">4</button>
+          <button class="press ${S.calm===5?"on":""}" data-act="calm" data-id="5">5</button>
+        </div>
+        <button class="cta press" data-act="declare" ${e.gate==="deny"||S.declared?"disabled":""} style="margin-top:10px">${S.declared ? "Declared" : "Confirm"}</button>
+        ${e.gate==="deny" ? `<div class="ready">${esc(e.reasons[0])}</div>` : `<p class="note">${esc(b.symbol)} · Session is wallpaper you can still read</p>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+
+function paint() {
+  const v = VARIANTS.find(x => x.key === S.variant);
+  const b = book();
+  const e = engine();
+  document.getElementById("island").textContent = moneyFmt(b.equity, 0) + " " + moneyUnit();
+  document.getElementById("app").innerHTML = `
+    <div class="rail">
+      <div class="k">Session</div>
+      <button class="nav press">${ICO.sun} Morning brief</button>
+      <button class="nav press on">${ICO.clip} Pre-trade</button>
+      <button class="nav press">${ICO.bolt} Live trade</button>
+      <button class="nav press">${ICO.list} Post-trade</button>
+      <button class="hide press" data-act="hide">Hide notch · ⌥Space</button>
+      <div class="apill"><i></i>${esc(ROLES[S.role].label)} · sizer</div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <h1>Pre-trade</h1>
+        <span class="sp"></span>
+        <span class="chip">${esc(S.symbol)}</span>
+        <span class="chip">${esc(b.book)} · ${moneyUnit()}</span>
+        <span class="chip warn">Demo · not live</span>
+      </div>
+      <div class="tabs">
+        ${["spot","equity","options"].map(id => `<button class="tab press ${S.asset===id?"on":""}" data-act="asset" data-id="${id}">${BOOKS[id].label}</button>`).join("")}
+        ${S.asset === "options" ? `<button class="tab press ${!S.seller?"on":""}" data-act="seller" data-id="0">Buyer</button>
+        <button class="tab press ${S.seller?"on":""}" data-act="seller" data-id="1">Seller</button>` : ""}
+        ${Object.values(ROLES).map(r => `<button class="tab press ${S.role===r.id?"on":""}" data-act="role" data-id="${r.id}">${r.label}</button>`).join("")}
+        <button class="tab press ${S.hasStop?"on":""}" data-act="togglestop">${S.hasStop ? "Stop on" : "Stop off"}</button>
+      </div>
+      ${detectHTML()}
+      ${S.variant === "A" ? boardA() : S.variant === "B" ? boardB() : boardC()}
+    </div>
+    <div class="toast ${S.toast ? "on" : ""}">${esc(S.toast || "")}</div>`;
+  document.getElementById("switcher").innerHTML = `<button type="button" data-act="prev">←</button>
+    <div class="lab">${v.key} — ${v.name}<span>${v.blurb}</span></div>
+    <button type="button" data-act="next">→</button>`;
+  dump(e);
+  drawAll();
+}
+
+function dump(e) {
+  const state = {
+    variant: S.variant, asset: S.asset, money: moneyUnit(), dualNoBlend: true,
+    role: S.role, riskFrac: e.riskFrac, calm: S.calm, calmCap: e.calmCap,
+    hasStop: S.hasStop, fill: S.fill, seller: S.seller,
+    entry: S.entry, sl: S.hasStop ? S.sl : null,
+    authoredQty: e.authoredQty, liveQty: e.liveQty, atStop: e.atStop, pct: e.pct,
+    gate: e.gate, reasons: e.reasons, declared: S.declared,
+    inventStop: false, margin: "unavailable", sigmaLadder: "dark",
+  };
+  document.getElementById("app").dataset.state = JSON.stringify(state);
+  document.getElementById("dump").textContent = JSON.stringify(state, null, 2);
+}
+
+function layout(id) {
+  const cv = document.getElementById(id);
+  const wrap = cv && cv.parentElement;
+  if (!cv || !wrap) return null;
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (w < 8 || h < 8) return null;
+  cv.width = Math.floor(w * dpr); cv.height = Math.floor(h * dpr);
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+function drawSession(id) {
+  const L = layout(id);
+  if (!L) return;
+  const { ctx, w, h } = L;
+  const bars = book().bars;
+  const ys = bars.flatMap(b => [b.h, b.l]);
+  const min = Math.min(...ys), max = Math.max(...ys);
+  const y = v => 16 + (1 - (v - min) / (max - min || 1)) * (h - 32);
+  const x = i => 12 + (i / (bars.length - 1)) * (w - 24);
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(100,210,255,.85)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  bars.forEach((b, i) => { const X = x(i), Y = y(b.c); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+  ctx.stroke();
+  if (S.hasStop) {
+    ctx.strokeStyle = "rgba(255,69,58,.7)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(12, y(S.sl)); ctx.lineTo(w - 12, y(S.sl)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(255,69,58,.9)";
+    ctx.font = "500 11px ui-monospace, Menlo, monospace";
+    ctx.fillText("SL " + S.sl, 16, y(S.sl) - 6);
+  }
+  ctx.fillStyle = "rgba(10,132,255,.9)";
+  ctx.fillText("BUY " + S.entry, 16, y(S.entry) + 14);
+}
+
+function drawPath() {
+  const L = layout("pathcv");
+  if (!L) return;
+  const { ctx, w, h } = L;
+  const e = engine();
+  ctx.clearRect(0, 0, w, h);
+  const eq = book().equity;
+  const loss = e.atStop || 0;
+  const pad = Math.max(loss * 2.2, eq * 0.03);
+  const top = eq + pad * 0.12, bot = eq - pad;
+  const y = v => 28 + (1 - (v - bot) / (top - bot || 1)) * (h - 56);
+  const x0 = 48, x1 = w - 36;
+  ctx.strokeStyle = "rgba(255,255,255,.12)";
+  ctx.beginPath(); ctx.moveTo(x0, y(eq)); ctx.lineTo(x1, y(eq)); ctx.stroke();
+  ctx.strokeStyle = "#ff453a";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(x0, y(eq));
+  ctx.lineTo(x0 + (x1 - x0) * 0.35, y(eq));
+  ctx.lineTo(x1, y(eq - loss));
+  ctx.stroke();
+  ctx.fillStyle = "rgba(245,245,247,.62)";
+  ctx.font = "500 11px ui-monospace, Menlo, monospace";
+  ctx.fillText("now " + moneyFmt(eq, 0), x0, y(eq) - 8);
+  ctx.fillText("if SL " + moneyFmt(eq - loss, 0), x1 - 120, y(eq - loss) - 8);
+}
+
+function drawAll() {
+  if (S.variant === "B") drawPath();
+  else if (S.variant === "C") drawSession("cv");
+}
+
+function say(t) {
+  S.toast = t;
+  paint();
+  setTimeout(() => { if (S.toast === t) { S.toast = ""; const el = document.querySelector(".toast"); if (el) el.classList.remove("on"); } }, 1600);
+}
+
+function setVariant(k) {
+  S.variant = k; S.toast = "";
+  const u = new URL(location.href); u.searchParams.set("variant", k); history.replaceState(null, "", u);
+  paint();
+}
+function cycle(d) {
+  const i = VARIANTS.findIndex(v => v.key === S.variant);
+  setVariant(VARIANTS[(i + d + 3) % 3].key);
+}
+
+function applyAsset(id) {
+  const next = bookDefaults(id);
+  Object.assign(S, next);
+  S.declared = false;
+  S.overrideQty = null;
+  S.fill = "none";
+  S.hasStop = true;
+  const u = new URL(location.href); u.searchParams.set("asset", id); history.replaceState(null, "", u);
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  const act = btn.getAttribute("data-act");
+  const id = btn.getAttribute("data-id");
+  if (act === "prev") cycle(-1);
+  if (act === "next") cycle(1);
+  if (act === "asset") applyAsset(id);
+  if (act === "role") { S.role = id; S.declared = false; const u = new URL(location.href); u.searchParams.set("role", id); history.replaceState(null, "", u); }
+  if (act === "calm") S.calm = +id;
+  if (act === "side") S.side = id;
+  if (act === "seller") { S.seller = id === "1"; S.declared = false; }
+  if (act === "togglestop") { S.hasStop = !S.hasStop; S.declared = false; }
+  if (act === "fill") { S.fill = id; if (id === "noStop") S.hasStop = false; if (id === "withStop") S.hasStop = true; if (id === "none") S.hasStop = true; }
+  if (act === "hide") say("Hide is live Notch · demo stays open");
+  if (act === "step") {
+    const e = engine();
+    const step = book().qtyStep;
+    const base = e.liveQty != null ? e.liveQty : e.authoredQty;
+    S.overrideQty = Math.max(0, +(base + (+id * step)).toFixed(8));
+  }
+  if (act === "declare") {
+    const e = engine();
+    if (S.calm === 0) { say("Need a calm rating"); return; }
+    if (e.gate === "deny") { say(e.reasons[0]); return; }
+    if (S.declared) { say("clientToken held · no second send"); return; }
+    S.declared = true;
+    say("Declaration on file · waiting for fill · qty " + qtyFmt(e.authoredQty));
+  }
+  paint();
+});
+
+document.addEventListener("input", (e) => {
+  const act = e.target.getAttribute("data-act");
+  if (!act) return;
+  if (act === "qty") {
+    const n = parseFloat(e.target.value);
+    S.overrideQty = Number.isFinite(n) ? n : null;
+  }
+  if (act === "sl") {
+    const n = parseFloat(e.target.value);
+    if (Number.isFinite(n) && n > 0) { S.sl = n; S.hasStop = true; }
+    else { S.hasStop = false; }
+    S.declared = false;
+  }
+  dump(engine());
+});
+document.addEventListener("change", (e) => {
+  if (e.target.getAttribute("data-act") === "qty" || e.target.getAttribute("data-act") === "sl") paint();
+});
+
+document.addEventListener("pointerdown", (e) => { const el = e.target.closest(".press"); if (el) el.classList.add("is-down"); }, true);
+document.addEventListener("pointerup", () => document.querySelectorAll(".press.is-down").forEach(el => el.classList.remove("is-down")));
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+window.addEventListener("resize", () => drawAll());
+
+const boot = new URLSearchParams(location.search);
+S.variant = VARIANTS.some(v => v.key === boot.get("variant")) ? boot.get("variant") : "A";
+if (BOOKS[boot.get("asset")]) applyAsset(boot.get("asset"));
+if (ROLES[boot.get("role")]) S.role = boot.get("role");
+paint();
+</script>
+</body>
+</html>

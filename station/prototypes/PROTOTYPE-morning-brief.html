@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — throwaway.
+  Question: What should Notch Morning brief look like as desk facts, not a demo chart?
+  Four variants of the Morning column, inside the existing PLAN shell. ?variant= A|B|C|D
+  Open: open station/prototypes/PROTOTYPE-morning-brief.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PROTOTYPE — Morning brief</title>
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #0d0d0d;
+      --sidebar: #0a0a0a;
+      --card: #111111;
+      --accent: #63E6E2;
+      --accent-rgb: 99, 230, 226;
+      --gain: #30D158;
+      --loss: #FF453A;
+      --caution: #FF9F0A;
+      --info: #0A84FF;
+      --t1: #ffffff;
+      --t2: rgba(255,255,255,.60);
+      --t3: rgba(255,255,255,.30);
+      --t4: rgba(255,255,255,.18);
+      --bd: rgba(255,255,255,.07);
+      --glass: rgba(5,5,5,.78);
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+      --spring: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { min-height: 100%; }
+    body {
+      font: 400 13px/1.45 var(--sans);
+      letter-spacing: -.006em;
+      background: #1a1a1c;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% 0%, #2a2a2e 0%, transparent 55%),
+        linear-gradient(#1a1a1c, #111);
+      color: var(--t1);
+      -webkit-font-smoothing: antialiased;
+      padding: 20px 20px 110px;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; border-radius: 6px; }
+    .press { transition: transform 100ms ease-out; }
+    .press:active { transform: scale(.97); }
+
+    .q {
+      width: min(1080px, 100%);
+      margin: 0 auto 12px;
+      color: var(--t3);
+      font-size: 11px;
+      letter-spacing: .012em;
+    }
+    .q b { color: var(--t2); font-size: 13px; font-weight: 600; letter-spacing: -.006em; }
+    .state-dump {
+      width: min(1080px, 100%);
+      margin: 0 auto 12px;
+      font: 500 11px/1.45 var(--mono);
+      color: var(--t2);
+      background: #0a0a0a;
+      border: .5px solid var(--bd);
+      border-radius: 8px;
+      padding: 8px 12px;
+      white-space: pre-wrap;
+    }
+
+    .desktop {
+      width: min(1080px, 100%);
+      margin: 0 auto;
+      height: 760px;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      background: #0c0c0e;
+      box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 .5px rgba(255,255,255,.08);
+    }
+    .menubar {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(22,22,24,.88);
+      backdrop-filter: blur(28px) saturate(180%);
+      border-bottom: .5px solid rgba(255,255,255,.06);
+      font-size: 12px;
+      color: var(--t2);
+    }
+    .menubar .apple { position: absolute; left: 12px; }
+    .menubar .clock { position: absolute; right: 12px; font-family: var(--mono); font-size: 11px; }
+    .chart {
+      position: absolute; inset: 28px 0 0;
+      background:
+        linear-gradient(180deg, rgba(5,5,5,.15), rgba(5,5,5,.5)),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(255,255,255,.025) 47px 48px),
+        #08080a;
+    }
+    .candles {
+      position: absolute; left: 8%; right: 8%; bottom: 16%; height: 44%;
+      display: flex; align-items: flex-end; gap: 6px; opacity: .4;
+    }
+    .cndl { width: 5px; border-radius: 1px; position: relative; }
+    .cndl::before {
+      content: ""; position: absolute; left: 50%; width: 1px;
+      transform: translateX(-50%); background: inherit; top: -16px; bottom: -10px; opacity: .7;
+    }
+    .cndl.up { background: var(--gain); }
+    .cndl.dn { background: var(--loss); }
+
+    .pill {
+      position: absolute; top: 36px; left: 50%; transform: translateX(-50%);
+      height: 32px; min-width: 176px; padding: 0 12px; z-index: 8;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--glass); backdrop-filter: blur(40px) saturate(180%);
+      border-radius: 999px; border: .5px solid rgba(255,255,255,.12);
+      box-shadow: 0 8px 28px rgba(0,0,0,.4);
+      font-size: 12px; font-weight: 600;
+    }
+    .pill .d { width: 6px; height: 6px; border-radius: 50%; background: var(--loss); }
+
+    .sheet {
+      position: absolute; top: 76px; left: 50%; transform: translateX(-50%);
+      width: min(980px, 95%); height: 640px; z-index: 7;
+      background: var(--glass); backdrop-filter: blur(48px) saturate(180%);
+      border-radius: 16px; border: .5px solid rgba(255,255,255,.1);
+      box-shadow: 0 28px 80px rgba(0,0,0,.55);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .grip { height: 18px; flex-shrink: 0; display: grid; place-items: center; }
+    .grip i { width: 36px; height: 4px; border-radius: 999px; background: rgba(255,255,255,.22); }
+
+    .body { flex: 1; display: flex; min-height: 0; }
+    .sb {
+      width: 176px; flex-shrink: 0;
+      background: rgba(10,10,10,.82);
+      border-right: .5px solid rgba(255,255,255,.06);
+      padding: 8px; display: flex; flex-direction: column;
+    }
+    .sb-sec {
+      padding: 10px 8px 4px;
+      font-size: 10px; font-weight: 600; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--t3);
+    }
+    .nav {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; text-align: left; padding: 7px 8px;
+      border-radius: 7px; color: var(--t2); font-size: 13px;
+    }
+    .nav.on { background: rgba(99,230,226,.12); color: var(--t1); font-weight: 600; }
+    .nav .ico { width: 15px; height: 15px; opacity: .7; flex-shrink: 0; }
+    .nav.on .ico { opacity: 1; color: var(--accent); }
+    .badge {
+      margin-left: auto; font-size: 10px; font-weight: 600;
+      padding: 1px 6px; border-radius: 999px;
+      background: rgba(255,159,10,.2); color: var(--caution);
+    }
+    .hide {
+      margin-top: auto; padding: 8px; font-size: 11px; color: var(--t3);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .arch {
+      display: flex; align-items: center; gap: 7px;
+      padding: 8px; font-size: 11px; color: var(--t3);
+    }
+    .arch .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: rgba(0,0,0,.28); }
+    .top {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.35), transparent);
+    }
+    .top .title { font-size: 14px; font-weight: 600; letter-spacing: -.011em; margin-right: auto; }
+    .chip {
+      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+      background: rgba(255,255,255,.06); color: var(--t2);
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--gain); }
+    .chip.warn { color: var(--caution); }
+    .chip.warn .d { background: var(--caution); }
+    .score { font-family: var(--mono); font-size: 11px; color: var(--t2); }
+
+    .scroll { flex: 1; overflow: auto; padding: 16px; }
+    .scroll::-webkit-scrollbar { width: 0; }
+
+    .caps {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--t3); margin-bottom: 6px;
+    }
+    .card {
+      background: var(--card);
+      border: .5px solid var(--bd);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .muted { color: var(--t2); }
+    .hint { color: var(--t3); font-size: 11px; }
+    .mono { font-family: var(--mono); }
+    .gain { color: var(--gain); }
+    .loss { color: var(--loss); }
+    .amber { color: var(--caution); }
+    .teal { color: var(--accent); }
+
+    .idx-row { display: flex; gap: 8px; }
+    .idx { flex: 1; }
+    .idx .n { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--t2); }
+    .idx .v { font-family: var(--mono); font-size: 13px; font-weight: 500; margin-top: 2px; }
+    .idx .c { font-family: var(--mono); font-size: 11px; margin-top: 1px; }
+    .idx .c.neg { color: var(--loss); }
+    .idx .c.pos { color: var(--gain); }
+
+    .spark { width: 100%; height: 44px; display: block; margin-top: 8px; }
+    .big-btn {
+      width: 100%; padding: 11px 14px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; letter-spacing: -.006em;
+      background: var(--accent); color: #050505;
+    }
+    .big-btn[disabled] { opacity: .35; cursor: not-allowed; transform: none; }
+    .big-btn.outline {
+      background: transparent; color: var(--t1);
+      border: .5px solid rgba(255,255,255,.14);
+    }
+
+    /* B desk stack */
+    .ident {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .ident .book { font-size: 14px; font-weight: 600; letter-spacing: -.011em; }
+    .row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 10px; padding: 7px 0;
+      border-bottom: .5px solid rgba(255,255,255,.05);
+    }
+    .row:last-child { border-bottom: 0; padding-bottom: 0; }
+    .row .k { color: var(--t2); }
+    .row .v { font-family: var(--mono); font-size: 12px; }
+    .banner {
+      border: .5px solid rgba(255,159,10,.28);
+      background: rgba(255,159,10,.08);
+      color: var(--caution);
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 12px; font-weight: 500;
+      margin-bottom: 10px;
+    }
+    .rule {
+      border: .5px solid rgba(255,159,10,.22);
+      background: rgba(255,159,10,.06);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .rule .lab { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--caution); margin-bottom: 4px; }
+    .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .pill-m {
+      font-size: 11px; color: var(--t2);
+      padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,255,255,.06);
+      border: .5px solid rgba(255,255,255,.08);
+    }
+    .feel { display: flex; gap: 4px; }
+    .feel button {
+      flex: 1; padding: 7px 0; border-radius: 6px;
+      background: rgba(255,255,255,.05);
+      color: var(--t2); font-size: 11px; font-weight: 600;
+    }
+    .feel button.on { background: rgba(99,230,226,.18); color: var(--t1); }
+
+    /* C hero blotter — no card-article stack */
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 0;
+      min-height: 100%;
+    }
+    .hero-left {
+      padding-right: 18px;
+      border-right: .5px solid rgba(255,255,255,.06);
+      display: flex; flex-direction: column;
+    }
+    .hero-kicker { font-size: 11px; color: var(--t3); letter-spacing: .04em; text-transform: uppercase; font-weight: 600; }
+    .hero-num {
+      font-family: var(--mono); font-weight: 600;
+      font-size: 44px; letter-spacing: -.04em; line-height: 1.05;
+      margin: 6px 0 8px;
+    }
+    .hero-sent { font-size: 15px; font-weight: 400; line-height: 1.4; color: var(--t1); max-width: 28ch; }
+    .hero-left .big-btn { margin-top: auto; }
+    .hero-right { padding-left: 18px; }
+    .ledger { font-family: var(--mono); font-size: 12px; }
+    .ledger .r {
+      display: grid; grid-template-columns: 1fr auto auto;
+      gap: 10px; padding: 8px 0;
+      border-bottom: .5px solid rgba(255,255,255,.05);
+    }
+    .bar {
+      height: 4px; border-radius: 99px; background: rgba(255,255,255,.08); margin-top: 6px; overflow: hidden;
+    }
+    .bar i { display: block; height: 100%; background: var(--caution); border-radius: 99px; }
+
+    /* D ritual */
+    .ritual h2 {
+      font-size: 22px; font-weight: 600; letter-spacing: -.026em;
+      line-height: 1.15; margin-bottom: 6px;
+    }
+    .check {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 14px 0;
+      border-bottom: .5px solid rgba(255,255,255,.06);
+    }
+    .box {
+      width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+      border: 1.5px solid rgba(255,255,255,.22);
+      display: grid; place-items: center;
+      margin-top: 1px;
+    }
+    .check.done .box { background: var(--accent); border-color: var(--accent); color: #050505; }
+    .check .t { font-size: 14px; font-weight: 500; }
+    .check .s { font-size: 12px; color: var(--t2); margin-top: 3px; }
+
+    .switcher {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      z-index: 40;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px 8px 8px;
+      background: #f5f5f7; color: #111;
+      border-radius: 999px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.45);
+      font-size: 12px; font-weight: 600;
+    }
+    .switcher button.arr {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: #111; color: #fff;
+    }
+    .switcher .lab { min-width: 168px; text-align: center; }
+    .switcher .lab small { display: block; font-weight: 500; color: #666; font-size: 10px; }
+    .books {
+      display: flex; padding: 3px; border-radius: 999px; background: rgba(0,0,0,.08); margin-left: 4px;
+    }
+    .books button {
+      padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; color: #555;
+    }
+    .books button.on { background: #111; color: #fff; }
+  </style>
+</head>
+<body>
+  <p class="q">
+    <b>PROTOTYPE — throwaway.</b>
+    Question: what should Notch Morning brief look like as desk facts, not a demo chart?
+    Variants sit inside the real PLAN shell. ← → or the bar. Book toggle is data, not a layout.
+  </p>
+  <div class="state-dump" id="state-dump"></div>
+
+  <div class="desktop">
+    <div class="menubar">
+      <span class="apple"> TradeAutopsy</span>
+      <span>RELIANCE · 1,412.40</span>
+      <span class="clock" id="mb-clock">Thu 08:28</span>
+    </div>
+    <div class="chart">
+      <div class="candles" id="candles"></div>
+    </div>
+    <div class="pill"><span class="d"></span> N↓ · −₹2,140</div>
+    <div class="sheet">
+      <div class="grip"><i></i></div>
+      <div class="body">
+        <nav class="sb">
+          <div class="sb-sec">Session</div>
+          <button class="nav on" type="button">
+            <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5a.75.75 0 0 1 .75.75v.6a6.75 6.75 0 1 1-1.5 0v-.6A.75.75 0 0 1 12 4.5Zm0 3.75a5.25 5.25 0 1 0 0 10.5 5.25 5.25 0 0 0 0-10.5Z"/></svg>
+            Morning brief <span class="badge">1</span>
+          </button>
+          <button class="nav" type="button">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+            Pre-trade
+          </button>
+          <button class="nav" type="button">
+            <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M11.2 3.4a1 1 0 0 1 1.7.1l8 14A1 1 0 0 1 20 19H4a1 1 0 0 1-.9-1.5l8-14Z"/></svg>
+            Live trade
+          </button>
+          <button class="nav" type="button">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 7h14M5 12h14M5 17h9"/></svg>
+            Post-trade
+          </button>
+          <button class="hide" type="button">Hide notch · ⌥Space</button>
+          <div class="arch"><span class="dot"></span><span id="arch-lab">Intraday · cash</span></div>
+        </nav>
+        <div class="main">
+          <div class="top">
+            <div class="title">Morning brief</div>
+            <span class="score">0.22</span>
+            <span class="chip" id="broker-chip"><span class="d"></span>Kotak · live</span>
+            <span class="chip warn"><span class="d"></span>Pre-market</span>
+          </div>
+          <div class="scroll" id="morning"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="switcher" role="navigation" aria-label="Prototype variants">
+    <button class="arr press" type="button" id="prev" aria-label="Previous variant">←</button>
+    <div class="lab" id="vlab"></div>
+    <button class="arr press" type="button" id="next" aria-label="Next variant">→</button>
+    <div class="books" id="books">
+      <button type="button" data-book="kotak">Kotak</button>
+      <button type="button" data-book="com">COM</button>
+    </div>
+  </div>
+
+<script>
+const NAMES = {
+  A: "Shipping",
+  B: "Desk stack",
+  C: "Hero blotter",
+  D: "Ritual gate",
+};
+const KEYS = ["A", "B", "C", "D"];
+const BOOKS = {
+  kotak: {
+    id: "kotak",
+    chip: "Kotak · live",
+    book: "Kotak Neo",
+    product: "cash CNC · INR",
+    arch: "Intraday · cash",
+    ccy: "INR",
+    clock: "09:15–15:30 IST · MIS 15:15",
+    clockHint: "47 min to open",
+    pnl: "−₹2,140",
+    pnlClass: "loss",
+    sentence: "Stops held 6 of 8. Size crept once vs declared.",
+    heroKicker: "Yesterday · Today · INR",
+    inventory: [
+      ["RELIANCE", "CNC 50", "holding"],
+      ["HDFCBANK", "MIS 0", "flat"],
+    ],
+    undeclared: "1 undeclared fill — declare before you add",
+    floor: "₹5,800 / ₹12,000",
+    floorPct: 48,
+    last: "RELIANCE 1,412.40",
+    indexes: true,
+  },
+  com: {
+    id: "com",
+    chip: "Binance.com · live",
+    book: "Binance.com",
+    product: "spot · USDT",
+    arch: "Intraday · spot",
+    ccy: "USDT",
+    clock: "24h · no NSE square-off",
+    clockHint: "Session always on",
+    pnl: "−$84.20",
+    pnlClass: "loss",
+    sentence: "Stops held 6 of 8. No blend with INR.",
+    heroKicker: "Yesterday · Today · USDT",
+    inventory: [
+      ["BTCUSDT", "spot 0.12", "holding"],
+      ["ETHUSDT", "spot 0", "flat"],
+    ],
+    undeclared: null,
+    floor: "$210 / $400",
+    floorPct: 52,
+    last: "BTCUSDT 64,210",
+    indexes: false,
+  },
+};
+
+const S = {
+  variant: "A",
+  book: "kotak",
+  calm: 0,
+  conf: 0,
+  ruleAck: false,
+  started: false,
+};
+
+function params() {
+  const u = new URL(location.href);
+  return u.searchParams;
+}
+function readUrl() {
+  const p = params();
+  const v = (p.get("variant") || "A").toUpperCase();
+  S.variant = KEYS.includes(v) ? v : "A";
+  const b = (p.get("book") || "kotak").toLowerCase();
+  S.book = b === "com" ? "com" : "kotak";
+}
+function writeUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set("variant", S.variant);
+  u.searchParams.set("book", S.book);
+  history.replaceState(null, "", u);
+}
+
+function spark(loss) {
+  const color = loss ? "var(--loss)" : "var(--gain)";
+  return `<svg class="spark" viewBox="0 0 220 44" aria-hidden="true">
+    <polyline fill="none" stroke="${color}" stroke-width="1.6"
+      points="0,8 24,10 48,6 72,18 96,22 120,28 144,24 168,34 196,38 220,40"/>
+  </svg>`;
+}
+
+function feelRow(kind, value) {
+  const labels = kind === "calm"
+    ? ["1 Calm","2","3","4","5"]
+    : ["1","2","3","4","5 Sharp"];
+  return `<div class="feel" data-feel="${kind}">
+    ${labels.map((l,i) => `<button type="button" class="press ${value===i+1?"on":""}" data-n="${i+1}">${l}</button>`).join("")}
+  </div>`;
+}
+
+function variantA(b) {
+  const idx = b.indexes
+    ? `<div class="idx-row">
+        <div class="idx"><div class="n">Nifty</div><div class="v">24,812</div><div class="c pos">+0.42%</div></div>
+        <div class="idx"><div class="n">BNF</div><div class="v">52,140</div><div class="c neg">−0.18%</div></div>
+        <div class="idx"><div class="n">VIX</div><div class="v amber">14.2</div></div>
+      </div>`
+    : `<div class="idx-row">
+        <div class="idx"><div class="n">Nifty</div><div class="v">24,812</div><div class="c pos">+0.42%</div></div>
+        <div class="idx"><div class="n">BNF</div><div class="v">52,140</div><div class="c neg">−0.18%</div></div>
+        <div class="idx"><div class="n">VIX</div><div class="v amber">14.2</div></div>
+      </div>
+      <p class="hint" style="margin-top:8px">Shipping still paints NSE indexes on a COM desk — that is the bug this prototype is arguing against.</p>`;
+  return `
+    <div class="caps">Session</div>
+    <div class="card">
+      <div class="caps">Pre-market</div>
+      ${idx}
+    </div>
+    <div class="caps">What matters</div>
+    <div class="card">
+      <div class="hint" style="margin-bottom:4px">Yesterday’s session P&amp;L</div>
+      <p>Yesterday closed −₹2,100 after two revenge-adjacent adds. Size crept 18% vs declared.</p>
+      ${spark(true)}
+      <p class="muted" style="margin-top:10px">Watch for size discipline and time-pressure entries in the first 45 minutes.</p>
+    </div>
+    <div class="card">
+      <p class="muted">Trade only A-setups. Cap first trade at half size until calm ≤ 2. Declare before you click buy.</p>
+    </div>
+    <button class="big-btn press" type="button" data-act="start">Start trading →</button>
+  `;
+}
+
+function variantB(b) {
+  const und = b.undeclared ? `<div class="banner">${b.undeclared}</div>` : "";
+  const inv = b.inventory.map(([s,q,st]) =>
+    `<div class="row"><span class="k mono">${s}</span><span class="v">${q}</span><span class="hint">${st}</span></div>`
+  ).join("");
+  return `
+    <div class="card">
+      <div class="ident">
+        <span class="book">${b.book}</span>
+        <span class="chip"><span class="d"></span>${b.product}</span>
+        <span class="chip"><span class="d"></span>synced 12s</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="k">${b.clock}</span>
+        <span class="v amber">${b.clockHint}</span>
+      </div>
+    </div>
+    ${und}
+    <div class="caps">Overnight</div>
+    <div class="card">${inv}<p class="hint" style="margin-top:8px">Obtain / AccountBook — not Today fill-inventory.</p></div>
+    <div class="caps">Yesterday · Today</div>
+    <div class="card">
+      <div class="row"><span class="k">Session P&amp;L</span><span class="v ${b.pnlClass}">${b.pnl}</span></div>
+      ${spark(true)}
+      <div class="pills">
+        <span class="pill-m">Stops 6/8</span>
+        <span class="pill-m">Exits plan 5/8</span>
+        <span class="pill-m">2 shots unposted</span>
+      </div>
+    </div>
+    <div class="rule">
+      <div class="lab">Non-negotiable today</div>
+      No add in the first 45 minutes. Half size until calm is 1 or 2.
+    </div>
+    <div class="card">
+      <div class="caps">State</div>
+      <p class="hint" style="margin-bottom:6px">Psychological calm — 1 is best</p>
+      ${feelRow("calm", S.calm)}
+      <p class="hint" style="margin:10px 0 6px">Confidence — 5 is best</p>
+      ${feelRow("conf", S.conf)}
+    </div>
+    <button class="big-btn press" type="button" data-act="start">Start trading →</button>
+  `;
+}
+
+function variantC(b) {
+  const und = b.undeclared
+    ? `<div class="banner" style="margin-top:12px">${b.undeclared}</div>`
+    : "";
+  const inv = b.inventory.map(([s,q,st]) =>
+    `<div class="r"><span>${s}</span><span>${q}</span><span class="hint">${st}</span></div>`
+  ).join("");
+  return `
+    <div class="hero">
+      <div class="hero-left">
+        <div class="hero-kicker">${b.heroKicker}</div>
+        <div class="hero-num ${b.pnlClass}">${b.pnl}</div>
+        <p class="hero-sent">${b.sentence}</p>
+        ${spark(true)}
+        <p class="hint" style="margin-top:10px">Stops 6/8 · exits plan-driven 5/8 · DualNoBlend ${b.ccy}</p>
+        ${und}
+        <button class="big-btn press" type="button" data-act="start">Start trading →</button>
+      </div>
+      <div class="hero-right">
+        <div class="caps">On the book</div>
+        <div class="ledger">${inv}</div>
+        <div style="margin-top:16px">
+          <div class="caps">Daily floor</div>
+          <div class="row"><span class="k">Used</span><span class="v">${b.floor}</span></div>
+          <div class="bar"><i style="width:${b.floorPct}%"></i></div>
+        </div>
+        <div style="margin-top:16px">
+          <div class="caps">Clock</div>
+          <p>${b.clock}</p>
+          <p class="amber" style="margin-top:4px">${b.clockHint}</p>
+        </div>
+        <p class="hint" style="margin-top:16px">2 unposted charts on this Mac. Not a journal until linked.</p>
+      </div>
+    </div>
+  `;
+}
+
+function variantD(b) {
+  const calmDone = S.calm > 0;
+  const confDone = S.conf > 0;
+  const ruleDone = S.ruleAck;
+  const ready = calmDone && confDone && ruleDone;
+  const invLine = b.undeclared
+    ? b.undeclared
+    : `${b.inventory[0][0]} ${b.inventory[0][1]} overnight · nothing undeclared`;
+  return `
+    <div class="ritual">
+      <p class="hint">You don’t trade until this is done</p>
+      <h2>Morning gate</h2>
+      <p class="muted" style="margin-bottom:8px">${b.book} · ${b.product} · ${b.clockHint}</p>
+
+      <div class="check ${calmDone?"done":""}">
+        <div class="box">${calmDone?"✓":""}</div>
+        <div>
+          <div class="t">How calm are you</div>
+          <div class="s">1 is best. Same scale as Pre-trade.</div>
+          <div style="margin-top:8px">${feelRow("calm", S.calm)}</div>
+        </div>
+      </div>
+      <div class="check ${confDone?"done":""}">
+        <div class="box">${confDone?"✓":""}</div>
+        <div>
+          <div class="t">Confidence</div>
+          <div class="s">5 is sharp. Empty means Start stays locked.</div>
+          <div style="margin-top:8px">${feelRow("conf", S.conf)}</div>
+        </div>
+      </div>
+      <div class="check done">
+        <div class="box">✓</div>
+        <div>
+          <div class="t">Yesterday was ${b.pnl}</div>
+          <div class="s">${b.sentence} ${invLine}</div>
+        </div>
+      </div>
+      <div class="check ${ruleDone?"done":""}">
+        <div class="box">${ruleDone?"✓":""}</div>
+        <div>
+          <div class="t">Non-negotiable</div>
+          <div class="s">No add in the first 45 minutes. Half size until calm is 1 or 2.</div>
+          <button class="big-btn outline press" type="button" data-act="ack" style="margin-top:10px;width:auto;padding:8px 14px">
+            ${ruleDone ? "Acknowledged" : "I will keep this"}
+          </button>
+        </div>
+      </div>
+      <button class="big-btn press" type="button" data-act="start" ${ready?"":"disabled"} style="margin-top:18px">
+        ${ready ? "Start trading →" : "Locked until the gate is complete"}
+      </button>
+    </div>
+  `;
+}
+
+function dump() {
+  const b = BOOKS[S.book];
+  const ready = S.calm && S.conf && S.ruleAck;
+  document.getElementById("state-dump").textContent =
+    `variant=${S.variant} (${NAMES[S.variant]})  book=${S.book}  ccy=${b.ccy}  calm=${S.calm||"—"}  conf=${S.conf||"—"}  ruleAck=${S.ruleAck}  startEnabled=${S.variant==="D"?ready:true}  started=${S.started}  indexesOnShipping=${b.indexes}`;
+}
+
+function render() {
+  const b = BOOKS[S.book];
+  document.getElementById("broker-chip").innerHTML = `<span class="d"></span>${b.chip}`;
+  document.getElementById("arch-lab").textContent = b.arch;
+  document.getElementById("mb-clock").textContent = S.book === "com" ? "Thu 22:14 UTC" : "Thu 08:28";
+  const fn = { A: variantA, B: variantB, C: variantC, D: variantD }[S.variant];
+  document.getElementById("morning").innerHTML = fn(b);
+  document.getElementById("vlab").innerHTML = `${S.variant} (${NAMES[S.variant]})<small>${S.book === "com" ? "Binance.com USDT" : "Kotak cash INR"}</small>`;
+  document.querySelectorAll("#books button").forEach((el) => {
+    el.classList.toggle("on", el.dataset.book === S.book);
+  });
+  dump();
+}
+
+function cycle(dir) {
+  const i = KEYS.indexOf(S.variant);
+  S.variant = KEYS[(i + dir + KEYS.length) % KEYS.length];
+  S.started = false;
+  writeUrl();
+  render();
+}
+
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.getElementById("books").onclick = (e) => {
+  const btn = e.target.closest("[data-book]");
+  if (!btn) return;
+  S.book = btn.dataset.book;
+  S.started = false;
+  writeUrl();
+  render();
+};
+document.getElementById("morning").onclick = (e) => {
+  const feel = e.target.closest("[data-n]");
+  if (feel) {
+    const row = feel.closest("[data-feel]");
+    const n = Number(feel.dataset.n);
+    if (row.dataset.feel === "calm") S.calm = n;
+    else S.conf = n;
+    render();
+    return;
+  }
+  const act = e.target.closest("[data-act]");
+  if (!act) return;
+  if (act.dataset.act === "ack") {
+    S.ruleAck = !S.ruleAck;
+    render();
+  }
+  if (act.dataset.act === "start" && !act.disabled) {
+    S.started = true;
+    dump();
+  }
+};
+window.addEventListener("keydown", (e) => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+
+const heights = [28, 44, 36, 52, 22, 48, 40, 18, 34, 46, 30, 38, 24, 42, 20, 50];
+document.getElementById("candles").innerHTML = heights.map((h, i) =>
+  `<div class="cndl ${i%3===0?"dn":"up"}" style="height:${h}%"></div>`
+).join("");
+
+readUrl();
+writeUrl();
+render();
+</script>
+</body>
+</html>
