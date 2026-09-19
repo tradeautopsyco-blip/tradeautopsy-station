@@ -8,7 +8,8 @@ use crate::data::{
     ensure_coinm_force_orders, ensure_coinm_klines, ensure_coinm_positions,
     ensure_options_margin_account, ensure_options_positions, ensure_options_user_trades,
     ensure_spot_account, ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_exchange_info,
-    ensure_usdm_force_orders, ensure_usdm_klines, ensure_usdm_positions,
+    ensure_usdm_force_orders, ensure_usdm_klines, ensure_usdm_positions, ensure_coinm_depth,
+    ensure_usdm_depth,
     ensure_usdm_realized_income, extract_chain_from, extract_coinm_history, extract_depth_on_book,
     extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
     extract_options_history, extract_quote_for_book, extract_usdm_history,
@@ -471,6 +472,15 @@ async fn kick_usdm_private(state: &AppState, envelope: &ObtainEnvelope) {
             )
             .await;
         }
+        "depth" => {
+            let instrument = state
+                .selected_quote_for(BINANCE_COM_USDM_BOOK_ID)
+                .unwrap_or_default();
+            if instrument.is_empty() {
+                return;
+            }
+            ensure_usdm_depth(state.depthbook.clone(), &instrument).await;
+        }
         _ => {}
     }
 }
@@ -516,6 +526,15 @@ async fn kick_coinm_private(state: &AppState, envelope: &ObtainEnvelope) {
                 &instrument,
             )
             .await;
+        }
+        "depth" => {
+            let instrument = state
+                .selected_quote_for(BINANCE_COM_COINM_BOOK_ID)
+                .unwrap_or_default();
+            if instrument.is_empty() {
+                return;
+            }
+            ensure_coinm_depth(state.depthbook.clone(), &instrument).await;
         }
         _ => {}
     }
@@ -645,11 +664,13 @@ fn enricher(
         ("binance-com-usdm", "positionbook") => Some(enrich_positions),
         ("binance-com-usdm", "forceorder") => Some(enrich_forceorder),
         ("binance-com-usdm", "history") => Some(enrich_usdm_history),
+        ("binance-com-usdm", "depth") => Some(enrich_depth),
         ("binance-com-coinm", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-coinm", "funds") => Some(enrich_binance_funds),
         ("binance-com-coinm", "positionbook") => Some(enrich_positions),
         ("binance-com-coinm", "forceorder") => Some(enrich_forceorder),
         ("binance-com-coinm", "history") => Some(enrich_coinm_history),
+        ("binance-com-coinm", "depth") => Some(enrich_depth),
         _ => None,
     }
 }
@@ -742,6 +763,8 @@ fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
     }
     let instrument = match book_id {
         BINANCE_COM_SPOT_BOOK_ID => state.selected_quote_for(BINANCE_COM_SPOT_BOOK_ID),
+        BINANCE_COM_USDM_BOOK_ID => state.selected_quote_for(BINANCE_COM_USDM_BOOK_ID),
+        BINANCE_COM_COINM_BOOK_ID => state.selected_quote_for(BINANCE_COM_COINM_BOOK_ID),
         KOTAK_NSE_BSE_CASH_BOOK_ID => state.selected_quote_for(KOTAK_NSE_BSE_CASH_BOOK_ID),
         KOTAK_NSE_NFO_BOOK_ID => state.selected_quote_for(KOTAK_NSE_NFO_BOOK_ID),
         _ => None,
@@ -749,6 +772,10 @@ fn depth_instrument_for_book(state: &AppState, book_id: &str) -> String {
     .unwrap_or_default();
     if book_id == BINANCE_COM_SPOT_BOOK_ID {
         crate::data::normalize_quote_instrument(&instrument)
+    } else if book_id == BINANCE_COM_USDM_BOOK_ID {
+        crate::data::normalize_usdm_instrument(&instrument)
+    } else if book_id == BINANCE_COM_COINM_BOOK_ID {
+        crate::data::normalize_coinm_instrument(&instrument)
     } else {
         instrument
     }

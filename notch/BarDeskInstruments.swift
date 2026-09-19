@@ -276,7 +276,7 @@ enum BarDeskTemplate {
         case .options:
             return [.last, .history, .chain, .openInterest, .depth]
         case .usdm, .coinm:
-            return [.last, .history]
+            return [.last, .history, .depth]
         }
     }
 
@@ -375,6 +375,10 @@ enum BarDeskTemplate {
             return "REST \(label). Never synced. Never ordered_state."
         case binanceComOptionsBookId:
             return "REST GET /eapi/v1/depth?limit=50. Levels are [price, quantity]. No orders count. Not COM @depth. Physics \(label). Never synced."
+        case binanceComUsdmBookId:
+            return "REST GET /fapi/v1/depth?limit=50. Levels are [price, quantity]. Not COM @depth. Not dapi. Physics \(label). Never synced."
+        case binanceComCoinmBookId:
+            return "REST GET /dapi/v1/depth?limit=50. Levels are [price, quantity]. Not COM @depth. Not fapi. Physics \(label). Never synced."
         case kotakNfoBookId:
             return "REST \(label) from observed depth.buy / depth.sell {price, quantity, orders}. Never synced. Not a strike grid."
         default:

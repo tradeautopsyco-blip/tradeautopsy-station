@@ -735,8 +735,9 @@ pub fn binance_com_options_manifest() -> SourceManifest {
 }
 
 /// Named USDM book on the same `binance_com` adapter. USER_DATA funds +
-/// positions + lossy force-order + public REST last + public fapi klines this
-/// slice — no tradebook, no fapi trade stream. Lock: `locks/binance-com-usdm.md`.
+/// positions + lossy force-order + public REST last + public fapi klines +
+/// public fapi REST depth this slice — no tradebook, no fapi trade stream,
+/// no `@depth`. Lock: `locks/binance-com-usdm.md`.
 /// Catalog / Start slug still ships spot.
 pub fn binance_com_usdm_manifest() -> SourceManifest {
     let coverage = Coverage {
@@ -765,6 +766,7 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
             "quotes".into(),
             "search".into(),
             "history".into(),
+            "depth".into(),
         ],
         bindings: vec![
             account_binding(
@@ -785,6 +787,14 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
             quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
             search_binding("binance_com", coverage.clone(), AuthMode::Public),
             history_binding("binance_com", history_coverage, AuthMode::Public),
+            // REST bounded snapshot of `GET /fapi/v1/depth` — `Rest` only. Spot
+            // `@depth` is another book. Coin-M is another owner file.
+            depth_binding(
+                "binance_com",
+                coverage,
+                AuthMode::Public,
+                vec![TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -818,6 +828,7 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
             "quotes".into(),
             "search".into(),
             "history".into(),
+            "depth".into(),
         ],
         bindings: vec![
             account_binding(
@@ -838,6 +849,13 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
             quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
             search_binding("binance_com", coverage.clone(), AuthMode::Public),
             history_binding("binance_com", history_coverage, AuthMode::Public),
+            // REST bounded snapshot of `GET /dapi/v1/depth` — own owner, Rest only.
+            depth_binding(
+                "binance_com",
+                coverage,
+                AuthMode::Public,
+                vec![TransportKind::Rest],
+            ),
         ],
     }
 }
@@ -1600,11 +1618,13 @@ mod tests {
                 "forceorder",
                 "quotes",
                 "search",
-                "history"
+                "history",
+                "depth"
             ]
         );
         assert!(manifest.implemented.iter().any(|op| op == "quotes"));
         assert!(manifest.implemented.iter().any(|op| op == "history"));
+        assert!(manifest.implemented.iter().any(|op| op == "depth"));
         assert!(!manifest.implemented.iter().any(|op| op == "tradebook"));
         let quotes = manifest
             .bindings
@@ -1628,6 +1648,19 @@ mod tests {
         assert_eq!(history.auth_mode, AuthMode::Public);
         assert!(history.coverage.intervals.contains(&"1m".to_string()));
         assert!(!history.coverage.intervals.iter().any(|i| i == "1s"));
+        let depth = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "depth")
+            .expect("usdm depth binding");
+        assert_eq!(depth.capability_id, "order_book");
+        assert_eq!(depth.physics, Physics::BoundedSnapshot);
+        assert_eq!(depth.auth_mode, AuthMode::Public);
+        assert_eq!(depth.transports, vec![TransportKind::Rest]);
+        assert_ne!(
+            depth.transports,
+            vec![TransportKind::Stream, TransportKind::Rest]
+        );
         let hist = obtain(&manifest, "history");
         assert_eq!(hist.status, ObtainStatus::Unavailable);
         assert_ne!(hist.status, ObtainStatus::Unsupported);
@@ -1690,6 +1723,11 @@ mod tests {
         let search_env = obtain(&manifest, "search");
         assert_eq!(search_env.status, ObtainStatus::Unavailable);
         assert_ne!(search_env.status, ObtainStatus::Unsupported);
+        let depth_env = obtain(&manifest, "depth");
+        assert_eq!(depth_env.status, ObtainStatus::Unavailable);
+        assert_ne!(depth_env.status, ObtainStatus::Unsupported);
+        assert!(depth_env.data.is_none());
+        assert!(!is_empty_success(&depth_env));
     }
 
     #[test]
@@ -1750,7 +1788,23 @@ mod tests {
         assert!(coinm.implemented.iter().any(|op| op == "quotes"));
         assert!(coinm.implemented.iter().any(|op| op == "search"));
         assert!(coinm.implemented.iter().any(|op| op == "history"));
+        assert!(coinm.implemented.iter().any(|op| op == "depth"));
         assert!(!coinm.implemented.iter().any(|op| op == "tradebook"));
+        let coinm_depth = coinm
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "depth")
+            .expect("coinm depth binding");
+        assert_eq!(coinm_depth.capability_id, "order_book");
+        assert_eq!(coinm_depth.physics, Physics::BoundedSnapshot);
+        assert_eq!(coinm_depth.transports, vec![TransportKind::Rest]);
+        let depth_env = obtain(&coinm, "depth");
+        assert_eq!(depth_env.status, ObtainStatus::Unavailable);
+        assert_ne!(depth_env.status, ObtainStatus::Unsupported);
+        assert_ne!(
+            obtain(&usdm, "depth").book_id,
+            obtain(&coinm, "depth").book_id
+        );
         assert_ne!(
             obtain(&usdm, "quotes").book_id,
             obtain(&coinm, "quotes").book_id

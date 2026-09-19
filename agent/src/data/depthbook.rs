@@ -5,10 +5,13 @@
 //! BTCUSDT subscribe must not close spot REST for that ticker. Locks:
 //! binance-com-spot + kotak-nse-bse-cash (fetch 2026-08-22 IST).
 
+use super::binance_coinm_ticker::normalize_coinm_instrument;
 use super::binance_public::normalize_quote_instrument;
+use super::binance_usdm_ticker::normalize_usdm_instrument;
 use super::descriptor::{
-    BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 use super::kotak_depth::DepthSnapshot;
 use super::tick::Transport;
@@ -24,10 +27,11 @@ pub(crate) fn depth_key(book_id: &str, instrument_id: &str) -> String {
 }
 
 fn normalize_depth_instrument(book_id: &str, instrument_id: &str) -> String {
-    if book_id.trim() == BINANCE_COM_SPOT_BOOK_ID {
-        normalize_quote_instrument(instrument_id)
-    } else {
-        instrument_id.trim().to_string()
+    match book_id.trim() {
+        BINANCE_COM_SPOT_BOOK_ID => normalize_quote_instrument(instrument_id),
+        BINANCE_COM_USDM_BOOK_ID => normalize_usdm_instrument(instrument_id),
+        BINANCE_COM_COINM_BOOK_ID => normalize_coinm_instrument(instrument_id),
+        _ => instrument_id.trim().to_string(),
     }
 }
 
@@ -41,9 +45,10 @@ fn normalize_depth_instrument(book_id: &str, instrument_id: &str) -> String {
 /// field, which is not a slug anyone can log in with.
 fn placeholder_adapter_id(book_id: &str) -> String {
     match book_id.trim() {
-        BINANCE_COM_SPOT_BOOK_ID | BINANCE_COM_OPTIONS_BOOK_ID | "binance-com-usdm" => {
-            BINANCE_COM_ADAPTER_ID.to_string()
-        }
+        BINANCE_COM_SPOT_BOOK_ID
+        | BINANCE_COM_OPTIONS_BOOK_ID
+        | BINANCE_COM_USDM_BOOK_ID
+        | BINANCE_COM_COINM_BOOK_ID => BINANCE_COM_ADAPTER_ID.to_string(),
         KOTAK_NSE_BSE_CASH_BOOK_ID => KOTAK_NEO_ADAPTER_ID.to_string(),
         other => other.to_string(),
     }
@@ -132,7 +137,10 @@ mod tests {
                 BINANCE_COM_ADAPTER_ID.to_string(),
                 BINANCE_COM_SPOT_BOOK_ID.to_string(),
             )
-        } else if arg == BINANCE_COM_SPOT_BOOK_ID || arg == "binance-com-usdm" {
+        } else if arg == BINANCE_COM_SPOT_BOOK_ID
+            || arg == BINANCE_COM_USDM_BOOK_ID
+            || arg == BINANCE_COM_COINM_BOOK_ID
+        {
             (BINANCE_COM_ADAPTER_ID.to_string(), arg.to_string())
         } else if arg == KOTAK_NEO_ADAPTER_ID || arg == KOTAK_NSE_BSE_CASH_BOOK_ID {
             (
@@ -319,10 +327,27 @@ mod tests {
 
     #[test]
     fn depth_key_spot_and_usdm_prefixes_are_unequal() {
-        // `binance-com-usdm` is a slot prefix only — not a live USD-M book.
+        // Matching is book_id. Spot lowercase and USDM venue-case share letters
+        // but never a slot.
         assert_ne!(
-            depth_key("binance-com-spot", "btcusdt"),
-            depth_key("binance-com-usdm", "btcusdt")
+            depth_key(BINANCE_COM_SPOT_BOOK_ID, "btcusdt"),
+            depth_key(BINANCE_COM_USDM_BOOK_ID, "btcusdt")
+        );
+        assert_eq!(
+            depth_key(BINANCE_COM_USDM_BOOK_ID, "BTCUSDT"),
+            format!("{}\0BTCUSDT", BINANCE_COM_USDM_BOOK_ID)
+        );
+        assert_eq!(
+            depth_key(BINANCE_COM_USDM_BOOK_ID, "btcusdt"),
+            depth_key(BINANCE_COM_USDM_BOOK_ID, "BTCUSDT")
+        );
+        assert_eq!(
+            depth_key(BINANCE_COM_COINM_BOOK_ID, "BTCUSD_PERP"),
+            format!("{}\0BTCUSD_PERP", BINANCE_COM_COINM_BOOK_ID)
+        );
+        assert_ne!(
+            depth_key(BINANCE_COM_USDM_BOOK_ID, "BTCUSDT"),
+            depth_key(BINANCE_COM_COINM_BOOK_ID, "BTCUSD_PERP")
         );
     }
 

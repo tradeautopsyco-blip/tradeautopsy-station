@@ -221,5 +221,11 @@ mod tests {
         );
         assert_eq!(COINM_DEPTH_PATH, "/dapi/v1/depth");
         assert_eq!(COINM_DEPTH_HOST, "dapi.binance.com");
+        let call = binance_coinm_depth_call("BTCUSD_PERP").expect("call");
+        assert_eq!(call.method, "GET");
+        assert!(call.headers.is_empty(), "public depth must not attach HMAC headers");
+        assert_ne!(call.path, "/fapi/v1/depth");
+        assert_ne!(call.path, "/api/v3/depth");
+        assert_ne!(call.host, "fapi.binance.com");
     }
 }

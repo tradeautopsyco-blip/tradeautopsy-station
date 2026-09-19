@@ -44,11 +44,16 @@ struct BarCashCockpitMosaic: View {
                 physicsNote: viewModel.deskDepthPhysicsNote,
             )
         case .ticket:
-            BarDeskTicketTile(
-                viewModel: viewModel,
-                sideBuy: $sideBuy,
-                quantityText: $quantityText,
-            )
+            ScrollView {
+                BarDeskTicketTile(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    quantityText: $quantityText,
+                )
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .scrollIndicators(.automatic)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 

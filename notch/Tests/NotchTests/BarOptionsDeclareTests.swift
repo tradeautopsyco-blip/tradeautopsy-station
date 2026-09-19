@@ -2107,8 +2107,12 @@ struct BarOptionsDeclareTests {
         usdm.declareAssetClass = .usdm
         usdm.deskSelectedInstrumentId = "BTCUSDT"
         let path = usdm.deskDepthExtractPath(symbol: "BTCUSDT")
+        #expect(path.contains("book=binance-com-usdm"))
+        #expect(path.contains("instrument=BTCUSDT"))
         #expect(!path.contains("book=binance-com-spot"))
         #expect(!path.contains("book=binance-com-options"))
+        #expect(!path.contains("book=binance-com-coinm"))
+        #expect(usdm.deskDepthPhysicsNote.contains("/fapi/v1/depth"))
         let plan = DeskExtractPlan.resolve(
             slug: "binance_com",
             assetClass: .usdm,
@@ -2116,6 +2120,19 @@ struct BarOptionsDeclareTests {
         )
         #expect(!plan.fetchesGlance)
         #expect(!plan.defersComSpotDepth)
+    }
+
+    @Test func coinmDepthPathNamesCoinmBookNotFapi() {
+        let coinm = NotchViewModel(planSurfaceOnly: true)
+        coinm.activeBrokerSlug = "binance_com"
+        coinm.declareAssetClass = .coinm
+        coinm.deskSelectedInstrumentId = "BTCUSD_PERP"
+        let path = coinm.deskDepthExtractPath(symbol: "BTCUSD_PERP")
+        #expect(path.contains("book=binance-com-coinm"))
+        #expect(path.contains("instrument=BTCUSD_PERP"))
+        #expect(!path.contains("book=binance-com-usdm"))
+        #expect(!path.contains("book=binance-com-spot"))
+        #expect(coinm.deskDepthPhysicsNote.contains("/dapi/v1/depth"))
     }
 
     @Test func leftoverSpotPairOnOptionsIssuesNoDepthGlance() {

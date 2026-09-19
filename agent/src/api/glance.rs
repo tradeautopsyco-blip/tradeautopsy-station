@@ -5,7 +5,8 @@ use crate::api::AppState;
 use crate::data::{
     apply_history_series_and_seed, await_binance_options_ticker, await_bound_com_depth_row,
     chain_input_honesty, chain_rows_for_contract, depth_snapshot_from_eapi_json,
-    expiration_from_dated_contract, extract_chain_from, extract_depth_on_book,
+    ensure_coinm_depth, ensure_usdm_depth, expiration_from_dated_contract, extract_chain_from,
+    extract_depth_on_book,
     extract_greeks_from_mark, extract_index, extract_open_interest, extract_open_interest_for_book,
     extract_open_interest_from, index_price_from_json_for_underlying,
     index_underlying_for_contract, is_dated_option_contract, mark_row_for_symbol,
@@ -14,8 +15,9 @@ use crate::data::{
     parse_nfo_instrument_id, series_from_eapi_klines_json, underlying_asset_from_dated_contract,
     validate_options_kline_request, CachedIndex, CachedMark, ChainRow, DepthEnvelope,
     GlanceEnvelope, GreeksEnvelope, InputHonesty, OptionsOiRow, Transport, BINANCE_COM_ADAPTER_ID,
-    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH,
+    BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, DEFAULT_OPTIONS_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, OPTIONS_DEPTH_HOST, OPTIONS_DEPTH_PATH,
     OPTIONS_INDEX_HOST, OPTIONS_INDEX_PATH, OPTIONS_KLINES_HOST, OPTIONS_KLINES_PATH,
     OPTIONS_KLINE_LIMIT_DEFAULT, OPTIONS_MARK_PATH,
 };
@@ -658,6 +660,16 @@ pub async fn depth_handler(
     match book.as_deref() {
         Some(id) if id == BINANCE_COM_OPTIONS_BOOK_ID => {
             ensure_options_depth(&state, &instrument).await;
+        }
+        Some(id) if id == BINANCE_COM_USDM_BOOK_ID => {
+            if !instrument.is_empty() {
+                ensure_usdm_depth(state.depthbook.clone(), &instrument).await;
+            }
+        }
+        Some(id) if id == BINANCE_COM_COINM_BOOK_ID => {
+            if !instrument.is_empty() {
+                ensure_coinm_depth(state.depthbook.clone(), &instrument).await;
+            }
         }
         Some(id) if id == KOTAK_NSE_NFO_BOOK_ID || id == KOTAK_NSE_BSE_CASH_BOOK_ID => {
             if !instrument.is_empty() {

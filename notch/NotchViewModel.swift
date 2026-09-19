@@ -2399,7 +2399,8 @@ public final class NotchViewModel: ObservableObject {
 
     private func depthInstrument(symbol: String) -> String {
         if declareAssetClass == .usdm || declareAssetClass == .coinm {
-            return ""
+            let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
+            return selected.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         let trimmed = selected.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2419,8 +2420,11 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func depthBookId(symbol: String) -> String? {
-        if declareAssetClass == .usdm || declareAssetClass == .coinm {
-            return nil
+        if declareAssetClass == .usdm {
+            return BarDeskTemplate.binanceComUsdmBookId
+        }
+        if declareAssetClass == .coinm {
+            return BarDeskTemplate.binanceComCoinmBookId
         }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         if BarDeskTemplate.isBinanceOptionsSelection(
@@ -2728,7 +2732,8 @@ public final class NotchViewModel: ObservableObject {
         let oiPath = plan.fetchesGlance ? deskOiExtractPath(symbol: symbol) : nil
         let greeksPath = plan.fetchesGlance ? deskGreeksExtractPath(symbol: symbol) : nil
         let indexPath = plan.fetchesGlance ? deskIndexExtractPath(symbol: symbol) : nil
-        let depthPath = plan.fetchesGlance && !plan.defersComSpotDepth
+        let namedFuturesDepth = plan.usesUsdmHistoryObtain || plan.usesCoinmHistoryObtain
+        let depthPath = (plan.fetchesGlance && !plan.defersComSpotDepth) || namedFuturesDepth
             ? deskDepthExtractPath(symbol: symbol)
             : nil
         let historyPath = deskHistoryExtractPath(instrument: raw, consumeVendorArm: true)
@@ -2752,6 +2757,9 @@ public final class NotchViewModel: ObservableObject {
                 guard generation == self.deskExtractGeneration else { return }
                 self.applyStationHistoryEnvelope(licensedJSON ?? [:])
                 self.scheduleSessionHistoryRefresh()
+                if namedFuturesDepth {
+                    self.applyStationDepthEnvelope(depthJSON ?? [:])
+                }
                 // A skipped glance writes nothing: the hole keeps what invalidate set.
                 guard plan.fetchesGlance else { return }
                 self.deskChainStatus = chainJSON?["status"] as? String ?? "unavailable"
@@ -2760,7 +2768,7 @@ public final class NotchViewModel: ObservableObject {
                 self.applyStationOiEnvelope(oiJSON ?? [:])
                 self.applyGreeksEnvelope(greeksJSON ?? [:])
                 self.applyStationIndexEnvelope(indexJSON ?? [:])
-                if !plan.defersComSpotDepth {
+                if !plan.defersComSpotDepth && !namedFuturesDepth {
                     self.applyStationDepthEnvelope(depthJSON ?? [:])
                 }
             }

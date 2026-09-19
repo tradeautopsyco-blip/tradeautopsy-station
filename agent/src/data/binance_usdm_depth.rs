@@ -220,5 +220,18 @@ mod tests {
         );
         assert_eq!(USDM_DEPTH_PATH, "/fapi/v1/depth");
         assert_eq!(USDM_DEPTH_HOST, "fapi.binance.com");
+        let call = binance_usdm_depth_call("BTCUSDT").expect("call");
+        assert_eq!(call.method, "GET");
+        assert!(call.headers.is_empty(), "public depth must not attach HMAC headers");
+        assert_ne!(call.path, "/api/v3/depth");
+        assert_ne!(call.path, "/eapi/v1/depth");
+        assert_ne!(call.path, "/dapi/v1/depth");
+        assert_ne!(call.host, "api.binance.com");
+    }
+
+    #[test]
+    fn spot_depth_stream_body_is_not_a_fapi_snapshot() {
+        let stream = r#"{"e":"depthUpdate","E":1,"s":"BTCUSDT","U":1,"u":2,"b":[["4","1"]],"a":[["5","1"]]}"#;
+        assert!(depth_snapshot_from_fapi_json(stream, "BTCUSDT", received()).is_none());
     }
 }

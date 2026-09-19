@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Prototype 3-cell glance (`strip n3`). Last / History / Depth on cash; last-only books
-/// swap Depth for a Margin cell and keep History as an honest hole.
+/// Prototype 3-cell glance (`strip n3`). Last / History / Depth.
 struct BarCashGlanceStrip: View {
     @ObservedObject var viewModel: NotchViewModel
 

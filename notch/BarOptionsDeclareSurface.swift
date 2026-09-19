@@ -75,22 +75,33 @@ enum BarOptionsDeclareSurface {
     }
 }
 
-/// Prototype cash / last-only cockpit (`CASH_SEEDS` / `LAST_SEEDS`, `board=cockpit`, Plan rail).
-/// Edit-board catalog is out of v1. USDM / Coin-M have no Depth tile and no History product.
-enum BarCashCockpitSeed {
-    enum Dock: Equatable {
-        case rail
-    }
+/// Prototype board id (`cockpit` / `hero` / `focus`). Custom boards use other raw ids.
+enum BarCockpitBoardId: String, Equatable, Hashable, CaseIterable {
+    case cockpit
+    case hero
+    case focus
+}
 
-    enum Kind: Equatable {
-        case session, depth
+/// Plan dock. Floor is chrome, not a second Confirm path.
+enum BarCockpitDock: String, Equatable, Hashable {
+    case rail
+    case floor
+}
+
+/// Prototype cash / last-only cockpit (`CASH_SEEDS` / `LAST_SEEDS`).
+/// USDM / Coin-M light Depth after that book's lock names fapi/dapi depth.
+enum BarCashCockpitSeed {
+    typealias Dock = BarCockpitDock
+
+    enum Kind: String, Equatable, Hashable {
+        case session, depth, ticket
     }
 
     enum StripKind: Equatable, Hashable {
         case last, history, depth, margin
     }
 
-    struct Tile: Equatable {
+    struct Tile: Equatable, Hashable {
         var kind: Kind
         var x: Int
         var y: Int
@@ -98,46 +109,117 @@ enum BarCashCockpitSeed {
         var h: Int
     }
 
+    /// Cockpit seed dock (prototype `board=cockpit`).
     static let planDock: Dock = .rail
 
-    static func tiles(for asset: BarDeclareAssetClass) -> [Tile] {
-        if showsDepth(for: asset) {
-            return [
-                Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
-                Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
-            ]
+    static func planDock(for board: BarCockpitBoardId) -> Dock {
+        switch board {
+        case .cockpit, .hero: return .rail
+        case .focus: return .floor
         }
-        return [
-            Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
-        ]
+    }
+
+    static func tiles(for asset: BarDeclareAssetClass) -> [Tile] {
+        tiles(for: asset, board: .cockpit)
+    }
+
+    static func tiles(for asset: BarDeclareAssetClass, board: BarCockpitBoardId) -> [Tile] {
+        let depth = showsDepth(for: asset)
+        switch board {
+        case .cockpit:
+            if depth {
+                return [
+                    Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                    Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
+                ]
+            }
+            return [Tile(kind: .session, x: 0, y: 0, w: 4, h: 3)]
+        case .hero:
+            if depth {
+                return [
+                    Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                    Tile(kind: .depth, x: 0, y: 3, w: 2, h: 1),
+                ]
+            }
+            return [Tile(kind: .session, x: 0, y: 0, w: 4, h: 4)]
+        case .focus:
+            if depth {
+                return [
+                    Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                    Tile(kind: .depth, x: 0, y: 3, w: 4, h: 1),
+                ]
+            }
+            return [Tile(kind: .session, x: 0, y: 0, w: 4, h: 4)]
+        }
     }
 
     static func showsDepth(for asset: BarDeclareAssetClass) -> Bool {
         BarDeskTemplate.glanceKinds(for: asset).contains(.depth)
     }
 
-    static func stripKinds(for asset: BarDeclareAssetClass) -> [StripKind] {
+    /// Catalog kinds this book may add in Edit board. Ticket is overlay, not catalog.
+    static func catalog(for asset: BarDeclareAssetClass) -> [Kind] {
+        if showsDepth(for: asset) {
+            return [.session, .depth]
+        }
+        return [.session]
+    }
+
+    static func addSize(for kind: Kind, asset: BarDeclareAssetClass) -> (w: Int, h: Int) {
+        switch kind {
+        case .session:
+            return showsDepth(for: asset) ? (4, 2) : (4, 2)
+        case .depth:
+            return (2, 1)
+        case .ticket:
+            return ticketOverlaySize(for: asset)
+        }
+    }
+
+    /// USDM / Coin-M ticket is taller (TIF + Contracts + reduce-only). Spot stays 2×1.
+    static func ticketOverlaySize(for asset: BarDeclareAssetClass) -> (w: Int, h: Int) {
         switch asset {
         case .usdm, .coinm:
-            return [.last, .history, .margin]
-        case .spot, .equity, .options:
+            return (BarCockpitTicketOverlay.ticketW, 2)
+        default:
+            return (BarCockpitTicketOverlay.ticketW, BarCockpitTicketOverlay.ticketH)
+        }
+    }
+
+    static func title(for kind: Kind) -> String {
+        switch kind {
+        case .session: return "Session"
+        case .depth: return "Depth"
+        case .ticket: return "Ticket"
+        }
+    }
+
+    static func note(for kind: Kind) -> String {
+        switch kind {
+        case .session: return "this pair · named book"
+        case .depth: return "market/order_book · not placed"
+        case .ticket: return "type · size · TIF"
+        }
+    }
+
+    static func stripKinds(for asset: BarDeclareAssetClass) -> [StripKind] {
+        switch asset {
+        case .usdm, .coinm, .spot, .equity, .options:
             return [.last, .history, .depth]
         }
     }
 }
 
-/// Prototype cockpit seed (`board=cockpit`, Plan rail). Edit-board catalog is out of v1.
+/// Prototype options/NFO seeds (`OPTIONS_SEEDS`). Cockpit is the v1 default.
 enum BarNfoCockpitSeed {
-    enum Dock: Equatable {
-        case rail
-    }
+    typealias Dock = BarCockpitDock
 
-    enum Kind: Equatable {
+    enum Kind: String, Equatable, Hashable {
         case session, oi, payoff, depth, chain
         case greeks, legs, ladder, ticket
     }
 
-    struct Tile: Equatable {
+    struct Tile: Equatable, Hashable {
         var kind: Kind
         var x: Int
         var y: Int
@@ -145,7 +227,17 @@ enum BarNfoCockpitSeed {
         var h: Int
     }
 
+    /// Cockpit seed dock (prototype `board=cockpit`).
     static let planDock: Dock = .rail
+
+    static func planDock(for board: BarCockpitBoardId) -> Dock {
+        switch board {
+        case .cockpit, .hero: return .rail
+        case .focus: return .floor
+        }
+    }
+
+    /// Cockpit seed tiles — public layout spec used by ticket overlay tests.
     static let tiles: [Tile] = [
         Tile(kind: .session, x: 0, y: 0, w: 2, h: 2),
         Tile(kind: .oi, x: 2, y: 0, w: 2, h: 2),
@@ -153,6 +245,68 @@ enum BarNfoCockpitSeed {
         Tile(kind: .depth, x: 2, y: 2, w: 2, h: 2),
         Tile(kind: .chain, x: 0, y: 4, w: 4, h: 1),
     ]
+
+    static func tiles(for board: BarCockpitBoardId) -> [Tile] {
+        switch board {
+        case .cockpit:
+            return tiles
+        case .hero:
+            return [
+                Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                Tile(kind: .oi, x: 0, y: 3, w: 2, h: 1),
+                Tile(kind: .payoff, x: 2, y: 3, w: 2, h: 1),
+                Tile(kind: .chain, x: 0, y: 4, w: 4, h: 1),
+            ]
+        case .focus:
+            return [
+                Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                Tile(kind: .oi, x: 0, y: 3, w: 1, h: 1),
+                Tile(kind: .payoff, x: 1, y: 3, w: 1, h: 1),
+                Tile(kind: .depth, x: 2, y: 3, w: 1, h: 1),
+                Tile(kind: .chain, x: 3, y: 3, w: 1, h: 1),
+            ]
+        }
+    }
+
+    static let catalog: [Kind] = [
+        .session, .oi, .payoff, .depth, .chain, .greeks, .legs, .ladder,
+    ]
+
+    static func addSize(for kind: Kind) -> (w: Int, h: Int) {
+        switch kind {
+        case .session, .oi, .payoff, .depth, .greeks, .legs, .ladder: return (2, 1)
+        case .chain: return (4, 1)
+        case .ticket: return (2, 1)
+        }
+    }
+
+    static func title(for kind: Kind) -> String {
+        switch kind {
+        case .session: return "Session"
+        case .oi: return "Open interest"
+        case .payoff: return "At expiry"
+        case .depth: return "Depth"
+        case .chain: return "Chain · catalog"
+        case .greeks: return "Greeks"
+        case .legs: return "Legs"
+        case .ladder: return "Ladder"
+        case .ticket: return "Ticket"
+        }
+    }
+
+    static func note(for kind: Kind) -> String {
+        switch kind {
+        case .session: return BarNfoHistoryCopy.sessionHoleTitle
+        case .oi: return "market/open_interest · quote field open_int"
+        case .payoff: return BarNfoPayoffCopy.holeTitle
+        case .depth: return "market/order_book"
+        case .chain: return "showsStrikeGrid = false"
+        case .greeks: return "not Black-76"
+        case .legs: return "local plan"
+        case .ladder: return "rung 1 typed · σ 2–5 dark"
+        case .ticket: return "NFO · no COM ticket"
+        }
+    }
 }
 
 /// Chain table is forbidden while the extract is dark. Ghost strike grids are cheating.

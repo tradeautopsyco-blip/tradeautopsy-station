@@ -12,8 +12,8 @@ struct BarDeskInstrumentsTests {
         #expect(BarDeclareAssetClass.usdm.label == "USDM")
         #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.spot.label)
         #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.options.label)
-        #expect(BarDeskTemplate.glanceKinds(for: .usdm) == [.last, .history])
-        #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.depth))
+        #expect(BarDeskTemplate.glanceKinds(for: .usdm) == [.last, .history, .depth])
+        #expect(BarDeskTemplate.glanceKinds(for: .usdm).contains(.depth))
         #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.chain))
         #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.openInterest))
         #expect(BarDeskTemplate.binanceComUsdmBookId == "binance-com-usdm")
@@ -31,8 +31,9 @@ struct BarDeskInstrumentsTests {
     @Test func coinmClassIsLastAndHistoryAndNamesItsOwnBook() {
         #expect(BarDeclareAssetClass.coinm.label == "Coin-M")
         #expect(BarDeclareAssetClass.coinm.isNamedComFutures)
-        #expect(BarDeskTemplate.glanceKinds(for: .coinm) == [.last, .history])
+        #expect(BarDeskTemplate.glanceKinds(for: .coinm) == [.last, .history, .depth])
         #expect(BarDeskTemplate.glanceKinds(for: .coinm).contains(.history))
+        #expect(BarDeskTemplate.glanceKinds(for: .coinm).contains(.depth))
         #expect(BarDeskTemplate.binanceComCoinmBookId == "binance-com-coinm")
         #expect(BarDeskTemplate.binanceComCoinmBookId != BarDeskTemplate.binanceComUsdmBookId)
         #expect(BarDeskTemplate.showsConfirmControl(for: .coinm))
@@ -134,6 +135,24 @@ struct BarDeskInstrumentsTests {
         #expect(nfo.contains("depth.sell"))
         #expect(nfo.contains("Never synced"))
         #expect(nfo.contains("Not a strike grid"))
+
+        let usdm = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.binanceComUsdmBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(usdm.contains("/fapi/v1/depth"))
+        #expect(usdm.contains("limit=50"))
+        #expect(usdm.contains("Not COM @depth"))
+        #expect(usdm.contains("Not dapi"))
+        #expect(usdm.contains("Never synced"))
+
+        let coinm = BarDeskTemplate.depthPhysicsNote(
+            bookId: BarDeskTemplate.binanceComCoinmBookId,
+            physics: "bounded_snapshot"
+        )
+        #expect(coinm.contains("/dapi/v1/depth"))
+        #expect(coinm.contains("Not fapi"))
+        #expect(coinm.contains("Never synced"))
     }
 
     @Test func yahooHistoryDetailIsRightsForbid() {

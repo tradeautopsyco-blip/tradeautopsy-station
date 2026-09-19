@@ -7,7 +7,8 @@ use super::AppState;
 use crate::data::{
     binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
     ensure_binance_com_options_quote, ensure_binance_com_trade_stream, ensure_coinm_exchange_info,
-    ensure_coinm_klines, ensure_usdm_exchange_info, ensure_usdm_klines, extract_quote_for_book,
+    ensure_coinm_klines, ensure_usdm_exchange_info, ensure_usdm_klines, ensure_coinm_depth,
+    ensure_usdm_depth, extract_quote_for_book,
     is_dated_option_contract, kotak_quote_book_id, normalize_coinm_instrument,
     normalize_options_instrument, normalize_quote_instrument, normalize_usdm_instrument,
     parse_nfo_instrument_id, resolve_among, series_from_klines_json, validate_kline_request,
@@ -873,6 +874,7 @@ impl AppState {
                         &instrument,
                     )
                     .await;
+                    ensure_usdm_depth(state.depthbook.clone(), &instrument).await;
                 });
             }
             QuoteSource::BinanceCoinmPublic => {
@@ -889,6 +891,7 @@ impl AppState {
                         &instrument,
                     )
                     .await;
+                    ensure_coinm_depth(state.depthbook.clone(), &instrument).await;
                 });
             }
             QuoteSource::BinanceSpotPublic => {
