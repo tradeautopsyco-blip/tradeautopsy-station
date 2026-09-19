@@ -66,7 +66,18 @@ struct BarDeclarationFlowView: View {
                     for: viewModel.declareAssetClass,
                     slug: viewModel.resolvedDeskSlug,
                     instrumentId: viewModel.deskSelectedInstrumentId,
+                    instrumentType: viewModel.deskSelectedInstrumentType,
                 ) {
+                case .nfoCockpit:
+                    BarNfoOptionsCockpitView(
+                        viewModel: viewModel,
+                        sideBuy: $sideBuy,
+                        stopLossText: $stopLossText,
+                        targetPriceText: $targetPriceText,
+                        submitReady: submitReadiness.ready,
+                        submitHint: submitReadiness.hint,
+                        onConfirm: { Task { await submit() } },
+                    )
                 case .nfoThreeZone:
                     BarOptionsDeclareView(
                         viewModel: viewModel,
@@ -92,7 +103,48 @@ struct BarDeclarationFlowView: View {
                     stateCheckCard
 
                     BarSectionLabel(text: "Numbers")
-                    riskNumbersCard
+                    if BarDeskTicketSurface.surface(
+                        for: viewModel.declareAssetClass,
+                        slug: viewModel.resolvedDeskSlug,
+                        instrumentId: viewModel.deskSelectedInstrumentId,
+                    ) == .spot {
+                        BarCard {
+                            BarSpotTicketView(
+                                ticket: $viewModel.deskTicket,
+                                sideBuy: $sideBuy,
+                                quantityText: $quantityText,
+                                quoteOrderQtyText: $viewModel.quoteOrderQtyText,
+                                availableLine: viewModel.accountChrome.freeText == "—"
+                                    ? nil
+                                    : "available = \(viewModel.accountChrome.freeText)",
+                            )
+                            .onChange(of: viewModel.deskTicket) { _, _ in viewModel.persistDeskTicket() }
+                            .onChange(of: viewModel.quoteOrderQtyText) { _, _ in viewModel.persistDeskTicket() }
+                        }
+                        riskNumbersCard
+                    } else if viewModel.declareAssetClass.isNamedComFutures,
+                              BarDeskTicketSurface.usesVenueTicket(
+                                for: viewModel.declareAssetClass,
+                                slug: viewModel.resolvedDeskSlug,
+                                instrumentId: viewModel.deskSelectedInstrumentId,
+                              ) {
+                        BarCard {
+                            BarUsdmTicketView(
+                                ticket: $viewModel.deskTicket,
+                                sideBuy: $sideBuy,
+                                quantityText: $quantityText,
+                                triggerPriceText: $viewModel.ticketTriggerPrice,
+                                marginMode: futuresMargin.mode,
+                                leverage: futuresMargin.leverage,
+                                liquidationPrice: futuresMargin.liq,
+                            )
+                            .onChange(of: viewModel.deskTicket) { _, _ in viewModel.persistDeskTicket() }
+                            .onChange(of: viewModel.ticketTriggerPrice) { _, _ in viewModel.persistDeskTicket() }
+                        }
+                        riskNumbersCard
+                    } else {
+                        riskNumbersCard
+                    }
 
                     BarSectionLabel(text: "Setup & invalidation")
                     setupAndInvalidationCard
@@ -145,6 +197,7 @@ struct BarDeclarationFlowView: View {
                 viewModel.setIfChanged(\.declInvalidationType, "")
                 viewModel.setIfChanged(\.declInvalidationCondition, "")
             }
+            viewModel.adoptDeskTicket()
             applyBrokerDeclarationPrefillIfNeeded()
         }
         .onChange(of: viewModel.showingDeclarationForm) { _, showing in
@@ -290,13 +343,15 @@ struct BarDeclarationFlowView: View {
             } else {
                 horizonRow
             }
-            HStack(spacing: 5) {
-                pretradeSidePill(title: "BUY", selected: sideBuy) { sideBuy = true }
-                pretradeSidePill(title: "SELL", selected: !sideBuy) { sideBuy = false }
-            }
-            .padding(.bottom, 4)
-            if viewModel.declareAssetClass != .options {
-                BarInputField(placeholder: "Quantity", text: $quantityText)
+            if !showsVenueTicket {
+                HStack(spacing: 5) {
+                    pretradeSidePill(title: "BUY", selected: sideBuy) { sideBuy = true }
+                    pretradeSidePill(title: "SELL", selected: !sideBuy) { sideBuy = false }
+                }
+                .padding(.bottom, 4)
+                if viewModel.declareAssetClass != .options {
+                    BarInputField(placeholder: "Quantity", text: $quantityText)
+                }
             }
 
             if viewModel.declareAssetClass == .options {
@@ -332,6 +387,18 @@ struct BarDeclarationFlowView: View {
             }
             .animation(.easeInOut(duration: 0.15), value: selectedInvalidationKind)
         }
+    }
+
+    private var futuresMargin: (mode: String?, leverage: String?, liq: String?) {
+        viewModel.futuresMarginReadout(symbol: viewModel.barDeclarationSymbol)
+    }
+
+    private var showsVenueTicket: Bool {
+        BarDeskTicketSurface.usesVenueTicket(
+            for: viewModel.declareAssetClass,
+            slug: viewModel.resolvedDeskSlug,
+            instrumentId: viewModel.deskSelectedInstrumentId,
+        )
     }
 
     private var elapsedLiveSeconds: Int {
@@ -528,10 +595,14 @@ struct BarDeclarationFlowView: View {
         ) else { return nil }
         guard let sym = BarBrokerTicker.normalize(raw: viewModel.barDeclarationSymbol) else { return nil }
         let lotsParsed = Int(viewModel.declLots.trimmingCharacters(in: .whitespacesAndNewlines))
+        viewModel.persistDeskTicket()
+        let ticketForBody = showsVenueTicket ? viewModel.deskTicket.coerced() : nil
         let qty: Double
         if isOptions {
             guard !viewModel.optionLegs.isEmpty else { return nil }
             qty = Double(viewModel.optionLegs[0].lots)
+        } else if ticketForBody?.sizeMode == .quote, let q = ticketForBody?.quoteOrderQty, q > 0 {
+            qty = q
         } else if let parsedQty = Double(quantityText.trimmingCharacters(in: .whitespaces)), parsedQty > 0 {
             qty = VenueLotTick.round(parsedQty, stepSize: viewModel.deskStepSize)
         } else {
@@ -583,6 +654,7 @@ struct BarDeclarationFlowView: View {
             horizonDays: viewModel.declHorizonDays,
             maxPlannedLossINR: maxLoss,
             bookId: viewModel.declareBookId,
+            ticket: ticketForBody,
         )
         return try? JSONSerialization.data(withJSONObject: obj, options: [])
     }

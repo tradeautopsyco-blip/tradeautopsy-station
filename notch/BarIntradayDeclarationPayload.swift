@@ -32,6 +32,7 @@ enum BarIntradayDeclarationPayload {
         horizonDays: Int? = nil,
         maxPlannedLossINR: Double? = nil,
         bookId: String? = nil,
+        ticket: BarDeskTicketIntent? = nil,
     ) -> [String: Any] {
         var s1: [String: Any] = [
             "mood_stress": moodStress,
@@ -94,6 +95,11 @@ enum BarIntradayDeclarationPayload {
         }
         if let book = bookId?.trimmingCharacters(in: .whitespacesAndNewlines), !book.isEmpty {
             o["book_id"] = book
+        }
+        if let ticket, !ticket.bookId.isEmpty {
+            var payload = o["declaration_payload"] as? [String: Any] ?? [:]
+            payload["ticket"] = ticket.jsonObject
+            o["declaration_payload"] = payload
         }
         return o
     }

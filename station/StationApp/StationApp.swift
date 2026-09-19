@@ -103,7 +103,7 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
-
+ 
     func applicationWillTerminate(_ notification: Notification) {
         // Best-effort if something bypassed shouldTerminate (e.g. forced kill path).
         // Quit already ran in shouldTerminate for normal exits.

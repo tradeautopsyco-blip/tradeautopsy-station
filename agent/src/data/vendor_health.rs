@@ -36,10 +36,7 @@ pub fn vendor_health_rows(cfg: &GapVendorConfig, amfi_enabled: bool) -> Vec<Valu
         .iter()
         .map(|spec| {
             let (status, what) = if spec.adapter_id == LICENSED_HISTORY_ADAPTER_ID {
-                (
-                    licensed_history_status(cfg),
-                    LICENSED_HISTORY_BINDING.what,
-                )
+                (licensed_history_status(cfg), LICENSED_HISTORY_BINDING.what)
             } else {
                 (amfi_status(amfi_enabled), AMFI_BINDING.what)
             };

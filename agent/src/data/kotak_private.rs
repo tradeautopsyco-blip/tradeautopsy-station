@@ -36,10 +36,7 @@ fn url_encode_form_component(value: &str) -> String {
 pub fn kotak_jdata_form_body(fields: &[(&str, &str)]) -> String {
     let mut map = serde_json::Map::new();
     for (key, value) in fields {
-        map.insert(
-            (*key).to_string(),
-            Value::String((*value).to_string()),
-        );
+        map.insert((*key).to_string(), Value::String((*value).to_string()));
     }
     let json = serde_json::to_string(&Value::Object(map)).expect("jData json");
     format!("jData={}", url_encode_form_component(&json))

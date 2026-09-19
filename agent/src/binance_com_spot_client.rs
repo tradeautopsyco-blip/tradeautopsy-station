@@ -1,7 +1,9 @@
 //! Binance Global spot read-only client — `api.binance.com`.
 //!
 //! Ref: `docs/reference/crypto/binance-global/spot/REST.md`
-//! Scope: `GET /api/v3/account`, `GET /api/v3/myTrades`, `GET /api/v3/openOrders`.
+//! Oracle: `/Users/bishnu/binance-connector-rust` `binance-sdk` 70.1.0 @ `592f16b`
+//! `SPOT_REST_API_PROD_URL`. Scope: `GET /api/v3/account`, `GET /api/v3/myTrades`,
+//! `GET /api/v3/openOrders`.
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -112,7 +114,9 @@ impl BinanceComSpotClient {
         parse_account_info(&body)
     }
 
-    /// `GET /api/v3/myTrades` — USER_DATA, weight 20 (REST.md).
+    /// `GET /api/v3/myTrades` — USER_DATA, weight 20 without orderId (binance-sdk 70.1.0).
+    /// Official combos: `symbol`, `symbol+startTime`, `symbol+startTime+endTime` (≤24h),
+    /// `symbol+fromId`. `fromId` must not combine with startTime/endTime.
     pub async fn fetch_my_trades(
         &self,
         symbol: &str,
@@ -122,6 +126,8 @@ impl BinanceComSpotClient {
         let mut params: Vec<(&str, String)> = vec![("symbol", symbol.to_ascii_uppercase())];
         if let Some(ms) = start_time_ms {
             params.push(("startTime", ms.to_string()));
+            // Official: window between startTime and endTime cannot exceed 24 hours.
+            params.push(("endTime", (ms.saturating_add(86_400_000 - 1)).to_string()));
         }
         if let Some(n) = limit {
             params.push(("limit", n.to_string()));
@@ -279,12 +285,32 @@ pub fn open_order_to_broker_open_order(
     }
 }
 
+/// Quote side of the pair. Match the live Wasm adapter — never hardcode USDT.
+fn spot_quote_asset(symbol: &str) -> String {
+    const QUOTE_ASSETS: &[&str] = &[
+        "USDT", "USDC", "FDUSD", "TUSD", "BUSD", "BTC", "ETH", "BNB", "EUR", "TRY", "BRL", "INR",
+    ];
+    let upper = symbol.to_ascii_uppercase();
+    let mut best = "";
+    for quote in QUOTE_ASSETS {
+        if upper.len() > quote.len() && upper.ends_with(*quote) && quote.len() > best.len() {
+            best = quote;
+        }
+    }
+    if best.is_empty() {
+        "UNKNOWN".to_string()
+    } else {
+        best.to_string()
+    }
+}
+
 pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::BrokerFill {
     let side = if trade.is_buyer { "BUY" } else { "SELL" }.to_string();
     let filled_at = DateTime::<Utc>::from_timestamp_millis(trade.time_ms).unwrap_or_else(Utc::now);
     crate::broker::BrokerFill {
         fill_id: trade.id.to_string(),
-        trade_id: trade.id.to_string(),
+        // Align live Wasm mapper: orderId is the venue order, fill_id is trade id.
+        trade_id: trade.order_id.to_string(),
         symbol: trade.symbol.clone(),
         side,
         qty: trade.qty.parse().unwrap_or(0.0),
@@ -293,7 +319,7 @@ pub fn my_trade_to_broker_fill(trade: &BinanceComMyTrade) -> crate::broker::Brok
         broker: "binance_com".to_string(),
         fee_amount: trade.commission.parse().ok(),
         fee_asset: Some(trade.commission_asset.clone()),
-        currency: Some("USDT".to_string()),
+        currency: Some(spot_quote_asset(&trade.symbol)),
         product: None,
         exchange_segment: None,
         instrument_type: None,
@@ -410,5 +436,25 @@ mod tests {
         assert_eq!(orders[0].order_id, 1);
         assert_eq!(orders[0].symbol, "LTCBTC");
         assert_eq!(orders[0].side, "BUY");
+    }
+
+    #[test]
+    fn my_trade_to_broker_fill_uses_quote_asset_not_hardcoded_usdt() {
+        let trade = BinanceComMyTrade {
+            id: 1,
+            order_id: 99,
+            symbol: "ETHBTC".into(),
+            price: "0.05".into(),
+            qty: "3".into(),
+            commission: "0.00001".into(),
+            commission_asset: "BNB".into(),
+            time_ms: 1_700_000_000_000,
+            is_buyer: false,
+        };
+        let fill = my_trade_to_broker_fill(&trade);
+        assert_eq!(fill.currency.as_deref(), Some("BTC"));
+        assert_eq!(fill.fill_id, "1");
+        assert_eq!(fill.trade_id, "99");
+        assert_eq!(fill.fee_asset.as_deref(), Some("BNB"));
     }
 }

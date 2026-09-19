@@ -556,6 +556,7 @@ struct InstrumentResult: Codable, Identifiable, Equatable {
     let segment: String?
     let instrument_token: Int64?
     let last_price: Double
+    var instrument_type: String? = nil
 
     /// Cash TickBook id. Equity/spot declare — never `nse_fo`.
     var tickBookInstrumentId: String? {

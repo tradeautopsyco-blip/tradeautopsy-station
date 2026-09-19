@@ -45,6 +45,8 @@ struct DeskOiExpiryRow: Identifiable, Equatable {
 struct DeskChainCatalogRow: Identifiable, Equatable {
     var id: String { symbol }
     let symbol: String
+    let instrumentId: String?
+    let instrumentType: String?
     let strikeRaw: String?
     let side: String?
     let expiryRaw: String?
@@ -348,6 +350,55 @@ public final class NotchViewModel: ObservableObject {
     var declareBookId: String? {
         BarAccountChrome.namedBookId(forAssetClass: declareAssetClass, startSlug: resolvedDeskSlug)
     }
+
+    func adoptDeskTicket() {
+        if !deskTicket.bookId.isEmpty {
+            var stored = deskTicket
+            stored.triggerPrice = ticketTriggerPrice
+            if stored.sizeMode == .quote {
+                stored.quoteOrderQty = Double(quoteOrderQtyText.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            deskTicketByBook[deskTicket.bookId] = stored.coerced()
+        }
+        guard let book = BarDeskTicketSurface.bookId(
+            for: declareAssetClass,
+            slug: resolvedDeskSlug,
+            instrumentId: deskSelectedInstrumentId
+        ) else {
+            deskTicket = .blank
+            quoteOrderQtyText = ""
+            ticketTriggerPrice = ""
+            return
+        }
+        if let kept = deskTicketByBook[book], kept.bookId == book {
+            deskTicket = kept.coerced()
+        } else {
+            deskTicket = .defaults(bookId: book)
+        }
+        deskTicketByBook[book] = deskTicket
+        quoteOrderQtyText = deskTicket.quoteOrderQty.map { String($0) } ?? ""
+        ticketTriggerPrice = deskTicket.triggerPrice
+    }
+
+    func persistDeskTicket() {
+        if deskTicket.bookId.isEmpty {
+            adoptDeskTicket()
+        }
+        guard !deskTicket.bookId.isEmpty else { return }
+        var stored = deskTicket.coerced()
+        stored.triggerPrice = ticketTriggerPrice
+        if stored.sizeMode == .quote {
+            stored.quoteOrderQty = Double(quoteOrderQtyText.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            stored.quoteOrderQty = nil
+        }
+        deskTicket = stored
+        deskTicketByBook[stored.bookId] = stored
+    }
+
+    func futuresMarginReadout(symbol: String) -> (mode: String?, leverage: String?, liq: String?) {
+        BarAccountChrome.futuresMargin(from: accountChrome, symbol: symbol)
+    }
     /// True while broker sync is running or has fresh/stale data — drives Today session mirror polling.
     public var isBrokerSyncActiveForTodayMirror: Bool {
         switch brokerSyncClass {
@@ -513,6 +564,7 @@ public final class NotchViewModel: ObservableObject {
             if oldValue.isNamedComFutures, !declareAssetClass.isNamedComFutures {
                 usdmPositionbookCount = 0
             }
+            adoptDeskTicket()
             reconcileDeskLastForAssetClass(previousClass: oldValue)
             if brokerSessionActive {
                 Task { await refreshAccountChrome() }
@@ -529,6 +581,11 @@ public final class NotchViewModel: ObservableObject {
     @Published var declHorizonMode: BarPlanHorizon.Mode = .today
     @Published var declMaxPlannedLossText: String = ""
     @Published var optionLegs: [BarIntradayDeclarationPayload.OptionLeg] = []
+    /// Venue ticket keyed by `book_id`. Class switch adopts that book's slot — never leftover type/sizeMode.
+    @Published var deskTicket: BarDeskTicketIntent = .blank
+    @Published var deskTicketByBook: [String: BarDeskTicketIntent] = [:]
+    @Published var quoteOrderQtyText: String = ""
+    @Published var ticketTriggerPrice: String = ""
     @Published var deskLastStatus: String = "unavailable"
     /// Venue `PRICE_FILTER.tickSize` from the named book's quote envelope. Never `pricePrecision`.
     @Published var deskTickSize: String?
@@ -602,6 +659,8 @@ public final class NotchViewModel: ObservableObject {
     private var accountChromeGeneration: UInt64 = 0
     /// Last selected TickBook id (`nse_cm|2885`, `nse_fo|token`, or Binance pair).
     @Published var deskSelectedInstrumentId: String = ""
+    /// Scrip `instrument_type` (`OPTIDX` / `FUTIDX` / …). Empty is unknown — NFO stays three-zone.
+    @Published var deskSelectedInstrumentType: String = ""
     /// Bumped on every desk rebind (symbol, asset class, broker slug). An extract
     /// Task carries the generation it started under and drops its apply once this moves,
     /// so a slow reply for the previous instrument can never paint the current one.
@@ -1273,6 +1332,22 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    /// Binds the selected token. On a new id, clears `deskSelectedInstrumentType` unless
+    /// search already supplied `instrument_type`.
+    private func bindDeskSelectedInstrumentId(_ newId: String, instrumentTypeFromSearch: String? = nil) {
+        let rebinding = newId != deskSelectedInstrumentId
+        clearEntryIfRebinding(to: newId)
+        deskSelectedInstrumentId = newId
+        guard rebinding else { return }
+        if let raw = instrumentTypeFromSearch?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty
+        {
+            deskSelectedInstrumentType = raw
+        } else {
+            deskSelectedInstrumentType = ""
+        }
+    }
+
     func selectSymbol(_ result: InstrumentResult) {
         symbolSearchTask?.cancel()
         ignoreSymbolSearchUntilEdit = true
@@ -1324,9 +1399,9 @@ public final class NotchViewModel: ObservableObject {
         }
         // Order matters: the id first, then invalidate (it reads the id to decide whether
         // Last may survive), then fetch — which captures the generation it must match.
-        clearEntryIfRebinding(to: bind.tickBookId)
-        deskSelectedInstrumentId = bind.tickBookId
+        bindDeskSelectedInstrumentId(bind.tickBookId, instrumentTypeFromSearch: result.instrument_type)
         selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
+        adoptDeskTicket()
         invalidateDeskMarketExtracts(reason: "select-symbol")
         switch bind.shape {
         case .kotakNfo, .kotakCash:
@@ -1412,9 +1487,9 @@ public final class NotchViewModel: ObservableObject {
         //
         // Order matters: the id first, then invalidate (it reads the id to decide whether
         // Last may survive), then fetch — which captures the generation it must match.
-        clearEntryIfRebinding(to: bind.tickBookId)
-        deskSelectedInstrumentId = bind.tickBookId
+        bindDeskSelectedInstrumentId(bind.tickBookId)
         selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
+        adoptDeskTicket()
         invalidateDeskMarketExtracts(reason: "commit-symbol")
         // No `applyLTP` seed: there is no catalog row here, and a spot-shaped last never
         // seeds a premium.
@@ -1452,9 +1527,9 @@ public final class NotchViewModel: ObservableObject {
         barDeclarationSymbol = ticker
         barDeclarationLastError = nil
         barLtpFetchError = nil
-        clearEntryIfRebinding(to: bind.tickBookId)
-        deskSelectedInstrumentId = bind.tickBookId
+        bindDeskSelectedInstrumentId(bind.tickBookId)
         selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
+        adoptDeskTicket()
         invalidateDeskMarketExtracts(reason: "commit-symbol")
         fetchStationQuote(instrument: bind.tickBookId)
         refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
@@ -2253,18 +2328,32 @@ public final class NotchViewModel: ObservableObject {
         let parsed = rawRows.compactMap(Self.deskChainRow(from:))
         if !parsed.isEmpty {
             deskChainRows = parsed
+            syncDeskSelectedInstrumentTypeFromChainRows(parsed)
         }
+    }
+
+    private func syncDeskSelectedInstrumentTypeFromChainRows(_ rows: [DeskChainCatalogRow]) {
+        let selected = deskSelectedInstrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selected.isEmpty else { return }
+        guard let row = rows.first(where: { $0.instrumentId == selected }),
+              let instType = row.instrumentType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !instType.isEmpty
+        else { return }
+        deskSelectedInstrumentType = instType
     }
 
     private static func deskChainRow(from raw: Any) -> DeskChainCatalogRow? {
         guard let obj = raw as? [String: Any] else { return nil }
+        let instrumentId = publishedVenueString(obj["instrument_id"])
         let symbol = publishedVenueString(obj["trading_symbol"])
-            ?? publishedVenueString(obj["instrument_id"])
+            ?? instrumentId
             ?? publishedVenueString(obj["symbol"])
         guard let symbol else { return nil }
         let last = publishedVenueString(obj["last"])
         return DeskChainCatalogRow(
             symbol: symbol,
+            instrumentId: instrumentId,
+            instrumentType: publishedVenueString(obj["instrument_type"]),
             strikeRaw: publishedVenueString(obj["strike_raw"]),
             side: publishedVenueString(obj["option_type"]) ?? publishedVenueString(obj["side"]),
             expiryRaw: publishedVenueString(obj["expiry_raw"]),

@@ -84,6 +84,9 @@ impl BrokerAdapter for WasmBrokerAdapter {
         &self,
         since: Option<DateTime<Utc>>,
     ) -> Result<Vec<BrokerFill>, BrokerError> {
+        // Time cursor only. Official paging is per-symbol `fromId` (adapter pages a
+        // full 500-row window). The poller still does not pin symbol/fromId — B6
+        // incremental-from-last-id stays a remaining FAIL until per-symbol cursors.
         let cursor = FillCursor {
             since_unix_ms: since.map(|t| t.timestamp_millis()),
             from_id: None,

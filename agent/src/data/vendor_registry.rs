@@ -66,7 +66,9 @@ pub fn clamp_budget(spec: &VendorBindingSpec, requested: Option<u32>) -> u32 {
     if spec.published_budget == 0 {
         return 0;
     }
-    requested.unwrap_or(spec.published_budget).min(spec.published_budget)
+    requested
+        .unwrap_or(spec.published_budget)
+        .min(spec.published_budget)
 }
 
 #[cfg(test)]

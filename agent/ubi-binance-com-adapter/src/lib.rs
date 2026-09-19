@@ -26,6 +26,11 @@ const MY_TRADES_PATH: &str = "/api/v3/myTrades";
 const KLINES_PATH: &str = "/api/v3/klines";
 /// B6 §4: limit default 500, max 1000. Same documented max as klines.
 const TRADES_LIMIT: &str = "500";
+const TRADES_LIMIT_N: usize = 500;
+/// Official `my_trades` (binance-sdk 70.1.0): startTime↔endTime cannot exceed 24h.
+const MS_24H: i64 = 86_400_000;
+/// Safety cap so a stuck fixture / repeating page cannot loop forever.
+const MAX_MY_TRADES_PAGES: usize = 40;
 const KLINE_LIMIT_DEFAULT: u32 = 500;
 const KLINE_LIMIT_MAX: u32 = 1000;
 const DEFAULT_HISTORY_INTERVAL: &str = "1m";
@@ -111,41 +116,77 @@ fn fetch_symbol_trades(
     symbol: &str,
     cursor: &FillCursor,
 ) -> Result<Option<Vec<FillEvent>>, String> {
-    let mut query = vec![
-        HttpQueryParam {
-            name: "symbol".to_string(),
-            value: symbol.to_string(),
-        },
-        HttpQueryParam {
-            name: "limit".to_string(),
-            value: TRADES_LIMIT.to_string(),
-        },
-    ];
-    // B6 §4 / R1: `fromId` + `startTime`/`endTime` together is refused (-1128).
-    // Prefer incremental `fromId` when the caller pinned one symbol (B6 §5/§6).
-    let from_id = cursor
+    let mut fills = Vec::new();
+    // B6 §4 / R1 + official SDK notes: `fromId` cannot combine with startTime/endTime
+    // (-1128). Prefer incremental `fromId` when the caller pinned one symbol.
+    let mut page_from = cursor
         .symbol
         .as_ref()
         .and_then(|_| cursor.from_id.as_ref())
-        .filter(|id| is_digits(id));
-    if let Some(from_id) = from_id {
-        query.push(HttpQueryParam {
-            name: "fromId".to_string(),
-            value: from_id.clone(),
-        });
-    } else if let Some(since) = cursor.since_unix_ms {
-        query.push(HttpQueryParam {
-            name: "startTime".to_string(),
-            value: since.to_string(),
-        });
-    }
+        .filter(|id| is_digits(id))
+        .cloned();
+    let mut prev_max_id: Option<i64> = None;
 
-    let response = call(MY_TRADES_PATH, query)?;
-    if response.status == 400 {
-        return Ok(None);
+    for _ in 0..MAX_MY_TRADES_PAGES {
+        let mut query = vec![
+            HttpQueryParam {
+                name: "symbol".to_string(),
+                value: symbol.to_string(),
+            },
+            HttpQueryParam {
+                name: "limit".to_string(),
+                value: TRADES_LIMIT.to_string(),
+            },
+        ];
+        if let Some(from_id) = &page_from {
+            query.push(HttpQueryParam {
+                name: "fromId".to_string(),
+                value: from_id.clone(),
+            });
+        } else if let Some(since) = cursor.since_unix_ms {
+            query.push(HttpQueryParam {
+                name: "startTime".to_string(),
+                value: since.to_string(),
+            });
+            // Official combo `symbol + startTime + endTime`; window ≤ 24h.
+            let end = since.saturating_add(MS_24H.saturating_sub(1));
+            query.push(HttpQueryParam {
+                name: "endTime".to_string(),
+                value: end.to_string(),
+            });
+        }
+
+        let response = call(MY_TRADES_PATH, query)?;
+        if response.status == 400 {
+            return Ok(if fills.is_empty() { None } else { Some(fills) });
+        }
+        let body = require_ok("myTrades", &response)?;
+        let page = map_my_trades(&body)?;
+        if page.is_empty() {
+            break;
+        }
+        let page_len = page.len();
+        let page_max = page
+            .iter()
+            .filter_map(|f| f.fill_id.parse::<i64>().ok())
+            .max();
+        if let (Some(prev), Some(max)) = (prev_max_id, page_max) {
+            if max <= prev {
+                break;
+            }
+        }
+        fills.extend(page);
+        if page_len < TRADES_LIMIT_N {
+            break;
+        }
+        let Some(max_id) = page_max else {
+            break;
+        };
+        // Official: fromId returns trades >= fromId. Step past this page.
+        page_from = Some(max_id.saturating_add(1).to_string());
+        prev_max_id = Some(max_id);
     }
-    let body = require_ok("myTrades", &response)?;
-    map_my_trades(&body).map(Some)
+    Ok(Some(fills))
 }
 
 fn call(path: &str, query: Vec<HttpQueryParam>) -> Result<BrokerHttpResponse, String> {

@@ -107,7 +107,12 @@ async fn post_kotak_start(port: u16) {
     .send()
     .await
     .expect("start");
-    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap_or_default());
+    assert_eq!(
+        resp.status(),
+        200,
+        "{}",
+        resp.text().await.unwrap_or_default()
+    );
 }
 
 async fn obtain(port: u16, query: &str) -> serde_json::Value {
@@ -131,7 +136,10 @@ async fn put_enable_with_key_makes_licensed_history_health_up() {
     wait_ready(PORT_PUT).await;
 
     let before = get_health(PORT_PUT).await;
-    assert_eq!(vendor_row(&before, "licensed_history")["status"], "unsupported");
+    assert_eq!(
+        vendor_row(&before, "licensed_history")["status"],
+        "unsupported"
+    );
     assert_eq!(vendor_row(&before, "amfi")["status"], "up");
 
     let (status, body) = put_binding(
@@ -174,7 +182,10 @@ async fn put_url_shaped_key_is_refused() {
     .await;
     assert_eq!(status, 400);
     assert_eq!(body["error_class"], "url_is_not_a_key");
-    assert_eq!(vendor_row(&get_health(PORT_URL).await, "licensed_history")["status"], "unsupported");
+    assert_eq!(
+        vendor_row(&get_health(PORT_URL).await, "licensed_history")["status"],
+        "unsupported"
+    );
 }
 
 #[tokio::test]
@@ -220,7 +231,10 @@ async fn put_amfi_disable_darks_nav_obtain() {
         TestAgentOptions::default(),
     ));
     wait_ready(PORT_AMFI).await;
-    assert_eq!(vendor_row(&get_health(PORT_AMFI).await, "amfi")["status"], "up");
+    assert_eq!(
+        vendor_row(&get_health(PORT_AMFI).await, "amfi")["status"],
+        "up"
+    );
 
     let (status, _) = put_binding(
         PORT_AMFI,
@@ -231,7 +245,10 @@ async fn put_amfi_disable_darks_nav_obtain() {
     )
     .await;
     assert_eq!(status, 200);
-    assert_eq!(vendor_row(&get_health(PORT_AMFI).await, "amfi")["status"], "unsupported");
+    assert_eq!(
+        vendor_row(&get_health(PORT_AMFI).await, "amfi")["status"],
+        "unsupported"
+    );
 
     let nav = obtain(PORT_AMFI, "adapter=amfi&operation=amfi_nav").await;
     assert_eq!(nav["status"], "unsupported");

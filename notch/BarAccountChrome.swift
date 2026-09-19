@@ -7,6 +7,12 @@ enum BarAccountChrome {
         var id: String
         var symbol: String
         var qty: String
+        /// Venue `marginType` when the positionbook row carried it. Nil if flat or the envelope omitted it.
+        var marginType: String? = nil
+        /// Venue leverage string. Nil if flat — never invent `50x`.
+        var leverage: String? = nil
+        /// Venue `liquidationPrice`. Nil if flat.
+        var liquidationPrice: String? = nil
     }
 
     struct Snapshot: Equatable {
@@ -260,8 +266,41 @@ enum BarAccountChrome {
                 if let s = row[key] as? String, !s.isEmpty { return s }
                 return nil
             }.first ?? "—"
-            return Row(id: "\(symbol)#\(idx)", symbol: symbol, qty: qty)
+            return Row(
+                id: "\(symbol)#\(idx)",
+                symbol: symbol,
+                qty: qty,
+                marginType: stringField(row, ["marginType", "margin_type"]),
+                leverage: stringField(row, ["leverage"]),
+                liquidationPrice: stringField(row, ["liquidationPrice", "liquidation_price"])
+            )
         }
+    }
+
+    /// Cross / x / liq from a named-book position row. All nil when flat or the envelope omitted the fields.
+    static func futuresMargin(from snap: Snapshot, symbol: String) -> (mode: String?, leverage: String?, liq: String?) {
+        guard snap.positionsStatus == "success", snap.positionsCount > 0 else {
+            return (nil, nil, nil)
+        }
+        let want = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let row = snap.positionsRows.first { $0.symbol.uppercased() == want } ?? snap.positionsRows.first
+        guard let row else { return (nil, nil, nil) }
+        return (row.marginType, row.leverage, row.liquidationPrice)
+    }
+
+    private static func stringField(_ row: [String: Any], _ keys: [String]) -> String? {
+        for key in keys {
+            if let s = row[key] as? String {
+                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { return t }
+            }
+            if let n = row[key] as? Int { return String(n) }
+            if let n = row[key] as? Double {
+                if n == n.rounded() { return String(Int(n.rounded())) }
+                return String(n)
+            }
+        }
+        return nil
     }
 
     private static func formatQty(_ n: Double) -> String {

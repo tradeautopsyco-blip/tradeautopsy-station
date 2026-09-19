@@ -1,20 +1,37 @@
 import Foundation
 
-/// Pre-trade Options is not one surface. Kotak NFO keeps the three-zone HTML surface;
+/// Pre-trade Options is not one surface. Kotak NFO futures (and unknown kind) keep the
+/// three-zone HTML surface; Kotak NFO options (OPT*) get the cockpit mosaic + Plan rail;
 /// a dated Binance contract gets the crypto surface; everything else — spot, equity, and
 /// a bookless pair left sitting on the Options tab — keeps the standard form.
 /// The split lives here and in the flow routing, never inside a declare view.
 enum BarOptionsDeclareSurface {
     enum Surface: Equatable {
-        /// Kotak NFO options desk.
+        /// Kotak NFO futures, or NFO with unknown `instrument_type`.
         case nfoThreeZone
+        /// Kotak NFO options (OPTIDX / OPTSTK / OPTCUR / OPTCOM).
+        case nfoCockpit
         /// Binance desk + `.options` + dated contract.
         case cryptoOptions
         /// Spot / equity / bookless options.
         case standardForm
     }
 
-    static func surface(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Surface {
+    /// Same allowlist as the NFO master: option rows, never FUTIDX/FUTSTK/SPREAD.
+    static func isNfoOptionInstType(_ raw: String?) -> Bool {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return false }
+        return ["OPTIDX", "OPTSTK", "OPTCUR", "OPTCOM"].contains {
+            $0.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+    }
+
+    static func surface(
+        for asset: BarDeclareAssetClass,
+        slug: String?,
+        instrumentId: String,
+        instrumentType: String? = nil
+    ) -> Surface {
         if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: asset,
             instrumentId: instrumentId
@@ -22,18 +39,69 @@ enum BarOptionsDeclareSurface {
             return .cryptoOptions
         }
         if BarDeskTemplate.isKotakNfoDesk(slug: slug, assetClass: asset) {
+            if isNfoOptionInstType(instrumentType) {
+                return .nfoCockpit
+            }
             return .nfoThreeZone
         }
         return .standardForm
     }
 
-    static func usesThreeZone(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Bool {
-        surface(for: asset, slug: slug, instrumentId: instrumentId) == .nfoThreeZone
+    static func usesThreeZone(
+        for asset: BarDeclareAssetClass,
+        slug: String?,
+        instrumentId: String,
+        instrumentType: String? = nil
+    ) -> Bool {
+        surface(for: asset, slug: slug, instrumentId: instrumentId, instrumentType: instrumentType) == .nfoThreeZone
     }
 
-    static func usesCryptoOptions(for asset: BarDeclareAssetClass, slug: String?, instrumentId: String) -> Bool {
-        surface(for: asset, slug: slug, instrumentId: instrumentId) == .cryptoOptions
+    static func usesCockpit(
+        for asset: BarDeclareAssetClass,
+        slug: String?,
+        instrumentId: String,
+        instrumentType: String? = nil
+    ) -> Bool {
+        surface(for: asset, slug: slug, instrumentId: instrumentId, instrumentType: instrumentType) == .nfoCockpit
     }
+
+    static func usesCryptoOptions(
+        for asset: BarDeclareAssetClass,
+        slug: String?,
+        instrumentId: String,
+        instrumentType: String? = nil
+    ) -> Bool {
+        surface(for: asset, slug: slug, instrumentId: instrumentId, instrumentType: instrumentType) == .cryptoOptions
+    }
+}
+
+/// Prototype cockpit seed (`board=cockpit`, Plan rail). Edit-board catalog is out of v1.
+enum BarNfoCockpitSeed {
+    enum Dock: Equatable {
+        case rail
+    }
+
+    enum Kind: Equatable {
+        case session, oi, payoff, depth, chain
+        case greeks, legs, ladder, ticket
+    }
+
+    struct Tile: Equatable {
+        var kind: Kind
+        var x: Int
+        var y: Int
+        var w: Int
+        var h: Int
+    }
+
+    static let planDock: Dock = .rail
+    static let tiles: [Tile] = [
+        Tile(kind: .session, x: 0, y: 0, w: 2, h: 2),
+        Tile(kind: .oi, x: 2, y: 0, w: 2, h: 2),
+        Tile(kind: .payoff, x: 0, y: 2, w: 2, h: 2),
+        Tile(kind: .depth, x: 2, y: 2, w: 2, h: 2),
+        Tile(kind: .chain, x: 0, y: 4, w: 4, h: 1),
+    ]
 }
 
 /// Chain table is forbidden while the extract is dark. Ghost strike grids are cheating.

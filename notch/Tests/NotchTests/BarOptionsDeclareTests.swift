@@ -47,6 +47,101 @@ struct BarOptionsDeclareTests {
         ))
     }
 
+    @Test func kotakNfoOptionInstTypeRoutesToCockpit() {
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options,
+            slug: "kotak_neo",
+            instrumentId: "nse_fo|12345",
+            instrumentType: "OPTIDX"
+        ) == .nfoCockpit)
+        #expect(BarOptionsDeclareSurface.usesCockpit(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345", instrumentType: "OPTIDX"
+        ))
+        #expect(!BarOptionsDeclareSurface.usesThreeZone(
+            for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345", instrumentType: "OPTIDX"
+        ))
+    }
+
+    @Test func kotakNfoOptionInstTypesAreCaseInsensitive() {
+        for inst in ["OPTSTK", "OPTCUR", "OPTCOM", "optidx"] {
+            #expect(BarOptionsDeclareSurface.surface(
+                for: .options,
+                slug: "kotak_neo",
+                instrumentId: "nse_fo|12345",
+                instrumentType: inst
+            ) == .nfoCockpit)
+        }
+    }
+
+    @Test func kotakNfoFutureOrUnknownInstTypeStaysThreeZone() {
+        let kinds: [String?] = [nil, "", "FUTIDX", "FUTSTK", "SPREAD", "EQ"]
+        for inst in kinds {
+            #expect(BarOptionsDeclareSurface.surface(
+                for: .options,
+                slug: "kotak_neo",
+                instrumentId: "nse_fo|12345",
+                instrumentType: inst
+            ) == .nfoThreeZone)
+            #expect(BarOptionsDeclareSurface.usesThreeZone(
+                for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345", instrumentType: inst
+            ))
+            #expect(!BarOptionsDeclareSurface.usesCockpit(
+                for: .options, slug: "kotak_neo", instrumentId: "nse_fo|12345", instrumentType: inst
+            ))
+        }
+    }
+
+    @Test func datedContractStillCryptoWhenInstrumentTypeLooksLikeNfoOption() {
+        #expect(BarOptionsDeclareSurface.surface(
+            for: .options,
+            slug: "binance_com",
+            instrumentId: "BTC-200730-9000-C",
+            instrumentType: "OPTIDX"
+        ) == .cryptoOptions)
+        #expect(!BarOptionsDeclareSurface.usesCockpit(
+            for: .options,
+            slug: "binance_com",
+            instrumentId: "BTC-200730-9000-C",
+            instrumentType: "OPTIDX"
+        ))
+    }
+
+    @Test func nfoChainRowInstTypeLightsCockpitForSelectedToken() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "kotak_neo"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "nse_fo|12345"
+        #expect(vm.deskSelectedInstrumentType.isEmpty)
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId,
+            instrumentType: vm.deskSelectedInstrumentType
+        ) == .nfoThreeZone)
+
+        vm.applyStationChainEnvelope([
+            "status": "success",
+            "data": [
+                "row_count": 1,
+                "rows": [[
+                    "instrument_id": "nse_fo|12345",
+                    "trading_symbol": "NIFTY25APR24000CE",
+                    "instrument_type": "OPTIDX",
+                    "option_type": "CE",
+                    "strike_raw": "24000",
+                    "expiry_raw": "1474554600",
+                ]],
+            ],
+        ])
+        #expect(vm.deskSelectedInstrumentType == "OPTIDX")
+        #expect(BarOptionsDeclareSurface.surface(
+            for: vm.declareAssetClass,
+            slug: vm.resolvedDeskSlug,
+            instrumentId: vm.deskSelectedInstrumentId,
+            instrumentType: vm.deskSelectedInstrumentType
+        ) == .nfoCockpit)
+    }
+
     @Test func darkChainNeverShowsStrikeGrid() {
         let none = BarOptionsChainPresentation.from(underlying: "", chainStatus: "unavailable")
         #expect(none == .nothingDeclared)

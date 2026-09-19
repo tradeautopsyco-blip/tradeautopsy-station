@@ -838,6 +838,7 @@ struct BarCryptoOptionsDeclareView: View {
                 groupLab("Contract")
                 contractFields
                 contractPills
+                ticketFields
 
                 groupLab("Risk")
                 riskFields
@@ -988,6 +989,51 @@ struct BarCryptoOptionsDeclareView: View {
                     )
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private var ticketFields: some View {
+        let spec = BarDeskTicketSpec.forBook(BarDeskTemplate.binanceComOptionsBookId)
+        let illegal = BarDeskTicketIllegal.reason(
+            bookId: BarDeskTemplate.binanceComOptionsBookId,
+            instrumentId: viewModel.deskSelectedInstrumentId,
+            type: viewModel.deskTicket.type,
+        )
+        return VStack(alignment: .leading, spacing: 8) {
+            groupLab("Ticket")
+            HStack(spacing: 4) {
+                ForEach(spec.types) { t in
+                    Text(spec.label(for: t))
+                        .font(BarDS.bodyFont(11, weight: .semibold))
+                        .foregroundColor(BarDS.Text.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Color.white.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+            HStack(spacing: 5) {
+                ForEach(BarTicketTif.allCases) { t in
+                    BarChip(label: t.rawValue, selected: viewModel.deskTicket.tif == t) {
+                        viewModel.deskTicket.tif = t
+                        viewModel.persistDeskTicket()
+                    }
+                }
+            }
+            BarChip(label: "Post-only", selected: viewModel.deskTicket.postOnly) {
+                viewModel.deskTicket.postOnly.toggle()
+                viewModel.persistDeskTicket()
+            }
+            if let illegal {
+                Text(illegal)
+                    .font(BarDS.monoFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("path \(spec.orderPath) · Confirm is LiveBook intent, not a venue POST")
+                .font(BarDS.monoFont(10, weight: .regular))
+                .foregroundColor(BarDS.Text.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

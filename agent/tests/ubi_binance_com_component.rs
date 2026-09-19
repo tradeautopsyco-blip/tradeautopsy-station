@@ -197,6 +197,8 @@ fn pinned_symbol_time_cursor_sends_start_time_without_from_id() {
         .map(|q| (q.name.as_str(), q.value.as_str()))
         .collect();
     assert_eq!(query.get("startTime"), Some(&"1699000000000"));
+    // Official SDK: symbol+startTime+endTime, window ≤ 24h. fromId XOR time.
+    assert_eq!(query.get("endTime"), Some(&"1699086399999"));
     assert!(!query.contains_key("fromId"));
 }
 

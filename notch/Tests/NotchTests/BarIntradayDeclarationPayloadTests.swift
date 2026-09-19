@@ -95,4 +95,35 @@ struct BarIntradayDeclarationPayloadTests {
         let payload = obj["declaration_payload"] as? [String: Any]
         #expect(payload?["protective_sl_consent"] as? Bool == false)
     }
+
+    @Test func usdmTicketIntentLivesOnDeclarePayloadNotAVenuePost() {
+        var ticket = BarDeskTicketIntent.defaults(bookId: "binance-com-usdm")
+        ticket.type = .conditional
+        ticket.reduceOnly = true
+        ticket = ticket.coerced()
+        let obj = BarIntradayDeclarationPayload.buildJSONObject(
+            symbol: "CATIUSDT",
+            sideBuy: true,
+            quantity: 2,
+            stopLoss: 0.04,
+            declarationKind: "intraday",
+            moodStress: 2,
+            moodImpulse: 4,
+            invalidationNote: "Last through invalidation.",
+            protectiveSlConsent: false,
+            entryPrice: 0.05,
+            targetPrice: 0.07,
+            scalperSessionId: nil,
+            bookId: "binance-com-usdm",
+            ticket: ticket
+        )
+        let payload = obj["declaration_payload"] as? [String: Any]
+        let stored = payload?["ticket"] as? [String: Any]
+        #expect(stored?["type"] as? String == "CONDITIONAL")
+        #expect(stored?["tif"] as? String == "GTC")
+        #expect(stored?["reduce_only"] as? Bool == true)
+        #expect(stored?["path"] as? String == "/fapi/v1/algoOrder")
+        #expect(obj["book_id"] as? String == "binance-com-usdm")
+        #expect(obj["quantity"] as? Double == 2)
+    }
 }
