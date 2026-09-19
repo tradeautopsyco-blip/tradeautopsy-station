@@ -494,6 +494,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var declareAssetClass: BarDeclareAssetClass = .spot {
         didSet {
             guard oldValue != declareAssetClass else { return }
+            if declareAssetClass == .usdm {
+                declProtectiveSLConsent = false
+            }
+            if oldValue == .usdm, declareAssetClass != .usdm {
+                usdmPositionbookCount = 0
+            }
             reconcileDeskLastForAssetClass(previousClass: oldValue)
             if brokerSessionActive {
                 Task { await refreshAccountChrome() }
@@ -573,6 +579,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskInstrumentsCapability: String = "unavailable"
     /// S8 obtain pulse + ledger for the shipping book of Start. Never Today fill-inventory.
     @Published var accountChrome: BarAccountChrome.Snapshot = .empty
+    /// Last successful USDM `positionbook` row count — DualNoBlend vs daemon `/positions`.
+    private var usdmPositionbookCount: Int = 0
     /// Drop stale account obtain replies when Start slug / session changes.
     private var accountChromeGeneration: UInt64 = 0
     /// Last selected TickBook id (`nse_cm|2885`, `nse_fo|token`, or Binance pair).
@@ -1140,7 +1148,14 @@ public final class NotchViewModel: ObservableObject {
             setIfChanged(\.barSurfacePhase, .debrief)
             return
         }
-        let hasPos = !positions.isEmpty
+        let hasPos: Bool
+        if declareAssetClass == .usdm {
+            hasPos = accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId
+                && accountChrome.positionsStatus == "success"
+                && accountChrome.positionsCount > 0
+        } else {
+            hasPos = !positions.isEmpty
+        }
         if hasPos {
             clearOptimisticArmedStorage()
             setIfChanged(\.barSurfacePhase, .livePlan)
@@ -1417,7 +1432,7 @@ public final class NotchViewModel: ObservableObject {
 
     /// Whether the active execution broker can place orders for the selected instrument.
     /// Kotak market books require `kotak_neo`; `binance-com-options` is public data only.
-    /// USDM TRADE is unnamed — last may bind; Confirm / place may not.
+    /// USDM may declare a plan; venue TRADE / auto-place SL stay off.
     func canExecuteSelectedInstrument() -> Bool {
         if declareAssetClass == .usdm {
             return false
@@ -4109,7 +4124,9 @@ public final class NotchViewModel: ObservableObject {
                     out.append(NotchPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))
                 }
             }
-            notePositionTransitionForBar(previousCount: previousPositionCount, newCount: out.count)
+            if declareAssetClass != .usdm {
+                notePositionTransitionForBar(previousCount: previousPositionCount, newCount: out.count)
+            }
             positions = out
             let remembered = NotchChipCatalogMutations.rememberSymbols(out.map(\.symbol), in: chipCatalog)
             if remembered != chipCatalog {
@@ -4713,6 +4730,7 @@ extension NotchViewModel {
             positions: positions,
             orders: orders
         )
+        syncUsdmPositionbookPhaseFromChrome()
     }
 
     func refreshAccountChrome() async {
@@ -4765,6 +4783,20 @@ extension NotchViewModel {
             positions: positionsJSON,
             orders: ordersJSON
         )
+    }
+
+    /// USDM live/post follow this book's positionbook, never daemon spot inventory.
+    private func syncUsdmPositionbookPhaseFromChrome() {
+        guard declareAssetClass == .usdm else { return }
+        guard accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId else { return }
+        guard accountChrome.positionsStatus == "success" else {
+            recomputeBarSurfacePhase()
+            return
+        }
+        let newCount = accountChrome.positionsCount
+        notePositionTransitionForBar(previousCount: usdmPositionbookCount, newCount: newCount)
+        usdmPositionbookCount = newCount
+        recomputeBarSurfacePhase()
     }
 
     static func brokerDisplayName(forSlug slug: String?) -> String {

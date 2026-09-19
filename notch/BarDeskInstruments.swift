@@ -273,13 +273,21 @@ enum BarDeskTemplate {
         }
     }
 
-    /// TRADE is unnamed on USDM — Confirm / `POST /api/daemon/bar/declare` stay off this class.
+    /// LiveBook declare (Station intent). Venue `POST /fapi/v1/order` stays off — see `allowsVenueProtectivePlace`.
     static func showsConfirmControl(for assetClass: BarDeclareAssetClass) -> Bool {
-        assetClass != .usdm
+        switch assetClass {
+        case .spot, .equity, .options, .usdm:
+            return true
+        }
     }
 
     static func canSubmitBarDeclaration(for assetClass: BarDeclareAssetClass) -> Bool {
         showsConfirmControl(for: assetClass)
+    }
+
+    /// Auto-place SL / fapi TRADE. USDM records the plan only.
+    static func allowsVenueProtectivePlace(for assetClass: BarDeclareAssetClass) -> Bool {
+        assetClass != .usdm
     }
 
     static func historyDetail(status: String, ineligible: [String]) -> String {

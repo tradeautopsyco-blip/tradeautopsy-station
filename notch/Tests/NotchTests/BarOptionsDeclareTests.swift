@@ -213,6 +213,27 @@ struct BarOptionsDeclareTests {
         #expect(ready.hint == nil)
     }
 
+    @Test func usdmConfirmDoesNotRequireAutoPlaceStop() {
+        let input = BarIntradayDeclarationSubmitInput(
+            blocksDeclarationSubmit: false,
+            protectiveSlConsent: false,
+            calm: 2,
+            confidence: 4,
+            stopLossText: "64000",
+            symbolRaw: "BTCUSDT",
+            quantityText: "0.002",
+            setupType: "breakout",
+            invalidationTypeRaw: "behaviour",
+            invalidationCondition: "Last through invalidation.",
+            declarationKindWire: "intraday",
+            scalperSessionId: "",
+            isUsdm: true
+        )
+        let ready = BarIntradayDeclareValidator.submitReadiness(input)
+        #expect(ready.ready)
+        #expect(ready.hint == nil)
+    }
+
     @Test func twoLegsRoundTripOnPayload() {
         let obj = BarIntradayDeclarationPayload.buildJSONObject(
             symbol: "BANKNIFTY",
@@ -743,8 +764,8 @@ struct BarOptionsDeclareTests {
         ))
         #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "BTCUSDT"))
         #expect(!vm.shouldBindQuoteLast(adapter: nil, instrumentId: "BTC-200730-9000-C"))
-        #expect(!vm.canSubmitBarDeclaration)
-        #expect(!vm.showsConfirmControl)
+        #expect(vm.canSubmitBarDeclaration)
+        #expect(vm.showsConfirmControl)
         #expect(!vm.canExecuteSelectedInstrument())
 
         vm.declareAssetClass = .spot

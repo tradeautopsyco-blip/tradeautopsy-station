@@ -99,12 +99,19 @@ struct BarDeclarationFlowView: View {
 
                     if viewModel.showsConfirmControl {
                         BarSectionLabel(text: "Review")
-                        BarToggleRow(
-                            label: "Auto-place stop loss on fill",
-                            sub: "Pre-authorized — placed within 500ms of broker fill",
-                            isOn: $viewModel.declProtectiveSLConsent,
-                        )
-                        .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
+                        if BarDeskTemplate.allowsVenueProtectivePlace(for: viewModel.declareAssetClass) {
+                            BarToggleRow(
+                                label: "Auto-place stop loss on fill",
+                                sub: "Pre-authorized — placed within 500ms of broker fill",
+                                isOn: $viewModel.declProtectiveSLConsent,
+                            )
+                            .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)
+                        } else {
+                            Text("Records the plan on this book. Station does not send a USDM order.")
+                                .font(BarDS.bodyFont(10, weight: .medium))
+                                .foregroundColor(BarDS.Text.hint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         BarBigButton(
                             label: viewModel.barDeclarationBusy ? "Submitting…" : "Confirm — enter trade →",
@@ -175,6 +182,7 @@ struct BarDeclarationFlowView: View {
                 scalperSessionId: scalperSessionId,
                 lotsText: viewModel.declLots,
                 isOptions: viewModel.declareAssetClass == .options,
+                isUsdm: viewModel.declareAssetClass == .usdm,
                 optionLegCount: viewModel.optionLegs.count,
                 maxPlannedLossText: viewModel.declMaxPlannedLossText,
             ),
@@ -505,8 +513,9 @@ struct BarDeclarationFlowView: View {
 
     private func buildJsonBody() -> Data? {
         let isOptions = viewModel.declareAssetClass == .options
+        let isUsdm = viewModel.declareAssetClass == .usdm
         guard viewModel.barLiveState?.blocksDeclarationSubmit != true else { return nil }
-        if !isOptions {
+        if !isOptions, !isUsdm {
             guard viewModel.declProtectiveSLConsent else { return nil }
         }
         guard (1 ... 5).contains(viewModel.declEmotionalCalm),
@@ -561,7 +570,7 @@ struct BarDeclarationFlowView: View {
             moodStress: Double(calm),
             moodImpulse: Double(conf),
             invalidationNote: invTrim,
-            protectiveSlConsent: isOptions ? true : viewModel.declProtectiveSLConsent,
+            protectiveSlConsent: isUsdm ? false : (isOptions ? true : viewModel.declProtectiveSLConsent),
             entryPrice: entryOpt,
             targetPrice: targetOpt,
             scalperSessionId: wireKind == "scalper_session" ? scalperSessionId : nil,

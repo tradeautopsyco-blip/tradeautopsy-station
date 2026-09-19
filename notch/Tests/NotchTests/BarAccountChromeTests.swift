@@ -230,6 +230,66 @@ struct BarAccountChromeTests {
         #expect(vm.accountChrome == .empty)
     }
 
+    @Test func usdmSpotDaemonPositionsDoNotBecomeLivePlan() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.declareAssetClass = .usdm
+        vm.positions = [
+            NotchPosition(symbol: "BTCUSDT", qty: 1, unrealizedPnL: 0, direction: "LONG"),
+        ]
+        vm.applyAccountObtainEnvelopes(
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: []
+            ),
+            orders: nil
+        )
+        #expect(vm.barSurfacePhase != .livePlan)
+        #expect(!vm.barDebriefPending)
+    }
+
+    @Test func usdmPositionbookOpenIsLivePlanAndCloseArmsDebrief() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.declareAssetClass = .usdm
+        vm.applyAccountObtainEnvelopes(
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: [["symbol": "ETHUSDT", "net_qty": 2]]
+            ),
+            orders: nil
+        )
+        #expect(vm.accountChrome.positionsCount == 1)
+        #expect(vm.accountChrome.positionsRows.first?.qty == "2")
+        #expect(vm.barSurfacePhase == .livePlan)
+        #expect(!vm.barDebriefPending)
+
+        vm.applyAccountObtainEnvelopes(
+            funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: []
+            ),
+            orders: nil
+        )
+        #expect(vm.accountChrome.positionsCount == 0)
+        #expect(vm.barDebriefPending)
+        #expect(vm.barSurfacePhase == .debrief)
+    }
+
     private func fundsEnvelope(book: String, asset: String, free: Double) -> [String: Any] {
         [
             "status": "success",

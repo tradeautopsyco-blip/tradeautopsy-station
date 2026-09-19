@@ -406,7 +406,7 @@ struct BrokerBridgeTests {
         #expect(vm.deskSelectedInstrumentId == "BTCUSDT")
         #expect(vm.declEntryPrice.isEmpty)
         #expect(vm.deskQuoteExtractPath(instrument: "BTCUSDT").contains("book=binance-com-usdm"))
-        #expect(!vm.canSubmitBarDeclaration)
+        #expect(vm.canSubmitBarDeclaration)
         #expect(!vm.canExecuteSelectedInstrument())
     }
 

@@ -6,7 +6,7 @@
 
 ## Slice decision 2026-09-19
 
-Founder: **keep** phases **1 → 2 → 3** as separate slices (do **not** merge lock quotes, Harness chrome, and Notch `usdm` class). **Landed 2026-09-19:** Phase 1 public last + Phase 2 named USDM strip + Phase 3 class `usdm` + Phase 4 tickSize persist + Phase 5 income `REALIZED_PNL` owner. Depth/klines stay unnamed. Phase 6 TRADE stays out until the founder **names TRADE**. Confirm/place is not on the USDM tab.
+Founder: **keep** phases **1 → 2 → 3** as separate slices (do **not** merge lock quotes, Harness chrome, and Notch `usdm` class). **Landed 2026-09-19:** Phase 1 public last + Phase 2 named USDM strip + Phase 3 class `usdm` + Phase 4 tickSize persist + Phase 5 income `REALIZED_PNL` owner. Depth/klines stay unnamed. **2026-09-19 ~14:30 IST:** LiveBook **declare** on USDM is in (pre → armed live → cancel; live/post follow USDM positionbook). Stay away from order execution — Phase 6 TRADE / `POST /fapi/v1/order` stays **parked**. Auto-place SL stays off this tab.
 
 ## Architectural decisions
 
@@ -16,7 +16,7 @@ Durable decisions that apply across all phases:
 - **Start:** stays `binance-com-spot`. No new slug. No new B6 sheet.
 - **Routes:** loopback `GET /api/station/obtain?adapter=binance_com&book=binance-com-usdm&operation=…` (unsigned on loopback). Quotes/last later use the same book query, never slug-only.
 - **Obtain now:** `funds` · `positionbook` · `forceorder` (lossy: `idle` / `observing` / `unavailable`, never `synced`) · `quotes` (public last, empty TickBook = `unavailable`).
-- **TRADE:** `POST /fapi/v1/order` stays **MutationForbidden** until the founder **names TRADE** on this book (Phase 6). Notch Confirm/place/cancel is not a UI-only add.
+- **TRADE:** `POST /fapi/v1/order` stays **MutationForbidden**. Notch **Confirm** on USDM is LiveBook declare (intent) only — not a venue place. Auto-place SL is off.
 - **PnL owner:** Station `agent/src/usdm_realized_pnl.rs` only. Not `round_trip_engine.rs`. Realized from `GET /fapi/v1/income` `incomeType=REALIZED_PNL`. Venue `unRealizedProfit` may display; do not invent a sum.
 - **Tick:** `GET /fapi/v1/exchangeInfo` `filters[].tickSize`. Never `pricePrecision`.
 - **DualNoBlend:** USDT-M never blends with spot WAC or INR NFO. Account chrome that still maps Start → `binance-com-spot` must keep dropping USDM envelopes until a named USDM surface exists.

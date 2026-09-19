@@ -29,6 +29,7 @@ struct BarIntradayDeclarationSubmitInput: Equatable, Sendable {
     /// Options lots — when set, satisfies the quantity confirm gate (lots is the unit until lot size exists).
     var lotsText: String = ""
     var isOptions: Bool = false
+    var isUsdm: Bool = false
     var optionLegCount: Int = 0
     var maxPlannedLossText: String = ""
 }
@@ -53,7 +54,7 @@ enum BarIntradayDeclareValidator {
         if input.blocksDeclarationSubmit {
             return (false, "Circuit active — finish or clear the web Bar intervention before declaring.")
         }
-        if !input.isOptions, !input.protectiveSlConsent {
+        if !input.isOptions, !input.isUsdm, !input.protectiveSlConsent {
             return (false, "Turn on auto-place stop loss in Step 4.")
         }
         let calmOpt: Int? = (1 ... 5).contains(input.calm) ? input.calm : nil
