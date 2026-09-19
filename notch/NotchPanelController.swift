@@ -115,6 +115,8 @@ final class NotchPanelController {
     private var escCollapseMonitor: Any?
     /// Expanded panel body size — locked for session to avoid resize flicker on content changes.
     private var sessionLockedExpandedContentSize: CGSize?
+    /// `visibleFrame` the lock was computed from. A display move/rotate invalidates the lock.
+    private var sessionLockedVisibleFrame: CGRect?
     /// Pending frame snap back to the pill — held while the collapse exit fade plays.
     /// Cancelled when a second ⌥Space re-expands mid-flight (interruptible summon).
     private var collapseFrameWorkItem: DispatchWorkItem?
@@ -702,25 +704,22 @@ final class NotchPanelController {
     private func layoutPanel(expanded: Bool) {
         guard !chromeHiddenForCapture else { return }
         guard !isDraggingCollapsedPill, islandSpring == nil else { return }
-        guard let screen = NSScreen.main else { return }
+        guard let screen = panel.screen ?? NSScreen.main else { return }
         let frame = screen.frame
         let vf = screen.visibleFrame
         let inset = screen.safeAreaInsets
         let hasNotch = inset.top > 0
         let notchTopInset = inset.top
 
-        let expandedW: CGFloat
-        let expandedContentH: CGFloat
-        if let locked = sessionLockedExpandedContentSize {
-            expandedW = locked.width
-            expandedContentH = locked.height
-        } else {
-            let w = NotchPanelLayout.expandedWidth(in: vf)
-            let ch = NotchPanelLayout.expandedContentHeight(in: vf)
-            sessionLockedExpandedContentSize = CGSize(width: w, height: ch)
-            expandedW = w
-            expandedContentH = ch
-        }
+        let content = NotchPanelLayout.resolvedExpandedContentSize(
+            locked: sessionLockedExpandedContentSize,
+            lockedVisibleFrame: sessionLockedVisibleFrame,
+            currentVisibleFrame: vf
+        )
+        sessionLockedExpandedContentSize = content
+        sessionLockedVisibleFrame = vf
+        let expandedW = content.width
+        let expandedContentH = content.height
         let expandedH = expandedContentH + (hasNotch ? notchTopInset : 0)
 
         let collapsed = collapsedSlotFrame(on: screen)

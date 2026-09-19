@@ -18,4 +18,31 @@ enum NotchPanelLayout {
     static func expandedContentHeight(in visibleFrame: CGRect) -> CGFloat {
         max(400, visibleFrame.height - 2 * expandedVerticalInsetFromVisibleFrame)
     }
+
+    /// Keep the session lock while `visibleFrame` is unchanged so SwiftUI content
+    /// churn does not resize the HUD. Recompute when the display moves or rotates.
+    static let visibleFrameMatchEpsilon: CGFloat = 0.5
+
+    static func visibleFramesMatch(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.origin.x - b.origin.x) <= visibleFrameMatchEpsilon
+            && abs(a.origin.y - b.origin.y) <= visibleFrameMatchEpsilon
+            && abs(a.size.width - b.size.width) <= visibleFrameMatchEpsilon
+            && abs(a.size.height - b.size.height) <= visibleFrameMatchEpsilon
+    }
+
+    static func resolvedExpandedContentSize(
+        locked: CGSize?,
+        lockedVisibleFrame: CGRect?,
+        currentVisibleFrame: CGRect
+    ) -> CGSize {
+        if let locked, let lockedVisibleFrame,
+           visibleFramesMatch(lockedVisibleFrame, currentVisibleFrame)
+        {
+            return locked
+        }
+        return CGSize(
+            width: expandedWidth(in: currentVisibleFrame),
+            height: expandedContentHeight(in: currentVisibleFrame)
+        )
+    }
 }

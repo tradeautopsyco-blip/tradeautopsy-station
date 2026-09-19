@@ -45,9 +45,11 @@ enum JournalInteractiveScreenshot {
         await MainActor.run {
             promptForScreenRecordingAccessIfNeeded()
         }
+        let target = await MainActor.run { currentCaptureTarget() }
+        guard let target else { throw JournalInteractiveScreenshotError.failed }
         let cg: CGImage
         do {
-            cg = try await captureDisplayImage()
+            cg = try await captureDisplayImage(target: target)
         } catch {
             if !hasScreenRecordingAccess() {
                 await MainActor.run { openScreenRecordingSettings() }
@@ -55,12 +57,15 @@ enum JournalInteractiveScreenshot {
             }
             throw JournalInteractiveScreenshotError.failed
         }
-        let still = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        let screenFrame: NSRect? = await MainActor.run {
-            (NSScreen.main ?? NSScreen.screens.first)?.frame
-        }
-        guard let screenFrame else { throw JournalInteractiveScreenshotError.failed }
-        let cropped = try await JournalRegionPicker.crop(from: still, screenFrame: screenFrame)
+        let still = NSImage(
+            cgImage: cg,
+            size: JournalCaptureGeometry.pointSize(
+                pixelWidth: cg.width,
+                pixelHeight: cg.height,
+                scale: target.scale
+            )
+        )
+        let cropped = try await JournalRegionPicker.crop(from: still, screenFrame: target.frame)
         return try writeTempPNG(cropped)
     }
 
@@ -99,13 +104,29 @@ enum JournalInteractiveScreenshot {
         try? FileManager.default.removeItem(at: url)
     }
 
-    private static func captureDisplayImage() async throws -> CGImage {
+    private struct CaptureTarget {
+        let frame: NSRect
+        let displayID: CGDirectDisplayID
+        let scale: CGFloat
+    }
+
+    @MainActor
+    private static func currentCaptureTarget() -> CaptureTarget? {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return nil }
+        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+            as? CGDirectDisplayID
+        else { return nil }
+        return CaptureTarget(
+            frame: screen.frame,
+            displayID: displayID,
+            scale: max(screen.backingScaleFactor, 1)
+        )
+    }
+
+    private static func captureDisplayImage(target: CaptureTarget) async throws -> CGImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard !content.displays.isEmpty else { throw JournalInteractiveScreenshotError.failed }
-        let displayID = await MainActor.run { () -> CGDirectDisplayID? in
-            NSScreen.main?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-        }
-        let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays[0]
+        let display = content.displays.first(where: { $0.displayID == target.displayID }) ?? content.displays[0]
         let bundle = Bundle.main.bundleIdentifier
         let excluded = content.applications.filter { $0.bundleIdentifier == bundle }
         let filter = SCContentFilter(
@@ -114,8 +135,8 @@ enum JournalInteractiveScreenshot {
             exceptingWindows: []
         )
         let config = SCStreamConfiguration()
-        config.width = display.width
-        config.height = display.height
+        config.width = max(1, Int((target.frame.width * target.scale).rounded()))
+        config.height = max(1, Int((target.frame.height * target.scale).rounded()))
         config.showsCursor = false
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }

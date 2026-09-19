@@ -154,6 +154,25 @@ struct PlanSurfaceOnlyTests {
         launcher.dismiss()
     }
 
+    @Test func restoreChromeAfterCaptureKeepsExpandedFrameMatchedToSurface() {
+        let launcher = NotchLauncher(isHostedByStation: true)
+        launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
+        launcher.start()
+
+        launcher.toggle()
+        #expect(launcher.viewModel.isExpanded)
+
+        launcher.hideChromeForInteractiveCapture()
+        launcher.restoreChromeAfterInteractiveCapture()
+
+        #expect(launcher.viewModel.isExpanded)
+        #expect(launcher.panelFrame.size == launcher.viewModel.expandedSurfaceSize)
+        #expect(launcher.panelFrame.width > 0)
+        #expect(launcher.panelFrame.height > 0)
+
+        launcher.dismiss()
+    }
+
     @Test func chromeTapCollapseCollapsesExpandedPlanSurface() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         #expect(vm.isExpanded == false)

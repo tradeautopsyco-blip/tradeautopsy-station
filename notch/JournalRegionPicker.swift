@@ -18,6 +18,8 @@ enum JournalRegionPicker {
             panel.backgroundColor = .black
             panel.ignoresMouseEvents = false
             panel.acceptsMouseMovedEvents = false
+            panel.isMovable = false
+            panel.setFrame(screenFrame, display: true)
 
             let view = RegionPickView(frame: NSRect(origin: .zero, size: screenFrame.size))
             view.image = image
@@ -35,11 +37,21 @@ enum JournalRegionPicker {
                     continuation.resume(throwing: JournalInteractiveScreenshotError.failed)
                     return
                 }
+                let bounds = NSRect(origin: .zero, size: view.bounds.size)
+                let fitted = JournalCaptureGeometry.fittedDrawRect(imageSize: image.size, in: bounds)
+                let local = JournalCaptureGeometry.selectionInFittedImage(
+                    selection: rect,
+                    fittedRect: fitted
+                )
+                guard local.width >= 8, local.height >= 8 else {
+                    continuation.resume(throwing: JournalInteractiveScreenshotError.cancelled)
+                    return
+                }
                 let pixel = RegionCrop.pixelRect(
-                    viewRect: rect,
+                    viewRect: local,
                     imageWidth: cg.width,
                     imageHeight: cg.height,
-                    viewSize: view.bounds.size
+                    viewSize: fitted.size
                 )
                 guard pixel.width >= 2, pixel.height >= 2,
                       let sliced = cg.cropping(to: pixel)
@@ -113,13 +125,24 @@ private final class RegionPickView: NSView {
         )
     }
 
+    private var fittedRect: CGRect {
+        guard let image else { return .zero }
+        return JournalCaptureGeometry.fittedDrawRect(imageSize: image.size, in: bounds)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        image?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
+        NSColor.black.setFill()
+        bounds.fill()
+        let fitted = fittedRect
+        image?.draw(in: fitted, from: .zero, operation: .copy, fraction: 1)
         NSColor.black.withAlphaComponent(0.45).setFill()
         bounds.fill()
         if let r = selectionRect, r.width > 1, r.height > 1 {
-            image?.draw(in: r, from: sourceRect(for: r), operation: .copy, fraction: 1)
+            let visible = r.intersection(fitted)
+            if visible.width > 1, visible.height > 1 {
+                image?.draw(in: visible, from: sourceRect(for: visible), operation: .copy, fraction: 1)
+            }
             NSColor.white.withAlphaComponent(0.9).setStroke()
             let path = NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5))
             path.lineWidth = 1
@@ -129,13 +152,19 @@ private final class RegionPickView: NSView {
 
     private func sourceRect(for viewRect: CGRect) -> NSRect {
         guard let image, image.size.width > 0, image.size.height > 0 else { return .zero }
-        let sx = image.size.width / bounds.width
-        let sy = image.size.height / bounds.height
+        let fitted = fittedRect
+        guard fitted.width > 0, fitted.height > 0 else { return .zero }
+        let local = JournalCaptureGeometry.selectionInFittedImage(
+            selection: viewRect,
+            fittedRect: fitted
+        )
+        let sx = image.size.width / fitted.width
+        let sy = image.size.height / fitted.height
         return NSRect(
-            x: viewRect.minX * sx,
-            y: viewRect.minY * sy,
-            width: viewRect.width * sx,
-            height: viewRect.height * sy
+            x: local.minX * sx,
+            y: local.minY * sy,
+            width: local.width * sx,
+            height: local.height * sy
         )
     }
 }
