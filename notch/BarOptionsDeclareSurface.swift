@@ -13,7 +13,7 @@ enum BarOptionsDeclareSurface {
         case nfoCockpit
         /// Binance desk + `.options` + dated contract.
         case cryptoOptions
-        /// Spot / equity / bookless options.
+        /// Spot / equity / USDM / Coin-M / leftover Options — prototype cockpit (strip + mosaic + Plan rail).
         case standardForm
     }
 
@@ -72,6 +72,57 @@ enum BarOptionsDeclareSurface {
         instrumentType: String? = nil
     ) -> Bool {
         surface(for: asset, slug: slug, instrumentId: instrumentId, instrumentType: instrumentType) == .cryptoOptions
+    }
+}
+
+/// Prototype cash / last-only cockpit (`CASH_SEEDS` / `LAST_SEEDS`, `board=cockpit`, Plan rail).
+/// Edit-board catalog is out of v1. USDM / Coin-M have no Depth tile and no History product.
+enum BarCashCockpitSeed {
+    enum Dock: Equatable {
+        case rail
+    }
+
+    enum Kind: Equatable {
+        case session, depth
+    }
+
+    enum StripKind: Equatable, Hashable {
+        case last, history, depth, margin
+    }
+
+    struct Tile: Equatable {
+        var kind: Kind
+        var x: Int
+        var y: Int
+        var w: Int
+        var h: Int
+    }
+
+    static let planDock: Dock = .rail
+
+    static func tiles(for asset: BarDeclareAssetClass) -> [Tile] {
+        if showsDepth(for: asset) {
+            return [
+                Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+                Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
+            ]
+        }
+        return [
+            Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
+        ]
+    }
+
+    static func showsDepth(for asset: BarDeclareAssetClass) -> Bool {
+        BarDeskTemplate.glanceKinds(for: asset).contains(.depth)
+    }
+
+    static func stripKinds(for asset: BarDeclareAssetClass) -> [StripKind] {
+        switch asset {
+        case .usdm, .coinm:
+            return [.last, .history, .margin]
+        case .spot, .equity, .options:
+            return [.last, .history, .depth]
+        }
     }
 }
 

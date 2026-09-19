@@ -731,27 +731,31 @@ struct BarNotchShell: View {
 
     @ViewBuilder
     private var mainScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if activeScreen.wrappedValue == .settings {
-                    BarSettingsView(viewModel: viewModel)
-                } else if viewModel.barFeaturesActiveFromApi == false {
-                    barGateRequired
-                } else if activeScreen.wrappedValue == .pretrade {
-                    BarDeclarationFlowView(viewModel: viewModel)
-                } else if viewModel.barSurfacePhase == .debrief {
-                    BarPostTradeView(viewModel: viewModel)
-                } else if viewModel.barSurfacePhase == .declaration, viewModel.showingDeclarationForm {
-                    declarationFormRoot
-                } else {
-                    routedBySidebar
+        if activeScreen.wrappedValue == .pretrade, viewModel.barFeaturesActiveFromApi != false {
+            BarDeclarationFlowView(viewModel: viewModel)
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if activeScreen.wrappedValue == .settings {
+                        BarSettingsView(viewModel: viewModel)
+                    } else if viewModel.barFeaturesActiveFromApi == false {
+                        barGateRequired
+                    } else if viewModel.barSurfacePhase == .debrief {
+                        BarPostTradeView(viewModel: viewModel)
+                    } else if viewModel.barSurfacePhase == .declaration, viewModel.showingDeclarationForm {
+                        declarationFormRoot
+                    } else {
+                        routedBySidebar
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(16)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(16)
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .scrollIndicators(.hidden)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Routed declaration + phase helpers (from BarCircuitPanelView)
