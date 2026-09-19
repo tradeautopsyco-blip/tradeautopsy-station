@@ -735,15 +735,24 @@ pub fn binance_com_options_manifest() -> SourceManifest {
 }
 
 /// Named USDM book on the same `binance_com` adapter. USER_DATA funds +
-/// positions + lossy force-order + public REST last this slice — no history/tradebook,
-/// no fapi trade stream. Lock: `locks/binance-com-usdm.md`. Catalog / Start slug
-/// still ships spot.
+/// positions + lossy force-order + public REST last + public fapi klines this
+/// slice — no tradebook, no fapi trade stream. Lock: `locks/binance-com-usdm.md`.
+/// Catalog / Start slug still ships spot.
 pub fn binance_com_usdm_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["binance.com".into()],
         asset_classes: vec!["crypto_usdm".into()],
         history_range: None,
         intervals: vec![],
+    };
+    let history_coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_usdm".into()],
+        history_range: None,
+        intervals: super::binance_usdm_klines::USDM_KLINE_INTERVALS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
     };
     SourceManifest {
         manifest_id: "binance_com.usdm.v1".into(),
@@ -755,6 +764,7 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
             "forceorder".into(),
             "quotes".into(),
             "search".into(),
+            "history".into(),
         ],
         bindings: vec![
             account_binding(
@@ -773,7 +783,8 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
             ),
             forceorder_binding("binance_com", coverage.clone()),
             quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
-            search_binding("binance_com", coverage, AuthMode::Public),
+            search_binding("binance_com", coverage.clone(), AuthMode::Public),
+            history_binding("binance_com", history_coverage, AuthMode::Public),
         ],
     }
 }
@@ -787,6 +798,15 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
         history_range: None,
         intervals: vec![],
     };
+    let history_coverage = Coverage {
+        venues: vec!["binance.com".into()],
+        asset_classes: vec!["crypto_coinm".into()],
+        history_range: None,
+        intervals: super::binance_coinm_klines::COINM_KLINE_INTERVALS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
+    };
     SourceManifest {
         manifest_id: "binance_com.coinm.v1".into(),
         adapter_id: "binance_com".into(),
@@ -797,6 +817,7 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
             "forceorder".into(),
             "quotes".into(),
             "search".into(),
+            "history".into(),
         ],
         bindings: vec![
             account_binding(
@@ -815,7 +836,8 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
             ),
             forceorder_binding("binance_com", coverage.clone()),
             quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
-            search_binding("binance_com", coverage, AuthMode::Public),
+            search_binding("binance_com", coverage.clone(), AuthMode::Public),
+            history_binding("binance_com", history_coverage, AuthMode::Public),
         ],
     }
 }
@@ -1572,13 +1594,18 @@ mod tests {
         assert_eq!(manifest.book_id, "binance-com-usdm");
         assert_eq!(
             manifest.implemented,
-            vec!["funds", "positionbook", "forceorder", "quotes", "search"]
+            vec![
+                "funds",
+                "positionbook",
+                "forceorder",
+                "quotes",
+                "search",
+                "history"
+            ]
         );
         assert!(manifest.implemented.iter().any(|op| op == "quotes"));
-        assert!(!manifest
-            .implemented
-            .iter()
-            .any(|op| { matches!(op.as_str(), "history" | "tradebook") }));
+        assert!(manifest.implemented.iter().any(|op| op == "history"));
+        assert!(!manifest.implemented.iter().any(|op| op == "tradebook"));
         let quotes = manifest
             .bindings
             .iter()
@@ -1591,6 +1618,20 @@ mod tests {
             quotes.transports,
             vec![TransportKind::Stream, TransportKind::Rest]
         );
+        let history = manifest
+            .bindings
+            .iter()
+            .find(|binding| binding.operation == "history")
+            .expect("usdm history binding");
+        assert_eq!(history.capability_id, "ohlcv");
+        assert_eq!(history.physics, Physics::HistoricalSeries);
+        assert_eq!(history.auth_mode, AuthMode::Public);
+        assert!(history.coverage.intervals.contains(&"1m".to_string()));
+        assert!(!history.coverage.intervals.iter().any(|i| i == "1s"));
+        let hist = obtain(&manifest, "history");
+        assert_eq!(hist.status, ObtainStatus::Unavailable);
+        assert_ne!(hist.status, ObtainStatus::Unsupported);
+        assert!(hist.data.is_none());
         let funds = manifest
             .bindings
             .iter()
@@ -1708,6 +1749,8 @@ mod tests {
         assert_ne!(search.status, ObtainStatus::Unsupported);
         assert!(coinm.implemented.iter().any(|op| op == "quotes"));
         assert!(coinm.implemented.iter().any(|op| op == "search"));
+        assert!(coinm.implemented.iter().any(|op| op == "history"));
+        assert!(!coinm.implemented.iter().any(|op| op == "tradebook"));
         assert_ne!(
             obtain(&usdm, "quotes").book_id,
             obtain(&coinm, "quotes").book_id

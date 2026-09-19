@@ -3,12 +3,18 @@
 //! Licensed series is Binance.com public klines (`historical_series`).
 //! Yahoo is research_segment + `rights_forbid_canonical` and is never persisted.
 
+use super::binance_coinm_klines::{validate_coinm_kline_request, DEFAULT_COINM_HISTORY_INTERVAL};
+use super::binance_coinm_ticker::normalize_coinm_instrument;
 use super::binance_klines::{validate_kline_request, HistorySeries, DEFAULT_HISTORY_INTERVAL};
 use super::binance_options_klines::{
     validate_options_kline_request, DEFAULT_OPTIONS_HISTORY_INTERVAL,
 };
 use super::binance_options_public::{is_dated_option_contract, normalize_options_instrument};
-use super::descriptor::BINANCE_COM_ADAPTER_ID;
+use super::binance_usdm_klines::{validate_usdm_kline_request, DEFAULT_USDM_HISTORY_INTERVAL};
+use super::binance_usdm_ticker::normalize_usdm_instrument;
+use super::descriptor::{
+    BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_USDM_BOOK_ID,
+};
 use super::historybook::HistoryBook;
 use super::identity::{CapabilityId, Family, Identity, Physics};
 use super::rights::Rights;
@@ -186,6 +192,75 @@ pub fn extract_options_history(
     licensed_success(row, "eapi_klines")
 }
 
+/// Named USDM book series. Uppercase id. Never `first_for_adapter` (spot leftover).
+/// Empty series stays unavailable. Store key is `binance-com-usdm`, not COM adapter.
+pub fn extract_usdm_history(
+    book: &HistoryBook,
+    instrument_id: &str,
+    interval: Option<&str>,
+    limit: Option<u32>,
+) -> HistoryEnvelope {
+    let instrument_id = normalize_usdm_instrument(instrument_id);
+    if instrument_id.is_empty()
+        || instrument_id.contains('|')
+        || is_dated_option_contract(&instrument_id)
+    {
+        return empty_licensed(instrument_id, BINANCE_COM_USDM_BOOK_ID, Vec::new());
+    }
+    let interval = interval
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_USDM_HISTORY_INTERVAL);
+    match validate_usdm_kline_request(interval, limit) {
+        Err(refuse) => {
+            return empty_licensed(
+                instrument_id,
+                BINANCE_COM_USDM_BOOK_ID,
+                vec![refuse.as_ineligible().to_string()],
+            );
+        }
+        Ok(_) => {}
+    }
+    let Some(row) = book.get(BINANCE_COM_USDM_BOOK_ID, &instrument_id, interval) else {
+        return empty_licensed(instrument_id, BINANCE_COM_USDM_BOOK_ID, Vec::new());
+    };
+    licensed_success(row, "fapi_klines")
+}
+
+/// Named Coin-M book series. Venue case (`BTCUSD_PERP`). Never fapi / spot.
+pub fn extract_coinm_history(
+    book: &HistoryBook,
+    instrument_id: &str,
+    interval: Option<&str>,
+    limit: Option<u32>,
+) -> HistoryEnvelope {
+    let instrument_id = normalize_coinm_instrument(instrument_id);
+    if instrument_id.is_empty()
+        || instrument_id.contains('|')
+        || is_dated_option_contract(&instrument_id)
+    {
+        return empty_licensed(instrument_id, BINANCE_COM_COINM_BOOK_ID, Vec::new());
+    }
+    let interval = interval
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_COINM_HISTORY_INTERVAL);
+    match validate_coinm_kline_request(interval, limit) {
+        Err(refuse) => {
+            return empty_licensed(
+                instrument_id,
+                BINANCE_COM_COINM_BOOK_ID,
+                vec![refuse.as_ineligible().to_string()],
+            );
+        }
+        Ok(_) => {}
+    }
+    let Some(row) = book.get(BINANCE_COM_COINM_BOOK_ID, &instrument_id, interval) else {
+        return empty_licensed(instrument_id, BINANCE_COM_COINM_BOOK_ID, Vec::new());
+    };
+    licensed_success(row, "dapi_klines")
+}
+
 /// Fixture gap vendor series. Separate adapter_id from COM klines (DualNoBlend).
 pub fn extract_gap_vendor_history(
     book: &HistoryBook,
@@ -264,6 +339,30 @@ pub fn history_obtain_data(envelope: &HistoryEnvelope) -> Option<serde_json::Val
         return None;
     }
     if envelope.provenance.adapter_id != BINANCE_COM_ADAPTER_ID {
+        return None;
+    }
+    if envelope
+        .ineligible
+        .iter()
+        .any(|r| r == "rights_forbid_canonical")
+    {
+        return None;
+    }
+    let data = envelope.data.as_ref()?;
+    if data.get("candles").and_then(|c| c.as_array())?.is_empty() {
+        return None;
+    }
+    Some(data.clone())
+}
+
+/// Named USDM/Coin-M series live under the book id, not the COM adapter slug.
+pub fn futures_history_obtain_data(envelope: &HistoryEnvelope) -> Option<serde_json::Value> {
+    if envelope.status != HistoryStatus::Success {
+        return None;
+    }
+    if envelope.provenance.adapter_id != BINANCE_COM_USDM_BOOK_ID
+        && envelope.provenance.adapter_id != BINANCE_COM_COINM_BOOK_ID
+    {
         return None;
     }
     if envelope
@@ -530,5 +629,76 @@ mod tests {
         assert_eq!(data["source"], LICENSED_HISTORY_ADAPTER_ID);
         assert_ne!(data["source"], "binance_klines");
         assert!(gap_history_obtain_data(&env, LICENSED_HISTORY_ADAPTER_ID).is_some());
+    }
+
+    #[test]
+    fn usdm_history_keeps_fapi_source_and_does_not_inherit_spot() {
+        let json = r#"[[1499040000000,"950","1100","900","1000","100",1499040059999,"2",10,"100","10000","0"]]"#;
+        let series =
+            crate::data::series_from_fapi_klines_json(json, "BTCUSDT", "1m", Transport::Fixture)
+                .unwrap();
+        let mut book = HistoryBook::new();
+        apply_history_series(&mut book, series);
+        let env = extract_usdm_history(&book, "BTCUSDT", Some("1m"), None);
+        assert_eq!(env.status, HistoryStatus::Success);
+        assert_eq!(env.instrument_id, "BTCUSDT");
+        assert_eq!(env.data.as_ref().unwrap()["source"], "fapi_klines");
+        assert_ne!(env.data.as_ref().unwrap()["source"], "binance_klines");
+        assert_eq!(env.provenance.adapter_id, BINANCE_COM_USDM_BOOK_ID);
+        assert!(futures_history_obtain_data(&env).is_some());
+        assert!(history_obtain_data(&env).is_none());
+
+        let spot = series_from_klines_json(
+            include_str!("../../fixtures/binance/klines.json"),
+            "BTCUSDT",
+            "1m",
+            Transport::Fixture,
+        )
+        .unwrap();
+        let mut spot_only = HistoryBook::new();
+        apply_history_series(&mut spot_only, spot);
+        let miss = extract_usdm_history(&spot_only, "BTCUSDT", Some("1m"), None);
+        assert_eq!(miss.status, HistoryStatus::Unavailable);
+        assert!(futures_history_obtain_data(&miss).is_none());
+
+        let licensed = extract_licensed_history(&book, "BTCUSDT", Some("1m"), None);
+        assert_eq!(licensed.status, HistoryStatus::Unavailable);
+        assert!(history_obtain_data(&licensed).is_none());
+    }
+
+    #[test]
+    fn usdm_one_s_is_unsupported_not_resample() {
+        let env = extract_usdm_history(&HistoryBook::new(), "BTCUSDT", Some("1s"), None);
+        assert_eq!(env.status, HistoryStatus::Unavailable);
+        assert_eq!(env.ineligible, ["unsupported_interval"]);
+        assert!(futures_history_obtain_data(&env).is_none());
+    }
+
+    #[test]
+    fn coinm_history_keeps_dapi_source_and_does_not_inherit_usdm() {
+        let json = r#"[[1499040000000,"950","1100","900","1000","100",1499040059999,"2",10,"100","10000","0"]]"#;
+        let usdm =
+            crate::data::series_from_fapi_klines_json(json, "BTCUSDT", "1m", Transport::Fixture)
+                .unwrap();
+        let coinm = crate::data::series_from_dapi_klines_json(
+            json,
+            "BTCUSD_PERP",
+            "1m",
+            Transport::Fixture,
+        )
+        .unwrap();
+        let mut book = HistoryBook::new();
+        apply_history_series(&mut book, usdm);
+        apply_history_series(&mut book, coinm);
+        let env = extract_coinm_history(&book, "BTCUSD_PERP", Some("1m"), None);
+        assert_eq!(env.status, HistoryStatus::Success);
+        assert_eq!(env.instrument_id, "BTCUSD_PERP");
+        assert_eq!(env.data.as_ref().unwrap()["source"], "dapi_klines");
+        assert_ne!(env.data.as_ref().unwrap()["source"], "fapi_klines");
+        assert_eq!(env.provenance.adapter_id, BINANCE_COM_COINM_BOOK_ID);
+        let usdm_env = extract_usdm_history(&book, "BTCUSDT", Some("1m"), None);
+        assert_eq!(usdm_env.data.as_ref().unwrap()["source"], "fapi_klines");
+        let miss = extract_coinm_history(&book, "BTCUSDT", Some("1m"), None);
+        assert_eq!(miss.status, HistoryStatus::Unavailable);
     }
 }

@@ -1,49 +1,63 @@
 import SwiftUI
 
 /// Cash cockpit mosaic (prototype `CASH_SEEDS` / `LAST_SEEDS`). Session owns;
-/// Depth follows on spot/equity. No fake klines.
+/// Depth follows on spot/equity once the lock names it. No fake klines.
 struct BarCashCockpitMosaic: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
     @Binding var quantityText: String
     @Binding var stopLossText: String
     @Binding var targetPriceText: String
+    var tiles: [BarCashCockpitSeed.Tile]
+    var editing: Bool = false
+    var onRemove: ((BarCashCockpitSeed.Kind) -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            cockpitTile(title: "Session", note: sessionNote) {
-                sessionHost
-            }
-            if BarCashCockpitSeed.showsDepth(for: viewModel.declareAssetClass) {
-                cockpitTile(title: "Depth", note: "market/order_book") {
-                    BarDeskDepthLadder(
-                        status: viewModel.deskDepthStatus,
-                        display: viewModel.deskDepthDisplay,
-                        bids: viewModel.deskDepthBids,
-                        asks: viewModel.deskDepthAsks,
-                        physicsNote: viewModel.deskDepthPhysicsNote,
-                    )
-                }
-            }
-            if showsTicketC {
-                cockpitTile(title: "Ticket", note: "type · size · TIF") {
-                    BarDeskTicketTile(
-                        viewModel: viewModel,
-                        sideBuy: $sideBuy,
-                        quantityText: $quantityText,
-                    )
+        let placements = tiles.map {
+            BarCockpitMosaicPlacement(x: $0.x, y: $0.y, w: $0.w, h: $0.h)
+        }
+        BarCockpitMosaicGrid(placements: placements) {
+            ForEach(tiles, id: \.kind) { tile in
+                cockpitTile(
+                    title: BarCashCockpitSeed.title(for: tile.kind),
+                    note: tileNote(tile.kind),
+                    removable: editing && tile.kind != .ticket,
+                    onRemove: { onRemove?(tile.kind) },
+                ) {
+                    host(for: tile.kind)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var showsTicketC: Bool {
-        BarDeskTicketSurface.usesVenueTicket(
-            for: viewModel.declareAssetClass,
-            slug: viewModel.resolvedDeskSlug,
-            instrumentId: viewModel.deskSelectedInstrumentId,
-        )
+    @ViewBuilder
+    private func host(for kind: BarCashCockpitSeed.Kind) -> some View {
+        switch kind {
+        case .session: sessionHost
+        case .depth:
+            BarDeskDepthLadder(
+                status: viewModel.deskDepthStatus,
+                display: viewModel.deskDepthDisplay,
+                bids: viewModel.deskDepthBids,
+                asks: viewModel.deskDepthAsks,
+                physicsNote: viewModel.deskDepthPhysicsNote,
+            )
+        case .ticket:
+            BarDeskTicketTile(
+                viewModel: viewModel,
+                sideBuy: $sideBuy,
+                quantityText: $quantityText,
+            )
+        }
+    }
+
+    private func tileNote(_ kind: BarCashCockpitSeed.Kind) -> String {
+        switch kind {
+        case .session: return sessionNote
+        case .depth: return "market/order_book"
+        case .ticket: return "type · size · TIF"
+        }
     }
 
     @ViewBuilder
@@ -91,16 +105,10 @@ struct BarCashCockpitMosaic: View {
     }
 
     private var sessionHoleTitle: String {
-        if viewModel.declareAssetClass == .usdm || viewModel.declareAssetClass == .coinm {
-            return "no History tile on this book"
-        }
         return "no session series"
     }
 
     private var sessionNote: String {
-        if viewModel.declareAssetClass == .usdm || viewModel.declareAssetClass == .coinm {
-            return "Last-only glance · history stays dark"
-        }
         return BarDeskTemplate.historyGlanceLine(
             licensedStatus: viewModel.deskHistoryStatus,
             licensedIneligible: viewModel.deskHistoryIneligible,
@@ -115,6 +123,8 @@ struct BarCashCockpitMosaic: View {
     private func cockpitTile<Content: View>(
         title: String,
         note: String,
+        removable: Bool = false,
+        onRemove: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content,
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -127,6 +137,13 @@ struct BarCashCockpitMosaic: View {
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .lineLimit(1)
+                if removable {
+                    Button("×", action: { onRemove?() })
+                        .font(BarDS.monoFont(11, weight: .medium))
+                        .buttonStyle(.plain)
+                        .foregroundColor(BarDS.Text.muted)
+                        .accessibilityLabel("Remove \(title)")
+                }
             }
             content()
         }

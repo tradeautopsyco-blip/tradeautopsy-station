@@ -286,11 +286,157 @@ struct BarDeskHistoryTests {
         #expect(vm.deskHistoryExtractPath(instrument: "nse_fo|61466", consumeVendorArm: true) == nil)
     }
 
-    @Test func usdmHistoryPathStaysNil() {
+    @Test func usdmHistoryPathIsFapiObtainNeverSpotKlines() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"
         vm.declareAssetClass = .usdm
-        #expect(vm.deskHistoryExtractPath(instrument: "BTCUSDT", consumeVendorArm: true) == nil)
+        let path = vm.deskHistoryExtractPath(instrument: "BTCUSDT", consumeVendorArm: true)
+        #expect(path == vm.deskUsdmHistoryExtractPath())
+        #expect(path?.contains("book=binance-com-usdm") == true)
+        #expect(path?.contains("operation=history") == true)
+        #expect(path?.contains("/api/v3/klines") == false)
+        #expect(path?.contains("binance-com-options") == false)
+        #expect(path?.contains("licensed-history") == false)
+    }
+
+    @Test func coinmHistoryPathIsDapiObtainNeverFapi() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .coinm
+        let path = vm.deskHistoryExtractPath(instrument: "BTCUSD_PERP", consumeVendorArm: true)
+        #expect(path == vm.deskCoinmHistoryExtractPath())
+        #expect(path?.contains("book=binance-com-coinm") == true)
+        #expect(path?.contains("operation=history") == true)
+        #expect(path?.contains("/fapi/") == false)
+        #expect(path?.contains("/api/v3/klines") == false)
+    }
+
+    @Test func usdmSessionPaintsFapiKlinesAndRefusesSpotMix() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-usdm",
+            "operation": "history",
+            "provenance_path": "/fapi/v1/klines",
+            "data": [
+                "source": "fapi_klines",
+                "instrument_id": "BTCUSDT",
+                "interval": "1m",
+                "candles": [[
+                    "open_time_ms": 1499040000000,
+                    "open": "950",
+                    "high": "1100",
+                    "low": "900",
+                    "close": "1000",
+                    "volume": "100",
+                    "close_time_ms": 1499040059999,
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].close == "1000")
+        #expect(vm.deskHistoryCandles[0].open != "0")
+        #expect(vm.deskHistoryBookId == "binance-com-usdm")
+
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-spot",
+            "data": [
+                "source": "binance_klines",
+                "candles": [[
+                    "open_time_ms": 1499040000000,
+                    "open": "1",
+                    "high": "1",
+                    "low": "1",
+                    "close": "1",
+                    "volume": "1",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-usdm",
+            "data": [
+                "source": "fapi_klines",
+                "candles": [] as [[String: Any]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+    }
+
+    @Test func coinmSessionPaintsDapiKlinesAndRefusesFapiMix() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .coinm
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-coinm",
+            "provenance_path": "/dapi/v1/klines",
+            "data": [
+                "source": "dapi_klines",
+                "instrument_id": "BTCUSD_PERP",
+                "interval": "1m",
+                "candles": [[
+                    "open_time_ms": 1499040000000,
+                    "open": "950",
+                    "high": "1100",
+                    "low": "900",
+                    "close": "1000",
+                    "volume": "100",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "success")
+        #expect(vm.deskHistoryCandles.count == 1)
+        #expect(vm.deskHistoryCandles[0].close == "1000")
+
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "binance-com-usdm",
+            "data": [
+                "source": "fapi_klines",
+                "candles": [[
+                    "open_time_ms": 1499040000000,
+                    "open": "1",
+                    "high": "1",
+                    "low": "1",
+                    "close": "1",
+                    "volume": "1",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryStatus == "unavailable")
+        #expect(vm.deskHistoryCandles.isEmpty)
+    }
+
+    @Test func licensedHistoryDoesNotPaintUsdmSession() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        vm.applyStationHistoryEnvelope([
+            "status": "success",
+            "book_id": "licensed-history",
+            "data": [
+                "source": "licensed_history",
+                "candles": [[
+                    "open_time_ms": 1,
+                    "open": "1",
+                    "high": "1",
+                    "low": "1",
+                    "close": "1",
+                    "volume": "1",
+                ]],
+            ],
+        ])
+        #expect(vm.deskHistoryCandles.isEmpty)
+        #expect(vm.deskHistoryStatus == "unavailable")
     }
 
     private func glanceLine(_ vm: NotchViewModel) -> String {

@@ -109,12 +109,18 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("ohlcv", "GET", AuthMode::Public)
-            if path == "/api/v3/klines" || normalize_request_path(path) == "/eapi/v1/klines" =>
+            if path == "/api/v3/klines"
+                || normalize_request_path(path) == "/eapi/v1/klines"
+                || normalize_request_path(path) == "/fapi/v1/klines"
+                || normalize_request_path(path) == "/dapi/v1/klines" =>
         {
             true
         }
         ("order_book", "GET", AuthMode::Public)
-            if path == "/api/v3/depth" || normalize_request_path(path) == "/eapi/v1/depth" =>
+            if path == "/api/v3/depth"
+                || normalize_request_path(path) == "/eapi/v1/depth"
+                || normalize_request_path(path) == "/fapi/v1/depth"
+                || normalize_request_path(path) == "/dapi/v1/depth" =>
         {
             true
         }
@@ -242,8 +248,20 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/depth" => {
             Ok(("order_book", AuthMode::Public))
         }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/depth" => {
+            Ok(("order_book", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/depth" => {
+            Ok(("order_book", AuthMode::Public))
+        }
         ("GET", "/api/v3/klines") => Ok(("ohlcv", AuthMode::Public)),
         ("GET", p) if normalize_request_path(p) == "/eapi/v1/klines" => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/fapi/v1/klines" => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/klines" => {
             Ok(("ohlcv", AuthMode::Public))
         }
         ("GET", "/api/v3/depth") => Ok(("order_book", AuthMode::Public)),
@@ -599,9 +617,16 @@ pub fn authorize_host_call(
     }
     if (normalize_request_path(path) == "/fapi/v1/ticker/price"
         || normalize_request_path(path) == "/fapi/v1/exchangeInfo"
-        || normalize_request_path(path) == "/fapi/v1/income")
+        || normalize_request_path(path) == "/fapi/v1/income"
+        || normalize_request_path(path) == "/fapi/v1/klines"
+        || normalize_request_path(path) == "/fapi/v1/depth")
         && host_norm != "fapi.binance.com"
     {
+        return Err(HostRefuse::HostNotAllowed);
+    }
+    if (normalize_request_path(path) == "/dapi/v1/klines"
+        || normalize_request_path(path) == "/dapi/v1/depth")
+        && host_norm != "dapi.binance.com" {
         return Err(HostRefuse::HostNotAllowed);
     }
     if (is_kotak_cash_scrip_csv_path(path) || is_kotak_fo_scrip_csv_path(path))
@@ -790,6 +815,90 @@ mod tests {
                 "USDM fence must not dial {host}{path}"
             );
         }
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/klines").unwrap(),
+            ("ohlcv", AuthMode::Public)
+        );
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/klines?symbol=BTCUSDT&interval=1m").unwrap(),
+            ("ohlcv", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "GET",
+            "/fapi/v1/klines",
+            false,
+        )
+        .expect("USDM public klines GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "fapi.binance.com",
+                "GET",
+                "/fapi/v1/klines",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            infer_capability("GET", "/fapi/v1/depth").unwrap(),
+            ("order_book", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "GET",
+            "/fapi/v1/depth",
+            false,
+        )
+        .expect("USDM public depth GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-usdm",
+                "fapi.binance.com",
+                "GET",
+                "/fapi/v1/depth",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        for (host, path) in [
+            ("api.binance.com", "/api/v3/depth"),
+            ("eapi.binance.com", "/eapi/v1/depth"),
+            ("dapi.binance.com", "/dapi/v1/depth"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-usdm", host, "GET", path, false).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "USDM fence must not dial {host}{path}"
+            );
+        }
+        for (host, path) in [
+            ("api.binance.com", "/api/v3/klines"),
+            ("eapi.binance.com", "/eapi/v1/klines"),
+            ("dapi.binance.com", "/dapi/v1/klines"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-usdm", host, "GET", path, false).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "USDM fence must not dial {host}{path}"
+            );
+        }
+        assert_eq!(
+            authorize_host_call(
+                "api.binance.com",
+                "GET",
+                "/fapi/v1/klines",
+                "ohlcv",
+                AuthMode::Public,
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
     }
 
     #[test]
@@ -842,6 +951,74 @@ mod tests {
             false,
         )
         .expect("Coin-M public exchangeInfo GET must be allowlisted without HMAC");
+        assert_eq!(
+            infer_capability("GET", "/dapi/v1/klines").unwrap(),
+            ("ohlcv", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-coinm",
+            "dapi.binance.com",
+            "GET",
+            "/dapi/v1/klines",
+            false,
+        )
+        .expect("Coin-M public klines GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "dapi.binance.com",
+                "GET",
+                "/dapi/v1/klines",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        for (host, path) in [
+            ("fapi.binance.com", "/fapi/v1/klines"),
+            ("api.binance.com", "/api/v3/klines"),
+            ("eapi.binance.com", "/eapi/v1/klines"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-coinm", host, "GET", path, false).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "Coin-M fence must not dial {host}{path}"
+            );
+        }
+        assert_eq!(
+            infer_capability("GET", "/dapi/v1/depth").unwrap(),
+            ("order_book", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-coinm",
+            "dapi.binance.com",
+            "GET",
+            "/dapi/v1/depth",
+            false,
+        )
+        .expect("Coin-M public depth GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "dapi.binance.com",
+                "GET",
+                "/dapi/v1/depth",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        for (host, path) in [
+            ("fapi.binance.com", "/fapi/v1/depth"),
+            ("api.binance.com", "/api/v3/depth"),
+            ("eapi.binance.com", "/eapi/v1/depth"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-coinm", host, "GET", path, false).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "Coin-M fence must not dial {host}{path}"
+            );
+        }
         assert_eq!(
             infer_capability("POST", "/dapi/v1/order").unwrap_err(),
             HostRefuse::MutationForbidden

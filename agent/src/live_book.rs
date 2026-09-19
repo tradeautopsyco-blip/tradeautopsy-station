@@ -562,7 +562,10 @@ mod tests {
             }
         });
         let book = LiveBook::new();
-        book.apply(LiveBookEvent::declare_from_body(&body, "local-usdm-book".into()));
+        book.apply(LiveBookEvent::declare_from_body(
+            &body,
+            "local-usdm-book".into(),
+        ));
         let snap = book.snapshot().unwrap();
         let pending = pending(&snap);
         assert_eq!(pending["symbol"], "CATIUSDT");
@@ -599,7 +602,10 @@ mod tests {
             }
         });
         let book = LiveBook::new();
-        book.apply(LiveBookEvent::declare_from_body(&body, "local-ticket".into()));
+        book.apply(LiveBookEvent::declare_from_body(
+            &body,
+            "local-ticket".into(),
+        ));
         let snap = book.snapshot().unwrap();
         let pending = pending(&snap);
         assert_eq!(pending["ticket"]["type"], "CONDITIONAL");

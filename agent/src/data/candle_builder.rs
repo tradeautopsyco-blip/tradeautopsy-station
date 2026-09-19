@@ -186,12 +186,7 @@ fn builder_key(adapter_id: &str, instrument_id: &str, interval: &str) -> String 
     } else {
         super::binance_public::normalize_quote_instrument(instrument_id)
     };
-    format!(
-        "{}\0{}\0{}",
-        adapter_id.trim(),
-        instrument,
-        interval.trim()
-    )
+    format!("{}\0{}\0{}", adapter_id.trim(), instrument, interval.trim())
 }
 
 #[derive(Debug, Default)]
@@ -286,7 +281,10 @@ impl CandleBuilders {
 }
 
 /// Closed REST series plus the in-memory forming bar. Does not persist forming.
-pub fn overlay_forming(series: &HistorySeries, forming: Option<&HistoryCandle>) -> Vec<HistoryCandle> {
+pub fn overlay_forming(
+    series: &HistorySeries,
+    forming: Option<&HistoryCandle>,
+) -> Vec<HistoryCandle> {
     let mut candles = series.candles.clone();
     let Some(forming) = forming else {
         return candles;
@@ -411,7 +409,12 @@ mod tests {
         }
     }
 
-    fn series(adapter: &str, instrument: &str, interval: &str, candles: Vec<HistoryCandle>) -> HistorySeries {
+    fn series(
+        adapter: &str,
+        instrument: &str,
+        interval: &str,
+        candles: Vec<HistoryCandle>,
+    ) -> HistorySeries {
         HistorySeries {
             instrument_id: instrument.into(),
             adapter_id: adapter.into(),
@@ -435,9 +438,7 @@ mod tests {
     fn seeded_tick_keeps_history_open_and_sums_ltq() {
         let mut b = CandleBuilder::new("binance_com", "btcusdt", "1m", 60_000, 1_700_000_000_000);
         b.seed(bar(1_700_000_000_000, "100", "101", "99", "100.5", "10"));
-        let out = b
-            .on_tick(1_700_000_010_000, "102", Some("3"))
-            .unwrap();
+        let out = b.on_tick(1_700_000_010_000, "102", Some("3")).unwrap();
         assert_eq!(out.open, "100");
         assert_eq!(out.high, "102");
         assert_eq!(out.close, "102");

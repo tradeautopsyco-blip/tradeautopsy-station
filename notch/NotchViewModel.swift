@@ -1899,7 +1899,8 @@ public final class NotchViewModel: ObservableObject {
 
     /// Bind History from a Station history extract (testable without network).
     /// Crypto Options session chart consumes eapi candles.
-    /// Spot paints `binance_klines`. Kotak cash paints native Neo; COM klines stay unsupported.
+    /// Spot paints `binance_klines`. USDM paints `fapi_klines`. Coin-M paints `dapi_klines`.
+    /// Kotak cash paints native Neo. Yahoo and licensed-history stay off a shipping COM Session.
     /// A declared gap vendor may paint labs series. Spot `/api/station/history` never paints a dated contract.
     func applyStationHistoryEnvelope(_ json: [String: Any]) {
         deskYahooHistoryStatus = "unavailable"
@@ -1983,6 +1984,29 @@ public final class NotchViewModel: ObservableObject {
                 status: status,
                 dataSource: dataSource,
                 bookId: bookId
+            )
+            return
+        }
+
+        if declareAssetClass == .usdm {
+            applyNamedFuturesSessionHistory(
+                json: json,
+                status: status,
+                dataSource: dataSource,
+                bookId: bookId,
+                expectedBookId: BarDeskTemplate.binanceComUsdmBookId,
+                expectedSource: "fapi_klines"
+            )
+            return
+        }
+        if declareAssetClass == .coinm {
+            applyNamedFuturesSessionHistory(
+                json: json,
+                status: status,
+                dataSource: dataSource,
+                bookId: bookId,
+                expectedBookId: BarDeskTemplate.binanceComCoinmBookId,
+                expectedSource: "dapi_klines"
             )
             return
         }
@@ -2085,6 +2109,52 @@ public final class NotchViewModel: ObservableObject {
             $0 != "rights_forbid_canonical"
         }
         deskHistoryCandles = []
+    }
+
+    /// USDM `fapi_klines` / Coin-M `dapi_klines` only. Never spot, eapi, Yahoo, or licensed-history.
+    private func applyNamedFuturesSessionHistory(
+        json: [String: Any],
+        status: String,
+        dataSource: String,
+        bookId: String,
+        expectedBookId: String,
+        expectedSource: String
+    ) {
+        let mix = dataSource == "binance_klines"
+            || dataSource == "eapi_klines"
+            || dataSource == "yahoo"
+            || dataSource == "yahoo_chart"
+            || bookId == "licensed-history"
+            || bookId == BarDeskTemplate.binanceComSpotBookId
+            || (dataSource == "fapi_klines" && expectedSource != "fapi_klines")
+            || (dataSource == "dapi_klines" && expectedSource != "dapi_klines")
+        if mix || bookId != expectedBookId || dataSource != expectedSource {
+            deskHistoryStatus = "unavailable"
+            deskHistoryIneligible = []
+            deskHistoryCandles = []
+            deskHistoryProductUse = nil
+            deskHistoryBookId = bookId.isEmpty ? nil : bookId
+            return
+        }
+        let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
+        if status == "success", !candles.isEmpty {
+            deskHistoryStatus = "success"
+            deskHistoryIneligible = []
+            deskHistoryCandles = candles
+            deskHistoryProductUse = nil
+            deskHistoryBookId = expectedBookId
+            return
+        }
+        deskHistoryStatus = status == "unsupported" ? "unavailable" : (status.isEmpty ? "unavailable" : status)
+        if deskHistoryStatus == "success" {
+            deskHistoryStatus = "unavailable"
+        }
+        deskHistoryIneligible = stringList(json["ineligible"]).filter {
+            $0 != "rights_forbid_canonical"
+        }
+        deskHistoryCandles = []
+        deskHistoryProductUse = nil
+        deskHistoryBookId = expectedBookId
     }
 
     static func parseSessionCandles(_ raw: Any?) -> [DeskSessionCandle] {
@@ -2231,6 +2301,16 @@ public final class NotchViewModel: ObservableObject {
     /// Dated crypto Options session series. Never Kotak history, never spot `/api/v3/klines`.
     func deskOptionsHistoryExtractPath() -> String {
         "/api/station/obtain?adapter=binance_com&book=binance-com-options&operation=history"
+    }
+
+    /// USDM public klines. Never `/api/v3/klines`, never eapi, never dapi.
+    func deskUsdmHistoryExtractPath() -> String {
+        "/api/station/obtain?adapter=binance_com&book=binance-com-usdm&operation=history"
+    }
+
+    /// Coin-M public klines. Never fapi, never spot, never eapi.
+    func deskCoinmHistoryExtractPath() -> String {
+        "/api/station/obtain?adapter=binance_com&book=binance-com-coinm&operation=history"
     }
 
     /// Testable chain glance path. Kotak names `deskBookId` and an underlying ticker.
@@ -2708,6 +2788,12 @@ public final class NotchViewModel: ObservableObject {
         if plan.usesOptionsHistoryObtain {
             return deskOptionsHistoryExtractPath()
         }
+        if plan.usesUsdmHistoryObtain {
+            return deskUsdmHistoryExtractPath()
+        }
+        if plan.usesCoinmHistoryObtain {
+            return deskCoinmHistoryExtractPath()
+        }
         if declareAssetClass == .options || declareAssetClass.isNamedComFutures {
             return nil
         }
@@ -2715,7 +2801,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Re-read history so the forming bar can land after klines/quotes seed.
-    /// Spot and Kotak cash only — NFO Session and USDM stay unnamed.
+    /// Spot, Kotak cash, USDM, and Coin-M. NFO Session stays unnamed.
     func scheduleSessionHistoryRefresh() {
         let instrument = deskSelectedInstrumentId.isEmpty ? barDeclarationSymbol : deskSelectedInstrumentId
         let cash = InstrumentTickBookId.isCashIdentity(instrument)
@@ -2723,7 +2809,8 @@ public final class NotchViewModel: ObservableObject {
             assetClass: declareAssetClass,
             instrumentId: instrument
         )
-        guard cash || spot else { return }
+        let namedFutures = declareAssetClass.isNamedComFutures
+        guard cash || spot || namedFutures else { return }
         guard let path = deskHistoryExtractPath(instrument: instrument, consumeVendorArm: false) else {
             return
         }

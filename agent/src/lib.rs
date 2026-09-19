@@ -939,9 +939,7 @@ fn plant_binance_usdm_exchange_info(
     cache: &Arc<std::sync::Mutex<crate::data::UsdmExchangeInfoCache>>,
 ) {
     let json = include_str!("../fixtures/binance/usdm_exchange_info.json");
-    *cache
-        .lock()
-        .expect("usdm exchange info mutex poisoned") =
+    *cache.lock().expect("usdm exchange info mutex poisoned") =
         crate::data::UsdmExchangeInfoCache::from_exchange_info_json(json);
 }
 
@@ -963,9 +961,7 @@ fn plant_binance_coinm_exchange_info(
     cache: &Arc<std::sync::Mutex<crate::data::CoinmExchangeInfoCache>>,
 ) {
     let json = include_str!("../fixtures/binance/coinm_exchange_info.json");
-    *cache
-        .lock()
-        .expect("coinm exchange info mutex poisoned") =
+    *cache.lock().expect("coinm exchange info mutex poisoned") =
         crate::data::CoinmExchangeInfoCache::from_exchange_info_json(json);
 }
 

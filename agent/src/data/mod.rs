@@ -5,8 +5,10 @@ mod account_capability;
 mod account_split;
 mod amfi;
 mod apply;
-mod binance_coinm_private;
+mod binance_coinm_depth;
 mod binance_coinm_exchange_info;
+mod binance_coinm_klines;
+mod binance_coinm_private;
 mod binance_coinm_ticker;
 mod binance_depth;
 mod binance_klines;
@@ -22,7 +24,9 @@ mod binance_options_ticker;
 mod binance_public;
 mod binance_spot_private;
 mod binance_spot_ticker;
+mod binance_usdm_depth;
 mod binance_usdm_exchange_info;
+mod binance_usdm_klines;
 mod binance_usdm_private;
 mod binance_usdm_ticker;
 mod book_identity;
@@ -78,11 +82,19 @@ pub use account_split::{
 };
 pub use amfi::{obtain_amfi_nav, AMFI_ADAPTER_ID, AMFI_NAV_BOOK_ID, AMFI_NAV_HOST};
 pub use apply::{apply_quote, ApplyError};
-pub use binance_coinm_private::{
-    ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
-};
 pub use binance_coinm_exchange_info::{
     coinm_step_size_for, coinm_tick_size_for, ensure_coinm_exchange_info, CoinmExchangeInfoCache,
+};
+pub use binance_coinm_depth::{
+    depth_snapshot_from_dapi_json, ensure_coinm_depth, coinm_depth_query, COINM_DEPTH_HOST,
+    COINM_DEPTH_PATH,
+};
+pub use binance_coinm_klines::{
+    ensure_coinm_klines, series_from_dapi_klines_json, validate_coinm_kline_request,
+    COINM_KLINES_HOST, COINM_KLINES_PATH, COINM_KLINE_INTERVALS, DEFAULT_COINM_HISTORY_INTERVAL,
+};
+pub use binance_coinm_private::{
+    ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
 };
 pub use binance_coinm_ticker::{
     await_binance_coinm_ticker, normalize_coinm_instrument, quote_tick_from_coinm_ticker_json,
@@ -134,6 +146,14 @@ pub use binance_usdm_exchange_info::{
     ensure_usdm_exchange_info, step_size_for, tick_size_for, UsdmExchangeInfoCache,
     UsdmSymbolFilters,
 };
+pub use binance_usdm_depth::{
+    depth_snapshot_from_fapi_json, ensure_usdm_depth, usdm_depth_query, USDM_DEPTH_HOST,
+    USDM_DEPTH_PATH,
+};
+pub use binance_usdm_klines::{
+    ensure_usdm_klines, series_from_fapi_klines_json, validate_usdm_kline_request,
+    DEFAULT_USDM_HISTORY_INTERVAL, USDM_KLINES_HOST, USDM_KLINES_PATH, USDM_KLINE_INTERVALS,
+};
 pub use binance_usdm_private::{
     ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
     ensure_usdm_realized_income,
@@ -170,8 +190,9 @@ pub use glance::{
 };
 pub use greeks::{extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksStatus};
 pub use history::{
-    apply_history_series, extract_gap_vendor_history, extract_history, extract_licensed_history,
-    extract_options_history, gap_history_obtain_data, history_obtain_data, HistoryEnvelope,
+    apply_history_series, extract_coinm_history, extract_gap_vendor_history, extract_history,
+    extract_licensed_history, extract_options_history, extract_usdm_history,
+    futures_history_obtain_data, gap_history_obtain_data, history_obtain_data, HistoryEnvelope,
     HistoryStatus,
 };
 pub use historybook::HistoryBook;
@@ -201,8 +222,9 @@ pub use kotak_private::{
 pub use kotak_quotes::{
     kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
     parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
-    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path, tick_cash_builders_from_kotak_json,
-    NfoOiSessionSlice, NfoOpenInterest, QUOTE_TYPE_ALL, QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
+    quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,
+    tick_cash_builders_from_kotak_json, NfoOiSessionSlice, NfoOpenInterest, QUOTE_TYPE_ALL,
+    QUOTE_TYPE_DEPTH, QUOTE_TYPE_OI,
 };
 pub use margin_estimate::extract_margin_estimate;
 pub use market_bind::MarketBind;

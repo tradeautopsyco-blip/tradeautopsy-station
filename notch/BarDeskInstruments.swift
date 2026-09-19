@@ -276,7 +276,7 @@ enum BarDeskTemplate {
         case .options:
             return [.last, .history, .chain, .openInterest, .depth]
         case .usdm, .coinm:
-            return [.last]
+            return [.last, .history]
         }
     }
 
@@ -464,17 +464,32 @@ struct DeskExtractPlan: Equatable {
     var usesKotakHistoryObtain: Bool
     /// Dated crypto Options obtain `history` on `binance-com-options`. Never spot klines.
     var usesOptionsHistoryObtain: Bool
+    /// USDM obtain `history` on `binance-com-usdm`. Never `/api/v3/klines`.
+    var usesUsdmHistoryObtain: Bool
+    /// Coin-M obtain `history` on `binance-com-coinm`. Never fapi / spot.
+    var usesCoinmHistoryObtain: Bool
     /// COM `@depth` is kicked on quote bind. Glance must not race that bind —
     /// Last can light from the ticker while DepthBook is still empty.
     var defersComSpotDepth: Bool
 
     static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
-        if assetClass == .usdm || assetClass == .coinm {
-            // Last is the quote path (`book=`). Depth/chain/OI unnamed this slice.
+        if assetClass == .usdm {
             return DeskExtractPlan(
                 fetchesGlance: false,
                 usesKotakHistoryObtain: false,
                 usesOptionsHistoryObtain: false,
+                usesUsdmHistoryObtain: true,
+                usesCoinmHistoryObtain: false,
+                defersComSpotDepth: false
+            )
+        }
+        if assetClass == .coinm {
+            return DeskExtractPlan(
+                fetchesGlance: false,
+                usesKotakHistoryObtain: false,
+                usesOptionsHistoryObtain: false,
+                usesUsdmHistoryObtain: false,
+                usesCoinmHistoryObtain: true,
                 defersComSpotDepth: false
             )
         }
@@ -490,6 +505,8 @@ struct DeskExtractPlan: Equatable {
             fetchesGlance: fetchesGlance,
             usesKotakHistoryObtain: BarDeskTemplate.isKotakNeoDesk(slug: slug),
             usesOptionsHistoryObtain: cryptoDated,
+            usesUsdmHistoryObtain: false,
+            usesCoinmHistoryObtain: false,
             defersComSpotDepth: fetchesGlance
                 && assetClass == .spot
                 && !cryptoDated

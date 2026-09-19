@@ -31,9 +31,7 @@ fn is_coinm_pair(id: &str) -> bool {
     !id.is_empty()
         && !id.contains('|')
         && !is_dated_option_contract(id)
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 pub fn binance_coinm_ticker_call(instrument_id: &str) -> Option<EgressCall> {
@@ -105,7 +103,10 @@ async fn wait_for_inflight_coinm_ticker(
         tokio::time::sleep(Duration::from_millis(50)).await;
         {
             let guard = book.lock().expect("tickbook mutex poisoned");
-            if guard.get(BINANCE_COM_COINM_BOOK_ID, instrument_id).is_some() {
+            if guard
+                .get(BINANCE_COM_COINM_BOOK_ID, instrument_id)
+                .is_some()
+            {
                 return;
             }
         }

@@ -8,11 +8,11 @@ struct BarDeskInstrumentsTests {
         #expect(BarDeskTemplate.glanceKinds(for: .equity) == [.last, .history, .depth])
     }
 
-    @Test func usdmClassIsLastOnlyAndLabeledDistinctFromSpot() {
+    @Test func usdmClassIsLastAndHistoryAndLabeledDistinctFromSpot() {
         #expect(BarDeclareAssetClass.usdm.label == "USDM")
         #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.spot.label)
         #expect(BarDeclareAssetClass.usdm.label != BarDeclareAssetClass.options.label)
-        #expect(BarDeskTemplate.glanceKinds(for: .usdm) == [.last])
+        #expect(BarDeskTemplate.glanceKinds(for: .usdm) == [.last, .history])
         #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.depth))
         #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.chain))
         #expect(!BarDeskTemplate.glanceKinds(for: .usdm).contains(.openInterest))
@@ -28,11 +28,11 @@ struct BarDeskInstrumentsTests {
         #expect(BarDeskTemplate.canSubmitBarDeclaration(for: .equity))
     }
 
-    @Test func coinmClassIsLastOnlyAndNamesItsOwnBook() {
+    @Test func coinmClassIsLastAndHistoryAndNamesItsOwnBook() {
         #expect(BarDeclareAssetClass.coinm.label == "Coin-M")
         #expect(BarDeclareAssetClass.coinm.isNamedComFutures)
-        #expect(BarDeskTemplate.glanceKinds(for: .coinm) == [.last])
-        #expect(!BarDeskTemplate.glanceKinds(for: .coinm).contains(.history))
+        #expect(BarDeskTemplate.glanceKinds(for: .coinm) == [.last, .history])
+        #expect(BarDeskTemplate.glanceKinds(for: .coinm).contains(.history))
         #expect(BarDeskTemplate.binanceComCoinmBookId == "binance-com-coinm")
         #expect(BarDeskTemplate.binanceComCoinmBookId != BarDeskTemplate.binanceComUsdmBookId)
         #expect(BarDeskTemplate.showsConfirmControl(for: .coinm))
@@ -44,6 +44,8 @@ struct BarDeskInstrumentsTests {
         )
         #expect(!plan.fetchesGlance)
         #expect(!plan.usesOptionsHistoryObtain)
+        #expect(plan.usesCoinmHistoryObtain)
+        #expect(!plan.usesUsdmHistoryObtain)
         let bind = DeskInstrumentBind.resolve(
             rawId: "BTCUSD_PERP", slug: "binance_com", currentClass: .coinm
         )
@@ -89,6 +91,8 @@ struct BarDeskInstrumentsTests {
         #expect(!plan.defersComSpotDepth)
         #expect(!plan.usesOptionsHistoryObtain)
         #expect(!plan.usesKotakHistoryObtain)
+        #expect(plan.usesUsdmHistoryObtain)
+        #expect(!plan.usesCoinmHistoryObtain)
     }
 
     @Test func optionsShellIncludesRedChainAndOi() {

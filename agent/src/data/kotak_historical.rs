@@ -384,7 +384,10 @@ mod tests {
         assert_eq!(candles[0]["close"], "103");
         assert_eq!(candles[0]["open_time"], "2026-08-20T09:15:00+0530");
         let ms = candles[0]["open_time_ms"].as_i64().expect("utc ms");
-        assert_eq!(ms, open_time_ms_from_iso("2026-08-20T09:15:00+0530").unwrap());
+        assert_eq!(
+            ms,
+            open_time_ms_from_iso("2026-08-20T09:15:00+0530").unwrap()
+        );
         // 09:15 IST is 03:45 UTC — not the wall-clock IST hour as unix.
         assert_eq!(ms, 1_787_197_500_000);
     }

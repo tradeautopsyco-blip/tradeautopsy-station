@@ -195,9 +195,7 @@ async fn run_one_connection(
                 Err(err) => tracing::debug!(error = %err, "s1 desk: apply refused"),
             }
         }
-        if tick.book_id == BINANCE_COM_SPOT_BOOK_ID
-            || tick.book_id == binance_com_spot_book_id()
-        {
+        if tick.book_id == BINANCE_COM_SPOT_BOOK_ID || tick.book_id == binance_com_spot_book_id() {
             let mut builders = builders.lock().expect("candle builders mutex poisoned");
             builders.tick(
                 BINANCE_COM_ADAPTER_ID,

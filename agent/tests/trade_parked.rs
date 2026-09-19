@@ -13,11 +13,19 @@ fn parked_trade_paths_stay_mutation_forbidden() {
     let parked = [
         ("binance-com-usdm", "fapi.binance.com", "/fapi/v1/order"),
         ("binance-com-usdm", "fapi.binance.com", "/fapi/v1/leverage"),
-        ("binance-com-usdm", "fapi.binance.com", "/fapi/v1/marginType"),
+        (
+            "binance-com-usdm",
+            "fapi.binance.com",
+            "/fapi/v1/marginType",
+        ),
         ("binance-com-usdm", "fapi.binance.com", "/fapi/v1/algoOrder"),
         ("binance-com-options", "eapi.binance.com", "/eapi/v1/order"),
         ("binance-com-coinm", "dapi.binance.com", "/dapi/v1/order"),
-        ("binance-com-coinm", "dapi.binance.com", "/dapi/v1/algoOrder"),
+        (
+            "binance-com-coinm",
+            "dapi.binance.com",
+            "/dapi/v1/algoOrder",
+        ),
         ("binance-com-spot", "api.binance.com", "/api/v3/order"),
     ];
     for (book, host, path) in parked {

@@ -7,14 +7,15 @@ use super::AppState;
 use crate::data::{
     binance_exchange_info_cache_path, ensure_binance_com_depth_stream,
     ensure_binance_com_options_quote, ensure_binance_com_trade_stream, ensure_coinm_exchange_info,
-    ensure_usdm_exchange_info, extract_quote_for_book, is_dated_option_contract,
-    kotak_quote_book_id, normalize_coinm_instrument, normalize_options_instrument,
-    normalize_quote_instrument, normalize_usdm_instrument, parse_nfo_instrument_id, resolve_among,
-    series_from_klines_json, validate_kline_request, write_raw_cache, HistoryBook,
-    InstrumentMasterErrorClass, InstrumentMasterFetchError, InstrumentMasterStatus, MarketBind,
-    QuoteStatus, Transport, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
-    BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, DEFAULT_HISTORY_INTERVAL,
-    KLINE_LIMIT_DEFAULT, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    ensure_coinm_klines, ensure_usdm_exchange_info, ensure_usdm_klines, extract_quote_for_book,
+    is_dated_option_contract, kotak_quote_book_id, normalize_coinm_instrument,
+    normalize_options_instrument, normalize_quote_instrument, normalize_usdm_instrument,
+    parse_nfo_instrument_id, resolve_among, series_from_klines_json, validate_kline_request,
+    write_raw_cache, HistoryBook, InstrumentMasterErrorClass, InstrumentMasterFetchError,
+    InstrumentMasterStatus, MarketBind, QuoteStatus, Transport, BINANCE_COM_COINM_BOOK_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID,
+    DEFAULT_HISTORY_INTERVAL, KLINE_LIMIT_DEFAULT, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::exchange_info::ExchangeInfoSymbolCache;
 use crate::kotak_scrip_master::{self, KotakScripMaster, KOTAK_NEO};
@@ -862,10 +863,33 @@ impl AppState {
             QuoteSource::BinanceUsdmPublic => {
                 self.prime_binance_usdm_ticker(&binding.instrument_id).await;
                 ensure_usdm_exchange_info(self, &binding.instrument_id).await;
+                let state = self.clone();
+                let instrument = binding.instrument_id.clone();
+                tokio::spawn(async move {
+                    ensure_usdm_klines(
+                        state.historybook.clone(),
+                        state.candle_builders.clone(),
+                        state.klines_inflight.clone(),
+                        &instrument,
+                    )
+                    .await;
+                });
             }
             QuoteSource::BinanceCoinmPublic => {
-                self.prime_binance_coinm_ticker(&binding.instrument_id).await;
+                self.prime_binance_coinm_ticker(&binding.instrument_id)
+                    .await;
                 ensure_coinm_exchange_info(self, &binding.instrument_id).await;
+                let state = self.clone();
+                let instrument = binding.instrument_id.clone();
+                tokio::spawn(async move {
+                    ensure_coinm_klines(
+                        state.historybook.clone(),
+                        state.candle_builders.clone(),
+                        state.klines_inflight.clone(),
+                        &instrument,
+                    )
+                    .await;
+                });
             }
             QuoteSource::BinanceSpotPublic => {
                 if self.is_binance_com_desk()

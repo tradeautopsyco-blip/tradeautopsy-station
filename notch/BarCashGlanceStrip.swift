@@ -90,11 +90,7 @@ struct BarCashGlanceStrip: View {
 
     @ViewBuilder
     private var historyValue: some View {
-        if viewModel.declareAssetClass == .usdm || viewModel.declareAssetClass == .coinm {
-            Text("Not eligible")
-                .font(BarDS.monoFont(13, weight: .medium))
-                .foregroundColor(BarDS.Text.muted)
-        } else if viewModel.deskHistoryStatus == "success",
+        if viewModel.deskHistoryStatus == "success",
                   let close = viewModel.deskHistoryCandles.last?.close,
                   !close.isEmpty {
             Text(close)
@@ -142,9 +138,6 @@ struct BarCashGlanceStrip: View {
         case .last:
             return "market/quote · \(bookLabel)"
         case .history:
-            if viewModel.declareAssetClass == .usdm || viewModel.declareAssetClass == .coinm {
-                return "no History tile on this book"
-            }
             return BarDeskTemplate.historyGlanceLine(
                 licensedStatus: viewModel.deskHistoryStatus,
                 licensedIneligible: viewModel.deskHistoryIneligible,

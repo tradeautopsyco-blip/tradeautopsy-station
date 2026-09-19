@@ -14,8 +14,8 @@
 | Same slug | `binance_com` — **no new B6**, no new broker |
 | Host / path | `https://fapi.binance.com` + `/fapi/` |
 | PnL owner | `agent/src/usdm_realized_pnl.rs` — **not** `round_trip_engine.rs` |
-| Allow this slice | HMAC `GET /fapi/v3/balance`, `GET /fapi/v3/positionRisk`, `GET /fapi/v1/forceOrders` (lossy); public `GET /fapi/v1/ticker/price` (no HMAC) |
-| Refuse | spot `/api/v3/` · eapi · dapi · `POST /fapi/v1/order` · `/fapi/v2/ticker/price` this slice · depth/klines until named · testnet · `pricePrecision` as tick · complete force-order · default Start=USDM |
+| Allow this slice | HMAC `GET /fapi/v3/balance`, `GET /fapi/v3/positionRisk`, `GET /fapi/v1/forceOrders` (lossy); public `GET /fapi/v1/ticker/price` (no HMAC); public `GET /fapi/v1/klines` (no HMAC) |
+| Refuse | spot `/api/v3/` · eapi · dapi · `POST /fapi/v1/order` · `/fapi/v2/ticker/price` this slice · depth until named · continuous/index/mark/premium klines · testnet · `pricePrecision` as tick · complete force-order · default Start=USDM |
 | Sister book | Coin-M [`locks/binance-com-coinm.md`](../../../issues/compliance/locks/binance-com-coinm.md) on `dapi.binance.com` `/dapi/` |
 
 Blended “crypto perps” as one class is **N-A** in [`CLAIM-REGISTRY.md`](../../../issues/compliance/CLAIM-REGISTRY.md). Matching is `book_id`, never the letters `BTCUSDT`.
@@ -34,7 +34,7 @@ Blended “crypto perps” as one class is **N-A** in [`CLAIM-REGISTRY.md`](../.
 | Wiremock | `agent/tests/usdm_obtain.rs` |
 | Notch | **no** `BarDeclareAssetClass` for USDM (only spot / equity / options). Harness cannot bind this book as a declare desk yet. |
 
-Phase 1 **law** names public `GET /fapi/v1/ticker/price` on this book (HMAC must not attach; last = JSON `price`). Notch class / `BarDeclareAssetClass` for USDM is still a **later** slice. TRADE still out. Running obtain `quotes` stays `unsupported` until Phase 1 **code**. History / tradebook stay unnamed. Do not expect a USDM class chip tonight.
+Public last is `GET /fapi/v1/ticker/price` (HMAC must not attach; last = JSON `price`). Public klines are `GET /fapi/v1/klines` (HMAC must not attach; `source=fapi_klines`). Depth / tradebook stay unnamed. TRADE still out.
 
 ---
 
