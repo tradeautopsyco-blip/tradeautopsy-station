@@ -31,6 +31,10 @@ enum BarNfoGreeksCopy {
 /// NFO session / derived OHLCV copy. Kotak has no history capability; Station
 /// does not compose coarser bars from a finer series.
 enum BarNfoHistoryCopy {
+    /// Cite: kotak-neo-python `docs/functions/market_data/historical_data.md`.
+    /// Example neosymbol is `nse_cm|1333` only. Named refuse: `mcx_fo` and `nse_com`.
+    /// `nse_fo` is unnamed — not named as allowed on historical_data / details.
+    static let sdkNamesNseFoOnHistoricalDetails = false
     static let sessionHoleTitle = "no licensed series"
     static let sessionHoleBody =
         "derived/ohlcv · kotak_history_unsupported. Kotak history is unsupported; Station does not compose coarser bars from 1m."

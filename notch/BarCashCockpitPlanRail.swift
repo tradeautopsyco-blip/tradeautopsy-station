@@ -31,10 +31,7 @@ struct BarCashCockpitPlanRail: View {
                 groupLab("State check")
                 stateCheck
 
-                groupLab(showsVenueTicket ? "Ticket" : "Numbers")
-                if showsVenueTicket {
-                    venueTicket
-                }
+                groupLab("Numbers")
                 numbersFields
 
                 if isOptions {
@@ -85,10 +82,6 @@ struct BarCashCockpitPlanRail: View {
     private var contractLabel: String {
         let s = viewModel.barDeclarationSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? "—" : s
-    }
-
-    private var futuresMargin: (mode: String?, leverage: String?, liq: String?) {
-        viewModel.futuresMarginReadout(symbol: viewModel.barDeclarationSymbol)
     }
 
     // MARK: - State
@@ -192,43 +185,6 @@ struct BarCashCockpitPlanRail: View {
     }
 
     // MARK: - Ticket / numbers
-
-    @ViewBuilder
-    private var venueTicket: some View {
-        let surface = BarDeskTicketSurface.surface(
-            for: viewModel.declareAssetClass,
-            slug: viewModel.resolvedDeskSlug,
-            instrumentId: viewModel.deskSelectedInstrumentId,
-        )
-        switch surface {
-        case .spot:
-            BarSpotTicketView(
-                ticket: $viewModel.deskTicket,
-                sideBuy: $sideBuy,
-                quantityText: $quantityText,
-                quoteOrderQtyText: $viewModel.quoteOrderQtyText,
-                availableLine: viewModel.accountChrome.freeText == "—"
-                    ? nil
-                    : "available = \(viewModel.accountChrome.freeText)",
-            )
-            .onChange(of: viewModel.deskTicket) { _, _ in viewModel.persistDeskTicket() }
-            .onChange(of: viewModel.quoteOrderQtyText) { _, _ in viewModel.persistDeskTicket() }
-        case .usdm, .coinm:
-            BarUsdmTicketView(
-                ticket: $viewModel.deskTicket,
-                sideBuy: $sideBuy,
-                quantityText: $quantityText,
-                triggerPriceText: $viewModel.ticketTriggerPrice,
-                marginMode: futuresMargin.mode,
-                leverage: futuresMargin.leverage,
-                liquidationPrice: futuresMargin.liq,
-            )
-            .onChange(of: viewModel.deskTicket) { _, _ in viewModel.persistDeskTicket() }
-            .onChange(of: viewModel.ticketTriggerPrice) { _, _ in viewModel.persistDeskTicket() }
-        case .none, .cryptoOptions:
-            EmptyView()
-        }
-    }
 
     @ViewBuilder
     private var numbersFields: some View {

@@ -17,7 +17,13 @@ struct BarCashCockpitView: View {
         VStack(alignment: .leading, spacing: 8) {
             BarCashGlanceStrip(viewModel: viewModel)
             HStack(alignment: .top, spacing: 10) {
-                BarCashCockpitMosaic(viewModel: viewModel)
+                BarCashCockpitMosaic(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    quantityText: $quantityText,
+                    stopLossText: $stopLossText,
+                    targetPriceText: $targetPriceText,
+                )
                 BarCashCockpitPlanRail(
                     viewModel: viewModel,
                     sideBuy: $sideBuy,

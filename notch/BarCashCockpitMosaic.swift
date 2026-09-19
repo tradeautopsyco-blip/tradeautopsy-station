@@ -4,6 +4,10 @@ import SwiftUI
 /// Depth follows on spot/equity. No fake klines.
 struct BarCashCockpitMosaic: View {
     @ObservedObject var viewModel: NotchViewModel
+    @Binding var sideBuy: Bool
+    @Binding var quantityText: String
+    @Binding var stopLossText: String
+    @Binding var targetPriceText: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -21,14 +25,39 @@ struct BarCashCockpitMosaic: View {
                     )
                 }
             }
+            if showsTicketC {
+                cockpitTile(title: "Ticket", note: "type · size · TIF") {
+                    BarDeskTicketTile(
+                        viewModel: viewModel,
+                        sideBuy: $sideBuy,
+                        quantityText: $quantityText,
+                    )
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var showsTicketC: Bool {
+        BarDeskTicketSurface.usesVenueTicket(
+            for: viewModel.declareAssetClass,
+            slug: viewModel.resolvedDeskSlug,
+            instrumentId: viewModel.deskSelectedInstrumentId,
+        )
     }
 
     @ViewBuilder
     private var sessionHost: some View {
         if viewModel.deskHistoryStatus == "success", !viewModel.deskHistoryCandles.isEmpty {
-            BarOptionsSessionChart(candles: viewModel.deskHistoryCandles)
+            BarOptionsSessionChart(
+                candles: viewModel.deskHistoryCandles,
+                drag: SessionChartDragBindings(
+                    sideBuy: sideBuy,
+                    entryText: $viewModel.declEntryPrice,
+                    stopText: $stopLossText,
+                    targetText: $targetPriceText,
+                ),
+            )
                 .frame(maxWidth: .infinity, minHeight: 140, maxHeight: .infinity)
                 .background(BarDS.Fill.elevated)
                 .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))

@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Pre-trade declaration. Spot / equity / USDM use the prototype cockpit (strip + mosaic + Plan rail).
-/// NFO options keep mosaic+rail; NFO futures keep three-zone; dated crypto stays three-zone.
+/// NFO options keep mosaic+rail+6-cell strip; NFO futures keep three-zone;
+/// dated crypto Options is mosaic + 6-cell strip + Plan rail (ticket-C on the mosaic).
 struct BarDeclarationFlowView: View {
     @ObservedObject var viewModel: NotchViewModel
 
@@ -72,18 +73,17 @@ struct BarDeclarationFlowView: View {
                     }
                     .scrollIndicators(.hidden)
                 case .cryptoOptions:
-                    ScrollView {
-                        BarCryptoOptionsDeclareView(
-                            viewModel: viewModel,
-                            sideBuy: $sideBuy,
-                            stopLossText: $stopLossText,
-                            targetPriceText: $targetPriceText,
-                            submitReady: submitReadiness.ready,
-                            submitHint: submitReadiness.hint,
-                            onConfirm: { Task { await submit() } },
-                        )
-                    }
-                    .scrollIndicators(.hidden)
+                    BarCryptoOptionsDeclareView(
+                        viewModel: viewModel,
+                        sideBuy: $sideBuy,
+                        quantityText: $quantityText,
+                        stopLossText: $stopLossText,
+                        targetPriceText: $targetPriceText,
+                        submitReady: submitReadiness.ready,
+                        submitHint: submitReadiness.hint,
+                        onConfirm: { Task { await submit() } },
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 case .standardForm:
                     BarCashCockpitView(
                         viewModel: viewModel,

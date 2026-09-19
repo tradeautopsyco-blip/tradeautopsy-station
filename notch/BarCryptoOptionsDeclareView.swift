@@ -1,15 +1,17 @@
 import SwiftUI
 
-/// Three-zone Options Pre-trade for the Binance crypto desk (dated European contracts,
-/// `BTC-260925-90000-C`). Money is USDT; there is no lot size, no NRML, no product code.
+/// Crypto Options Pre-trade cockpit (dated European contracts, `BTC-260925-90000-C`).
+/// Mosaic + 6-cell glance strip + Plan rail. Ticket-C lives on the mosaic.
+/// Money is USDT; there is no lot size, no NRML, no product code.
 /// Chain and OI glance the named options book. Greeks are the venue's own published mark
 /// table passed through per contract — lit only when the desk says `success` and the rights
 /// say `display`, dark as a chip otherwise; Station never computes them. At-expiry is the
-/// European cash settlement identity (S from eapi index). σ rungs 2–5 stay dark. Last is
-/// the live strip. Rung 1 runs on typed numbers.
+/// European cash settlement identity (S from eapi index). σ rungs 2–5 stay dark.
+/// Rung 1 runs on typed numbers. Confirm is LiveBook intent.
 struct BarCryptoOptionsDeclareView: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
+    @Binding var quantityText: String
     @Binding var stopLossText: String
     @Binding var targetPriceText: String
 
@@ -18,11 +20,140 @@ struct BarCryptoOptionsDeclareView: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            analyticsZone
-            consequenceZone
-            planAndConfirm
+        VStack(alignment: .leading, spacing: 8) {
+            BarOptionsGlanceStrip(viewModel: viewModel)
+            HStack(alignment: .top, spacing: 10) {
+                cryptoMosaic
+                cryptoPlanRail
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var cryptoMosaic: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                cockpitTile(title: "Session", note: "GET /eapi/v1/klines") {
+                    sessionChart
+                }
+                cockpitTile(title: "Open interest", note: "GET /eapi/v1/openInterest") {
+                    oiHost
+                }
+            }
+            HStack(alignment: .top, spacing: 8) {
+                cockpitTile(title: "At expiry", note: "eapi index · European") {
+                    atExpiryPanel
+                }
+                cockpitTile(title: "Depth", note: "GET /eapi/v1/depth") {
+                    BarDeskDepthLadder(
+                        status: viewModel.deskDepthStatus,
+                        display: viewModel.deskDepthDisplay,
+                        bids: viewModel.deskDepthBids,
+                        asks: viewModel.deskDepthAsks,
+                        physicsNote: viewModel.deskDepthPhysicsNote,
+                    )
+                }
+            }
+            cockpitTile(title: "Chain · catalog", note: "showsStrikeGrid = false") {
+                chainHost
+            }
+            cockpitTile(title: "Ticket", note: "type · TIF · post-only") {
+                BarDeskTicketTile(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    quantityText: $quantityText,
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var cryptoPlanRail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("PLAN")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .kerning(1.6)
+                Text("USDT · contracts · TRADE parked · ticket on mosaic")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                groupLab("State check")
+                stateCheck
+
+                groupLab("Contract")
+                contractFields
+                contractPills
+
+                groupLab("Legs")
+                legsHost
+
+                groupLab("Risk")
+                riskFields
+
+                groupLab("Horizon — how far ahead the σ rungs look")
+                horizonPills
+                Text("Set by your style chip. Edit it and every σ rung recomputes — the horizon is part of the number, not a setting.")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                groupLab("Invalidation")
+                premortem
+
+                groupLab("Greeks")
+                greeksGrid
+                Text(greeksProv)
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                groupLab("Ladder")
+                ladderHeader
+                ladderRungs
+                Text(ladderProv)
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if viewModel.showsConfirmControl {
+                    confirmBar
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .topLeading)
+    }
+
+    private func cockpitTile<Content: View>(
+        title: String,
+        note: String,
+        @ViewBuilder content: () -> Content,
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(BarDS.bodyFont(12, weight: .semibold))
+                    .foregroundColor(BarDS.Text.primary)
+                Spacer(minLength: 8)
+                Text(note)
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .lineLimit(1)
+            }
+            content()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BarDS.Fill.elevated)
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
+                .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
+        )
     }
 
     // MARK: Zone A
@@ -109,7 +240,15 @@ struct BarCryptoOptionsDeclareView: View {
     @ViewBuilder
     private var sessionChart: some View {
         if viewModel.deskHistoryStatus == "success", !viewModel.deskHistoryCandles.isEmpty {
-            BarOptionsSessionChart(candles: viewModel.deskHistoryCandles)
+            BarOptionsSessionChart(
+                candles: viewModel.deskHistoryCandles,
+                drag: SessionChartDragBindings(
+                    sideBuy: sideBuy,
+                    entryText: $viewModel.declEntryPrice,
+                    stopText: $stopLossText,
+                    targetText: $targetPriceText,
+                ),
+            )
                 .frame(maxWidth: .infinity, minHeight: 88)
                 .background(BarDS.Fill.elevated)
                 .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
@@ -1359,28 +1498,33 @@ enum SessionChartLayout {
     }()
 }
 
+/// Optional drag onto Session BUY/SL/TP. Commit writes typed Risk fields on release.
+struct SessionChartDragBindings {
+    var sideBuy: Bool
+    var entryText: Binding<String>
+    var stopText: Binding<String>
+    var targetText: Binding<String>
+}
+
 /// Venue OHLC bars for Session. Last-N from tile width, volume overlay, IST labels.
-/// No pan, zoom, interval picker, drawings, or place chrome.
+/// Drag BUY/SL/TP commits on release. No pan, zoom, interval picker, or place chrome.
 struct BarOptionsSessionChart: View {
     let candles: [DeskSessionCandle]
+    var drag: SessionChartDragBindings? = nil
+
+    @State private var dragging: SessionChartLine?
+    @State private var ghost: Double?
 
     var body: some View {
         GeometryReader { geo in
             let visible = SessionChartLayout.lastN(candles, width: geo.size.width)
             let parsed = Self.parse(visible)
+            let scale = self.scale(parsed: parsed, height: geo.size.height)
             ZStack(alignment: .topTrailing) {
                 Canvas { context, size in
                     guard !parsed.isEmpty, size.width > 0, size.height > 0 else { return }
                     let volumeH = size.height * SessionChartLayout.volumeFraction
                     let priceH = max(1, size.height - volumeH)
-                    let lo = parsed.map(\.low).min() ?? 0
-                    let hi = parsed.map(\.high).max() ?? 1
-                    var minY = lo
-                    var maxY = hi
-                    if maxY <= minY { maxY = minY + 1 }
-                    let pad = (maxY - minY) * 0.12
-                    minY -= pad
-                    maxY += pad
                     let maxVol = parsed.map(\.volume).max() ?? 0
                     let n = parsed.count
                     let slot = size.width / CGFloat(max(n, 1))
@@ -1399,10 +1543,10 @@ struct BarOptionsSessionChart: View {
                             )
                             context.fill(Path(rect), with: .color(BarDS.Text.muted.opacity(0.35)))
                         }
-                        let yHigh = priceY(bar.high, minY: minY, maxY: maxY, height: priceH)
-                        let yLow = priceY(bar.low, minY: minY, maxY: maxY, height: priceH)
-                        let yOpen = priceY(bar.open, minY: minY, maxY: maxY, height: priceH)
-                        let yClose = priceY(bar.close, minY: minY, maxY: maxY, height: priceH)
+                        let yHigh = scale.y(forPrice: bar.high)
+                        let yLow = scale.y(forPrice: bar.low)
+                        let yOpen = scale.y(forPrice: bar.open)
+                        let yClose = scale.y(forPrice: bar.close)
                         var wick = Path()
                         wick.move(to: CGPoint(x: x, y: yHigh))
                         wick.addLine(to: CGPoint(x: x, y: yLow))
@@ -1411,6 +1555,9 @@ struct BarOptionsSessionChart: View {
                         let bodyH = max(1, abs(yClose - yOpen))
                         let rect = CGRect(x: x - bodyW / 2, y: top, width: bodyW, height: bodyH)
                         context.fill(Path(rect), with: .color(color.opacity(up ? 0.85 : 1)))
+                    }
+                    if let drag {
+                        drawPlanLines(context: context, size: size, scale: scale, drag: drag)
                     }
                 }
                 if let last = visible.last {
@@ -1435,21 +1582,159 @@ struct BarOptionsSessionChart: View {
                     .padding(.bottom, 2)
                 }
             }
+            .contentShape(Rectangle())
+            .gesture(dragGesture(scale: scale))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .accessibilityLabel("Session klines")
     }
 
+    private func scale(
+        parsed: [(high: Double, low: Double, open: Double, close: Double, volume: Double)],
+        height: CGFloat
+    ) -> SessionChartScale {
+        let volumeH = height * SessionChartLayout.volumeFraction
+        let priceH = max(1, height - volumeH)
+        let lo = parsed.map(\.low).min() ?? 0
+        let hi = parsed.map(\.high).max() ?? 1
+        var minY = lo
+        var maxY = hi
+        if let drag {
+            for text in [drag.entryText.wrappedValue, drag.stopText.wrappedValue, drag.targetText.wrappedValue] {
+                if let p = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    minY = min(minY, p)
+                    maxY = max(maxY, p)
+                }
+            }
+        }
+        if let ghost {
+            minY = min(minY, ghost)
+            maxY = max(maxY, ghost)
+        }
+        if maxY <= minY { maxY = minY + 1 }
+        let pad = (maxY - minY) * 0.12
+        return SessionChartScale(minPrice: minY - pad, maxPrice: maxY + pad, height: priceH)
+    }
+
+    private func drawPlanLines(
+        context: GraphicsContext,
+        size: CGSize,
+        scale: SessionChartScale,
+        drag: SessionChartDragBindings
+    ) {
+        let entry = Double(drag.entryText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        let sl = Double(drag.stopText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        let tp = Double(drag.targetText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        if let entry {
+            strokeLine(
+                context: context,
+                size: size,
+                y: scale.y(forPrice: entry),
+                color: BarDS.Accent.blue,
+                label: drag.sideBuy ? "BUY" : "SELL",
+                dashed: false,
+            )
+        }
+        if let sl {
+            strokeLine(
+                context: context,
+                size: size,
+                y: scale.y(forPrice: sl),
+                color: BarDS.Accent.red,
+                label: "SL",
+                dashed: true,
+            )
+        }
+        if let tp {
+            strokeLine(
+                context: context,
+                size: size,
+                y: scale.y(forPrice: tp),
+                color: BarDS.Accent.teal,
+                label: "TP",
+                dashed: true,
+            )
+        }
+        if let ghost, dragging != nil {
+            strokeLine(
+                context: context,
+                size: size,
+                y: scale.y(forPrice: ghost),
+                color: BarDS.Text.primary.opacity(0.28),
+                label: "",
+                dashed: true,
+            )
+        }
+    }
+
+    private func strokeLine(
+        context: GraphicsContext,
+        size: CGSize,
+        y: CGFloat,
+        color: Color,
+        label: String,
+        dashed: Bool
+    ) {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: y))
+        path.addLine(to: CGPoint(x: size.width * (dashed ? 0.7 : 1), y: y))
+        context.stroke(
+            path,
+            with: .color(color),
+            style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 4] : []),
+        )
+        if !label.isEmpty {
+            context.draw(
+                Text(label)
+                    .font(BarDS.monoFont(8, weight: .medium))
+                    .foregroundColor(color),
+                at: CGPoint(x: 18, y: y - 8),
+            )
+        }
+    }
+
+    private func dragGesture(scale: SessionChartScale) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard let drag else { return }
+                let y = value.location.y
+                if dragging == nil {
+                    let entry = Double(drag.entryText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+                    let sl = Double(drag.stopText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+                    let tp = Double(drag.targetText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+                    let hit = SessionChartHit(
+                        entryY: entry.map { scale.y(forPrice: $0) } ?? -999,
+                        slY: sl.map { scale.y(forPrice: $0) } ?? -999,
+                        tpY: tp.map { scale.y(forPrice: $0) } ?? -999,
+                        slop: 8,
+                    )
+                    dragging = hit.line(atY: y)
+                }
+                guard dragging != nil else { return }
+                ghost = scale.price(atY: y)
+                commit(ghost ?? scale.price(atY: y), on: dragging, drag: drag)
+            }
+            .onEnded { _ in
+                dragging = nil
+                ghost = nil
+            }
+    }
+
+    private func commit(_ price: Double, on line: SessionChartLine?, drag: SessionChartDragBindings) {
+        guard let line else { return }
+        let text = SessionChartPriceFormat.string(from: price)
+        switch line {
+        case .entry: drag.entryText.wrappedValue = text
+        case .sl: drag.stopText.wrappedValue = text
+        case .tp: drag.targetText.wrappedValue = text
+        }
+    }
+
     private func labelIndices(count: Int) -> [Int] {
         if count <= 1 { return [0] }
         if count == 2 { return [0, 1] }
         return [0, count / 2, count - 1]
-    }
-
-    private func priceY(_ value: Double, minY: Double, maxY: Double, height: CGFloat) -> CGFloat {
-        let t = (value - minY) / (maxY - minY)
-        return height - CGFloat(t) * height
     }
 
     private static func parse(_ candles: [DeskSessionCandle]) -> [(high: Double, low: Double, open: Double, close: Double, volume: Double)] {
