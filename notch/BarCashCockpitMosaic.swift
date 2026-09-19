@@ -76,6 +76,9 @@ struct BarCashCockpitMosaic: View {
                     stopText: $stopLossText,
                     targetText: $targetPriceText,
                 ),
+                last: viewModel.sessionChartLast,
+                symbol: viewModel.barDeclarationSymbol,
+                interval: viewModel.deskHistoryInterval,
             )
                 .frame(maxWidth: .infinity, minHeight: 140, maxHeight: .infinity)
                 .background(BarDS.Fill.elevated)

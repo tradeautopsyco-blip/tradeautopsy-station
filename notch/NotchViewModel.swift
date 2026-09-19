@@ -594,6 +594,10 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskHistoryStatus: String = "unavailable"
     @Published var deskHistoryIneligible: [String] = []
     @Published var deskHistoryCandles: [DeskSessionCandle] = []
+    /// Envelope `data.interval` while a licensed series is lit. Cleared with the candles.
+    @Published var deskHistoryInterval: String?
+    /// Bound `data.last` from the quote envelope. Chart last line reads `sessionChartLast`.
+    @Published var deskQuoteLast: Double?
     @Published var deskHistoryProductUse: String?
     @Published var deskHistoryBookId: String?
     @Published var deskYahooHistoryStatus: String = "unavailable"
@@ -1659,6 +1663,7 @@ public final class NotchViewModel: ObservableObject {
         if !shouldBindQuoteLast(adapter: nil, instrumentId: instrument) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
+            deskQuoteLast = nil
             return
         }
         guard let url = URL(string: "\(baseURL())\(deskQuoteExtractPath(instrument: instrument))") else {
@@ -1738,6 +1743,7 @@ public final class NotchViewModel: ObservableObject {
             deskQuoteCapability = "unavailable"
             deskTickSize = nil
             deskStepSize = nil
+            deskQuoteLast = nil
             return
         }
         deskTickSize = stringField(json["tick_size"])
@@ -1760,12 +1766,16 @@ public final class NotchViewModel: ObservableObject {
             deskLastStatus = status
         }
         deskQuoteCapability = deskLastStatus
+        deskQuoteLast = nil
         if let data = json["data"] as? [String: Any],
            let last = Self.parseQuoteLastRaw(data),
            last.value > 0
         {
             barLtpFetchError = nil
             applyLTP(last.value, rawLast: last.raw)
+            if SessionChartQuoteLast.isBound(status: deskLastStatus) {
+                deskQuoteLast = last.value
+            }
         }
     }
 
@@ -1859,6 +1869,7 @@ public final class NotchViewModel: ObservableObject {
             declEntryPrice = ""
             deskTickSize = nil
             deskStepSize = nil
+            deskQuoteLast = nil
         }
         if declareAssetClass == .options {
             if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
@@ -1928,7 +1939,7 @@ public final class NotchViewModel: ObservableObject {
             || status == "research_segment"
             || provenanceAdapter == "yahoo" || provenanceAdapter == "yahoo_chart"
         {
-            deskHistoryCandles = []
+            setDeskHistoryCandles([])
             return
         }
 
@@ -1953,7 +1964,7 @@ public final class NotchViewModel: ObservableObject {
             if binanceShaped && !vendorGap {
                 deskHistoryStatus = "unsupported"
                 deskHistoryIneligible = []
-                deskHistoryCandles = []
+                setDeskHistoryCandles([])
                 deskHistoryProductUse = nil
                 deskHistoryBookId = nil
                 return
@@ -1968,7 +1979,7 @@ public final class NotchViewModel: ObservableObject {
             }
             deskHistoryStatus = "unsupported"
             deskHistoryIneligible = []
-            deskHistoryCandles = []
+            setDeskHistoryCandles([])
             deskHistoryProductUse = nil
             deskHistoryBookId = nil
             return
@@ -2024,14 +2035,14 @@ public final class NotchViewModel: ObservableObject {
         if spotKlines {
             let candles = Self.parseSessionCandles(rawCandles)
             if status == "success", !candles.isEmpty {
-                deskHistoryCandles = candles
+                setDeskHistoryCandles(candles, interval: historyInterval(in: json))
                 return
             }
             if status == "success", rawCandles != nil {
                 deskHistoryStatus = "unavailable"
             }
         }
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
     }
 
     /// Native Neo cash series. Never COM klines. Empty success is a hole.
@@ -2044,7 +2055,7 @@ public final class NotchViewModel: ObservableObject {
         if status == "success", !candles.isEmpty {
             deskHistoryStatus = "success"
             deskHistoryIneligible = []
-            deskHistoryCandles = candles
+            setDeskHistoryCandles(candles, interval: historyInterval(in: json))
             return
         }
         deskHistoryStatus = status.isEmpty ? "unavailable" : status
@@ -2054,7 +2065,7 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
     }
 
     /// Declared-gap vendor series on a Kotak desk. Never Kotak last. Never COM klines.
@@ -2067,7 +2078,7 @@ public final class NotchViewModel: ObservableObject {
         if status == "success", !candles.isEmpty {
             deskHistoryStatus = "success"
             deskHistoryIneligible = []
-            deskHistoryCandles = candles
+            setDeskHistoryCandles(candles, interval: historyInterval(in: json))
             return
         }
         deskHistoryStatus = status.isEmpty ? "unavailable" : status
@@ -2077,7 +2088,7 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
     }
 
     private func applyOptionsSessionHistory(
@@ -2091,14 +2102,14 @@ public final class NotchViewModel: ObservableObject {
         {
             deskHistoryStatus = "unavailable"
             deskHistoryIneligible = []
-            deskHistoryCandles = []
+            setDeskHistoryCandles([])
             return
         }
         let candles = Self.parseSessionCandles((json["data"] as? [String: Any])?["candles"])
         if status == "success", !candles.isEmpty {
             deskHistoryStatus = "success"
             deskHistoryIneligible = []
-            deskHistoryCandles = candles
+            setDeskHistoryCandles(candles, interval: historyInterval(in: json))
             return
         }
         deskHistoryStatus = status == "unsupported" ? "unavailable" : (status.isEmpty ? "unavailable" : status)
@@ -2108,7 +2119,7 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
     }
 
     /// USDM `fapi_klines` / Coin-M `dapi_klines` only. Never spot, eapi, Yahoo, or licensed-history.
@@ -2131,7 +2142,7 @@ public final class NotchViewModel: ObservableObject {
         if mix || bookId != expectedBookId || dataSource != expectedSource {
             deskHistoryStatus = "unavailable"
             deskHistoryIneligible = []
-            deskHistoryCandles = []
+            setDeskHistoryCandles([])
             deskHistoryProductUse = nil
             deskHistoryBookId = bookId.isEmpty ? nil : bookId
             return
@@ -2140,7 +2151,7 @@ public final class NotchViewModel: ObservableObject {
         if status == "success", !candles.isEmpty {
             deskHistoryStatus = "success"
             deskHistoryIneligible = []
-            deskHistoryCandles = candles
+            setDeskHistoryCandles(candles, interval: historyInterval(in: json))
             deskHistoryProductUse = nil
             deskHistoryBookId = expectedBookId
             return
@@ -2152,7 +2163,7 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryIneligible = stringList(json["ineligible"]).filter {
             $0 != "rights_forbid_canonical"
         }
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
         deskHistoryProductUse = nil
         deskHistoryBookId = expectedBookId
     }
@@ -2178,6 +2189,28 @@ public final class NotchViewModel: ObservableObject {
                 volume: volume
             )
         }
+    }
+
+    /// Envelope `data.interval`. Empty or missing stays nil — the chart does not invent 1m.
+    private func historyInterval(in json: [String: Any]) -> String? {
+        guard let raw = (json["data"] as? [String: Any])?["interval"] as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func setDeskHistoryCandles(_ candles: [DeskSessionCandle], interval: String? = nil) {
+        deskHistoryCandles = candles
+        if candles.isEmpty {
+            deskHistoryInterval = nil
+        } else {
+            let trimmed = interval?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            deskHistoryInterval = trimmed.isEmpty ? nil : trimmed
+        }
+    }
+
+    /// Bound quote last for the Session last-line. History close never substitutes.
+    var sessionChartLast: Double? {
+        SessionChartQuoteLast.value(deskQuoteLast, status: deskLastStatus)
     }
 
     private static func stringScalar(_ raw: Any?) -> String? {
@@ -2212,9 +2245,10 @@ public final class NotchViewModel: ObservableObject {
         clearDeskIndex()
         deskHistoryStatus = "unavailable"
         deskHistoryIneligible = []
-        deskHistoryCandles = []
+        setDeskHistoryCandles([])
         deskTickSize = nil
         deskStepSize = nil
+        deskQuoteLast = nil
         if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"

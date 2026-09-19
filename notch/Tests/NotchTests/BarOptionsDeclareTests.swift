@@ -671,6 +671,7 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskHistoryCandles[0].open == "950")
         #expect(vm.deskHistoryCandles[0].close == "1000")
         #expect(vm.deskHistoryCandles[0].open != "0")
+        #expect(vm.deskHistoryInterval == "1m")
     }
 
     @Test func binanceOptionsEmptySeriesIsUnavailableNotZeroCandle() {
@@ -805,6 +806,7 @@ struct BarOptionsDeclareTests {
         #expect(vm.deskLastStatus == "unknown")
         #expect(vm.deskQuoteCapability == "unknown")
         #expect(vm.declEntryPrice == "0.001")
+        #expect(vm.sessionChartLast == 0.001)
         // `unknown` is not honesty dialect, so the strip prints the wire word, not a chip.
         #expect(HonestyStatus.fromWire(vm.deskLastStatus) == nil)
     }
