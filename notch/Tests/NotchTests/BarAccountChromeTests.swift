@@ -251,6 +251,7 @@ struct BarAccountChromeTests {
         )
         #expect(vm.barSurfacePhase != .livePlan)
         #expect(!vm.barDebriefPending)
+        #expect(!vm.hasOpenPositions)
     }
 
     @Test func usdmPositionbookOpenIsLivePlanAndCloseArmsDebrief() {
@@ -273,6 +274,7 @@ struct BarAccountChromeTests {
         #expect(vm.accountChrome.positionsRows.first?.qty == "2")
         #expect(vm.barSurfacePhase == .livePlan)
         #expect(!vm.barDebriefPending)
+        #expect(vm.hasOpenPositions)
 
         vm.applyAccountObtainEnvelopes(
             funds: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1.04),
@@ -288,6 +290,28 @@ struct BarAccountChromeTests {
         #expect(vm.accountChrome.positionsCount == 0)
         #expect(vm.barDebriefPending)
         #expect(vm.barSurfacePhase == .debrief)
+    }
+
+    @Test func escrowDeclaredColumnUsesPendingWhenConsoleNodesEmpty() {
+        let pending = BarPendingDeclaration(
+            id: "00000000-0000-4000-8000-000000000099",
+            status: "PENDING",
+            createdAt: nil,
+            symbol: "BTCUSDT",
+            side: "BUY",
+            quantity: 0.002,
+            declarationKind: "intraday",
+            protectiveSlConsent: false,
+            stopLoss: 64000,
+            target: 0.75,
+            planSnapshot: nil
+        )
+        let rows = BarEscrowMatchPresentation.sevenSlotRows(from: nil, pending: pending)
+        #expect(rows[1].declared == "BTCUSDT")
+        #expect(rows[2].declared == "BUY")
+        #expect(rows[5].declared != "—")
+        #expect(rows[6].declared != "—")
+        #expect(rows.allSatisfy { $0.actual == "—" })
     }
 
     private func fundsEnvelope(book: String, asset: String, free: Double) -> [String: Any] {

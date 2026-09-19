@@ -21,8 +21,14 @@ enum BarEscrowMatchPresentation {
     /// Seven fixed ledger slots for Notch mockup parity (#6); pads with placeholders when the server sends fewer nodes.
     static let ledgerSlotCount = 7
 
-    static func sevenSlotRows(from report: BarEscrowMatchReport?) -> [BarEscrowRowPresentation] {
+    static func sevenSlotRows(
+        from report: BarEscrowMatchReport?,
+        pending: BarPendingDeclaration? = nil
+    ) -> [BarEscrowRowPresentation] {
         let data = rows(from: report)
+        if data.isEmpty, let pending {
+            return sevenSlotRowsFromPending(pending)
+        }
         var out: [BarEscrowRowPresentation] = []
         for i in 0 ..< ledgerSlotCount {
             if i < data.count {
@@ -41,6 +47,33 @@ enum BarEscrowMatchPresentation {
             }
         }
         return out
+    }
+
+    /// LiveBook pending when Console escrow has no nodes — declared column only; actual stays —.
+    static func sevenSlotRowsFromPending(_ pending: BarPendingDeclaration) -> [BarEscrowRowPresentation] {
+        let qty = pending.quantity
+        let qtyText = qty == qty.rounded() ? String(Int(qty.rounded())) : String(qty)
+        let stop = pending.stopLoss.map { String($0) } ?? "—"
+        let target = pending.target.map { String($0) } ?? "—"
+        let declared = [
+            "—",
+            pending.symbol,
+            pending.side,
+            qtyText,
+            "—",
+            stop,
+            target,
+        ]
+        return (0 ..< ledgerSlotCount).map { i in
+            BarEscrowRowPresentation(
+                id: "pending.\(i)",
+                label: ledgerPlaceholderLabel(index: i),
+                declared: i < declared.count ? declared[i] : "—",
+                actual: "—",
+                tone: .amber,
+                breakReason: nil,
+            )
+        }
     }
 
     private static func ledgerPlaceholderLabel(index: Int) -> String {

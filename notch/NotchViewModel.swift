@@ -286,7 +286,14 @@ public final class NotchViewModel: ObservableObject {
     @Published var chipCatalog = NotchChipCatalogState()
 
     /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
-    var hasOpenPositions: Bool { !positions.isEmpty }
+    var hasOpenPositions: Bool {
+        if declareAssetClass == .usdm {
+            return accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId
+                && accountChrome.positionsStatus == "success"
+                && accountChrome.positionsCount > 0
+        }
+        return !positions.isEmpty
+    }
     @Published var openOrders: Int = 0
     @Published public var killSwitchActive: Bool = false
     @Published public var killSwitchCountdownSecs: Int?

@@ -4,13 +4,14 @@ import SwiftUI
 /// Layout: dual columns + center connectors, seven fixed rows, status ring (spec: 56pt).
 struct BarEscrowMatchView: View {
     let report: BarEscrowMatchReport?
+    var pending: BarPendingDeclaration? = nil
 
     @State private var expandedRowIds: Set<String> = []
 
     private let escrowRingDiameter: CGFloat = 56
 
     var body: some View {
-        let rows = BarEscrowMatchPresentation.sevenSlotRows(from: report)
+        let rows = BarEscrowMatchPresentation.sevenSlotRows(from: report, pending: pending)
         let summary = BarEscrowMatchPresentation.summaryLine(from: report)
 
         VStack(alignment: .leading, spacing: 12) {

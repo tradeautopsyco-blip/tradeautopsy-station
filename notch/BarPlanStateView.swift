@@ -101,7 +101,10 @@ struct BarPlanStateView: View {
             }
 
             if embedEscrow {
-                BarEscrowMatchView(report: payload?.escrowMatchReport)
+                BarEscrowMatchView(
+                    report: payload?.escrowMatchReport,
+                    pending: payload?.pendingDeclaration
+                )
             }
 
             if shouldShowExitTradeSection {
@@ -109,8 +112,10 @@ struct BarPlanStateView: View {
                     .padding(.top, 8)
             }
 
-            planKillSection
-                .padding(.top, 8)
+            if BarDeskTemplate.allowsVenueProtectivePlace(for: viewModel.declareAssetClass) {
+                planKillSection
+                    .padding(.top, 8)
+            }
         }
         .padding(0)
         .onReceive(NotchOneSecondClock.publisher) { date in
@@ -475,22 +480,25 @@ struct BarPlanStateView: View {
     }
 
     private var livePlanFooterBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                showExitGateSheet = true
-            } label: {
-                footerPill(title: "Exit trade", danger: true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Exit trade")
+        let venueActions = BarDeskTemplate.allowsVenueProtectivePlace(for: viewModel.declareAssetClass)
+        return HStack(spacing: 8) {
+            if venueActions {
+                Button {
+                    showExitGateSheet = true
+                } label: {
+                    footerPill(title: "Exit trade", danger: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Exit trade")
 
-            Button {
-                moveSlFallbackAlert = true
-            } label: {
-                footerPill(title: "Move SL to entry")
+                Button {
+                    moveSlFallbackAlert = true
+                } label: {
+                    footerPill(title: "Move SL to entry")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Move stop loss to entry")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Move stop loss to entry")
 
             Button {
                 viewModel.holdAndWatchBarLive()

@@ -787,7 +787,7 @@ struct BarNotchShell: View {
         case .posttrade:
             BarPostTradeView(viewModel: viewModel)
         case .escrow:
-            BarEscrowMatchView(report: viewModel.barLiveState?.escrowMatchReport)
+            BarEscrowMatchView(report: viewModel.barLiveState?.escrowMatchReport, pending: viewModel.barLiveState?.pendingDeclaration)
         case .patterns:
             BarPatternsChartView()
         case .fidelity:

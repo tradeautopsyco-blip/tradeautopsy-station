@@ -31,6 +31,7 @@ pub enum LiveBookEvent {
         stop_loss: Option<f64>,
         target: Option<f64>,
         protective_sl_consent: bool,
+        plan_snapshot: Option<Value>,
     },
     /// After Console 2xx — pending id becomes the archive id (no second arm).
     ReconcileArchive {
@@ -83,6 +84,15 @@ impl LiveBookEvent {
             .and_then(|p| p.get("protective_sl_consent"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let s1 = payload.and_then(|p| p.get("s1"));
+        let plan_snapshot = s1.map(|s1| {
+            json!({
+                "setup_label": s1.get("setup_type").and_then(Value::as_str).unwrap_or(""),
+                "invalidation_line": s1.get("invalidation").and_then(Value::as_str).unwrap_or(""),
+                "calm_scale": s1.get("mood_stress").and_then(Value::as_f64),
+                "confidence_scale": s1.get("mood_impulse").and_then(Value::as_f64),
+            })
+        });
         let target = json_f64(body.get("target_price")).or_else(|| json_f64(body.get("target")));
         Self::Declare {
             local_id,
@@ -96,6 +106,7 @@ impl LiveBookEvent {
             stop_loss: json_f64(body.get("stop_loss")),
             target,
             protective_sl_consent: consent,
+            plan_snapshot,
         }
     }
 }
@@ -131,9 +142,10 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
             stop_loss,
             target,
             protective_sl_consent,
+            plan_snapshot,
         } => {
             let created = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-            let pending = json!({
+            let mut pending = json!({
                 "id": local_id,
                 "status": "PENDING",
                 "created_at": created,
@@ -145,6 +157,12 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                 "stop_loss": stop_loss,
                 "target": target,
             });
+            if let Some(ps) = plan_snapshot {
+                pending
+                    .as_object_mut()
+                    .expect("pending object")
+                    .insert("plan_snapshot".into(), ps);
+            }
             notch_map(book).insert("pending_declaration".into(), pending);
         }
         LiveBookEvent::ReconcileArchive {
@@ -288,6 +306,7 @@ mod tests {
             stop_loss: Some(1400.0),
             target: Some(1500.0),
             protective_sl_consent: true,
+            plan_snapshot: None,
         });
         let snap = book.snapshot().expect("book");
         assert_eq!(pending(&snap)["id"], "local-1");
@@ -312,6 +331,7 @@ mod tests {
             stop_loss: None,
             target: None,
             protective_sl_consent: false,
+            plan_snapshot: None,
         });
         book.apply(LiveBookEvent::ReconcileArchive {
             local_id: "local-1".into(),
@@ -334,6 +354,7 @@ mod tests {
             stop_loss: None,
             target: None,
             protective_sl_consent: false,
+            plan_snapshot: None,
         });
         book.apply(LiveBookEvent::Cancel {
             declaration_id: "d1".into(),
@@ -354,6 +375,7 @@ mod tests {
             stop_loss: None,
             target: None,
             protective_sl_consent: false,
+            plan_snapshot: None,
         });
         book.apply(LiveBookEvent::Cancel {
             declaration_id: "other".into(),
@@ -373,6 +395,7 @@ mod tests {
             stop_loss: Some(1400.0),
             target: None,
             protective_sl_consent: true,
+            plan_snapshot: None,
         });
         book.apply(LiveBookEvent::Protective {
             declaration_id: None,
@@ -393,6 +416,7 @@ mod tests {
             stop_loss: Some(1400.0),
             target: None,
             protective_sl_consent: false,
+            plan_snapshot: None,
         });
         book.apply(LiveBookEvent::Fill {
             symbol: "reliance".into(),
@@ -437,9 +461,45 @@ mod tests {
             stop_loss: None,
             target: None,
             protective_sl_consent: false,
+            plan_snapshot: None,
         });
         // No ReconcileArchive — Console 5xx. Book stays armed.
         assert_eq!(pending(&book.snapshot().unwrap())["id"], "local-1");
         assert_eq!(pending(&book.snapshot().unwrap())["status"], "PENDING");
+    }
+
+    #[test]
+    fn declare_from_body_copies_s1_into_plan_snapshot() {
+        let body = json!({
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "quantity": 0.002,
+            "stop_loss": 64000.0,
+            "target_price": 0.75,
+            "declaration_kind": "intraday",
+            "declaration_payload": {
+                "v": 1,
+                "protective_sl_consent": false,
+                "s1": {
+                    "setup_type": "breakout",
+                    "invalidation": "Last through invalidation.",
+                    "mood_stress": 2.0,
+                    "mood_impulse": 4.0
+                }
+            }
+        });
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::declare_from_body(&body, "local-usdm".into()));
+        let snap = book.snapshot().unwrap();
+        let pending = pending(&snap);
+        assert_eq!(pending["symbol"], "BTCUSDT");
+        assert_eq!(pending["stop_loss"], 64000.0);
+        assert_eq!(pending["plan_snapshot"]["setup_label"], "breakout");
+        assert_eq!(
+            pending["plan_snapshot"]["invalidation_line"],
+            "Last through invalidation."
+        );
+        assert_eq!(pending["plan_snapshot"]["calm_scale"], 2.0);
+        assert_ne!(pending["plan_snapshot"]["setup_label"], Value::Null);
     }
 }
