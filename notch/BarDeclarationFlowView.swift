@@ -182,7 +182,7 @@ struct BarDeclarationFlowView: View {
                 scalperSessionId: scalperSessionId,
                 lotsText: viewModel.declLots,
                 isOptions: viewModel.declareAssetClass == .options,
-                isUsdm: viewModel.declareAssetClass == .usdm,
+                isUsdm: viewModel.declareAssetClass.isNamedComFutures,
                 optionLegCount: viewModel.optionLegs.count,
                 maxPlannedLossText: viewModel.declMaxPlannedLossText,
             ),
@@ -513,9 +513,10 @@ struct BarDeclarationFlowView: View {
 
     private func buildJsonBody() -> Data? {
         let isOptions = viewModel.declareAssetClass == .options
-        let isUsdm = viewModel.declareAssetClass == .usdm
+        let isNamedFutures = viewModel.declareAssetClass == .usdm
+            || viewModel.declareAssetClass == .coinm
         guard viewModel.barLiveState?.blocksDeclarationSubmit != true else { return nil }
-        if !isOptions, !isUsdm {
+        if !isOptions, !isNamedFutures {
             guard viewModel.declProtectiveSLConsent else { return nil }
         }
         guard (1 ... 5).contains(viewModel.declEmotionalCalm),
@@ -532,7 +533,7 @@ struct BarDeclarationFlowView: View {
             guard !viewModel.optionLegs.isEmpty else { return nil }
             qty = Double(viewModel.optionLegs[0].lots)
         } else if let parsedQty = Double(quantityText.trimmingCharacters(in: .whitespaces)), parsedQty > 0 {
-            qty = parsedQty
+            qty = VenueLotTick.round(parsedQty, stepSize: viewModel.deskStepSize)
         } else {
             return nil
         }
@@ -570,7 +571,7 @@ struct BarDeclarationFlowView: View {
             moodStress: Double(calm),
             moodImpulse: Double(conf),
             invalidationNote: invTrim,
-            protectiveSlConsent: isUsdm ? false : (isOptions ? true : viewModel.declProtectiveSLConsent),
+            protectiveSlConsent: isNamedFutures ? false : (isOptions ? true : viewModel.declProtectiveSLConsent),
             entryPrice: entryOpt,
             targetPrice: targetOpt,
             scalperSessionId: wireKind == "scalper_session" ? scalperSessionId : nil,
@@ -581,6 +582,7 @@ struct BarDeclarationFlowView: View {
             optionLegs: isOptions ? viewModel.optionLegs : [],
             horizonDays: viewModel.declHorizonDays,
             maxPlannedLossINR: maxLoss,
+            bookId: viewModel.declareBookId,
         )
         return try? JSONSerialization.data(withJSONObject: obj, options: [])
     }

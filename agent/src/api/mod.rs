@@ -118,6 +118,8 @@ pub struct AppState {
     pub options_option_symbols: Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
     /// USDM `GET /fapi/v1/exchangeInfo` filters. Third identity — never spot `instrument_master`.
     pub usdm_exchange_info: Arc<Mutex<crate::data::UsdmExchangeInfoCache>>,
+    /// Coin-M `GET /dapi/v1/exchangeInfo` filters. Fourth identity — never USDM, never spot.
+    pub coinm_exchange_info: Arc<Mutex<crate::data::CoinmExchangeInfoCache>>,
     /// Planted OI rows for CI. Live fetch fills this path when `eapi_public_fetch`.
     pub options_oi_rows: Arc<Mutex<Vec<crate::data::OptionsOiRow>>>,
     /// NFO open interest, keyed `nse_fo|{token}`, read off the same

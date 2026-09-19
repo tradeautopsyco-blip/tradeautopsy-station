@@ -40,7 +40,7 @@ enum BarBrokerTicker {
         guard s.count >= 2, s.count <= 24 else { return nil }
 
         var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "&.-")
+        allowed.insert(charactersIn: "&.-_")
         guard s.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
 
         return s

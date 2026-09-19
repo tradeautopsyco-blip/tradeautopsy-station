@@ -1227,7 +1227,7 @@ async fn obtain_search_short_query_returns_empty_rows() {
 
     let unknown: Value = client
         .get(format!(
-            "http://127.0.0.1:{PORT}/api/station/obtain?book=binance-com-usdm&operation=search&q=nifty"
+            "http://127.0.0.1:{PORT}/api/station/obtain?book=binance-com-not-a-book&operation=search&q=nifty"
         ))
         .timeout(Duration::from_secs(2))
         .send()

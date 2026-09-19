@@ -754,6 +754,7 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
             "positionbook".into(),
             "forceorder".into(),
             "quotes".into(),
+            "search".into(),
         ],
         bindings: vec![
             account_binding(
@@ -771,7 +772,8 @@ pub fn binance_com_usdm_manifest() -> SourceManifest {
                 Limits::default(),
             ),
             forceorder_binding("binance_com", coverage.clone()),
-            quotes_rest_binding("binance_com", coverage, AuthMode::Public),
+            quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
+            search_binding("binance_com", coverage, AuthMode::Public),
         ],
     }
 }
@@ -789,7 +791,13 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
         manifest_id: "binance_com.coinm.v1".into(),
         adapter_id: "binance_com".into(),
         book_id: "binance-com-coinm".into(),
-        implemented: vec!["funds".into(), "positionbook".into(), "forceorder".into()],
+        implemented: vec![
+            "funds".into(),
+            "positionbook".into(),
+            "forceorder".into(),
+            "quotes".into(),
+            "search".into(),
+        ],
         bindings: vec![
             account_binding(
                 "binance_com",
@@ -805,7 +813,9 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
                 coverage.clone(),
                 Limits::default(),
             ),
-            forceorder_binding("binance_com", coverage),
+            forceorder_binding("binance_com", coverage.clone()),
+            quotes_rest_binding("binance_com", coverage.clone(), AuthMode::Public),
+            search_binding("binance_com", coverage, AuthMode::Public),
         ],
     }
 }
@@ -1562,7 +1572,7 @@ mod tests {
         assert_eq!(manifest.book_id, "binance-com-usdm");
         assert_eq!(
             manifest.implemented,
-            vec!["funds", "positionbook", "forceorder", "quotes"]
+            vec!["funds", "positionbook", "forceorder", "quotes", "search"]
         );
         assert!(manifest.implemented.iter().any(|op| op == "quotes"));
         assert!(!manifest
@@ -1636,6 +1646,9 @@ mod tests {
         assert_eq!(quotes_env.status, ObtainStatus::Unavailable);
         assert_ne!(quotes_env.status, ObtainStatus::Unsupported);
         assert!(quotes_env.data.is_none());
+        let search_env = obtain(&manifest, "search");
+        assert_eq!(search_env.status, ObtainStatus::Unavailable);
+        assert_ne!(search_env.status, ObtainStatus::Unsupported);
     }
 
     #[test]
@@ -1687,6 +1700,18 @@ mod tests {
         assert_ne!(fo.status, ObtainStatus::Unsupported);
         assert!(fo.data.is_none());
         assert!(!is_empty_success(&fo));
+        let quotes = obtain(&coinm, "quotes");
+        assert_eq!(quotes.status, ObtainStatus::Unavailable);
+        assert_ne!(quotes.status, ObtainStatus::Unsupported);
+        let search = obtain(&coinm, "search");
+        assert_eq!(search.status, ObtainStatus::Unavailable);
+        assert_ne!(search.status, ObtainStatus::Unsupported);
+        assert!(coinm.implemented.iter().any(|op| op == "quotes"));
+        assert!(coinm.implemented.iter().any(|op| op == "search"));
+        assert_ne!(
+            obtain(&usdm, "quotes").book_id,
+            obtain(&coinm, "quotes").book_id
+        );
     }
 
     #[test]

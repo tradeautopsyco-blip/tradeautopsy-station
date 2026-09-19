@@ -68,5 +68,31 @@ struct BarIntradayDeclarationPayloadTests {
         #expect(obj["quantity"] as? Double == 10)
         #expect(obj["horizon_days"] as? Int == 5)
         #expect(obj["side"] as? String == "SELL")
+        #expect(obj["book_id"] == nil)
+    }
+
+    @Test func usdmConfirmNamesTheBookAndKeepsQtyTwo() {
+        let obj = BarIntradayDeclarationPayload.buildJSONObject(
+            symbol: "CATIUSDT",
+            sideBuy: true,
+            quantity: 2,
+            stopLoss: 0.04,
+            declarationKind: "intraday",
+            moodStress: 2,
+            moodImpulse: 4,
+            invalidationNote: "Last through invalidation.",
+            protectiveSlConsent: false,
+            entryPrice: 0.05,
+            targetPrice: 0.07,
+            scalperSessionId: nil,
+            bookId: "binance-com-usdm"
+        )
+        #expect(obj["symbol"] as? String == "CATIUSDT")
+        #expect(obj["quantity"] as? Double == 2)
+        #expect(obj["quantity"] as? Double != 1)
+        #expect(obj["book_id"] as? String == "binance-com-usdm")
+        #expect(obj["book_id"] as? String != "binance-com-spot")
+        let payload = obj["declaration_payload"] as? [String: Any]
+        #expect(payload?["protective_sl_consent"] as? Bool == false)
     }
 }

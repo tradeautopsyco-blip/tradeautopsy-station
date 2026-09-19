@@ -51,20 +51,27 @@ enum BarAccountChrome {
         }
     }
 
-    /// Named USDM book on COM only. Nil for every other class/slug — Start chrome stays spot.
+    /// Named futures book on COM. Nil for every other class/slug — Start chrome stays spot.
     static func namedBookId(forAssetClass assetClass: BarDeclareAssetClass, startSlug: String?) -> String? {
-        guard assetClass == .usdm else { return nil }
         switch normalized(startSlug) {
         case "binance_com", "binance":
+            break
+        default:
+            return nil
+        }
+        switch assetClass {
+        case .usdm:
             return BarDeskTemplate.binanceComUsdmBookId
+        case .coinm:
+            return BarDeskTemplate.binanceComCoinmBookId
         default:
             return nil
         }
     }
 
-    /// Pulse/ledger book for this declare class. USDM never falls back to Start spot.
+    /// Pulse/ledger book for this declare class. USDM / Coin-M never fall back to Start spot.
     static func pulseBookId(forAssetClass assetClass: BarDeclareAssetClass, startSlug: String?) -> String? {
-        if assetClass == .usdm {
+        if assetClass == .usdm || assetClass == .coinm {
             return namedBookId(forAssetClass: assetClass, startSlug: startSlug)
         }
         return shippingBookId(forStartSlug: startSlug)
@@ -174,6 +181,14 @@ enum BarAccountChrome {
         envelope?["data"] as? [String: Any]
     }
 
+    /// USDM income slot when the funds envelope named it. Missing is none — never invent `0`.
+    static func realizedPnl(from funds: [String: Any]?) -> Double? {
+        let d = data(of: funds)
+        if let n = d?["realized_pnl"] as? Double { return n }
+        if let n = d?["realized_pnl"] as? Int { return Double(n) }
+        return nil
+    }
+
     private static func intField(_ envelope: [String: Any]?, _ key: String) -> Int? {
         let d = data(of: envelope)
         if let n = d?[key] as? Int { return n }
@@ -224,6 +239,8 @@ enum BarAccountChrome {
             kind = "Spot"
         case BarDeskTemplate.binanceComUsdmBookId:
             kind = "USDM"
+        case BarDeskTemplate.binanceComCoinmBookId:
+            kind = "Coin-M"
         default:
             kind = bookId
         }

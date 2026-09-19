@@ -87,6 +87,24 @@ impl UsdmExchangeInfoCache {
         self.get(symbol).and_then(|f| f.max_qty.clone())
     }
 
+    /// Prefix/contains search on persisted listing symbols. Empty cache → `[]`.
+    /// Never the spot `instrument_master`.
+    pub fn search_symbols(&self, q: &str, limit: usize) -> Vec<String> {
+        let q = q.trim().to_ascii_uppercase();
+        if q.len() < 2 || limit == 0 {
+            return Vec::new();
+        }
+        let mut hits: Vec<String> = self
+            .by_symbol
+            .keys()
+            .filter(|symbol| symbol.contains(&q))
+            .cloned()
+            .collect();
+        hits.sort();
+        hits.truncate(limit);
+        hits
+    }
+
     pub fn merge(&mut self, other: Self) {
         self.by_symbol.extend(other.by_symbol);
     }
@@ -187,15 +205,16 @@ pub fn step_size_for(state: &AppState, symbol: &str) -> Option<String> {
 /// HMAC off. If host_policy has not allow-listed the path yet, return without dial.
 pub async fn ensure_usdm_exchange_info(state: &AppState, symbol: &str) {
     let key = normalize_usdm_symbol(symbol);
-    if key.is_empty() {
-        return;
-    }
     {
         let cache = state
             .usdm_exchange_info
             .lock()
             .expect("usdm exchange info mutex poisoned");
-        if cache.tick_size_for(&key).is_some() && cache.step_size_for(&key).is_some() {
+        if key.is_empty() {
+            if !cache.is_empty() {
+                return;
+            }
+        } else if cache.tick_size_for(&key).is_some() && cache.step_size_for(&key).is_some() {
             return;
         }
     }
@@ -253,6 +272,9 @@ mod tests {
         assert_eq!(cache.max_qty_for("BTCUSDT").as_deref(), Some("1000"));
         assert!(cache.contains_symbol("BTCUSDT"));
         assert_eq!(cache.len(), 1);
+        assert_eq!(cache.search_symbols("btc", 10), vec!["BTCUSDT".to_string()]);
+        assert!(cache.search_symbols("nifty", 10).is_empty());
+        assert!(cache.search_symbols("b", 10).is_empty());
         let filters: &UsdmSymbolFilters = cache.get("BTCUSDT").expect("btc filters");
         assert_eq!(filters.tick_size.as_deref(), Some("0.10"));
         let _: fn(&AppState, &str) -> Option<String> = tick_size_for;

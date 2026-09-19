@@ -31,6 +31,7 @@ enum BarIntradayDeclarationPayload {
         optionLegs: [OptionLeg] = [],
         horizonDays: Int? = nil,
         maxPlannedLossINR: Double? = nil,
+        bookId: String? = nil,
     ) -> [String: Any] {
         var s1: [String: Any] = [
             "mood_stress": moodStress,
@@ -90,6 +91,9 @@ enum BarIntradayDeclarationPayload {
                     "lots": leg.lots,
                 ] as [String: Any]
             }
+        }
+        if let book = bookId?.trimmingCharacters(in: .whitespacesAndNewlines), !book.isEmpty {
+            o["book_id"] = book
         }
         return o
     }

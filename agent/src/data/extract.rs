@@ -57,6 +57,12 @@ pub struct QuoteEnvelope {
     pub book_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bind_status: Option<String>,
+    /// USDM sizer: venue `PRICE_FILTER.tickSize`. Never `pricePrecision`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tick_size: Option<String>,
+    /// USDM / Coin-M sizer: venue `LOT_SIZE.stepSize`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_size: Option<String>,
 }
 
 /// Explicit unavailable envelope when quote binding is refused. Never echoes the raw id.
@@ -96,6 +102,8 @@ pub fn refused_quote_binding(
         persist_canonical: false,
         book_id: Some(book_id.to_string()),
         bind_status: Some("refused".to_string()),
+        tick_size: None,
+        step_size: None,
     }
 }
 
@@ -196,6 +204,8 @@ pub fn extract_quote_for_book(
             persist_canonical: false,
             book_id: None,
             bind_status: None,
+            tick_size: None,
+            step_size: None,
         };
     };
 
@@ -233,6 +243,8 @@ pub fn extract_quote_for_book(
         persist_canonical: false,
         book_id: None,
         bind_status: None,
+        tick_size: None,
+        step_size: None,
     }
 }
 

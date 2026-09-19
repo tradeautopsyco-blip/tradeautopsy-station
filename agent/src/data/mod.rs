@@ -6,6 +6,8 @@ mod account_split;
 mod amfi;
 mod apply;
 mod binance_coinm_private;
+mod binance_coinm_exchange_info;
+mod binance_coinm_ticker;
 mod binance_depth;
 mod binance_klines;
 mod binance_options_chain;
@@ -77,6 +79,12 @@ pub use amfi::{obtain_amfi_nav, AMFI_ADAPTER_ID, AMFI_NAV_BOOK_ID, AMFI_NAV_HOST
 pub use apply::{apply_quote, ApplyError};
 pub use binance_coinm_private::{
     ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
+};
+pub use binance_coinm_exchange_info::{
+    coinm_step_size_for, coinm_tick_size_for, ensure_coinm_exchange_info, CoinmExchangeInfoCache,
+};
+pub use binance_coinm_ticker::{
+    await_binance_coinm_ticker, normalize_coinm_instrument, quote_tick_from_coinm_ticker_json,
 };
 pub use binance_depth::{
     await_bound_com_depth_row, ensure_binance_com_depth_stream, spawn_binance_com_depth_loop,
@@ -166,7 +174,7 @@ pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
     authorize_book_call, authorize_book_fence, authorize_host_call, authorize_inferred_call,
     infer_capability, is_kotak_cash_scrip_csv_path, is_kotak_fo_scrip_csv_path,
-    is_kotak_nse_fo_scrip_csv_path, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
+    is_kotak_nse_fo_scrip_csv_path, is_mutation, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
 pub use inherit::{capital_may_light, inherit};

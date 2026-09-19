@@ -32,6 +32,7 @@ pub enum LiveBookEvent {
         target: Option<f64>,
         protective_sl_consent: bool,
         plan_snapshot: Option<Value>,
+        book_id: Option<String>,
     },
     /// After Console 2xx — pending id becomes the archive id (no second arm).
     ReconcileArchive {
@@ -94,6 +95,7 @@ impl LiveBookEvent {
             })
         });
         let target = json_f64(body.get("target_price")).or_else(|| json_f64(body.get("target")));
+        let book_id = json_string(body.get("book_id")).filter(|id| !id.is_empty());
         Self::Declare {
             local_id,
             symbol: json_string(body.get("symbol")).unwrap_or_default(),
@@ -107,6 +109,7 @@ impl LiveBookEvent {
             target,
             protective_sl_consent: consent,
             plan_snapshot,
+            book_id,
         }
     }
 }
@@ -143,6 +146,7 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
             target,
             protective_sl_consent,
             plan_snapshot,
+            book_id,
         } => {
             let created = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
             let mut pending = json!({
@@ -157,6 +161,12 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                 "stop_loss": stop_loss,
                 "target": target,
             });
+            if let Some(book) = book_id.filter(|id| !id.is_empty()) {
+                pending
+                    .as_object_mut()
+                    .expect("pending object")
+                    .insert("book_id".into(), json!(book));
+            }
             if let Some(ps) = plan_snapshot {
                 pending
                     .as_object_mut()
@@ -307,6 +317,7 @@ mod tests {
             target: Some(1500.0),
             protective_sl_consent: true,
             plan_snapshot: None,
+            book_id: None,
         });
         let snap = book.snapshot().expect("book");
         assert_eq!(pending(&snap)["id"], "local-1");
@@ -332,6 +343,7 @@ mod tests {
             target: None,
             protective_sl_consent: false,
             plan_snapshot: None,
+            book_id: None,
         });
         book.apply(LiveBookEvent::ReconcileArchive {
             local_id: "local-1".into(),
@@ -355,6 +367,7 @@ mod tests {
             target: None,
             protective_sl_consent: false,
             plan_snapshot: None,
+            book_id: None,
         });
         book.apply(LiveBookEvent::Cancel {
             declaration_id: "d1".into(),
@@ -376,6 +389,7 @@ mod tests {
             target: None,
             protective_sl_consent: false,
             plan_snapshot: None,
+            book_id: None,
         });
         book.apply(LiveBookEvent::Cancel {
             declaration_id: "other".into(),
@@ -396,6 +410,7 @@ mod tests {
             target: None,
             protective_sl_consent: true,
             plan_snapshot: None,
+            book_id: None,
         });
         book.apply(LiveBookEvent::Protective {
             declaration_id: None,
@@ -417,6 +432,7 @@ mod tests {
             target: None,
             protective_sl_consent: false,
             plan_snapshot: None,
+            book_id: None,
         });
         book.apply(LiveBookEvent::Fill {
             symbol: "reliance".into(),
@@ -462,6 +478,7 @@ mod tests {
             target: None,
             protective_sl_consent: false,
             plan_snapshot: None,
+            book_id: None,
         });
         // No ReconcileArchive — Console 5xx. Book stays armed.
         assert_eq!(pending(&book.snapshot().unwrap())["id"], "local-1");
@@ -501,5 +518,37 @@ mod tests {
         );
         assert_eq!(pending["plan_snapshot"]["calm_scale"], 2.0);
         assert_ne!(pending["plan_snapshot"]["setup_label"], Value::Null);
+        assert!(pending.get("book_id").is_none());
+    }
+
+    #[test]
+    fn usdm_declare_from_body_names_the_usdm_book() {
+        let body = json!({
+            "symbol": "CATIUSDT",
+            "side": "BUY",
+            "quantity": 2.0,
+            "stop_loss": 0.04,
+            "book_id": "binance-com-usdm",
+            "declaration_kind": "intraday",
+            "declaration_payload": {
+                "v": 1,
+                "protective_sl_consent": false,
+                "s1": {
+                    "setup_type": "breakout",
+                    "invalidation": "Last through invalidation.",
+                    "mood_stress": 2.0,
+                    "mood_impulse": 4.0
+                }
+            }
+        });
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::declare_from_body(&body, "local-usdm-book".into()));
+        let snap = book.snapshot().unwrap();
+        let pending = pending(&snap);
+        assert_eq!(pending["symbol"], "CATIUSDT");
+        assert_eq!(pending["quantity"], 2.0);
+        assert_ne!(pending["quantity"], 1.0);
+        assert_eq!(pending["book_id"], "binance-com-usdm");
+        assert_ne!(pending["book_id"], "binance-com-spot");
     }
 }

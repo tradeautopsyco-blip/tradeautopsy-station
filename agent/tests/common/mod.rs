@@ -67,6 +67,12 @@ pub struct TestAgentOptions {
     pub plant_binance_options_quote: bool,
     /// USDM last — plant committed fapi ticker JSON into TickBook `binance-com-usdm`.
     pub plant_binance_usdm_quote: bool,
+    /// USDM listing — plant committed fapi exchangeInfo JSON.
+    pub plant_binance_usdm_exchange_info: bool,
+    /// Coin-M last — plant committed dapi ticker JSON into TickBook `binance-com-coinm`.
+    pub plant_binance_coinm_quote: bool,
+    /// Coin-M listing — plant committed dapi exchangeInfo JSON.
+    pub plant_binance_coinm_exchange_info: bool,
     /// Options chain/OI — plant committed exchangeInfo + OI JSON (no live eapi).
     pub plant_binance_options_chain: bool,
     /// Venue-published greeks — plant the committed `/eapi/v1/mark` JSON (no live eapi).
@@ -141,6 +147,9 @@ impl Default for TestAgentOptions {
             plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_usdm_quote: false,
+            plant_binance_usdm_exchange_info: false,
+            plant_binance_coinm_quote: false,
+            plant_binance_coinm_exchange_info: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
@@ -211,6 +220,9 @@ fn apply_broker_options(cfg: &mut AgentConfig, opts: &TestAgentOptions) {
     cfg.plant_binance_spot_funds = opts.plant_binance_spot_funds;
     cfg.plant_binance_options_quote = opts.plant_binance_options_quote;
     cfg.plant_binance_usdm_quote = opts.plant_binance_usdm_quote;
+    cfg.plant_binance_usdm_exchange_info = opts.plant_binance_usdm_exchange_info;
+    cfg.plant_binance_coinm_quote = opts.plant_binance_coinm_quote;
+    cfg.plant_binance_coinm_exchange_info = opts.plant_binance_coinm_exchange_info;
     cfg.plant_binance_options_chain = opts.plant_binance_options_chain;
     cfg.plant_binance_options_mark = opts.plant_binance_options_mark;
     cfg.plant_binance_options_mark_no_bid = opts.plant_binance_options_mark_no_bid;

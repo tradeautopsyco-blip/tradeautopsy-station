@@ -410,6 +410,28 @@ struct BrokerBridgeTests {
         #expect(!vm.canExecuteSelectedInstrument())
     }
 
+    @Test func selectSymbolCoinmPairStaysCoinmAndDoesNotShareUsdmBook() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.brokerSessionActive = true
+        vm.declareAssetClass = .coinm
+        let pair = InstrumentResult(
+            trading_symbol: "BTCUSD_PERP",
+            name: "BTCUSD_PERP",
+            exchange: "binance_com",
+            segment: "COINM",
+            instrument_token: 0,
+            last_price: 65000
+        )
+        vm.selectSymbol(pair)
+        #expect(vm.declareAssetClass == .coinm)
+        #expect(vm.deskSelectedInstrumentId == "BTCUSD_PERP")
+        #expect(vm.declEntryPrice.isEmpty)
+        #expect(vm.deskQuoteExtractPath(instrument: "BTCUSD_PERP").contains("book=binance-com-coinm"))
+        #expect(!vm.deskQuoteExtractPath(instrument: "BTCUSD_PERP").contains("book=binance-com-usdm"))
+        #expect(!vm.canExecuteSelectedInstrument())
+    }
+
     @Test func selectSymbolDatedContractOnUsdmDoesNotPaintOptionsLast() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"

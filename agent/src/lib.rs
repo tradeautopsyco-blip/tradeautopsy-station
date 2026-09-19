@@ -79,7 +79,7 @@ pub use data::{
     extract_contracts, extract_contracts_from_rows, extract_depth, extract_greeks, extract_history,
     extract_index, extract_licensed_history, extract_margin_estimate, extract_open_interest,
     extract_quote, extract_quote_for, extract_quote_for_book, extract_resample,
-    fixture_quote_descriptor, infer_capability, inherit, is_kotak_fo_scrip_csv_path,
+    fixture_quote_descriptor, infer_capability, inherit, is_kotak_fo_scrip_csv_path, is_mutation,
     kotak_cash_limits_jdata_body, kotak_neo_nfo_manifest, kotak_neo_quote_descriptor,
     kotak_neo_s1k_manifest, kotak_nfo_limits_jdata_body, normalize_quote_instrument, obtain,
     quote_tick_from_binance_json, quote_tick_from_kotak_json, quote_tick_from_options_ticker_json,
@@ -358,6 +358,12 @@ pub struct AgentConfig {
     pub plant_binance_options_quote: bool,
     /// USDM last CI: plant committed fapi ticker JSON into TickBook `binance-com-usdm`. No live fapi.
     pub plant_binance_usdm_quote: bool,
+    /// USDM listing CI: plant committed fapi exchangeInfo JSON. No live fapi.
+    pub plant_binance_usdm_exchange_info: bool,
+    /// Coin-M last CI: plant committed dapi ticker JSON into TickBook `binance-com-coinm`. No live dapi.
+    pub plant_binance_coinm_quote: bool,
+    /// Coin-M listing CI: plant committed dapi exchangeInfo JSON. No live dapi.
+    pub plant_binance_coinm_exchange_info: bool,
     /// Options chain/OI CI: plant committed exchangeInfo + OI JSON. No live eapi.
     pub plant_binance_options_chain: bool,
     /// Venue-published greeks CI: plant the committed `/eapi/v1/mark` JSON. No live eapi.
@@ -523,6 +529,9 @@ impl AgentConfig {
             plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_usdm_quote: false,
+            plant_binance_usdm_exchange_info: false,
+            plant_binance_coinm_quote: false,
+            plant_binance_coinm_exchange_info: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
@@ -607,6 +616,9 @@ impl AgentConfig {
             plant_binance_spot_funds: false,
             plant_binance_options_quote: false,
             plant_binance_usdm_quote: false,
+            plant_binance_usdm_exchange_info: false,
+            plant_binance_coinm_quote: false,
+            plant_binance_coinm_exchange_info: false,
             plant_binance_options_chain: false,
             plant_binance_options_mark: false,
             plant_binance_options_mark_no_bid: false,
@@ -921,6 +933,40 @@ fn plant_binance_usdm_quote(
             tracing::warn!(error = %err, "usdm fixture: quote plant refused");
         }
     }
+}
+
+fn plant_binance_usdm_exchange_info(
+    cache: &Arc<std::sync::Mutex<crate::data::UsdmExchangeInfoCache>>,
+) {
+    let json = include_str!("../fixtures/binance/usdm_exchange_info.json");
+    *cache
+        .lock()
+        .expect("usdm exchange info mutex poisoned") =
+        crate::data::UsdmExchangeInfoCache::from_exchange_info_json(json);
+}
+
+/// Headless Coin-M last: committed dapi ticker JSON into `binance-com-coinm`. No live dapi.
+fn plant_binance_coinm_quote(
+    registry: &crate::data::Registry,
+    tickbook: &Arc<Mutex<crate::data::TickBook>>,
+) {
+    let json = include_str!("../fixtures/binance/coinm_ticker.json");
+    if let Some(tick) = crate::data::quote_tick_from_coinm_ticker_json(json, Utc::now()) {
+        let mut book = tickbook.lock().expect("tickbook mutex poisoned");
+        if let Err(err) = crate::data::apply_quote(registry, &mut book, tick) {
+            tracing::warn!(error = %err, "coinm fixture: quote plant refused");
+        }
+    }
+}
+
+fn plant_binance_coinm_exchange_info(
+    cache: &Arc<std::sync::Mutex<crate::data::CoinmExchangeInfoCache>>,
+) {
+    let json = include_str!("../fixtures/binance/coinm_exchange_info.json");
+    *cache
+        .lock()
+        .expect("coinm exchange info mutex poisoned") =
+        crate::data::CoinmExchangeInfoCache::from_exchange_info_json(json);
 }
 
 fn plant_binance_options_chain(
@@ -1341,6 +1387,18 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let usdm_exchange_info = Arc::new(std::sync::Mutex::new(
         crate::data::UsdmExchangeInfoCache::empty(),
     ));
+    if config.plant_binance_usdm_exchange_info {
+        plant_binance_usdm_exchange_info(&usdm_exchange_info);
+    }
+    let coinm_exchange_info = Arc::new(std::sync::Mutex::new(
+        crate::data::CoinmExchangeInfoCache::empty(),
+    ));
+    if config.plant_binance_coinm_exchange_info {
+        plant_binance_coinm_exchange_info(&coinm_exchange_info);
+    }
+    if config.plant_binance_coinm_quote {
+        plant_binance_coinm_quote(quote_registry.as_ref(), &tickbook);
+    }
     let options_oi_rows = Arc::new(std::sync::Mutex::new(Vec::new()));
     if config.plant_binance_options_chain {
         plant_binance_options_chain(&options_option_symbols, &options_oi_rows);
@@ -1444,6 +1502,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         kotak_nfo_scrip_master,
         options_option_symbols,
         usdm_exchange_info,
+        coinm_exchange_info,
         options_oi_rows,
         nfo_open_interest,
         nfo_oi_session,

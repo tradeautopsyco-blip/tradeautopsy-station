@@ -28,6 +28,57 @@ struct BarDeskInstrumentsTests {
         #expect(BarDeskTemplate.canSubmitBarDeclaration(for: .equity))
     }
 
+    @Test func coinmClassIsLastOnlyAndNamesItsOwnBook() {
+        #expect(BarDeclareAssetClass.coinm.label == "Coin-M")
+        #expect(BarDeclareAssetClass.coinm.isNamedComFutures)
+        #expect(BarDeskTemplate.glanceKinds(for: .coinm) == [.last])
+        #expect(!BarDeskTemplate.glanceKinds(for: .coinm).contains(.history))
+        #expect(BarDeskTemplate.binanceComCoinmBookId == "binance-com-coinm")
+        #expect(BarDeskTemplate.binanceComCoinmBookId != BarDeskTemplate.binanceComUsdmBookId)
+        #expect(BarDeskTemplate.showsConfirmControl(for: .coinm))
+        #expect(!BarDeskTemplate.allowsVenueProtectivePlace(for: .coinm))
+        let plan = DeskExtractPlan.resolve(
+            slug: "binance_com",
+            assetClass: .coinm,
+            instrumentId: "BTCUSD_PERP"
+        )
+        #expect(!plan.fetchesGlance)
+        #expect(!plan.usesOptionsHistoryObtain)
+        let bind = DeskInstrumentBind.resolve(
+            rawId: "BTCUSD_PERP", slug: "binance_com", currentClass: .coinm
+        )
+        #expect(bind.assetClass == .coinm)
+        #expect(bind.bookId == BarDeskTemplate.binanceComCoinmBookId)
+        #expect(bind.tickBookId == "BTCUSD_PERP")
+        let usdmSameLetters = DeskInstrumentBind.resolve(
+            rawId: "BTCUSDT", slug: "binance_com", currentClass: .usdm
+        )
+        #expect(usdmSameLetters.bookId != bind.bookId)
+    }
+
+    @Test func catiusdtOnUsdmNamesTheUsdmBookNotSpot() {
+        let bind = DeskInstrumentBind.resolve(
+            rawId: "CATIUSDT", slug: "binance_com", currentClass: .usdm
+        )
+        #expect(bind.assetClass == .usdm)
+        #expect(bind.bookId == BarDeskTemplate.binanceComUsdmBookId)
+        #expect(bind.bookId != BarDeskTemplate.binanceComSpotBookId)
+        #expect(bind.tickBookId == "CATIUSDT")
+        let leftoverOnOptions = DeskInstrumentBind.resolve(
+            rawId: "CATIUSDT", slug: "binance_com", currentClass: .options
+        )
+        #expect(leftoverOnOptions.assetClass == .spot)
+        #expect(leftoverOnOptions.bookId == nil)
+    }
+
+    @Test func venueLotTickDoesNotCollapseQtyTwoAndIgnoresPricePrecision() {
+        #expect(VenueLotTick.round(2, stepSize: "0.001") == 2)
+        #expect(VenueLotTick.round(2, stepSize: "0.001") != 1)
+        #expect(VenueLotTick.round(1.5, stepSize: "1") == 1)
+        #expect(VenueLotTick.format(64111, stepSize: "0.10") == "64111.00")
+        #expect(VenueLotTick.round(2, stepSize: "0.001") != VenueLotTick.round(2, stepSize: "8"))
+    }
+
     @Test func usdmExtractPlanIssuesNoGlanceOrSpotDepth() {
         let plan = DeskExtractPlan.resolve(
             slug: "binance_com",
@@ -648,7 +699,7 @@ struct BarDeskInstrumentsTests {
         )
         #expect(usdmPair.shape == .binanceSpot)
         #expect(usdmPair.assetClass == .usdm)
-        #expect(usdmPair.bookId == nil)
+        #expect(usdmPair.bookId == BarDeskTemplate.binanceComUsdmBookId)
 
         let contract = DeskInstrumentBind.resolve(
             rawId: "BTC-200730-9000-C", slug: "binance_com", currentClass: .spot
@@ -709,8 +760,15 @@ struct BarDeskInstrumentsTests {
                 let bind = DeskInstrumentBind.resolve(
                     rawId: raw, slug: "binance_com", currentClass: klass
                 )
-                #expect(bind.bookId == nil)
                 #expect(bind.bookId != BarDeskTemplate.kotakNfoBookId)
+                switch klass {
+                case .usdm:
+                    #expect(bind.bookId == BarDeskTemplate.binanceComUsdmBookId)
+                case .coinm:
+                    #expect(bind.bookId == BarDeskTemplate.binanceComCoinmBookId)
+                default:
+                    #expect(bind.bookId == nil)
+                }
             }
         }
     }

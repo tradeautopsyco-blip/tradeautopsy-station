@@ -1,0 +1,28 @@
+{
+  "timezone": "UTC",
+  "serverTime": 1756480000000,
+  "symbols": [
+    {
+      "symbol": "BTCUSD_PERP",
+      "pair": "BTCUSD",
+      "contractType": "PERPETUAL",
+      "status": "TRADING",
+      "pricePrecision": 8,
+      "quantityPrecision": 0,
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "0.10",
+          "maxPrice": "1000000",
+          "tickSize": "0.10"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "1",
+          "maxQty": "1000000",
+          "stepSize": "1"
+        }
+      ]
+    }
+  ]
+}

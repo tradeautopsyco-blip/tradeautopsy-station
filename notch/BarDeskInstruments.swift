@@ -6,6 +6,7 @@ enum BarDeclareAssetClass: String, CaseIterable, Identifiable {
     case equity
     case options
     case usdm
+    case coinm
 
     var id: String { rawValue }
 
@@ -15,7 +16,13 @@ enum BarDeclareAssetClass: String, CaseIterable, Identifiable {
         case .equity: return "Equity"
         case .options: return "Options"
         case .usdm: return "USDM"
+        case .coinm: return "Coin-M"
         }
+    }
+
+    /// Named COM futures books (`binance-com-usdm` / `binance-com-coinm`). Not spot, not Options.
+    var isNamedComFutures: Bool {
+        self == .usdm || self == .coinm
     }
 }
 
@@ -268,7 +275,7 @@ enum BarDeskTemplate {
             return [.last, .history, .depth]
         case .options:
             return [.last, .history, .chain, .openInterest, .depth]
-        case .usdm:
+        case .usdm, .coinm:
             return [.last]
         }
     }
@@ -276,7 +283,7 @@ enum BarDeskTemplate {
     /// LiveBook declare (Station intent). Venue `POST /fapi/v1/order` stays off — see `allowsVenueProtectivePlace`.
     static func showsConfirmControl(for assetClass: BarDeclareAssetClass) -> Bool {
         switch assetClass {
-        case .spot, .equity, .options, .usdm:
+        case .spot, .equity, .options, .usdm, .coinm:
             return true
         }
     }
@@ -285,9 +292,9 @@ enum BarDeskTemplate {
         showsConfirmControl(for: assetClass)
     }
 
-    /// Auto-place SL / fapi TRADE. USDM records the plan only.
+    /// Auto-place SL / venue TRADE. USDM and Coin-M record the plan only.
     static func allowsVenueProtectivePlace(for assetClass: BarDeclareAssetClass) -> Bool {
-        assetClass != .usdm
+        assetClass != .usdm && assetClass != .coinm
     }
 
     static func historyDetail(status: String, ineligible: [String]) -> String {
@@ -354,6 +361,8 @@ enum BarDeskTemplate {
     static let binanceComSpotBookId = "binance-com-spot"
     /// Named USDT-M book on slug `binance_com`. Not Start. Not spot WAC.
     static let binanceComUsdmBookId = "binance-com-usdm"
+    /// Named Coin-M book on slug `binance_com`. Not Start. Not USDM.
+    static let binanceComCoinmBookId = "binance-com-coinm"
 
     /// Desk copy under the ladder. Never claims `synced` / `ordered_state`.
     static func depthPhysicsNote(bookId: String?, physics: String) -> String {
@@ -460,8 +469,8 @@ struct DeskExtractPlan: Equatable {
     var defersComSpotDepth: Bool
 
     static func resolve(slug: String?, assetClass: BarDeclareAssetClass, instrumentId: String = "") -> DeskExtractPlan {
-        if assetClass == .usdm {
-            // Last is the quote path (`book=binance-com-usdm`). Depth/chain/OI unnamed this slice.
+        if assetClass == .usdm || assetClass == .coinm {
+            // Last is the quote path (`book=`). Depth/chain/OI unnamed this slice.
             return DeskExtractPlan(
                 fetchesGlance: false,
                 usesKotakHistoryObtain: false,
@@ -622,17 +631,20 @@ struct DeskInstrumentBind: Equatable {
         slug: String?,
         currentClass: BarDeclareAssetClass
     ) -> DeskInstrumentBind {
-        // USDM stays on the tab: a pair must not snap to spot (Options does). Quote
-        // `book=` is the discriminator, so bind.bookId stays nil for this class.
+        // USDM / Coin-M stay on the tab: a pair must not snap to spot (Options does).
         let assetClass: BarDeclareAssetClass
         if currentClass == .usdm {
             assetClass = .usdm
+        } else if currentClass == .coinm {
+            assetClass = .coinm
         } else {
             assetClass = shape.impliedAssetClass ?? currentClass
         }
         let bookId: String?
         if currentClass == .usdm {
-            bookId = nil
+            bookId = BarDeskTemplate.binanceComUsdmBookId
+        } else if currentClass == .coinm {
+            bookId = BarDeskTemplate.binanceComCoinmBookId
         } else {
             bookId = BarDeskTemplate.marketBook(for: tickBookId)
                 ?? BarDeskTemplate.deskBookId(slug: slug, assetClass: assetClass)
@@ -699,5 +711,41 @@ enum DeskChainExtractQuery {
             return trimmed
         }
         return ticker(preferred) ?? ticker(declarationSymbol) ?? ""
+    }
+}
+
+/// Venue `PRICE_FILTER.tickSize` / `LOT_SIZE.stepSize` rounding. Never `pricePrecision`.
+/// Qty `2` with step `0.001` stays `2` — it must not collapse to `1`.
+enum VenueLotTick {
+    static func round(_ value: Double, stepSize: String?) -> Double {
+        guard let step = decimal(stepSize), step > 0 else { return value }
+        let v = Decimal(value)
+        let quotient = NSDecimalNumber(decimal: v / step).doubleValue
+        guard quotient.isFinite else { return value }
+        let floored = Decimal(sign: quotient < 0 ? .minus : .plus, exponent: 0, significand: Decimal(Int64(quotient.rounded(.towardZero))))
+        return NSDecimalNumber(decimal: floored * step).doubleValue
+    }
+
+    static func format(_ value: Double, stepSize: String?, rawLast: String? = nil) -> String {
+        guard decimal(stepSize) != nil else {
+            let trimmed = (rawLast ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return String(format: "%.2f", value) }
+            return String(format: "%.2f", value)
+        }
+        let rounded = round(value, stepSize: stepSize)
+        let places = fractionDigits(stepSize)
+        return String(format: "%.\(places)f", rounded)
+    }
+
+    private static func decimal(_ raw: String?) -> Decimal? {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "0" else { return nil }
+        return Decimal(string: trimmed)
+    }
+
+    private static func fractionDigits(_ raw: String?) -> Int {
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let dot = trimmed.firstIndex(of: ".") else { return 0 }
+        return trimmed[trimmed.index(after: dot)...].count
     }
 }

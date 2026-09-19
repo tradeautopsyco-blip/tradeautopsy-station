@@ -88,6 +88,8 @@ pub fn is_mutation(method: &str, path: &str) -> bool {
         || lower.contains("modifyorder")
         || lower.contains("cancelorder")
         || lower.contains("closeposition")
+        || lower.contains("/leverage")
+        || lower.contains("margintype")
     {
         return true;
     }
@@ -101,7 +103,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("quote", "GET", AuthMode::Public)
             if path == "/api/v3/ticker/price"
                 || normalize_request_path(path) == "/eapi/v1/ticker"
-                || normalize_request_path(path) == "/fapi/v1/ticker/price" =>
+                || normalize_request_path(path) == "/fapi/v1/ticker/price"
+                || normalize_request_path(path) == "/dapi/v1/ticker/price" =>
         {
             true
         }
@@ -126,6 +129,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             if path == "/api/v3/exchangeInfo"
                 || normalize_request_path(path) == "/eapi/v1/exchangeInfo"
                 || normalize_request_path(path) == "/fapi/v1/exchangeInfo"
+                || normalize_request_path(path) == "/dapi/v1/exchangeInfo"
                 || is_kotak_cash_scrip_csv_path(path)
                 || is_kotak_fo_scrip_csv_path(path) =>
         {
@@ -211,7 +215,13 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p) == "/fapi/v1/ticker/price" => {
             Ok(("quote", AuthMode::Public))
         }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/ticker/price" => {
+            Ok(("quote", AuthMode::Public))
+        }
         ("GET", p) if normalize_request_path(p) == "/fapi/v1/exchangeInfo" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/dapi/v1/exchangeInfo" => {
             Ok(("instrument_master", AuthMode::Public))
         }
         ("GET", p) if normalize_request_path(p) == "/fapi/v1/income" => {
@@ -732,6 +742,21 @@ mod tests {
             HostRefuse::MutationForbidden
         );
         assert!(is_mutation("POST", "/fapi/v1/order"));
+        assert!(is_mutation("POST", "/fapi/v1/leverage"));
+        assert!(is_mutation("POST", "/fapi/v1/marginType"));
+        assert!(is_mutation("POST", "/fapi/v1/algoOrder"));
+        assert_eq!(
+            infer_capability("POST", "/fapi/v1/leverage").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            infer_capability("POST", "/fapi/v1/marginType").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            infer_capability("POST", "/fapi/v1/algoOrder").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
         assert_eq!(
             authorize_book_call(
                 "binance-com-usdm",
@@ -763,6 +788,110 @@ mod tests {
                 authorize_book_call("binance-com-usdm", host, "GET", path, true).unwrap_err(),
                 HostRefuse::HostNotAllowed,
                 "USDM fence must not dial {host}{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn coinm_book_allows_public_ticker_and_refuses_trade_and_fapi() {
+        // Lock: binance-com-coinm.md — public last + listing; TRADE place refused.
+        for path in [
+            "/dapi/v1/balance",
+            "/dapi/v1/positionRisk",
+            "/dapi/v1/forceOrders",
+        ] {
+            authorize_book_call("binance-com-coinm", "dapi.binance.com", "GET", path, true)
+                .unwrap_or_else(|_| panic!("Coin-M USER_DATA GET {path} must be allowlisted"));
+        }
+        assert_eq!(
+            infer_capability("GET", "/dapi/v1/ticker/price").unwrap(),
+            ("quote", AuthMode::Public)
+        );
+        assert_eq!(
+            infer_capability("GET", "/dapi/v1/ticker/price?symbol=BTCUSD_PERP").unwrap(),
+            ("quote", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-coinm",
+            "dapi.binance.com",
+            "GET",
+            "/dapi/v1/ticker/price",
+            false,
+        )
+        .expect("Coin-M public ticker GET must be allowlisted without HMAC");
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "dapi.binance.com",
+                "GET",
+                "/dapi/v1/ticker/price",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::PrivateCredentialOnPublicCall
+        );
+        assert_eq!(
+            infer_capability("GET", "/dapi/v1/exchangeInfo").unwrap(),
+            ("instrument_master", AuthMode::Public)
+        );
+        authorize_book_call(
+            "binance-com-coinm",
+            "dapi.binance.com",
+            "GET",
+            "/dapi/v1/exchangeInfo",
+            false,
+        )
+        .expect("Coin-M public exchangeInfo GET must be allowlisted without HMAC");
+        assert_eq!(
+            infer_capability("POST", "/dapi/v1/order").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            infer_capability("POST", "/dapi/v1/algoOrder").unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "dapi.binance.com",
+                "POST",
+                "/dapi/v1/order",
+                true,
+            )
+            .unwrap_err(),
+            HostRefuse::MutationForbidden
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "fapi.binance.com",
+                "GET",
+                "/dapi/v1/ticker/price",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        assert_eq!(
+            authorize_book_call(
+                "binance-com-coinm",
+                "fapi.binance.com",
+                "GET",
+                "/fapi/v1/ticker/price",
+                false,
+            )
+            .unwrap_err(),
+            HostRefuse::HostNotAllowed
+        );
+        for (host, path) in [
+            ("api.binance.com", "/api/v3/ticker/price"),
+            ("eapi.binance.com", "/eapi/v1/ticker"),
+            ("fapi.binance.com", "/fapi/v1/ticker/price"),
+        ] {
+            assert_eq!(
+                authorize_book_call("binance-com-coinm", host, "GET", path, false).unwrap_err(),
+                HostRefuse::HostNotAllowed,
+                "Coin-M fence must not dial {host}{path}"
             );
         }
     }

@@ -4,8 +4,9 @@
 
 use crate::api::AppState;
 use crate::data::{
-    extract_quote, extract_quote_for, normalize_quote_instrument, BINANCE_COM_OPTIONS_BOOK_ID,
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    extract_quote, extract_quote_for, extract_quote_for_book, normalize_quote_instrument,
+    BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID,
 };
 use chrono::Utc;
@@ -32,6 +33,8 @@ pub fn search_rows_for_book(state: &AppState, book_id: &str, q: &str) -> Vec<Val
         id if id == KOTAK_NSE_BSE_CASH_BOOK_ID => kotak_cash_rows(state, q),
         id if id == KOTAK_NSE_NFO_BOOK_ID => kotak_nfo_rows(state, q),
         id if id == BINANCE_COM_OPTIONS_BOOK_ID => binance_options_rows(state, q),
+        id if id == BINANCE_COM_USDM_BOOK_ID => binance_usdm_rows(state, q),
+        id if id == BINANCE_COM_COINM_BOOK_ID => binance_coinm_rows(state, q),
         _ => Vec::new(),
     }
 }
@@ -174,6 +177,65 @@ fn binance_options_rows(state: &AppState, q: &str) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+fn binance_usdm_rows(state: &AppState, q: &str) -> Vec<Value> {
+    let hits = state
+        .usdm_exchange_info
+        .lock()
+        .expect("usdm exchange info mutex poisoned")
+        .search_symbols(q, SEARCH_LIMIT);
+    hits.into_iter()
+        .map(|symbol| {
+            let last_price = last_price_for_book(state, &symbol, BINANCE_COM_USDM_BOOK_ID);
+            json!({
+                "trading_symbol": symbol,
+                "name": symbol,
+                "exchange": "binance_com",
+                "segment": "USDM",
+                "instrument_token": 0,
+                "last_price": last_price,
+            })
+        })
+        .collect()
+}
+
+fn binance_coinm_rows(state: &AppState, q: &str) -> Vec<Value> {
+    let hits = state
+        .coinm_exchange_info
+        .lock()
+        .expect("coinm exchange info mutex poisoned")
+        .search_symbols(q, SEARCH_LIMIT);
+    hits.into_iter()
+        .map(|symbol| {
+            let last_price = last_price_for_book(state, &symbol, BINANCE_COM_COINM_BOOK_ID);
+            json!({
+                "trading_symbol": symbol,
+                "name": symbol,
+                "exchange": "binance_com",
+                "segment": "COINM",
+                "instrument_token": 0,
+                "last_price": last_price,
+            })
+        })
+        .collect()
+}
+
+fn last_price_for_book(state: &AppState, instrument_id: &str, book_id: &str) -> f64 {
+    let book = state.tickbook.lock().expect("tickbook mutex poisoned");
+    let env = extract_quote_for_book(
+        state.quote_registry.as_ref(),
+        &book,
+        instrument_id,
+        Utc::now(),
+        state.quote_freshness,
+        Some("binance_com"),
+        Some(book_id),
+    );
+    env.data
+        .and_then(|d| d.last.parse::<f64>().ok())
+        .filter(|p| *p > 0.0)
+        .unwrap_or(0.0)
 }
 
 fn last_price_for(

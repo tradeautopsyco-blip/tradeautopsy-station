@@ -29,6 +29,10 @@ mod tests {
         assert_ne!(OWNER_PATH, "agent/src/round_trip_engine.rs");
         assert_ne!(OWNER_PATH, crate::usdm_realized_pnl::OWNER_PATH);
         assert!(realized_pnl(&[]).is_none());
+        let rte = include_str!("round_trip_engine.rs");
+        assert!(!rte.contains("binance-com-coinm"));
+        assert!(!rte.contains("coinm_realized"));
+        assert!(!rte.contains("/dapi/v1/income"));
     }
 
     #[test]

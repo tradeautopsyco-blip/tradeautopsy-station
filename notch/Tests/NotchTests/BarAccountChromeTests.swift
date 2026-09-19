@@ -17,10 +17,19 @@ struct BarAccountChromeTests {
             BarAccountChrome.namedBookId(forAssetClass: .usdm, startSlug: "binance_com")
                 == "binance-com-usdm"
         )
+        #expect(
+            BarAccountChrome.namedBookId(forAssetClass: .coinm, startSlug: "binance_com")
+                == "binance-com-coinm"
+        )
         #expect(BarAccountChrome.namedBookId(forAssetClass: .usdm, startSlug: "kotak_neo") == nil)
+        #expect(BarAccountChrome.namedBookId(forAssetClass: .coinm, startSlug: "kotak_neo") == nil)
         #expect(
             BarAccountChrome.pulseBookId(forAssetClass: .usdm, startSlug: "binance_com")
                 == "binance-com-usdm"
+        )
+        #expect(
+            BarAccountChrome.pulseBookId(forAssetClass: .coinm, startSlug: "binance_com")
+                == "binance-com-coinm"
         )
         #expect(
             BarAccountChrome.pulseBookId(forAssetClass: .spot, startSlug: "binance_com")
@@ -163,6 +172,50 @@ struct BarAccountChromeTests {
         #expect(vm.accountChrome.positionsCount == 0)
         #expect(vm.accountChrome.fundsStatus == "success")
         #expect(vm.accountChrome.fundsStatus != "synced")
+    }
+
+    @Test func usdmSessionMoneyUsesIncomeNotDaemonHero() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.sessionPnL = 99
+        vm.declareAssetClass = .usdm
+        #expect(vm.sessionPnL == 0)
+        vm.applyPulseHero(["pnlTodayUsd": 123.0, "winRate": 0.5, "tradesToday": 3], degraded: false)
+        #expect(vm.sessionPnL == 0)
+        #expect(vm.sessionPnL != 123)
+        var funds = fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 23.72)
+        var data = funds["data"] as? [String: Any] ?? [:]
+        data["realized_pnl"] = 7.25
+        funds["data"] = data
+        vm.applyAccountObtainEnvelopes(
+            funds: funds,
+            holdings: nil,
+            positions: listEnvelope(
+                book: "binance-com-usdm",
+                status: "success",
+                countKey: "position_count",
+                rows: []
+            ),
+            orders: nil
+        )
+        #expect(vm.sessionPnL == 7.25)
+        #expect(BarAccountChrome.realizedPnl(from: fundsEnvelope(book: "binance-com-usdm", asset: "USDT", free: 1)) == nil)
+        var spotFunds = fundsEnvelope(book: "binance-com-spot", asset: "USDT", free: 9)
+        var spotData = spotFunds["data"] as? [String: Any] ?? [:]
+        spotData["realized_pnl"] = 99.0
+        spotFunds["data"] = spotData
+        vm.applyAccountObtainEnvelopes(
+            funds: spotFunds,
+            holdings: nil,
+            positions: nil,
+            orders: nil
+        )
+        #expect(vm.sessionPnL == 7.25)
+        #expect(vm.sessionPnL != 99)
+        vm.declareAssetClass = .spot
+        vm.applyPulseHero(["pnlTodayUsd": 11.0], degraded: false)
+        #expect(vm.sessionPnL == 11)
     }
 
     @Test func spotPulseStillDropsUsdmWhenClassIsSpot() {

@@ -774,6 +774,156 @@ struct BarOptionsDeclareTests {
         #expect(vm.showsConfirmControl)
     }
 
+    @Test func usdmSearchPathIsObtainBookNotSlugInstrumentsSearch() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        let path = vm.deskSearchExtractPath(query: "CATIUSDT")
+        #expect(path.contains("/api/station/obtain"))
+        #expect(path.contains("book=binance-com-usdm"))
+        #expect(path.contains("operation=search"))
+        #expect(path.contains("q=CATIUSDT"))
+        #expect(!path.contains("/instruments/search"))
+        vm.applyObtainSearchEnvelope(
+            [
+                "status": "success",
+                "book_id": "binance-com-spot",
+                "data": [
+                    "rows": [[
+                        "trading_symbol": "CATIUSDT",
+                        "name": "CATI",
+                        "exchange": "binance_com",
+                        "segment": "SPOT",
+                        "instrument_token": 0,
+                        "last_price": 0.05,
+                    ]],
+                ],
+            ],
+            expectedBook: "binance-com-usdm"
+        )
+        #expect(vm.symbolSuggestions.isEmpty)
+
+        vm.applyObtainSearchEnvelope(
+            [
+                "status": "success",
+                "book_id": "binance-com-usdm",
+                "data": [
+                    "rows": [[
+                        "trading_symbol": "CATIUSDT",
+                        "name": "CATIUSDT",
+                        "exchange": "binance_com",
+                        "segment": "USDM",
+                        "instrument_token": 0,
+                        "last_price": 0.05,
+                    ]],
+                ],
+            ],
+            expectedBook: "binance-com-usdm"
+        )
+        #expect(vm.symbolSuggestions.map(\.trading_symbol) == ["CATIUSDT"])
+        #expect(vm.symbolSuggestions.first?.segment != "SPOT")
+
+        vm.declareAssetClass = .spot
+        #expect(vm.deskSearchExtractPath(query: "CATIUSDT").contains("/instruments/search"))
+        #expect(!vm.deskSearchExtractPath(query: "CATIUSDT").contains("book=binance-com-usdm"))
+    }
+
+    @Test func leftoverCatiusdtOnOptionsDoesNotBindUsdmLast() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .options
+        vm.deskSelectedInstrumentId = "BTC-250926-90000-C"
+        #expect(!vm.shouldBindQuoteLast(adapter: "binance_com", instrumentId: "CATIUSDT"))
+        #expect(!vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "CATIUSDT",
+            bookId: "binance-com-usdm"
+        ))
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "CATIUSDT",
+            "book_id": "binance-com-usdm",
+            "data": ["last": "0.05"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "unavailable")
+        vm.barDeclarationSymbol = "CATIUSDT"
+        vm.commitDeskSymbol()
+        #expect(vm.deskSelectedInstrumentId == "BTC-250926-90000-C")
+        #expect(!BarDeskTemplate.isBinanceOptionsSelection(
+            assetClass: .options, instrumentId: "CATIUSDT"
+        ))
+    }
+
+    @Test func commitCatiusdtOnUsdmBindsTheNamedBook() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        vm.barDeclarationSymbol = "CATIUSDT"
+        vm.commitDeskSymbol()
+        #expect(vm.deskSelectedInstrumentId == "CATIUSDT")
+        #expect(vm.declareBookId == "binance-com-usdm")
+        #expect(vm.selectedMarketBookId == "binance-com-usdm")
+        #expect(vm.deskQuoteExtractPath(instrument: "CATIUSDT").contains("book=binance-com-usdm"))
+        #expect(!vm.canExecuteSelectedInstrument())
+        #expect(BarDeskTemplate.allowsVenueProtectivePlace(for: .usdm) == false)
+    }
+
+    @Test func usdmQuoteEnvelopeHonorsTickAndStepNotPricePrecision() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        vm.deskSelectedInstrumentId = "CATIUSDT"
+        vm.declEntryPrice = ""
+        vm.applyStationQuoteEnvelope([
+            "status": "fresh",
+            "instrument_id": "CATIUSDT",
+            "book_id": "binance-com-usdm",
+            "tick_size": "0.0001",
+            "step_size": "1",
+            "data": ["last": "0.0512"],
+            "provenance": ["adapter_id": "binance_com"],
+        ])
+        #expect(vm.deskLastStatus == "fresh")
+        #expect(vm.deskTickSize == "0.0001")
+        #expect(vm.deskStepSize == "1")
+        #expect(vm.deskTickSize != "8")
+        #expect(VenueLotTick.round(2, stepSize: vm.deskStepSize) == 2)
+        #expect(VenueLotTick.round(2, stepSize: vm.deskStepSize) != 1)
+    }
+
+    @Test func coinmQuotePathNamesCoinmBookAndDoesNotShareUsdmTickBook() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeBrokerSlug = "binance_com"
+        vm.declareAssetClass = .coinm
+        let path = vm.deskQuoteExtractPath(instrument: "BTCUSD_PERP")
+        #expect(path.contains("instrument=BTCUSD_PERP"))
+        #expect(path.contains("book=binance-com-coinm"))
+        #expect(!path.contains("book=binance-com-usdm"))
+        #expect(vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "BTCUSD_PERP",
+            bookId: "binance-com-coinm"
+        ))
+        #expect(!vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "BTCUSD_PERP",
+            bookId: "binance-com-usdm"
+        ))
+        #expect(!vm.shouldBindQuoteLast(
+            adapter: "binance_com",
+            instrumentId: "BTCUSDT",
+            bookId: "binance-com-usdm"
+        ))
+        #expect(vm.deskSearchExtractPath(query: "BTCUSD").contains("book=binance-com-coinm"))
+        #expect(!vm.canExecuteSelectedInstrument())
+        #expect(!BarDeskTemplate.allowsVenueProtectivePlace(for: .coinm))
+        vm.barDeclarationSymbol = "BTCUSD_PERP"
+        vm.commitDeskSymbol()
+        #expect(vm.deskSelectedInstrumentId == "BTCUSD_PERP")
+        #expect(vm.declareBookId == "binance-com-coinm")
+    }
+
     @Test func usdmDoesNotBindLeftoverSpotTickBookLast() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.activeBrokerSlug = "binance_com"

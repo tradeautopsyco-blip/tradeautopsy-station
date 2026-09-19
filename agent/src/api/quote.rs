@@ -4,8 +4,9 @@ use crate::api::quote_selection::QuoteBindError;
 use crate::api::AppState;
 use crate::data::{
     extract_quote_for_book, is_dated_option_contract, kotak_quote_book_id, parse_nfo_instrument_id,
-    refused_quote_binding, QuoteEnvelope, QuoteStatus, BINANCE_COM_OPTIONS_BOOK_ID,
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    refused_quote_binding, QuoteEnvelope, QuoteStatus, BINANCE_COM_COINM_BOOK_ID,
+    BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use axum::extract::{Query, State};
 use axum::Json;
@@ -99,6 +100,17 @@ pub async fn handler(
     );
     env.book_id = Some(binding.book_id.to_string());
     env.bind_status = Some("bound".to_string());
+    match binding.book_id {
+        BINANCE_COM_USDM_BOOK_ID => {
+            env.tick_size = crate::data::tick_size_for(&state, &binding.instrument_id);
+            env.step_size = crate::data::step_size_for(&state, &binding.instrument_id);
+        }
+        BINANCE_COM_COINM_BOOK_ID => {
+            env.tick_size = crate::data::coinm_tick_size_for(&state, &binding.instrument_id);
+            env.step_size = crate::data::coinm_step_size_for(&state, &binding.instrument_id);
+        }
+        _ => {}
+    }
     if env.status == QuoteStatus::Unavailable {
         if let Some(class) = state
             .quote_fetch_error

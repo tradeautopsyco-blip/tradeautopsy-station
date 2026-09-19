@@ -236,6 +236,9 @@ mod tests {
         assert!(!src.contains("usdm_realized"));
         assert!(!src.contains("/fapi/v1/income"));
         assert!(!src.contains("REALIZED_PNL"));
+        let capture = include_str!("api/capture.rs");
+        assert!(!capture.contains("binance-com-usdm"));
+        assert!(!capture.contains("usdm_realized"));
     }
 
     #[test]

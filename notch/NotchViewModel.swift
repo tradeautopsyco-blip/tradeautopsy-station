@@ -287,8 +287,8 @@ public final class NotchViewModel: ObservableObject {
 
     /// Open broker positions mirrored in Notch; used by PLAN honesty ladder (**thesis unknown** when empty plan + non-empty positions).
     var hasOpenPositions: Bool {
-        if declareAssetClass == .usdm {
-            return accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId
+        if declareAssetClass.isNamedComFutures {
+            return accountChrome.bookId == declareBookId
                 && accountChrome.positionsStatus == "success"
                 && accountChrome.positionsCount > 0
         }
@@ -343,6 +343,11 @@ public final class NotchViewModel: ObservableObject {
     @Published public var deskQuoteCurrency: String?
     /// Calc profile id for the active connection (`crypto_spot_usd` / `equities_inr_cash`).
     @Published public var deskCalcProfileId: String?
+
+    /// LiveBook declare `book_id`. Nil on Start/spot so CATIUSDT letters stay bookless there.
+    var declareBookId: String? {
+        BarAccountChrome.namedBookId(forAssetClass: declareAssetClass, startSlug: resolvedDeskSlug)
+    }
     /// True while broker sync is running or has fresh/stale data — drives Today session mirror polling.
     public var isBrokerSyncActiveForTodayMirror: Bool {
         switch brokerSyncClass {
@@ -497,14 +502,15 @@ public final class NotchViewModel: ObservableObject {
     @Published var declInvalidationCondition: String = ""
     @Published var declProtectiveSLConsent: Bool = true
 
-    /// Spot / equity / options / USDM — not the Intraday/Swing style tabs.
+    /// Spot / equity / options / USDM / Coin-M — not the Intraday/Swing style tabs.
     @Published var declareAssetClass: BarDeclareAssetClass = .spot {
         didSet {
             guard oldValue != declareAssetClass else { return }
-            if declareAssetClass == .usdm {
+            if declareAssetClass.isNamedComFutures {
                 declProtectiveSLConsent = false
+                sessionPnL = 0
             }
-            if oldValue == .usdm, declareAssetClass != .usdm {
+            if oldValue.isNamedComFutures, !declareAssetClass.isNamedComFutures {
                 usdmPositionbookCount = 0
             }
             reconcileDeskLastForAssetClass(previousClass: oldValue)
@@ -524,6 +530,10 @@ public final class NotchViewModel: ObservableObject {
     @Published var declMaxPlannedLossText: String = ""
     @Published var optionLegs: [BarIntradayDeclarationPayload.OptionLeg] = []
     @Published var deskLastStatus: String = "unavailable"
+    /// Venue `PRICE_FILTER.tickSize` from the named book's quote envelope. Never `pricePrecision`.
+    @Published var deskTickSize: String?
+    /// Venue `LOT_SIZE.stepSize` from the named book's quote envelope.
+    @Published var deskStepSize: String?
     @Published var deskHistoryStatus: String = "unavailable"
     @Published var deskHistoryIneligible: [String] = []
     @Published var deskHistoryCandles: [DeskSessionCandle] = []
@@ -1156,8 +1166,8 @@ public final class NotchViewModel: ObservableObject {
             return
         }
         let hasPos: Bool
-        if declareAssetClass == .usdm {
-            hasPos = accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId
+        if declareAssetClass.isNamedComFutures {
+            hasPos = accountChrome.bookId == declareBookId
                 && accountChrome.positionsStatus == "success"
                 && accountChrome.positionsCount > 0
         } else {
@@ -1216,13 +1226,18 @@ public final class NotchViewModel: ObservableObject {
             // form dirty. Wait for a pause; cancel still drops in-flight keys.
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
-            guard
-                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                let url = URL(string: self.baseURL() + "/instruments/search?q=\(encoded)")
+            guard let url = URL(string: self.baseURL() + self.deskSearchExtractPath(query: query))
             else { return }
             let req = self.authorizedRequest(url: url)
             do {
                 let (data, _) = try await URLSession.shared.data(for: req)
+                if let expectedBook = self.declareBookId {
+                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        return
+                    }
+                    self.applyObtainSearchEnvelope(json, expectedBook: expectedBook)
+                    return
+                }
                 let resp = try JSONDecoder().decode(InstrumentSearchResponse.self, from: data)
                 let filtered = DeskCatalogAllowlist.filterSymbols(
                     resp.symbols,
@@ -1303,7 +1318,7 @@ public final class NotchViewModel: ObservableObject {
         symbolSearchHint = nil
         // The tab follows the instrument when it is showing Options for something that is
         // not an option (a Binance pair). Never the reverse — picking a contract does not
-        // silently arm the Options surface. USDM must not snap a pair back to spot.
+        // silently arm the Options surface. USDM / Coin-M must not snap a pair back to spot.
         if declareAssetClass == .options, bind.assetClass != .options {
             declareAssetClass = bind.assetClass
         }
@@ -1311,7 +1326,7 @@ public final class NotchViewModel: ObservableObject {
         // Last may survive), then fetch — which captures the generation it must match.
         clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
-        selectedMarketBookId = Self.marketBook(for: bind.tickBookId)
+        selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
         invalidateDeskMarketExtracts(reason: "select-symbol")
         switch bind.shape {
         case .kotakNfo, .kotakCash:
@@ -1325,7 +1340,7 @@ public final class NotchViewModel: ObservableObject {
             // and `/instruments/ltp` is a Kotak seam that no-ops here.
             fetchStationQuote(instrument: bind.tickBookId)
         case .binanceSpot:
-            if declareAssetClass != .usdm, result.last_price > 0 {
+            if declareAssetClass != .usdm, declareAssetClass != .coinm, result.last_price > 0 {
                 applyLTP(result.last_price)
             }
             fetchStationQuote(instrument: bind.tickBookId)
@@ -1353,13 +1368,17 @@ public final class NotchViewModel: ObservableObject {
 
     /// Symbol field commit — Return or focus loss. The Binance catalog is spot-only, so a
     /// dated contract never comes back as a suggestion row: the typed string is the only
-    /// binding there is. A pair or free text commits nothing, so a leftover `BTCUSDT` keeps
-    /// whatever it was bound to and the standard form stays up.
+    /// binding there is. USDM / Coin-M pairs commit on the named book (`CATIUSDT`,
+    /// `BTCUSD_PERP`). A leftover pair on Options still commits nothing.
     func commitDeskSymbol() {
         let trimmed = barDeclarationSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
         // Blur fires on every focus toggle — rebinding the same id would re-invalidate
         // extracts that are already correct.
         guard !trimmed.isEmpty, trimmed != deskSelectedInstrumentId else { return }
+        if declareAssetClass.isNamedComFutures {
+            commitNamedFuturesPair(trimmed)
+            return
+        }
         guard InstrumentTickBookId.isDatedOptionContract(trimmed) else { return }
 
         let bind = DeskInstrumentBind.resolve(
@@ -1395,10 +1414,48 @@ public final class NotchViewModel: ObservableObject {
         // Last may survive), then fetch — which captures the generation it must match.
         clearEntryIfRebinding(to: bind.tickBookId)
         deskSelectedInstrumentId = bind.tickBookId
-        selectedMarketBookId = Self.marketBook(for: bind.tickBookId)
+        selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
         invalidateDeskMarketExtracts(reason: "commit-symbol")
         // No `applyLTP` seed: there is no catalog row here, and a spot-shaped last never
         // seeds a premium.
+        fetchStationQuote(instrument: bind.tickBookId)
+        refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
+    }
+
+    /// Typed pair on USDM / Coin-M. Leftover dated contracts and Kotak tokens stay unbound.
+    private func commitNamedFuturesPair(_ raw: String) {
+        guard let ticker = BarBrokerTicker.normalize(raw: raw) else {
+            refuseSelection(hint: "Symbol must be a broker ticker (e.g. CATIUSDT), not a company name.")
+            return
+        }
+        if InstrumentTickBookId.isDatedOptionContract(ticker)
+            || InstrumentTickBookId.isNfoIdentity(ticker)
+            || InstrumentTickBookId.isCashIdentity(ticker)
+        {
+            refuseSelection(hint: deskInstrumentHint)
+            return
+        }
+        guard DeskCatalogAllowlist.isBinanceDesk(resolvedDeskSlug) else {
+            refuseSelection(hint: deskInstrumentHint)
+            return
+        }
+        let bind = DeskInstrumentBind.resolve(
+            rawId: ticker,
+            slug: resolvedDeskSlug,
+            currentClass: declareAssetClass
+        )
+        symbolSearchTask?.cancel()
+        ignoreSymbolSearchUntilEdit = true
+        showSymbolSuggestions = false
+        symbolSuggestions = []
+        symbolSearchHint = nil
+        barDeclarationSymbol = ticker
+        barDeclarationLastError = nil
+        barLtpFetchError = nil
+        clearEntryIfRebinding(to: bind.tickBookId)
+        deskSelectedInstrumentId = bind.tickBookId
+        selectedMarketBookId = bind.bookId ?? Self.marketBook(for: bind.tickBookId)
+        invalidateDeskMarketExtracts(reason: "commit-symbol")
         fetchStationQuote(instrument: bind.tickBookId)
         refreshDeskExtracts(symbol: bind.chainUnderlying, instrumentId: bind.tickBookId)
     }
@@ -1441,7 +1498,7 @@ public final class NotchViewModel: ObservableObject {
     /// Kotak market books require `kotak_neo`; `binance-com-options` is public data only.
     /// USDM may declare a plan; venue TRADE / auto-place SL stay off.
     func canExecuteSelectedInstrument() -> Bool {
-        if declareAssetClass == .usdm {
+        if declareAssetClass.isNamedComFutures {
             return false
         }
         let book = Self.marketBook(for: deskSelectedInstrumentId) ?? selectedMarketBookId
@@ -1484,7 +1541,7 @@ public final class NotchViewModel: ObservableObject {
 
     func fetchLTP(symbol: String, exchange: String, segment: String) {
         let exchangeNorm = exchange.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if declareAssetClass == .options || declareAssetClass == .usdm {
+        if declareAssetClass == .options || declareAssetClass.isNamedComFutures {
             return
         }
         if BarDeskTemplate.isKotakNeoDesk(slug: resolvedDeskSlug) {
@@ -1604,8 +1661,12 @@ public final class NotchViewModel: ObservableObject {
         if !shouldBindQuoteLast(adapter: adapter, instrumentId: instrumentId, bookId: bookId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
+            deskTickSize = nil
+            deskStepSize = nil
             return
         }
+        deskTickSize = stringField(json["tick_size"])
+        deskStepSize = stringField(json["step_size"])
         let status = (json["status"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased() ?? "unavailable"
@@ -1639,15 +1700,19 @@ public final class NotchViewModel: ObservableObject {
     /// USDM last is **class + `book=`** — `BTCUSDT` is shared with spot, so leftover
     /// TickBook / spot envelopes must not fill this hole.
     func shouldBindQuoteLast(adapter: String?, instrumentId: String, bookId: String? = nil) -> Bool {
-        if declareAssetClass == .usdm {
+        if declareAssetClass.isNamedComFutures {
             let trimmed = instrumentId.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return false }
             if InstrumentTickBookId.isDatedOptionContract(trimmed) { return false }
             if InstrumentTickBookId.isNfoIdentity(trimmed) { return false }
             if InstrumentTickBookId.isCashIdentity(trimmed) { return false }
+            let wanted = declareBookId
+                ?? (declareAssetClass == .coinm
+                    ? BarDeskTemplate.binanceComCoinmBookId
+                    : BarDeskTemplate.binanceComUsdmBookId)
             let named = bookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !named.isEmpty {
-                return named == BarDeskTemplate.binanceComUsdmBookId
+                return named == wanted
             }
             // Envelope without a named book is leftover spot TickBook last.
             if adapter != nil {
@@ -1697,11 +1762,15 @@ public final class NotchViewModel: ObservableObject {
         if declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || declEntryPrice == "0"
         {
-            declEntryPrice = BarDeskLastFormatting.entryPrice(
-                rawLast: rawLast,
-                value: ltp,
-                preservesPrecision: cryptoOptions
-            )
+            if declareAssetClass.isNamedComFutures, deskTickSize != nil {
+                declEntryPrice = VenueLotTick.format(ltp, stepSize: deskTickSize, rawLast: rawLast)
+            } else {
+                declEntryPrice = BarDeskLastFormatting.entryPrice(
+                    rawLast: rawLast,
+                    value: ltp,
+                    preservesPrecision: cryptoOptions
+                )
+            }
         }
     }
 
@@ -1709,10 +1778,12 @@ public final class NotchViewModel: ObservableObject {
         // Wipe first: the old class's chain/OI belong to a book this class may not read.
         invalidateDeskMarketExtracts(reason: "asset-class")
         // Same letters (`BTCUSDT`) on USDM vs spot are two books — leftover last must not stand.
-        if declareAssetClass == .usdm || previousClass == .usdm {
+        if declareAssetClass.isNamedComFutures || previousClass?.isNamedComFutures == true {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
             declEntryPrice = ""
+            deskTickSize = nil
+            deskStepSize = nil
         }
         if declareAssetClass == .options {
             if shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
@@ -1948,6 +2019,8 @@ public final class NotchViewModel: ObservableObject {
         deskHistoryStatus = "unavailable"
         deskHistoryIneligible = []
         deskHistoryCandles = []
+        deskTickSize = nil
+        deskStepSize = nil
         if !shouldBindQuoteLast(adapter: nil, instrumentId: deskSelectedInstrumentId) {
             deskLastStatus = "unavailable"
             deskQuoteCapability = "unavailable"
@@ -1955,13 +2028,17 @@ public final class NotchViewModel: ObservableObject {
         return deskExtractGeneration
     }
 
-    /// Testable quote path. Dated contracts name `binance-com-options`; USDM names
-    /// `binance-com-usdm` from **class**, not instrument shape (`BTCUSDT` is shared).
+    /// Testable quote path. Dated contracts name `binance-com-options`; USDM / Coin-M name
+    /// their books from **class**, not instrument shape (`BTCUSDT` is shared with spot).
     /// Kotak identities stay bookless on quote — no other desk sends `book=` on a quote at all.
     func deskQuoteExtractPath(instrument: String) -> String {
         let encoded = InstrumentTickBookId.queryEncode(instrument)
         if declareAssetClass == .usdm {
             let encodedBook = InstrumentTickBookId.queryEncode(BarDeskTemplate.binanceComUsdmBookId)
+            return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
+        }
+        if declareAssetClass == .coinm {
+            let encodedBook = InstrumentTickBookId.queryEncode(BarDeskTemplate.binanceComCoinmBookId)
             return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
         }
         guard let book = Self.marketBook(for: instrument),
@@ -1971,6 +2048,60 @@ public final class NotchViewModel: ObservableObject {
         }
         let encodedBook = InstrumentTickBookId.queryEncode(book)
         return "/api/station/quote?instrument=\(encoded)&book=\(encodedBook)"
+    }
+
+    /// Testable search path. Named futures books use obtain `operation=search` — never slug `/instruments/search`.
+    func deskSearchExtractPath(query: String) -> String {
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        if let book = declareBookId,
+           let adapter = BarAccountChrome.obtainAdapterId(forStartSlug: resolvedDeskSlug)
+        {
+            return BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "search")
+                + "&q=\(encoded)"
+        }
+        return "/instruments/search?q=\(encoded)"
+    }
+
+    /// Book-keyed obtain search. A spot catalog payload on the USDM tab is dropped.
+    func applyObtainSearchEnvelope(_ json: [String: Any], expectedBook: String) {
+        let named = (json["book_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard named == expectedBook else {
+            symbolSuggestions = []
+            showSymbolSuggestions = false
+            symbolSearchHint = nil
+            return
+        }
+        let status = (json["status"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        guard status == "success" else {
+            symbolSuggestions = []
+            showSymbolSuggestions = false
+            return
+        }
+        let rows = (json["data"] as? [String: Any])?["rows"] as? [[String: Any]] ?? []
+        let decoded: [InstrumentResult]
+        if let data = try? JSONSerialization.data(withJSONObject: rows),
+           let parsed = try? JSONDecoder().decode([InstrumentResult].self, from: data)
+        {
+            decoded = parsed
+        } else {
+            decoded = []
+        }
+        let filtered = DeskCatalogAllowlist.filterSymbols(
+            decoded,
+            deskSlug: resolvedDeskSlug
+        )
+        if symbolSuggestions != filtered {
+            symbolSuggestions = filtered
+        }
+        showSymbolSuggestions = !filtered.isEmpty
+        symbolSearchHint = filtered.isEmpty
+            ? DeskCapabilityChrome.emptySearchHint(
+                masterStatus: deskInstrumentsCapability,
+                connectedInstrumentDesk: connectedInstrumentCatalogDesk
+            )
+            : nil
     }
 
     /// Dated crypto Options session series. Never Kotak history, never spot `/api/v3/klines`.
@@ -2049,6 +2180,9 @@ public final class NotchViewModel: ObservableObject {
         if declareAssetClass == .usdm {
             return BarDeskTemplate.binanceComUsdmBookId
         }
+        if declareAssetClass == .coinm {
+            return BarDeskTemplate.binanceComCoinmBookId
+        }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
         if BarDeskTemplate.isBinanceOptionsSelection(
             assetClass: declareAssetClass,
@@ -2060,7 +2194,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func depthInstrument(symbol: String) -> String {
-        if declareAssetClass == .usdm {
+        if declareAssetClass == .usdm || declareAssetClass == .coinm {
             return ""
         }
         let selected = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
@@ -2081,7 +2215,7 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func depthBookId(symbol: String) -> String? {
-        if declareAssetClass == .usdm {
+        if declareAssetClass == .usdm || declareAssetClass == .coinm {
             return nil
         }
         let instrument = deskSelectedInstrumentId.isEmpty ? symbol : deskSelectedInstrumentId
@@ -2387,7 +2521,7 @@ public final class NotchViewModel: ObservableObject {
             historyPath = VendorHistoryObtain.kotakHistoryPath(mode: mode, armed: armed)
         } else if plan.usesOptionsHistoryObtain {
             historyPath = deskOptionsHistoryExtractPath()
-        } else if declareAssetClass == .options || declareAssetClass == .usdm {
+        } else if declareAssetClass == .options || declareAssetClass.isNamedComFutures {
             historyPath = nil
         } else {
             historyPath = "/api/station/history?instrument=\(encoded)"
@@ -2445,6 +2579,11 @@ public final class NotchViewModel: ObservableObject {
 
     private func stringList(_ raw: Any?) -> [String] {
         (raw as? [Any])?.compactMap { $0 as? String } ?? []
+    }
+
+    private func stringField(_ raw: Any?) -> String? {
+        let trimmed = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     func dismissSymbolSuggestions() {
@@ -4072,28 +4211,41 @@ public final class NotchViewModel: ObservableObject {
             applyDeskHonesty(from: j)
             let hero = j["hero"] as? [String: Any] ?? [:]
             if j["degradedReason"] is String {
-                sessionPnL = 0
-                winRate = 0
-                tradesToday = 0
+                applyPulseHero([:], degraded: true)
                 return
             }
+            applyPulseHero(hero, degraded: false)
+        } catch {
+            lastAlert = error.localizedDescription
+        }
+    }
+
+    /// Daemon Today hero is **spot**. Named futures tabs must not paint `pnlTodayUsd`.
+    func applyPulseHero(_ hero: [String: Any], degraded: Bool) {
+        if degraded {
+            if !declareAssetClass.isNamedComFutures {
+                sessionPnL = 0
+            }
+            winRate = 0
+            tradesToday = 0
+            return
+        }
+        if !declareAssetClass.isNamedComFutures {
             if let p = hero["pnlTodayUsd"] as? Double {
                 sessionPnL = p
             } else {
                 sessionPnL = 0
             }
-            if let w = hero["winRate"] as? Double { winRate = w }
-            if let t = hero["tradesToday"] as? Int {
-                let prev = tradesToday
-                if t > prev {
-                    fireTradeFillRingPulse()
-                }
-                tradesToday = t
-            } else if let t = hero["tradesToday"] as? Double {
-                tradesToday = Int(t)
+        }
+        if let w = hero["winRate"] as? Double { winRate = w }
+        if let t = hero["tradesToday"] as? Int {
+            let prev = tradesToday
+            if t > prev {
+                fireTradeFillRingPulse()
             }
-        } catch {
-            lastAlert = error.localizedDescription
+            tradesToday = t
+        } else if let t = hero["tradesToday"] as? Double {
+            tradesToday = Int(t)
         }
     }
 
@@ -4131,10 +4283,12 @@ public final class NotchViewModel: ObservableObject {
                     out.append(NotchPosition(symbol: sym, qty: qty, unrealizedPnL: pnl, direction: dir))
                 }
             }
-            if declareAssetClass != .usdm {
+            if declareAssetClass.isNamedComFutures {
+                positions = []
+            } else {
                 notePositionTransitionForBar(previousCount: previousPositionCount, newCount: out.count)
+                positions = out
             }
-            positions = out
             let remembered = NotchChipCatalogMutations.rememberSymbols(out.map(\.symbol), in: chipCatalog)
             if remembered != chipCatalog {
                 chipCatalog = remembered
@@ -4737,6 +4891,13 @@ extension NotchViewModel {
             positions: positions,
             orders: orders
         )
+        if declareAssetClass.isNamedComFutures {
+            let fundsBook = (funds?["book_id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if fundsBook == book, let pnl = BarAccountChrome.realizedPnl(from: funds) {
+                sessionPnL = pnl
+            }
+        }
         syncUsdmPositionbookPhaseFromChrome()
     }
 
@@ -4760,8 +4921,8 @@ extension NotchViewModel {
         let holdingsJSON: [String: Any]?
         let positionsJSON: [String: Any]?
         let ordersJSON: [String: Any]?
-        if declareAssetClass == .usdm {
-            // Named USDM pulse: funds + positionbook. Force-order is lossy and stays off the Funds pill.
+        if declareAssetClass.isNamedComFutures {
+            // Named futures pulse: funds + positionbook. Force-order is lossy and stays off the Funds pill.
             async let positions = getExtractJSON(
                 BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "positionbook")
             )
@@ -4792,10 +4953,10 @@ extension NotchViewModel {
         )
     }
 
-    /// USDM live/post follow this book's positionbook, never daemon spot inventory.
+    /// Named futures live/post follow this book's positionbook, never daemon spot inventory.
     private func syncUsdmPositionbookPhaseFromChrome() {
-        guard declareAssetClass == .usdm else { return }
-        guard accountChrome.bookId == BarDeskTemplate.binanceComUsdmBookId else { return }
+        guard declareAssetClass.isNamedComFutures else { return }
+        guard accountChrome.bookId == declareBookId else { return }
         guard accountChrome.positionsStatus == "success" else {
             recomputeBarSurfacePhase()
             return

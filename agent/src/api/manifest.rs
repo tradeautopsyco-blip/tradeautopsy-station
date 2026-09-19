@@ -3,8 +3,8 @@
 use crate::api::desk::{account_identity, quote_status_wire, reference_identity};
 use crate::api::AppState;
 use crate::data::{
-    await_binance_usdm_ticker, chain_rows_for_contract, depth_obtain_data, describe,
-    ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
+    await_binance_coinm_ticker, await_binance_usdm_ticker, chain_rows_for_contract, depth_obtain_data, describe,
+    ensure_coinm_balance, ensure_coinm_exchange_info, ensure_coinm_force_orders, ensure_coinm_positions,
     ensure_options_margin_account, ensure_options_positions, ensure_options_user_trades,
     ensure_spot_account, ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_exchange_info,
     ensure_usdm_force_orders, ensure_usdm_positions, ensure_usdm_realized_income,
@@ -402,6 +402,7 @@ async fn kick_usdm_private(state: &AppState, envelope: &ObtainEnvelope) {
             .await;
             ensure_usdm_exchange_info(state, &instrument).await;
         }
+        "search" => ensure_usdm_exchange_info(state, "").await,
         _ => {}
     }
 }
@@ -415,6 +416,24 @@ async fn kick_coinm_private(state: &AppState, envelope: &ObtainEnvelope) {
         "funds" => ensure_coinm_balance(state).await,
         "positionbook" => ensure_coinm_positions(state).await,
         "forceorder" => ensure_coinm_force_orders(state).await,
+        "quotes" => {
+            let instrument = state
+                .selected_quote_for(BINANCE_COM_COINM_BOOK_ID)
+                .unwrap_or_default();
+            if instrument.is_empty() {
+                return;
+            }
+            await_binance_coinm_ticker(
+                state.quote_registry.clone(),
+                state.tickbook.clone(),
+                state.com_ticker_inflight.clone(),
+                state.quote_fetch_error.clone(),
+                &instrument,
+            )
+            .await;
+            ensure_coinm_exchange_info(state, &instrument).await;
+        }
+        "search" => ensure_coinm_exchange_info(state, "").await,
         _ => {}
     }
 }
@@ -542,6 +561,7 @@ fn enricher(
         ("binance-com-usdm", "funds") => Some(enrich_binance_funds),
         ("binance-com-usdm", "positionbook") => Some(enrich_positions),
         ("binance-com-usdm", "forceorder") => Some(enrich_forceorder),
+        ("binance-com-coinm", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-coinm", "funds") => Some(enrich_binance_funds),
         ("binance-com-coinm", "positionbook") => Some(enrich_positions),
         ("binance-com-coinm", "forceorder") => Some(enrich_forceorder),
@@ -699,7 +719,7 @@ fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
         return envelope;
     };
     envelope.status = ObtainStatus::Success;
-    envelope.data = Some(json!({
+    let mut data = json!({
         "identity": account_identity("funds"),
         "holdings": slot
             .value
@@ -713,7 +733,21 @@ fn enrich_binance_funds(state: &AppState, mut envelope: ObtainEnvelope) -> Obtai
             .collect::<Vec<_>>(),
         "unrealized_pnl": slot.value.unrealized_pnl,
         "as_of_ms": slot.as_of_ms,
-    }));
+    });
+    if envelope.book_id == BINANCE_COM_USDM_BOOK_ID {
+        let realized = state
+            .usdm_realized
+            .lock()
+            .expect("usdm_realized mutex poisoned");
+        if let Some(slot) = realized.as_ref() {
+            if let Some(pnl) = slot.published_realized_pnl_usd() {
+                data.as_object_mut()
+                    .expect("funds data object")
+                    .insert("realized_pnl".into(), json!(pnl));
+            }
+        }
+    }
+    envelope.data = Some(data);
     if !slot.provenance_path.is_empty() {
         envelope.provenance_path = Some(slot.provenance_path.clone());
     }
@@ -1579,6 +1613,9 @@ mod tests {
         );
         assert!(enricher("binance-com-spot", "optionchain").is_none());
         assert!(enricher("binance-com-usdm", "quotes").is_some());
+        assert!(enricher("binance-com-coinm", "quotes").is_some());
+        assert!(enricher("binance-com-usdm", "history").is_none());
+        assert!(enricher("binance-com-coinm", "history").is_none());
         assert!(enricher("binance-com-options", "quotes").is_some());
         assert!(enricher("binance-com-options", "optionchain").is_some());
         assert!(enricher("binance-com-options", "open_interest").is_some());
