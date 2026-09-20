@@ -31,6 +31,7 @@ pub enum AgentEvent {
         active: bool,
         level: Option<String>,
         countdown_secs: Option<u32>,
+        expires_at_ms: Option<i64>,
         requires_ack: bool,
     },
     AuthState {
@@ -76,6 +77,7 @@ impl AgentEvent {
                 active,
                 level,
                 countdown_secs,
+                expires_at_ms,
                 requires_ack,
             } => (
                 "kill_switch_state",
@@ -83,6 +85,9 @@ impl AgentEvent {
                     "active": active,
                     "level": level.as_ref().map(|s| json!(s)).unwrap_or(serde_json::Value::Null),
                     "countdown_secs": countdown_secs
+                        .map(|n| json!(n))
+                        .unwrap_or(serde_json::Value::Null),
+                    "expires_at_ms": expires_at_ms
                         .map(|n| json!(n))
                         .unwrap_or(serde_json::Value::Null),
                     "requires_ack": *requires_ack,
@@ -108,6 +113,7 @@ mod tests {
             active: false,
             level: None,
             countdown_secs: None,
+            expires_at_ms: None,
             requires_ack: false,
         };
         let (t, p) = ev.sse_type_and_payload_json();
@@ -115,7 +121,22 @@ mod tests {
         assert_eq!(p["active"], serde_json::json!(false));
         assert!(p["level"].is_null());
         assert!(p["countdown_secs"].is_null());
+        assert!(p["expires_at_ms"].is_null());
         assert_eq!(p["requires_ack"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn kill_switch_sse_payload_includes_expires_at_ms() {
+        let ev = AgentEvent::KillSwitchState {
+            active: true,
+            level: Some("L3".to_string()),
+            countdown_secs: Some(90),
+            expires_at_ms: Some(1_700_000_090_000),
+            requires_ack: true,
+        };
+        let (_, p) = ev.sse_type_and_payload_json();
+        assert_eq!(p["countdown_secs"], serde_json::json!(90));
+        assert_eq!(p["expires_at_ms"], serde_json::json!(1_700_000_090_000i64));
     }
 }
 

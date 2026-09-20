@@ -49,40 +49,24 @@ struct BriefLeftView: View {
             briefCapsHeader("What matters")
 
             BarCard {
-                BarTAChartFigure(
-                    kicker: "Yesterday’s session P&L",
-                    takeaway: "Yesterday closed −₹2,100 after two revenge-adjacent adds. Size crept 18% vs declared."
-                ) {
-                    BarTALinePlot(
-                        points: BarTAChartDemo.morningPnL,
-                        kind: .loss,
-                        height: 52,
-                        includeZero: true
-                    )
-                    .accessibilityLabel("Yesterday session P and L, closed minus 2100 rupees")
-                }
-
                 if let b = viewModel.morningBrief {
                     behavioralBriefContent(b)
-                        .padding(.top, 10)
                 } else {
-                    Text("Watch for size discipline and time-pressure entries in the first 45 minutes.")
+                    Text("No session series yet.")
                         .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
                         .foregroundColor(BarDS.Text.primary.opacity(0.72))
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 10)
                 }
             }
 
-            BarCard {
-                Text(
-                    viewModel.morningBrief?.recommendation
-                        ?? "Trade only A-setups. Cap first trade at half size until calm ≤ 2. Declare before you click buy."
-                )
-                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                .foregroundColor(BarDS.Text.primary.opacity(0.72))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            if let rec = viewModel.morningBrief?.recommendation, !rec.isEmpty {
+                BarCard {
+                    Text(rec)
+                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
+                        .foregroundColor(BarDS.Text.primary.opacity(0.72))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             BarBigButton(label: "Start trading →", style: .primary) {
@@ -516,33 +500,9 @@ struct BriefRightView: View {
                         }
                     }
                 }
-
-                Text("CONTEXT")
-                    .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
-                    .foregroundColor(BarDS.Text.labels)
-                    .kerning(0.08 * 10)
-                    .padding(.top, 6)
-                    .padding(.bottom, 4)
-                Text("1.35× score multiplier on Wednesday sessions (validated model).")
-                    .font(BarDS.bodyFont(10, weight: .medium))
-                    .foregroundColor(BarDS.Accent.amber)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(10)
-            .background(BarDS.Fill.card)
-            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
-                    .stroke(BarDS.Border.card, lineWidth: BarDS.borderThin),
-            )
-            .accessibilitySortPriority(8)
 
             Spacer()
-
-            BarBigButton(label: "Open Full Brief", style: .outline) {
-                viewModel.openDeepLink(viewModel.webBaseURL + "/dashboard/morning-brief")
-            }
-            .accessibilitySortPriority(4)
         }
         .padding(12)
         .glassCard(radius: 10)

@@ -359,12 +359,13 @@ struct BarAccountChromeTests {
             target: 0.75,
             planSnapshot: nil
         )
-        let rows = BarEscrowMatchPresentation.sevenSlotRows(from: nil, pending: pending)
-        #expect(rows[1].declared == "BTCUSDT")
-        #expect(rows[2].declared == "BUY")
-        #expect(rows[5].declared != "—")
-        #expect(rows[6].declared != "—")
+        let rows = BarEscrowMatchPresentation.matchRows(from: nil, pending: pending)
+        #expect(rows.contains(where: { $0.label == "Symbol" && $0.declared == "BTCUSDT" }))
+        #expect(rows.contains(where: { $0.label == "Side / product" && $0.declared == "BUY" }))
+        #expect(rows.contains(where: { $0.label == "Stop / protect" && $0.declared != "—" }))
+        #expect(rows.contains(where: { $0.label == "Target / policy" && $0.declared != "—" }))
         #expect(rows.allSatisfy { $0.actual == "—" })
+        #expect(rows.count < 7)
     }
 
     private func fundsEnvelope(book: String, asset: String, free: Double) -> [String: Any] {

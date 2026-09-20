@@ -11,7 +11,7 @@ struct BarEscrowMatchView: View {
     private let escrowRingDiameter: CGFloat = 56
 
     var body: some View {
-        let rows = BarEscrowMatchPresentation.sevenSlotRows(from: report, pending: pending)
+        let rows = BarEscrowMatchPresentation.matchRows(from: report, pending: pending)
         let summary = BarEscrowMatchPresentation.summaryLine(from: report)
 
         VStack(alignment: .leading, spacing: 12) {
@@ -19,6 +19,11 @@ struct BarEscrowMatchView: View {
 
             ForEach(rows) { row in
                 escrowLedgerRow(row)
+            }
+            if rows.isEmpty {
+                Text("No escrow match yet.")
+                    .font(BarDS.bodyFont(10, weight: .medium))
+                    .foregroundColor(BarDS.Text.secondary)
             }
         }
         .padding(12)
@@ -34,7 +39,7 @@ struct BarEscrowMatchView: View {
     private func headerRow(summary: String?) -> some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("ESCROW — declared vs actual")
+                Text("MATCH — declared vs actual")
                     .font(BarDS.bodyFont(10, weight: .bold))
                     .foregroundColor(BarDS.Text.hint)
                     .tracking(0.8)
@@ -45,7 +50,7 @@ struct BarEscrowMatchView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(summary)
                 } else {
-                    Text("No summary on this refresh — rows still reserve seven ledger slots.")
+                    Text("No escrow summary on this refresh.")
                         .font(BarDS.bodyFont(10, weight: .medium))
                         .foregroundColor(BarDS.Text.secondary)
                         .fixedSize(horizontal: false, vertical: true)

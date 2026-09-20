@@ -10,14 +10,13 @@ struct BarSettingsView: View {
     }
 
     private enum BehaviorArchetypeTab: String, CaseIterable {
-        case intraday, scalper, swing, positional
+        case intraday, scalper, swing
 
         var traderArchetype: TraderArchetype? {
             switch self {
             case .intraday: return .intraday
             case .scalper: return .scalper
             case .swing: return .swing
-            case .positional: return nil
             }
         }
     }
@@ -56,21 +55,6 @@ struct BarSettingsView: View {
     @State private var swingCheckinNotif = true
     @State private var misWarningNotif = false
     @State private var coolingNotif = true
-
-    private static let killSwitchDomains: [(label: String, url: String)] = [
-        ("Kotak CIS", "cis.kotaksecurities.com"),
-        ("Kotak Neo", "neo.kotaksecurities.com"),
-        ("Kotak MIS", "mis.kotaksecurities.com"),
-    ]
-
-    private static let intradayWeights: [(String, Double)] = [
-        ("Overtrading", 0.35),
-        ("Disposition", 0.20),
-        ("Herding / FOMO", 0.15),
-        ("Sizing error", 0.10),
-        ("Loss chasing", 0.10),
-        ("Symbol drift", 0.05),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -467,27 +451,35 @@ struct BarSettingsView: View {
     }
 
     private var killSwitchDomainsCard: some View {
-        BarCard {
-            Text("DNS sinkhole targets — blocked when kill switch fires.")
+        let rows = viewModel.killDnsHostRows
+        return BarCard {
+            Text("DNS sinkhole targets — blocked when Kill fires for the connected broker. Stop does not Kill.")
                 .font(BarDS.bodyFont(12, weight: .regular))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 8)
-            ForEach(Array(Self.killSwitchDomains.enumerated()), id: \.offset) { idx, row in
-                HStack {
-                    Text(row.label)
-                        .font(BarDS.bodyFont(11, weight: .regular))
-                        .foregroundColor(BarDS.Text.hint)
-                    Spacer(minLength: 8)
-                    Text(row.url)
-                        .font(BarDS.monoFont(11, weight: .regular))
-                        .foregroundColor(BarDS.Text.muted)
-                }
-                .padding(.vertical, 7)
-                if idx < Self.killSwitchDomains.count - 1 {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.05))
-                        .frame(height: BarDS.borderThin)
+            if rows.isEmpty {
+                Text("No DNS hosts for this broker — L3 will refuse (R8). Never defaults to Kotak.")
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Accent.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
+                    HStack {
+                        Text(row.label)
+                            .font(BarDS.bodyFont(11, weight: .regular))
+                            .foregroundColor(BarDS.Text.hint)
+                        Spacer(minLength: 8)
+                        Text(row.url)
+                            .font(BarDS.monoFont(11, weight: .regular))
+                            .foregroundColor(BarDS.Text.muted)
+                    }
+                    .padding(.vertical, 7)
+                    if idx < rows.count - 1 {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.05))
+                            .frame(height: BarDS.borderThin)
+                    }
                 }
             }
         }
@@ -708,26 +700,11 @@ struct BarSettingsView: View {
 
             BarSectionLabel(text: "Signal weights")
             BarCard {
-                ForEach(Array(Self.intradayWeights.enumerated()), id: \.offset) { _, row in
-                    BarProgressBlock(
-                        label: row.0,
-                        valueText: String(format: "%.2f", row.1),
-                        pct: row.1,
-                    )
-                }
-                Text("Weights locked to research defaults. Phase B (Optuna) unlocks after 500 trades per archetype.")
-                    .font(BarDS.bodyFont(11, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
+                Text("No live signal-weight engine. Honest empty until a real series exists.")
+                    .font(BarDS.bodyFont(12, weight: .regular))
+                    .foregroundColor(BarDS.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
             }
-
-            BarSectionLabel(text: "Score multipliers")
-            BarPlanRowsCard(rows: [
-                ("F&O instruments", "1.5×", BarDS.Accent.amber),
-                ("Wednesday", "1.35×", BarDS.Accent.amber),
-                ("Intraday", "1.4×", BarDS.Accent.amber),
-            ])
         }
     }
 
@@ -793,7 +770,7 @@ struct BarSettingsView: View {
 
             BarSectionLabel(text: "Session reminders")
             BarToggleRow(
-                label: "Morning brief ready",
+                label: "Open brief ready",
                 sub: "9:00 AM daily before market open",
                 isOn: $morningBriefNotif,
             )

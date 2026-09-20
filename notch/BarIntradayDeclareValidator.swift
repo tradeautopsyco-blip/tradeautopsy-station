@@ -52,7 +52,7 @@ enum BarIntradayDeclareValidator {
     /// Mirrors `BarDeclarationFlowView.buildJsonBody()` guards — drives disabled confirm + inline hint.
     static func submitReadiness(_ input: BarIntradayDeclarationSubmitInput) -> (ready: Bool, hint: String?) {
         if input.blocksDeclarationSubmit {
-            return (false, "Circuit active — finish or clear the web Bar intervention before declaring.")
+            return (false, "Circuit active — finish or clear the Harness intervention before declaring.")
         }
         if !input.isOptions, !input.isUsdm, !input.protectiveSlConsent {
             return (false, "Turn on auto-place stop loss in Step 4.")

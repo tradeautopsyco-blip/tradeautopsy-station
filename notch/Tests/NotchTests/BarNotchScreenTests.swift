@@ -1,7 +1,20 @@
-import Notch
 import Testing
+@testable import Notch
 
 struct BarNotchScreenTests {
+    @Test func shippingCopyIsHarnessOpenPlanWorkingDebrief() {
+        #expect(BarNotchScreen.morning.rawValue == "Open")
+        #expect(BarNotchScreen.pretrade.rawValue == "Plan")
+        #expect(BarNotchScreen.live.rawValue == "Working")
+        #expect(BarNotchScreen.posttrade.rawValue == "Debrief")
+        #expect(BarNotchScreen.escrow.rawValue == "Match")
+        #expect(BarNotchScreen.morning.navTitle == "Open")
+        #expect(BarNotchScreen.pretrade.navTitle == "Plan")
+        #expect(BarNotchScreen.live.navTitle == "Working")
+        #expect(BarNotchScreen.posttrade.navTitle == "Debrief")
+        #expect(BarNotchScreen.escrow.navTitle == "Match")
+    }
+
     @Test func barNotchScreenHasAllNineRoutes() {
         #expect(BarNotchScreen.allCases.count == 9)
         #expect(Set(BarNotchScreen.allCases) == Set([

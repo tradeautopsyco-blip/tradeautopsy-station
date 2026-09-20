@@ -1,4 +1,5 @@
 import Foundation
+import Notch
 import Testing
 @testable import Station
 
@@ -152,12 +153,15 @@ struct SessionModelTests {
                 "active": true,
                 "level": "L3",
                 "countdown_secs": 90,
+                "expires_at_ms": KillSwitchCountdown.nowMs() + 90_000,
                 "requires_ack": true,
             ]
         )
         #expect(applied)
         #expect(session.killSwitchActive == true)
-        #expect(session.killSwitchCountdownSecs == 90)
+        let remaining = session.killSwitchCountdownSecs ?? -1
+        #expect(remaining <= 90)
+        #expect(remaining >= 89)
         #expect(session.killSwitchStateAgeSecs < 60)
 
         _ = session.applyDaemonEventPayload(

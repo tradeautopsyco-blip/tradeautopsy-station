@@ -135,7 +135,7 @@ struct PositionsRightView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 4) {
-                dataRow("TOTAL EXPOSURE", viewModel.formatINR(viewModel.totalExposure))
+                dataRow("TOTAL EXPOSURE", viewModel.totalExposureText)
                 dataRow("OPEN ORDERS", "\(viewModel.openOrders)")
             }
             .padding(10)
@@ -143,26 +143,19 @@ struct PositionsRightView: View {
 
             Spacer()
 
-            VStack(spacing: 6) {
-                dangerButton("Exit All Positions", accessibilityLabel: "Exit all positions") {
-                    Task { await viewModel.exitAllPositions() }
-                }
-                .accessibilityHint("Sends market orders to close all open positions")
-                ghostButton("Cancel All Orders", accessibilityLabel: "Cancel all open orders") {
-                    Task { await viewModel.cancelAllOrders() }
-                }
-            }
+            Text("No flatten from this list. Kill is separate. Stop is broker sync pause.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(Color.white.opacity(0.45))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
 
             if !viewModel.isAuthenticated {
-                Button("Sign in") {
-                    viewModel.openDeepLink(viewModel.webBaseURL + "/login?toolbar_reauth=1")
-                }
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(Color(hex: "#00E5C0"))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-                .buttonStyle(.plain)
-                .accessibilityLabel("Sign in to view live positions")
+                Text("Sign in from Station to view live positions.")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Color(hex: "#00E5C0"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

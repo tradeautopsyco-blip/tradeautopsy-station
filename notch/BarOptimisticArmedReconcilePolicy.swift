@@ -6,7 +6,7 @@ enum BarOptimisticArmedReconcilePolicy {
     static let maxAgeSeconds: TimeInterval = 45
     static let maxPollFailures = 3
     static let confirmWarningMessage =
-        "Could not confirm declaration — check web Bar."
+        "Could not confirm declaration on Station."
 
     static func shouldClearOptimistic(
         snapshot: BarOptimisticArmedSnapshot,

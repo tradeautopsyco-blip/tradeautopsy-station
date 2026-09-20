@@ -31,8 +31,10 @@ struct BarPlanStateView: View {
         VStack(alignment: .leading, spacing: 12) {
             BarUndeclaredPositionBanner(position: payload?.undeclaredPosition)
 
-            if let pos = payload?.undeclaredPosition {
-                let ccy = DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug) ?? "INR"
+            if let pos = payload?.undeclaredPosition,
+               let ccy = viewModel.formatQuoteCurrency
+                ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug)
+            {
                 DetectCardView(
                     result: DetectCard.evaluate(
                         DetectCardInput(
@@ -126,14 +128,14 @@ struct BarPlanStateView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(
-                "Notch needs broker order sync for modify SL — complete this action in web Bar for now.",
+                "Notch needs broker order sync for modify SL — complete this action in Harness for now.",
             )
         }
         .alert("Cancel stop loss on broker?", isPresented: $cancelSlWebBarAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(
-                "Cancel SL requires the live broker order id — finish in web Bar until notch exposes the active order handle.",
+                "Cancel SL requires the live broker order id — finish in Harness until notch exposes the active order handle.",
             )
         }
         .alert("Step away", isPresented: $scalperStepAwayAck) {
@@ -366,10 +368,8 @@ struct BarPlanStateView: View {
     }
 
     private func formatDeskWhole(_ value: Double) -> String {
-        DeskMoneyFormatting.formatWhole(
-            value,
-            quoteCurrency: viewModel.deskQuoteCurrency ?? "INR"
-        )
+        guard let ccy = viewModel.formatQuoteCurrency, !ccy.isEmpty else { return "—" }
+        return DeskMoneyFormatting.formatWhole(value, quoteCurrency: ccy)
     }
 
     @ViewBuilder
@@ -1027,7 +1027,7 @@ struct BarPlanStateView: View {
                     .buttonStyle(.plain)
                     .foregroundColor(BarDS.Accent.teal)
                     .disabled(viewModel.barProtectiveBusy)
-                    .accessibilityHint("Opens web Bar when a broker cancel is required")
+                    .accessibilityHint("Opens Harness when a broker cancel is required")
                 }
             }
         }
@@ -1088,7 +1088,7 @@ struct BarPlanStateView: View {
         case "GREEN": return "Plan intact. Nothing to do."
         case "AMBER": return "Watch conditions — review your plan."
         case "RED": return "Thesis invalid — consider exit."
-        default: return "Review your plan on web Bar."
+        default: return "Review your plan in Harness."
         }
     }
 
@@ -1097,7 +1097,7 @@ struct BarPlanStateView: View {
         switch tier {
         case .syncExpired:
             syncBanner(headline: "Sync expired",
-                       bodyText: "Broker lane trust window ended — open web Bar to reconcile.",
+                       bodyText: "Broker lane trust window ended — reconcile in Harness.",
                        stripe: "RED")
         case .syncStale:
             syncBanner(headline: "Sync stale",
@@ -1105,7 +1105,7 @@ struct BarPlanStateView: View {
                        stripe: "AMBER")
         case .thesisUnknown:
             syncBanner(headline: "Thesis unknown",
-                       bodyText: "Open positions, no server plan — reconcile on web Bar.",
+                       bodyText: "Open positions, no server plan — reconcile in Harness.",
                        stripe: "AMBER")
         case let .serverPlan(state, sentence, terminal):
             serverPlanBanner(state: state, sentence: sentence, terminal: terminal)
@@ -1230,7 +1230,7 @@ struct BarPlanStateView: View {
             if needsGate {
                 Text(
                     gateLocksUI
-                        ? "Minimum read — \(rem)s before web Bar / override actions unlock."
+                        ? "Minimum read — \(rem)s before override actions unlock."
                         : "Read window complete — proceed only if you accept the risk.",
                 )
                 .font(.system(size: 10, weight: .semibold, design: .rounded))

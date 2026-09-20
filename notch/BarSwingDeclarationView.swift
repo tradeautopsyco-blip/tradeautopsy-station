@@ -137,7 +137,7 @@ struct BarSwingDeclarationView: View {
                 isOn: $dailyCheckInRequired,
             )
             Text(
-                "Protective stop consent matches the web Bar — submit stays disabled until you toggle consent on the block below."
+                "Protective stop consent is required — submit stays disabled until you toggle consent on the block below."
             )
             .font(BarDS.bodyFont(10, weight: .medium))
             .foregroundColor(BarDS.Text.hint)
@@ -289,7 +289,7 @@ struct BarSwingDeclarationView: View {
         VStack(alignment: .leading, spacing: 10) {
             BarToggleRow(
                 label: "Auto-place stop loss on fill",
-                sub: "Same consent field as the web Bar",
+                sub: "Same consent field as Harness",
                 isOn: $protectiveConsent,
             )
             .disabled(viewModel.barLiveState?.blocksDeclarationSubmit == true)

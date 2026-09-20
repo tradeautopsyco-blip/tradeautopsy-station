@@ -18,75 +18,45 @@ struct BarEscrowRowPresentation: Identifiable, Equatable {
 }
 
 enum BarEscrowMatchPresentation {
-    /// Seven fixed ledger slots for Notch mockup parity (#6); pads with placeholders when the server sends fewer nodes.
-    static let ledgerSlotCount = 7
-
-    static func sevenSlotRows(
+    static func matchRows(
         from report: BarEscrowMatchReport?,
         pending: BarPendingDeclaration? = nil
     ) -> [BarEscrowRowPresentation] {
         let data = rows(from: report)
-        if data.isEmpty, let pending {
-            return sevenSlotRowsFromPending(pending)
+        if !data.isEmpty { return data }
+        if let pending {
+            return pendingDeclaredRows(pending)
         }
-        var out: [BarEscrowRowPresentation] = []
-        for i in 0 ..< ledgerSlotCount {
-            if i < data.count {
-                out.append(data[i])
-            } else {
-                out.append(
-                    BarEscrowRowPresentation(
-                        id: "placeholder.\(i)",
-                        label: ledgerPlaceholderLabel(index: i),
-                        declared: "—",
-                        actual: "—",
-                        tone: .amber,
-                        breakReason: nil,
-                    ),
-                )
-            }
-        }
-        return out
+        return []
     }
 
     /// LiveBook pending when Console escrow has no nodes — declared column only; actual stays —.
-    static func sevenSlotRowsFromPending(_ pending: BarPendingDeclaration) -> [BarEscrowRowPresentation] {
+    static func pendingDeclaredRows(_ pending: BarPendingDeclaration) -> [BarEscrowRowPresentation] {
         let qty = pending.quantity
         let qtyText = qty == qty.rounded() ? String(Int(qty.rounded())) : String(qty)
-        let stop = pending.stopLoss.map { String($0) } ?? "—"
-        let target = pending.target.map { String($0) } ?? "—"
-        let declared = [
-            "—",
-            pending.symbol,
-            pending.side,
-            qtyText,
-            "—",
-            stop,
-            target,
+        var rows: [BarEscrowRowPresentation] = [
+            row(id: "pending.symbol", label: "Symbol", declared: pending.symbol),
+            row(id: "pending.side", label: "Side / product", declared: pending.side),
+            row(id: "pending.qty", label: "Quantity", declared: qtyText),
         ]
-        return (0 ..< ledgerSlotCount).map { i in
-            BarEscrowRowPresentation(
-                id: "pending.\(i)",
-                label: ledgerPlaceholderLabel(index: i),
-                declared: i < declared.count ? declared[i] : "—",
-                actual: "—",
-                tone: .amber,
-                breakReason: nil,
-            )
+        if let stop = pending.stopLoss {
+            rows.append(row(id: "pending.stop", label: "Stop / protect", declared: String(stop)))
         }
+        if let target = pending.target {
+            rows.append(row(id: "pending.target", label: "Target / policy", declared: String(target)))
+        }
+        return rows
     }
 
-    private static func ledgerPlaceholderLabel(index: Int) -> String {
-        let labels = [
-            "Venue / feed",
-            "Symbol",
-            "Side / product",
-            "Quantity",
-            "Entry",
-            "Stop / protect",
-            "Target / policy",
-        ]
-        return index < labels.count ? labels[index] : "Row \(index + 1)"
+    private static func row(id: String, label: String, declared: String) -> BarEscrowRowPresentation {
+        BarEscrowRowPresentation(
+            id: id,
+            label: label,
+            declared: declared,
+            actual: "—",
+            tone: .amber,
+            breakReason: nil
+        )
     }
 
     static func rows(from report: BarEscrowMatchReport?) -> [BarEscrowRowPresentation] {
@@ -119,7 +89,7 @@ enum BarEscrowMatchPresentation {
             parts.append("pre-trade \(s)s")
         }
         if parts.isEmpty, hasNodes {
-            return "Escrow match — see nodes"
+            return "Match — see nodes"
         }
         if parts.isEmpty { return nil }
         return parts.joined(separator: " · ")

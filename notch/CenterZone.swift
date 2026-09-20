@@ -69,7 +69,7 @@ struct CenterZoneView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.65), value: viewModel.scoreRingPulseScale)
 
             HStack(spacing: 4) {
-                ForEach(NotchTab.allCases) { tab in
+                ForEach(NotchTab.allCases.filter(\.isReachableOnDesk)) { tab in
                     tabPill(tab)
                 }
             }

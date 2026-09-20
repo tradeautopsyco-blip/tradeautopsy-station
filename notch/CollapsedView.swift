@@ -63,6 +63,13 @@ struct CollapsedNotchView: View {
                 .foregroundColor(sessionPnLColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
+            if !presentation.sessionClockText.isEmpty {
+                Text(presentation.sessionClockText)
+                    .font(BarDS.monoFont(9, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(viewModel.deskSessionStale ? BarDS.Accent.amber : BarDS.Text.muted)
+                    .lineLimit(1)
+            }
             collapsedSoundBars
         }
         return Group {
@@ -74,7 +81,7 @@ struct CollapsedNotchView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), P&L \(pnl)"
+            "TradeAutopsy notch — \(viewModel.daemonConnectionLabel), P&L \(pnl), \(viewModel.sessionClockLabel)"
         )
     }
 
@@ -107,6 +114,7 @@ struct CollapsedNotchView: View {
     }
 
     private var sessionPnLColor: Color {
+        if presentation.pnlText == "—" { return .white }
         if viewModel.sessionPnL > 0 { return BarDS.Accent.green }
         if viewModel.sessionPnL < 0 { return BarDS.Accent.red }
         return .white

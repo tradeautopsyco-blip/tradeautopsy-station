@@ -25,7 +25,9 @@ struct BarPlanKillChromeTests {
         #expect(chrome.showsKillButton == false)
         #expect(chrome.showsStopMe == false)
         #expect(chrome.warningTitle == "Kill")
-        #expect(chrome.warningBody == "This locks the desk. Overlay stays until you tap I'm Calm after the countdown. Broker sites may be blocked.")
+        #expect(chrome.warningBody.contains("Stop is not Kill"))
+        #expect(chrome.warningBody.contains("not a max-loss flatten"))
+        #expect(!chrome.warningBody.lowercased().contains("max-loss trip"))
         #expect(chrome.confirmTitle == "Confirm")
         #expect(chrome.cancelTitle == "Cancel")
     }

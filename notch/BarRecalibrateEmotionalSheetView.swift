@@ -11,7 +11,7 @@ struct BarRecalibrateEmotionalSheetView: View {
             Text("Quick recalibrate")
                 .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundColor(.white.opacity(0.94))
-            Text("Re-rate how you feel right now — 1 calmest, 5 highest load. Nothing is uploaded until you use web Bar workflows.")
+            Text("Re-rate how you feel right now — 1 calmest, 5 highest load. Nothing is uploaded until you use Harness workflows.")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)

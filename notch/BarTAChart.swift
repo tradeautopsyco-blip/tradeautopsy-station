@@ -1,51 +1,9 @@
 import SwiftUI
 
-/// HTML `ta-charts.js` platters — line = time series, bars = category compare.
-/// Demo series match `NOTCH-ui.html` so the plots are visible even before live data.
-
 struct BarTAPoint: Identifiable {
     var id: String { "\(x)-\(y)" }
     let x: String
     let y: Double
-}
-
-enum BarTAChartDemo {
-    static let morningPnL: [BarTAPoint] = [
-        .init(x: "09:15", y: 0),
-        .init(x: "09:40", y: 420),
-        .init(x: "10:05", y: 810),
-        .init(x: "10:22", y: 180),
-        .init(x: "10:31", y: -420),
-        .init(x: "11:02", y: -900),
-        .init(x: "11:18", y: -610),
-        .init(x: "12:04", y: -1480),
-        .init(x: "15:20", y: -2100),
-    ]
-
-    static let fidelitySessions: [BarTAPoint] = [
-        .init(x: "30 Jul", y: 88),
-        .init(x: "31 Jul", y: 90),
-        .init(x: "1 Aug", y: 86),
-        .init(x: "2 Aug", y: 91),
-        .init(x: "4 Aug", y: 93),
-        .init(x: "5 Aug", y: 89),
-        .init(x: "6 Aug", y: 94),
-        .init(x: "7 Aug", y: 92),
-        .init(x: "8 Aug", y: 95),
-        .init(x: "9 Aug", y: 90),
-        .init(x: "11 Aug", y: 96),
-        .init(x: "12 Aug", y: 90),
-        .init(x: "13 Aug", y: 93),
-        .init(x: "14 Aug", y: 94),
-    ]
-
-    static let setupMix: [BarTAPoint] = [
-        .init(x: "Breakout", y: 42),
-        .init(x: "Pullback", y: 28),
-        .init(x: "Reversal", y: 14),
-        .init(x: "Gap fill", y: 10),
-        .init(x: "Mean reversion", y: 6),
-    ]
 }
 
 enum BarTALineKind {

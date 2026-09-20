@@ -63,6 +63,7 @@ let package = Package(
             name: "StationTests",
             dependencies: [
                 "Station",
+                .product(name: "Notch", package: "notch"),
                 .product(name: "Testing", package: "swift-testing"),
             ],
             path: "StationTests"

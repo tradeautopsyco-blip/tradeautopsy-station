@@ -40,13 +40,6 @@ struct JournalCapturePanelView: View {
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .foregroundColor(Color.white.opacity(0.85))
                         Spacer()
-                        Button("Sign in") {
-                            viewModel.openDeepLink(viewModel.webBaseURL + "/login?toolbar_reauth=1")
-                        }
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color(hex: "#00E5C0"))
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Sign in to TradeAutopsy")
                     }
                     .padding(10)
                     .background(Color(hex: "#FF9500").opacity(0.08))

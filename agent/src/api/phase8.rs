@@ -32,6 +32,7 @@ pub async fn kill_switch_ack_handler(
                     active: false,
                     level: None,
                     countdown_secs: None,
+                    expires_at_ms: None,
                     requires_ack: false,
                 });
             }

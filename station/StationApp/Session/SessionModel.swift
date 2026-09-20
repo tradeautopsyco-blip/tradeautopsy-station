@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Notch
 
 /// Station-owned live session poller — positions, broker sync honesty, and kill-switch.
 /// Replaces the Notch package's `NotchViewModel` for Station surfaces (pulse strip + Today).
@@ -9,6 +10,7 @@ public final class SessionModel: ObservableObject {
     @Published public var positions: [DeskPosition] = []
     @Published public var killSwitchActive: Bool = false
     @Published public var killSwitchCountdownSecs: Int?
+    @Published public var killSwitchExpiresAtMs: Int64?
     @Published public var killSwitchDismissBusy: Bool = false
     @Published public var brokerSessionActive: Bool = false
     @Published public var activeBrokerSlug: String?
@@ -237,17 +239,25 @@ public final class SessionModel: ObservableObject {
                     killSwitchLevel = lv
                 }
                 killSwitchRequiresAck = payload["requires_ack"] as? Bool ?? false
+                killSwitchExpiresAtMs = KillSwitchCountdown.parseMs(payload["expires_at_ms"])
+                let wireCountdown: Int?
                 if let c = payload["countdown_secs"] as? Int {
-                    killSwitchCountdownSecs = c
+                    wireCountdown = c
                 } else if let d = payload["countdown_secs"] as? Double {
-                    killSwitchCountdownSecs = Int(d)
+                    wireCountdown = Int(d)
                 } else {
-                    killSwitchCountdownSecs = nil
+                    wireCountdown = nil
                 }
+                killSwitchCountdownSecs = KillSwitchCountdown.remainingSecs(
+                    expiresAtMs: killSwitchExpiresAtMs,
+                    countdownSecs: wireCountdown,
+                    nowMs: KillSwitchCountdown.nowMs()
+                )
                 startKillSwitchCountdownTimerIfNeeded()
             } else {
                 killSwitchActive = false
                 killSwitchCountdownSecs = nil
+                killSwitchExpiresAtMs = nil
                 killSwitchLevel = nil
                 killSwitchRequiresAck = false
                 stopKillSwitchCountdownTimer()
@@ -374,6 +384,7 @@ public final class SessionModel: ObservableObject {
             guard (200...299).contains(code) else { return }
             killSwitchActive = false
             killSwitchCountdownSecs = nil
+            killSwitchExpiresAtMs = nil
             killSwitchLevel = nil
             killSwitchRequiresAck = false
             recordKillSwitchStateReceived()
@@ -425,16 +436,20 @@ public final class SessionModel: ObservableObject {
     // MARK: - Countdown timer
 
     private func startKillSwitchCountdownTimerIfNeeded() {
-        guard killSwitchCountdownSecs != nil else { return }
+        guard killSwitchCountdownSecs != nil || killSwitchExpiresAtMs != nil else { return }
         stopKillSwitchCountdownTimer()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                guard let remaining = self.killSwitchCountdownSecs, remaining > 0 else {
+                let remaining = KillSwitchCountdown.remainingSecs(
+                    expiresAtMs: self.killSwitchExpiresAtMs,
+                    countdownSecs: self.killSwitchCountdownSecs.map { max(0, $0 - 1) },
+                    nowMs: KillSwitchCountdown.nowMs()
+                )
+                self.killSwitchCountdownSecs = remaining
+                if remaining == nil || remaining == 0 {
                     self.stopKillSwitchCountdownTimer()
-                    return
                 }
-                self.killSwitchCountdownSecs = remaining - 1
             }
         }
         RunLoop.main.add(t, forMode: .common)

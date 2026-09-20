@@ -24,7 +24,7 @@ enum BarDeclareHTTPErrorPresentation {
         if let detail = AgentHTTPErrorPresentation.allowListedDetail(from: body) {
             return "Declaration failed (\(httpStatus)) — \(detail)"
         }
-        return "Declaration failed (\(httpStatus)) — try again or check web Bar."
+        return "Declaration failed (\(httpStatus)) — try again in Harness."
     }
 
     private static func parseJSON(_ body: Data) -> [String: Any]? {
@@ -41,18 +41,18 @@ enum BarDeclareHTTPErrorPresentation {
         else { return nil }
         let keys = errObj["keys"] as? [String] ?? []
         if keys.contains("bar.loss_limits.not_acknowledged") {
-            return "Acknowledge daily and weekly loss limits in web Bar settings before declaring."
+            return "Acknowledge daily and weekly loss limits in Station Settings before declaring."
         }
         if keys.contains("bar.loss_limits.missing_daily")
             || keys.contains("bar.loss_limits.missing_weekly")
             || keys.contains("bar.loss_limits.missing_margin_cap")
         {
-            return "Set daily, weekly, and margin loss limits in web Bar settings before declaring."
+            return "Set daily, weekly, and margin loss limits in Station Settings before declaring."
         }
         if !keys.isEmpty {
-            return "Complete Bar activation (loss limits) in web Bar settings before declaring."
+            return "Complete Bar activation (loss limits) in Station Settings before declaring."
         }
-        return "Complete Bar activation in web Bar settings before declaring."
+        return "Complete Bar activation in Station Settings before declaring."
     }
 
     private static func interventionBlockMessage(from parsed: [String: Any]) -> String? {

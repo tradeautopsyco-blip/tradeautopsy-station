@@ -20,6 +20,32 @@ pub struct AuditTailQuery {
     pub tail: Option<u32>,
 }
 
+fn unix_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn expires_at_ms(countdown_secs: Option<u32>) -> Option<i64> {
+    countdown_secs.map(|c| unix_now_ms().saturating_add(i64::from(c).saturating_mul(1000)))
+}
+
+fn kill_state(
+    active: bool,
+    level: Option<&str>,
+    countdown_secs: Option<u32>,
+    requires_ack: bool,
+) -> AgentEvent {
+    AgentEvent::KillSwitchState {
+        active,
+        level: level.map(|s| s.to_string()),
+        countdown_secs,
+        expires_at_ms: expires_at_ms(countdown_secs),
+        requires_ack,
+    }
+}
+
 fn loaded_policy(state: &AppState) -> KillPolicy {
     state
         .kill_policy
@@ -243,24 +269,24 @@ async fn apply_kill_switch_teeth(
         remember_apply(state, level, broker);
         // Q8: L1 is desk state only — do not set fog_active.
         append_audit_fire(state, level as i32, broker, trigger, Vec::new());
-        state.event_bus.publish(AgentEvent::KillSwitchState {
-            active: true,
-            level: Some("L1".to_string()),
-            countdown_secs: None,
-            requires_ack: false,
-        });
+        state.event_bus.publish(kill_state(
+            true,
+            Some("L1"),
+            None,
+            false,
+        ));
         return Ok(KillApplyOutcome::Applied { level });
     }
 
     if level == 2 {
         remember_apply(state, level, broker);
         append_audit_fire(state, level as i32, broker, trigger, Vec::new());
-        state.event_bus.publish(AgentEvent::KillSwitchState {
-            active: true,
-            level: Some("L2".to_string()),
-            countdown_secs: Some(countdown),
-            requires_ack: false,
-        });
+        state.event_bus.publish(kill_state(
+            true,
+            Some("L2"),
+            Some(countdown),
+            false,
+        ));
         return Ok(KillApplyOutcome::Applied { level });
     }
 
@@ -285,12 +311,12 @@ async fn apply_kill_switch_teeth(
         append_audit_fire(state, level as i32, broker, trigger, audit_hosts);
         // Leftover L3 readers still look at fog_active.
         state.fog_active.store(true, Ordering::SeqCst);
-        state.event_bus.publish(AgentEvent::KillSwitchState {
-            active: true,
-            level: Some("L3".to_string()),
-            countdown_secs: Some(countdown),
-            requires_ack: true,
-        });
+        state.event_bus.publish(kill_state(
+            true,
+            Some("L3"),
+            Some(countdown),
+            true,
+        ));
     }
 
     Ok(KillApplyOutcome::Applied { level })
@@ -334,12 +360,7 @@ pub async fn dismiss_kill_switch_state(state: &AppState) -> Result<(), String> {
         *last = None;
     }
     state.fog_active.store(false, Ordering::SeqCst);
-    state.event_bus.publish(AgentEvent::KillSwitchState {
-        active: false,
-        level: None,
-        countdown_secs: None,
-        requires_ack: false,
-    });
+    state.event_bus.publish(kill_state(false, None, None, false));
     Ok(())
 }
 
@@ -380,17 +401,26 @@ pub async fn kill_switch_handler(
             })),
         )
             .into_response(),
-        Ok(KillApplyOutcome::Applied { level }) => (
+        Ok(KillApplyOutcome::Applied { level }) => {
+            let countdown = if level >= 2 {
+                Some(policy.countdown_secs)
+            } else {
+                None
+            };
+            (
             StatusCode::OK,
             Json(json!({
                 "received": true,
                 "ignored": false,
                 "level": level,
+                "countdown_secs": countdown,
+                "expires_at_ms": expires_at_ms(countdown),
                 "dns_active": dns_block::is_block_active(),
                 "fog_active": state.fog_active.load(Ordering::SeqCst),
             })),
         )
-            .into_response(),
+            .into_response()
+        }
         Err(e) => {
             warn!("KillSwitch apply failed: {e}");
             (

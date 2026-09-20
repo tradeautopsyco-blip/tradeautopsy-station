@@ -250,6 +250,11 @@ enum NotchTab: String, CaseIterable, Hashable {
     case plan = "PLAN"
     /// Journal toolbar capture — design §6.3 (expanded panel).
     case capture = "CAPTURE"
+
+    /// Pulse / TAI / Workflows / Positions are unreachable theater on the desk.
+    static let unreachableOnDesk: Set<NotchTab> = [.pulse, .tai, .workflows, .positions]
+
+    var isReachableOnDesk: Bool { !Self.unreachableOnDesk.contains(self) }
 }
 
 public enum BarSurfacePhase: String {
@@ -299,6 +304,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var openOrders: Int = 0
     @Published public var killSwitchActive: Bool = false
     @Published public var killSwitchCountdownSecs: Int?
+    /// Policy latch expiry from the agent. Overlay remaining time is derived from this.
+    @Published public var killSwitchExpiresAtMs: Int64?
     /// Seconds since the last kill-switch state update (SSE or daemon poll). `Int.max` if never received.
     public var killSwitchStateAgeSecs: Int {
         guard let killSwitchStateReceivedAt else { return Int.max }
@@ -318,7 +325,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var taiInput: String = ""
     @Published var taiMode: TaiMode = .ambient
     @Published var isLoading: Bool = false
-    @Published var activeTab: NotchTab = .pulse
+    @Published var activeTab: NotchTab = .plan
     /// When true (Station-hosted), expanded surface stays on PLAN / `BarNotchShell` only.
     private(set) var planSurfaceOnly: Bool = false
     @Published var lastAlert: String?
@@ -752,7 +759,63 @@ public final class NotchViewModel: ObservableObject {
     var shouldPulse: Bool { compositeScore > 0.25 }
 
     var formattedSessionPnL: String {
-        formatDeskMoney(sessionPnL)
+        guard !sessionPnLOwnerMissing else { return "—" }
+        return formatDeskMoney(sessionPnL)
+    }
+
+    /// NFO + Binance Options have no realized-PnL owner — pill dashes, does not steal spot/cash.
+    var sessionPnLOwnerMissing: Bool {
+        if declareAssetClass == .options { return true }
+        let book = selectedMarketBookId?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        if book == BarDeskTemplate.kotakNfoBookId || book == BarDeskTemplate.binanceComOptionsBookId {
+            return true
+        }
+        return BarDeskTemplate.isKotakNfoDesk(slug: resolvedDeskSlug, assetClass: declareAssetClass)
+    }
+
+    /// Spot/equity Today hero only. Named futures use income; NFO/options stay dark.
+    var paintsTodayHero: Bool {
+        !declareAssetClass.isNamedComFutures && !sessionPnLOwnerMissing
+    }
+
+    var startedDeskSlugs: [String] {
+        var slugs: [String] = []
+        var seen = Set<String>()
+        func append(_ raw: String?) {
+            let slug = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+            guard !slug.isEmpty, !seen.contains(slug) else { return }
+            seen.insert(slug)
+            slugs.append(slug)
+        }
+        let started = brokerSessionActive
+            || brokerSyncClass == "synced"
+            || brokerSyncClass == "stale"
+            || brokerSyncClass == "syncing"
+        if started {
+            append(activeExecutionBrokerSlug)
+        }
+        for (slug, posture) in venuePostureBySlug {
+            if posture.posture.lowercased() == "live" {
+                append(slug)
+            }
+        }
+        return slugs
+    }
+
+    var sessionClockPresentation: BookSessionClock.Presentation {
+        BookSessionClock.presentation(
+            bookId: selectedMarketBookId,
+            brokerSlug: activeExecutionBrokerSlug,
+            at: Date()
+        )
+    }
+
+    var sessionClockLabel: String { sessionClockPresentation.label }
+
+    var deskSessionStale: Bool { sessionClockPresentation.stale }
+
+    func shouldPollMarketReads(now: Date = Date()) -> Bool {
+        BookSessionClock.shouldPollMarketReads(startedSlugs: startedDeskSlugs, at: now)
     }
 
     var accountImpact: AccountImpact {
@@ -769,6 +832,7 @@ public final class NotchViewModel: ObservableObject {
             notch: barLiveState,
             impact: accountImpact,
             pnlText: formattedSessionPnL,
+            sessionClockText: sessionClockPresentation.collapsedLabel,
         )
     }
 
@@ -846,7 +910,14 @@ public final class NotchViewModel: ObservableObject {
 
     public var totalUnrealizedPnL: Double { unrealizedTotal }
 
-    var totalExposure: Double { totalExposureApprox }
+    /// Dark until a real notional exists. Never qty × 1000.
+    var totalExposureText: String { "—" }
+
+    var killDnsHostRows: [(label: String, url: String)] {
+        let armed = barProtectiveBrokerSlug.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slug = armed.isEmpty ? activeExecutionBrokerSlug : armed
+        return KillDnsHosts.hosts(forBrokerSlug: slug)
+    }
 
     var quickWorkflows: [QuickWorkflowItem] { quickWorkflowItems }
 
@@ -1032,7 +1103,12 @@ public final class NotchViewModel: ObservableObject {
     }
 
     func selectTab(_ tab: NotchTab) {
-        let resolved = planSurfaceOnly ? NotchTab.plan : tab
+        let resolved: NotchTab
+        if planSurfaceOnly || !tab.isReachableOnDesk {
+            resolved = .plan
+        } else {
+            resolved = tab
+        }
         activeTab = resolved
         if resolved != .plan {
             showingDeclarationForm = false
@@ -3889,16 +3965,10 @@ public final class NotchViewModel: ObservableObject {
         pollFast = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.isIstMarketSession() {
+                if self.shouldPollMarketReads() {
                     await self.fetchPulseData()
                     await self.fetchPositions()
                 }
-            }
-        }
-
-        pollWorkflows = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                await self?.fetchWorkflowStatus()
             }
         }
 
@@ -3911,7 +3981,7 @@ public final class NotchViewModel: ObservableObject {
         pollTrades = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.isIstMarketSession() {
+                if self.shouldPollMarketReads() {
                     await self.fetchRecentTrades()
                 }
             }
@@ -3927,10 +3997,9 @@ public final class NotchViewModel: ObservableObject {
         Task {
             await refreshBrokerSyncState()
             await fetchDailyLossLimit()
-            await fetchWorkflowStatus()
             await fetchMorningBriefIfNeeded()
-            await fetchRecentTrades()
-            if isIstMarketSession() {
+            if shouldPollMarketReads() {
+                await fetchRecentTrades()
                 await fetchPulseData()
                 await fetchPositions()
             }
@@ -4018,16 +4087,9 @@ public final class NotchViewModel: ObservableObject {
         return c
     }
 
-    /// NSE cash-style window 09:15–15:30 IST (inclusive end minute).
+    /// NSE cash-style window 09:15–15:30 IST (inclusive end minute). COM must not use this as a poll gate.
     func isIstMarketSession() -> Bool {
-        let c = istCalendar()
-        let now = Date()
-        let h = c.component(.hour, from: now)
-        let m = c.component(.minute, from: now)
-        let wd = c.component(.weekday, from: now)
-        if wd == 1 || wd == 7 { return false }
-        let mins = h * 60 + m
-        return mins >= (9 * 60 + 15) && mins <= (15 * 60 + 30)
+        BookSessionClock.isNseCashSession(at: Date(), calendar: istCalendar())
     }
 
     private func todayKeyIST() -> String {
@@ -4212,17 +4274,25 @@ public final class NotchViewModel: ObservableObject {
                     killSwitchLevel = lv
                 }
                 killSwitchRequiresAck = payload["requires_ack"] as? Bool ?? false
+                killSwitchExpiresAtMs = KillSwitchCountdown.parseMs(payload["expires_at_ms"])
+                let wireCountdown: Int?
                 if let c = payload["countdown_secs"] as? Int {
-                    killSwitchCountdownSecs = c
+                    wireCountdown = c
                 } else if let d = payload["countdown_secs"] as? Double {
-                    killSwitchCountdownSecs = Int(d)
+                    wireCountdown = Int(d)
                 } else {
-                    killSwitchCountdownSecs = nil
+                    wireCountdown = nil
                 }
+                killSwitchCountdownSecs = KillSwitchCountdown.remainingSecs(
+                    expiresAtMs: killSwitchExpiresAtMs,
+                    countdownSecs: wireCountdown,
+                    nowMs: KillSwitchCountdown.nowMs()
+                )
                 startKillSwitchCountdownTimerIfNeeded()
             } else {
                 killSwitchActive = false
                 killSwitchCountdownSecs = nil
+                killSwitchExpiresAtMs = nil
                 killSwitchLevel = nil
                 killSwitchRequiresAck = false
                 stopKillSwitchCountdownTimer()
@@ -4540,14 +4610,14 @@ public final class NotchViewModel: ObservableObject {
     /// Daemon Today hero is **spot**. Named futures tabs must not paint `pnlTodayUsd`.
     func applyPulseHero(_ hero: [String: Any], degraded: Bool) {
         if degraded {
-            if !declareAssetClass.isNamedComFutures {
+            if paintsTodayHero {
                 sessionPnL = 0
             }
             winRate = 0
             tradesToday = 0
             return
         }
-        if !declareAssetClass.isNamedComFutures {
+        if paintsTodayHero {
             if let p = hero["pnlTodayUsd"] as? Double {
                 sessionPnL = p
             } else {
@@ -4758,16 +4828,28 @@ public final class NotchViewModel: ObservableObject {
                     }
                     return
                 }
-                let levelInt = bodyDict["level"] as? Int ?? 3
+                let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                let levelInt = (json["level"] as? Int)
+                    ?? (json["level"] as? Double).map { Int($0) }
+                    ?? (bodyDict["level"] as? Int)
+                    ?? 3
                 let levelStr = levelInt >= 3 ? "L3" : (levelInt == 2 ? "L2" : "L\(levelInt)")
+                var payload: [String: Any] = [
+                    "active": true,
+                    "level": levelStr,
+                    "requires_ack": levelInt >= 3,
+                ]
+                if let exp = KillSwitchCountdown.parseMs(json["expires_at_ms"]) {
+                    payload["expires_at_ms"] = exp
+                }
+                if let c = json["countdown_secs"] as? Int {
+                    payload["countdown_secs"] = c
+                } else if let d = json["countdown_secs"] as? Double {
+                    payload["countdown_secs"] = Int(d)
+                }
                 _ = applyDaemonEventPayload(
                     type: "kill_switch_state",
-                    payload: [
-                        "active": true,
-                        "level": levelStr,
-                        "countdown_secs": 90,
-                        "requires_ack": levelInt >= 3,
-                    ],
+                    payload: payload,
                     immediateToolbarShow: false
                 )
             } catch {
@@ -4800,6 +4882,7 @@ public final class NotchViewModel: ObservableObject {
             }
             killSwitchActive = false
             killSwitchCountdownSecs = nil
+            killSwitchExpiresAtMs = nil
             killSwitchLevel = nil
             killSwitchRequiresAck = false
             recordKillSwitchStateReceived()
@@ -4908,11 +4991,6 @@ public final class NotchViewModel: ObservableObject {
         return "CALM"
     }
 
-    /// Rough exposure placeholder when LTP not available: sum |qty| × ₹1k (tunable when API adds notional).
-    var totalExposureApprox: Double {
-        positions.reduce(0) { $0 + Double(abs($1.qty)) * 1000 }
-    }
-
     var unrealizedTotal: Double {
         positions.map(\.unrealizedPnL).reduce(0, +)
     }
@@ -4926,8 +5004,8 @@ public final class NotchViewModel: ObservableObject {
         morningBrief?.cautionSymbols ?? []
     }
 
-    /// Session P&L delta vs previous fetch not tracked server-side — show neutral until wired.
-    var sessionPnLChangeHint: Double { 0 }
+    /// Session P&L delta vs previous fetch not tracked — omit until Today derives it. Never hardcode 0 as a change.
+    var sessionPnLChangeHint: Double? { nil }
 
     func briefTimeString() -> String {
         guard let b = morningBrief else { return "—" }
@@ -5034,16 +5112,20 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func startKillSwitchCountdownTimerIfNeeded() {
-        guard killSwitchCountdownSecs != nil else { return }
+        guard killSwitchCountdownSecs != nil || killSwitchExpiresAtMs != nil else { return }
         stopKillSwitchCountdownTimer()
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                guard let remaining = self.killSwitchCountdownSecs, remaining > 0 else {
+                let remaining = KillSwitchCountdown.remainingSecs(
+                    expiresAtMs: self.killSwitchExpiresAtMs,
+                    countdownSecs: self.killSwitchCountdownSecs.map { max(0, $0 - 1) },
+                    nowMs: KillSwitchCountdown.nowMs()
+                )
+                self.killSwitchCountdownSecs = remaining
+                if remaining == nil || remaining == 0 {
                     self.stopKillSwitchCountdownTimer()
-                    return
                 }
-                self.killSwitchCountdownSecs = remaining - 1
                 self.refreshKillSwitchOverlayVisibility()
             }
         }
@@ -5086,11 +5168,28 @@ enum NotchVoiceOver {
 }
 
 extension NotchViewModel {
-    /// Desk-honest money format: follows `deskQuoteCurrency` from active connection (R7).
-    /// Falls back to INR only when no active desk currency is known (legacy Bar equities default).
+    /// Desk-honest money format: single known quote only. Never default INR. DualNoBlend dashes.
     public func formatDeskMoney(_ v: Double) -> String {
-        let ccy = deskQuoteCurrency ?? "INR"
+        guard let ccy = formatQuoteCurrency else { return "—" }
         return DeskMoneyFormatting.formatSigned(v, quoteCurrency: ccy)
+    }
+
+    /// Payload quote for a single desk, else catalog map. Mixed USD+INR → nil.
+    var formatQuoteCurrency: String? {
+        let slugs = startedDeskSlugs
+        if slugs.count > 1, DeskHonesty.heroQuoteCurrency(activeSlugs: slugs) == nil {
+            return nil
+        }
+        if slugs.count == 1 {
+            if let payload = deskQuoteCurrency?.trimmingCharacters(in: .whitespacesAndNewlines), !payload.isEmpty {
+                return payload.uppercased()
+            }
+            return DeskHonesty.heroQuoteCurrency(activeSlugs: slugs)
+        }
+        if let payload = deskQuoteCurrency?.trimmingCharacters(in: .whitespacesAndNewlines), !payload.isEmpty {
+            return payload.uppercased()
+        }
+        return nil
     }
 
     /// Legacy name — routes through desk currency (no longer hardcodes INR when COM is active).

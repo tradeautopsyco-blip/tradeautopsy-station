@@ -2,11 +2,11 @@ import SwiftUI
 
 /// PLAN expanded surface — sidebar, top bar, and routed main content (visual shell only).
 public enum BarNotchScreen: String, CaseIterable {
-    case morning = "Morning brief"
-    case pretrade = "Pre-trade"
-    case live = "Live trade"
-    case posttrade = "Post-trade"
-    case escrow = "Escrow match"
+    case morning = "Open"
+    case pretrade = "Plan"
+    case live = "Working"
+    case posttrade = "Debrief"
+    case escrow = "Match"
     case patterns = "Patterns"
     case fidelity = "Fidelity score"
     case triage = "Triage"
@@ -128,7 +128,7 @@ struct BarNotchShell: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Session")
+            Text("Harness")
                 .font(BarDS.bodyFont(11, weight: .medium))
                 .foregroundColor(Color.white.opacity(0.5))
                 .kerning(0.006 * 11)
@@ -442,6 +442,12 @@ struct BarNotchShell: View {
                 .foregroundColor(BarDS.Text.primary)
                 .kerning(-0.011 * BarDS.FontSize.topbarTitle)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(viewModel.sessionClockLabel)
+                .font(BarDS.monoFont(11, weight: .medium))
+                .monospacedDigit()
+                .foregroundColor(viewModel.deskSessionStale ? BarDS.Accent.amber : BarDS.Text.muted)
+                .accessibilityLabel("Session clock \(viewModel.sessionClockLabel)")
 
             Text(String(format: "%.2f", viewModel.compositeScore))
                 .font(BarDS.monoFont(11, weight: .regular))
@@ -856,13 +862,13 @@ struct BarNotchShell: View {
     private var barGateRequired: some View {
         let pending = viewModel.barLiveState?.pendingDeclaration
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Bar features are off or need setup on the web app.")
+            Text("Bar features are off or need setup in Station.")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .medium))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let pending {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Pending declaration on file — finish activation on the web Bar to proceed.")
+                    Text("Pending declaration on file — finish activation in Harness to proceed.")
                         .font(BarDS.bodyFont(11, weight: .medium))
                         .foregroundColor(BarDS.Accent.amber.opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
@@ -894,7 +900,7 @@ struct BarNotchShell: View {
                         .font(BarDS.monoFont(10, weight: .medium))
                         .foregroundColor(BarDS.Text.hint)
                 }
-                Text(p.protectiveSlConsent ? "Protective SL consent: on file" : "Protective SL consent: missing (see web Bar)")
+                Text(p.protectiveSlConsent ? "Protective SL consent: on file" : "Protective SL consent: missing")
                     .font(BarDS.bodyFont(10, weight: .medium))
                     .foregroundColor(
                         p.protectiveSlConsent ? BarDS.Accent.teal.opacity(0.85) : BarDS.Accent.amber
@@ -957,74 +963,23 @@ private struct BarPlaceholderCard: View {
 }
 
 private struct BarPatternsChartView: View {
-    @State private var selected: String = "Breakout"
-    private let counts: [Double: Int] = [42: 21, 28: 14, 14: 7, 10: 5, 6: 3]
-    private let maxPct: Double = 50
-
-    private var readout: String {
-        guard let row = BarTAChartDemo.setupMix.first(where: { $0.x == selected }) else {
-            return "Breakout · 21 of 50 trades"
-        }
-        let n = counts[row.y] ?? 0
-        return "\(row.x) · \(n) of 50 trades"
-    }
-
     var body: some View {
-        BarTAChartFigure(
-            kicker: "Setup mix · last 50 trades",
-            takeaway: "Breakout is the most used setup at 42% of the last 50 trades. Horizontal bars compare categories — this is not a time series.",
-            readout: readout
-        ) {
-            VStack(spacing: 0) {
-                ForEach(BarTAChartDemo.setupMix) { row in
-                    BarTABarRow(
-                        label: row.x,
-                        pct: row.y,
-                        maxPct: maxPct,
-                        selected: selected == row.x
-                    ) {
-                        selected = row.x
-                    }
-                }
-            }
-        }
+        BarPlaceholderCard(
+            title: "Setups",
+            caption: "Not enough tickets for a setup mix. Honest empty until a real series exists."
+        )
     }
 }
 
 private struct BarFidelityChartView: View {
     @ObservedObject var viewModel: NotchViewModel
-    @State private var lens: String = "last"
-    @State private var readout: String = "14 Aug · 94%"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            BarTAChartFigure(
-                kicker: "Plan fidelity · 14 sessions",
-                takeaway: "Plan fidelity averaged 92% over the last 14 sessions, up 6 points from the prior two weeks. Latest session 94%.",
-                readout: readout
-            ) {
-                BarTALinePlot(
-                    points: BarTAChartDemo.fidelitySessions,
-                    kind: .fidelity,
-                    height: 132,
-                    includeZero: false,
-                    yMinFixed: 80,
-                    yMaxFixed: 100,
-                    showDiamonds: true
-                )
-                .accessibilityLabel("Plan fidelity over 14 sessions, latest 94 percent")
-            }
-
-            fidelityLens(id: "last", title: "Last session", sub: " — micro", value: "94%") {
-                readout = "14 Aug · 94%"
-            }
-            fidelityLens(id: "avg", title: "Average", sub: " — macro", value: "92%") {
-                readout = "Average · 92%"
-            }
-            fidelityLens(id: "best", title: "Best day", sub: " — 11 Aug", value: "96%") {
-                readout = "11 Aug · 96%"
-            }
-
+            BarPlaceholderCard(
+                title: "Plan fidelity",
+                caption: "Not enough tickets for a fidelity series. Honest empty until a real series exists."
+            )
             if let pct = viewModel.barLiveState?.escrowMatchReport?.fidelityPct, pct.isFinite {
                 BarProgressBlock(
                     label: "Plan fidelity (escrow)",
@@ -1035,30 +990,6 @@ private struct BarFidelityChartView: View {
                 .padding(.top, 8)
             }
         }
-    }
-
-    private func fidelityLens(id: String, title: String, sub: String, value: String, action: @escaping () -> Void) -> some View {
-        Button {
-            lens = id
-            action()
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                (Text(title).font(BarDS.bodyFont(13, weight: .medium))
-                    + Text(sub).font(BarDS.bodyFont(11, weight: .regular)).foregroundColor(BarDS.Text.secondary))
-                    .foregroundColor(BarDS.Text.primary)
-                Spacer(minLength: 0)
-                Text(value)
-                    .font(BarDS.monoFont(11, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-            }
-            .padding(.vertical, 8)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.white.opacity(0.05)).frame(height: 0.5)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
-        .opacity(lens == id ? 1 : 0.85)
     }
 }
 

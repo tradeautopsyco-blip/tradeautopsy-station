@@ -232,7 +232,7 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     }
 
     func expandToPulse() async {
-        await expandToTab(isHostedByStation ? .plan : .pulse)
+        await expandToTab(.plan)
     }
 
     func expandToBrief() async {
@@ -240,11 +240,11 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
     }
 
     func expandToTAI() async {
-        await expandToTab(isHostedByStation ? .plan : .tai)
+        await expandToTab(.plan)
     }
 
     func expandToPositions() async {
-        await expandToTab(isHostedByStation ? .plan : .positions)
+        await expandToTab(.plan)
     }
 
     func expandToPlan() async {
@@ -300,6 +300,7 @@ public func tradeautopsy_notch_launch(
     let base = apiBase.map { String(cString: $0) } ?? "https://localhost:3000"
     DispatchQueue.main.async {
         let l = NotchLauncher.sharedLauncher()
+        l.viewModel.enablePlanSurfaceOnly()
         l.configure(secret: s, port: port, webBase: base)
         l.start()
     }

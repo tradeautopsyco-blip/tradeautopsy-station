@@ -23,7 +23,7 @@ struct PlanSurfaceOnlyTests {
 
     @Test func enablePlanSurfaceOnlyLocksExistingViewModel() {
         let vm = NotchViewModel()
-        #expect(vm.activeTab == .pulse)
+        #expect(vm.activeTab == .plan)
         vm.enablePlanSurfaceOnly()
         #expect(vm.planSurfaceOnly)
         #expect(vm.activeTab == .plan)
@@ -50,7 +50,11 @@ struct PlanSurfaceOnlyTests {
     @Test func standaloneLauncherDoesNotInstallPlanSurfaceOnly() {
         let launcher = NotchLauncher(isHostedByStation: false)
         #expect(launcher.viewModel.planSurfaceOnly == false)
-        #expect(launcher.viewModel.activeTab == .pulse)
+        #expect(launcher.viewModel.activeTab == .plan)
+        launcher.viewModel.selectTab(.pulse)
+        #expect(launcher.viewModel.activeTab == .plan)
+        launcher.viewModel.selectTab(.tai)
+        #expect(launcher.viewModel.activeTab == .plan)
     }
 
     @Test func hostedLauncherDoesNotInstallToggleHotkeyMonitorsOnStart() {

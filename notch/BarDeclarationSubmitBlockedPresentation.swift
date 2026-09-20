@@ -5,18 +5,18 @@ import SwiftUI
 enum BarDeclarationSubmitBlockedPresentation {
     static func message(blocked: Bool, activeInterventions: [ActiveIntervention]) -> String {
         guard blocked else {
-            return "Circuit active — finish or clear the web Bar intervention before declaring."
+            return "Circuit active — finish or clear the Harness intervention before declaring."
         }
         let sorted = BarInterventionCardSpec.sortedInterventions(activeInterventions)
         if let primary = sorted.first {
             let kind = humanKind(primary.interventionType)
             let body = primary.primaryMessage.trimmingCharacters(in: .whitespacesAndNewlines)
             if body.isEmpty {
-                return "Declaration blocked — \(kind). Resolve in web Bar before declaring."
+                return "Declaration blocked — \(kind). Resolve in Harness before declaring."
             }
             return "\(body) (\(kind))"
         }
-        return "Circuit active — finish or clear the web Bar intervention before declaring."
+        return "Circuit active — finish or clear the Harness intervention before declaring."
     }
 
     private static func humanKind(_ raw: String) -> String {

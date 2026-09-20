@@ -193,9 +193,6 @@ extension BarNotchScreen {
     }
 
     var navTitle: String {
-        switch self {
-        case .fidelity: return "Fidelity"
-        default: return rawValue
-        }
+        rawValue
     }
 }
