@@ -299,6 +299,18 @@ struct BarOptionsDeclareTests {
             isOptions: true,
             optionLegCount: 0,
             maxPlannedLossText: "15000",
+            frustration: 2,
+            excitement: 2,
+            stanceRaw: "planned",
+            intent: "Credit after IV crush.",
+            targetPriceText: "320",
+            gate: BarPlanGateStripState(
+                capitalAck: true,
+                onePercentAck: true,
+                maxLossAck: true,
+                hedgeAck: true,
+                reviewAck: true
+            )
         )
         #expect(BarIntradayDeclareValidator.submitReadiness(input).ready == false)
 
@@ -322,7 +334,19 @@ struct BarOptionsDeclareTests {
             invalidationCondition: "Last through invalidation.",
             declarationKindWire: "intraday",
             scalperSessionId: "",
-            isUsdm: true
+            isUsdm: true,
+            frustration: 2,
+            excitement: 2,
+            stanceRaw: "planned",
+            intent: "Trend continuation.",
+            targetPriceText: "68000",
+            gate: BarPlanGateStripState(
+                capitalAck: true,
+                onePercentAck: true,
+                maxLossAck: true,
+                hedgeAck: true,
+                reviewAck: true
+            )
         )
         let ready = BarIntradayDeclareValidator.submitReadiness(input)
         #expect(ready.ready)

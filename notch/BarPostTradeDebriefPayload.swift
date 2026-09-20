@@ -25,7 +25,7 @@ struct BarPostTradeAdherenceAnswers: Equatable {
 }
 
 enum BarPostTradeDebriefPayload {
-    /// Payload shape only (#5) — server persists via `ingestSignal` on hosted route.
+    /// Payload shape only (#5) — server upserts notes on the declaration, then ingestSignal.
     static func buildJSONObject(
         momentANote: String,
         adherence: BarPostTradeAdherenceAnswers,
@@ -33,6 +33,14 @@ enum BarPostTradeDebriefPayload {
         momentCNote: String,
         declarationId: String?,
         completedAtMs: Int,
+        liveNote: String = "",
+        emotionOut: Int? = nil,
+        captureIds: [String] = [],
+        impulsive: Bool = false,
+        symbol: String? = nil,
+        side: String? = nil,
+        quantity: Double? = nil,
+        stance: String? = nil,
     ) -> [String: Any] {
         var o: [String: Any] = [
             "v": 1,
@@ -44,6 +52,24 @@ enum BarPostTradeDebriefPayload {
         ]
         if let declarationId, !declarationId.isEmpty {
             o["declaration_id"] = declarationId
+        }
+        if !liveNote.isEmpty {
+            o["live_note"] = liveNote
+        }
+        if let emotionOut, (1...5).contains(emotionOut) {
+            o["emotion_out"] = emotionOut
+        }
+        if !captureIds.isEmpty {
+            o["capture_ids"] = captureIds
+        }
+        if impulsive {
+            o["impulsive"] = true
+            o["stance"] = "reactive"
+            if let symbol, !symbol.isEmpty { o["symbol"] = symbol }
+            if let side, !side.isEmpty { o["side"] = side }
+            if let quantity { o["quantity"] = quantity }
+        } else if let stance, !stance.isEmpty {
+            o["stance"] = stance
         }
         return o
     }

@@ -49,11 +49,17 @@ enum JournalWeekWire {
         var stopLoss: Double?
         var target: Double?
 
+        var intent: String?
+        var stance: String?
+        var invalidationPrice: Double?
+        var product: String?
+
         enum CodingKeys: String, CodingKey {
-            case target
+            case target, intent, stance, product
             case setupLabel = "setup_label"
             case invalidationLine = "invalidation_line"
             case invalidationKind = "invalidation_kind"
+            case invalidationPrice = "invalidation_price"
             case calmScale = "calm_scale"
             case confidenceScale = "confidence_scale"
             case stopLoss = "stop_loss"
@@ -152,7 +158,8 @@ enum JournalWeekWire {
                 calmScale: snap?.calmScale,
                 confidenceScale: snap?.confidenceScale,
                 stopLoss: snap?.stopLoss,
-                target: snap?.target
+                target: snap?.target,
+                stance: snap?.stance
             ),
             notes: JournalNotes(
                 pre: item.notes?.pre ?? "",

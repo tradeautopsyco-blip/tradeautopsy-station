@@ -5,13 +5,20 @@ import SwiftUI
 struct BarEscrowMatchView: View {
     let report: BarEscrowMatchReport?
     var pending: BarPendingDeclaration? = nil
+    var last: Double? = nil
+    var lastStatus: String = "unavailable"
 
     @State private var expandedRowIds: Set<String> = []
 
     private let escrowRingDiameter: CGFloat = 56
 
     var body: some View {
-        let rows = BarEscrowMatchPresentation.matchRows(from: report, pending: pending)
+        let rows = BarEscrowMatchPresentation.matchRows(
+            from: report,
+            pending: pending,
+            last: last,
+            lastStatus: lastStatus
+        )
         let summary = BarEscrowMatchPresentation.summaryLine(from: report)
 
         VStack(alignment: .leading, spacing: 12) {
@@ -39,7 +46,7 @@ struct BarEscrowMatchView: View {
     private func headerRow(summary: String?) -> some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("MATCH — declared vs actual")
+                Text(pending == nil ? "MATCH — declared vs actual" : "WORKING — declared vs actual")
                     .font(BarDS.bodyFont(10, weight: .bold))
                     .foregroundColor(BarDS.Text.hint)
                     .tracking(0.8)
@@ -74,6 +81,7 @@ struct BarEscrowMatchView: View {
         case .green: return .ok
         case .amber: return .wrn
         case .red: return .brk
+        case .dark: return .wrn
         }
     }
 
@@ -207,6 +215,7 @@ struct BarEscrowMatchView: View {
         case .green: BarDS.Accent.teal.opacity(0.9)
         case .amber: BarDS.Accent.amber.opacity(0.9)
         case .red: BarDS.Accent.red.opacity(0.9)
+        case .dark: Color.white.opacity(0.22)
         }
     }
 

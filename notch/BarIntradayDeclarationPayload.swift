@@ -33,11 +33,28 @@ enum BarIntradayDeclarationPayload {
         maxPlannedLossINR: Double? = nil,
         bookId: String? = nil,
         ticket: BarDeskTicketIntent? = nil,
+        moodFrustration: Double? = nil,
+        moodExcitement: Double? = nil,
+        stance: String? = nil,
+        intent: String? = nil,
+        invalidationPrice: Double? = nil,
+        cashProduct: String? = nil,
+        gateStrip: BarPlanGateStripState? = nil,
     ) -> [String: Any] {
         var s1: [String: Any] = [
             "mood_stress": moodStress,
             "mood_impulse": moodImpulse,
         ]
+        if let f = moodFrustration { s1["mood_frustration"] = f }
+        if let e = moodExcitement { s1["mood_excitement"] = e }
+        if let st = stance?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           BarPlanStance(rawValue: st) != nil {
+            s1["stance"] = st
+        }
+        if let intentText = intent?.trimmingCharacters(in: .whitespacesAndNewlines), !intentText.isEmpty {
+            s1["intent"] = intentText
+            s1["pre"] = intentText
+        }
         if let setup = setupTypeLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !setup.isEmpty {
             s1["setup_type"] = setup
         }
@@ -46,6 +63,31 @@ enum BarIntradayDeclarationPayload {
         }
         if let inv = invalidationNote?.trimmingCharacters(in: .whitespacesAndNewlines), !inv.isEmpty {
             s1["invalidation"] = inv
+        }
+        if let invP = invalidationPrice, invP > 0 {
+            s1["invalidation_price"] = invP
+        }
+        var spec: [String: Any] = [:]
+        if let invT = invalidationTypeWire?.trimmingCharacters(in: .whitespacesAndNewlines), !invT.isEmpty {
+            spec["kind"] = invT
+        }
+        if let invP = invalidationPrice, invP > 0 {
+            spec["price"] = invP
+        }
+        if let inv = invalidationNote?.trimmingCharacters(in: .whitespacesAndNewlines), !inv.isEmpty {
+            spec["line"] = inv
+        } else if let invP = invalidationPrice, invP > 0 {
+            spec["line"] = "Last through \(invP)."
+        }
+        if !spec.isEmpty {
+            s1["invalidation_spec"] = spec
+        }
+        if let product = cashProduct?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+           product == "CNC" || product == "MIS" {
+            s1["product"] = product
+        }
+        if let gate = gateStrip {
+            s1["gate_strip"] = BarPlanGateStrip.asJSONObject(gate)
         }
         var quantityOut = quantity
         var legsOut: [OptionLeg] = optionLegs

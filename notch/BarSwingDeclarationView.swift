@@ -227,6 +227,8 @@ struct BarSwingDeclarationView: View {
 
     private func swingInvalidationExampleHint(_ kind: BarInvalidationKind?) -> String {
         switch kind {
+        case .price:
+            return "Example: \"Last through 1400 — thesis is dead; not the broker stop.\""
         case .time:
             return "Example: \"By Friday close — thesis expires if price hasn't cleared prior week high.\""
         case .behaviour:
@@ -241,6 +243,8 @@ struct BarSwingDeclarationView: View {
     @ViewBuilder
     private func swingInvalidationIcon(for k: BarInvalidationKind) -> some View {
         switch k {
+        case .price:
+            Image(systemName: "flag")
         case .time:
             Image(systemName: "clock")
         case .behaviour:
@@ -319,6 +323,8 @@ struct BarSwingDeclarationView: View {
             return BarIntradayDeclareValidator.canProceedFromEmotionalCheckIn(
                 calm: calmSelection,
                 confidence: confidenceSelection,
+                frustration: viewModel.declEmotionalFrustration,
+                excitement: viewModel.declEmotionalExcitement,
             )
         case 1:
             let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -362,7 +368,17 @@ struct BarSwingDeclarationView: View {
         var s1: [String: Any] = [
             "mood_stress": Double(calm),
             "mood_impulse": Double(conf),
+            "mood_frustration": Double(viewModel.declEmotionalFrustration),
+            "mood_excitement": Double(viewModel.declEmotionalExcitement),
         ]
+        if BarPlanStance(rawValue: viewModel.declStance) != nil {
+            s1["stance"] = viewModel.declStance
+        }
+        let intentTrim = viewModel.declIntent.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !intentTrim.isEmpty {
+            s1["intent"] = intentTrim
+            s1["pre"] = intentTrim
+        }
         let inv = invalidationNote.trimmingCharacters(in: .whitespacesAndNewlines)
         if !inv.isEmpty { s1["invalidation"] = inv }
         if let k = swingInvalidationKind {
@@ -403,12 +419,7 @@ struct BarSwingDeclarationView: View {
                 feel: calmFeelState,
             )
             if let c = calmSelection {
-                if c >= 4 {
-                    stateWarningBox(
-                        text: "State \(c) — position size halved. Trade will be flagged.",
-                        kind: .red,
-                    )
-                } else if c == 3 {
+                if c == 3 {
                     stateWarningBox(
                         text: "State 3 — trade with heightened awareness.",
                         kind: .amber,

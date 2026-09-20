@@ -37,8 +37,7 @@ struct BarPostTradeView: View {
     @State private var momentCIsCooling: Bool = true
     @State private var noteC: String = ""
     @State private var tick: Date = Date()
-
-    private let momentASeconds: TimeInterval = 120
+    @State private var emotionOut: Int = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -78,6 +77,7 @@ struct BarPostTradeView: View {
             adherenceTri = AdherenceTriState()
             momentCIsCooling = true
             noteC = ""
+            emotionOut = viewModel.declEmotionNow
             tick = Date()
         }
         .onReceive(NotchOneSecondClock.publisher) { tick = $0 }
@@ -93,11 +93,6 @@ struct BarPostTradeView: View {
         )
     }
 
-    private var adherenceAllYes: Bool {
-        adherenceTri.stop == .yes && adherenceTri.size == .yes && adherenceTri.invalidation == .yes
-            && adherenceTri.exit == .yes && adherenceTri.impulsive == .yes
-    }
-
     private var adherenceAnsweredCount: Int {
         let a = [adherenceTri.stop, adherenceTri.size, adherenceTri.invalidation, adherenceTri.exit, adherenceTri.impulsive]
         return a.filter { $0 != .unset }.count
@@ -108,13 +103,7 @@ struct BarPostTradeView: View {
         return a.filter { $0 == .no }.count
     }
 
-    private var momentAElapsed: TimeInterval {
-        tick.timeIntervalSince(momentABase)
-    }
-
-    private var momentACanContinue: Bool {
-        postTrade.momentAAcknowledged || momentAElapsed >= momentASeconds
-    }
+    private var momentACanContinue: Bool { true }
 
     private var unpostedChartsCard: some View {
         BarCard {
@@ -144,22 +133,19 @@ struct BarPostTradeView: View {
                 .foregroundColor(postTrade.momentAAcknowledged ? BarDS.Accent.teal : BarDS.Text.primary)
                 .padding(.bottom, 8)
 
-            Text("Win or loss aside: did the market prove your thesis wrong, or did you exit early?")
+            Text("Cited Today trip net for this ticket. NFO and options stay a dash.")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 8)
 
-            if !postTrade.momentAAcknowledged {
-                let remain = max(0, momentASeconds - momentAElapsed)
-                let mm = Int(remain) / 60
-                let ss = Int(remain) % 60
-                Text("Read window \(String(format: "%d:%02d", mm, ss))")
-                    .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
-                    .foregroundColor(BarDS.Accent.teal.opacity(0.9))
-                    .accessibilityLabel("Moment A countdown \(mm) minutes \(ss) seconds")
-                    .padding(.bottom, 8)
+            Text(citedNetDisplay)
+                .font(BarDS.monoFont(BarDS.FontSize.body, weight: .semibold))
+                .foregroundColor(BarDS.Text.primary)
+                .padding(.bottom, 8)
+                .accessibilityLabel("Cited net \(citedNetDisplay)")
 
+            if !postTrade.momentAAcknowledged {
                 BarInputField(placeholder: "Optional note", text: $noteA)
                     .padding(.bottom, 4)
 
@@ -177,35 +163,37 @@ struct BarPostTradeView: View {
 
     private var momentB: some View {
         let canAct = postTrade.momentAAcknowledged
-        let allOn = adherenceAllYes
         return BarCard {
             Text("Moment B — process")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .bold))
                 .foregroundColor(postTrade.momentBAcknowledged ? BarDS.Accent.teal : BarDS.Text.primary)
                 .padding(.bottom, 8)
 
-            Text("Affirm each line — only honest yes advances.")
+            Text("Check vs the frozen snapshot. Honest no is allowed — all-yes is not required.")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 8)
 
             if !postTrade.momentBAcknowledged {
-                adherenceCycleRow("Stop as declared", "Matches your declared stop for this plan.", \.stop, canAct)
-                adherenceCycleRow("Size as declared", "No drift vs declared size.", \.size, canAct)
-                adherenceCycleRow("Invalidation respected", "You honored the invalidation you wrote.", \.invalidation, canAct)
-                adherenceCycleRow("Exit per plan", "Exit matched thesis / risk plan.", \.exit, canAct)
+                adherenceCycleRow("Stop as declared", snapshotStopLine, \.stop, canAct)
+                adherenceCycleRow("Size as declared", snapshotSizeLine, \.size, canAct)
+                adherenceCycleRow("Invalidation respected", snapshotInvLine, \.invalidation, canAct)
+                adherenceCycleRow("Exit per plan", snapshotTargetLine, \.exit, canAct)
                 adherenceCycleRow("No impulsive add / scale-in", "No unplanned adds while stressed.", \.impulsive, canAct)
 
-                if adherenceAnsweredCount >= 3 {
+                emotionOutRow
+                    .padding(.vertical, 6)
+
+                if adherenceAnsweredCount >= 1 {
                     adherenceProcessBadge
                         .padding(.vertical, 6)
                 }
 
-                tealContinueButton(title: "Continue", enabled: canAct && allOn) {
+                tealContinueButton(title: "Continue", enabled: canAct && emotionOut >= 1) {
                     postTrade = BarPostTradeReducer.reduce(state: postTrade, action: .acknowledgeMomentB)
                 }
-                .disabled(!canAct || !allOn)
+                .disabled(!canAct || emotionOut < 1)
             } else {
                 Text("Recorded")
                     .font(BarDS.bodyFont(10, weight: .medium))
@@ -213,6 +201,31 @@ struct BarPostTradeView: View {
             }
         }
         .opacity(canAct || postTrade.momentBAcknowledged ? 1 : 0.45)
+    }
+
+    private var emotionOutRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("EMOTION OUT")
+                .font(BarDS.bodyFont(9, weight: .bold))
+                .foregroundColor(BarDS.Text.hint)
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { n in
+                    Button {
+                        emotionOut = n
+                    } label: {
+                        Text("\(n)")
+                            .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                            .foregroundColor(emotionOut == n ? Color(hex: "#050505") : BarDS.Text.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(emotionOut == n ? BarDS.Accent.teal : Color.white.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Emotion out \(n)")
+                }
+            }
+        }
     }
 
     private var adherenceProcessBadge: some View {
@@ -373,21 +386,37 @@ struct BarPostTradeView: View {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let declPending = viewModel.barLiveState?.pendingDeclaration?.id
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                let undeclared = viewModel.barLiveState?.undeclaredPosition
                 let declId: String? = {
                     if let m = declFromMatch, !m.isEmpty { return m }
                     if let p = declPending, !p.isEmpty { return p }
                     return nil
                 }()
-                let payload = BarPostTradeDebriefPayload.buildJSONObject(
-                    momentANote: noteA.trimmingCharacters(in: .whitespacesAndNewlines),
-                    adherence: adherence,
-                    momentCContext: momentCIsCooling ? "cooling" : "win",
-                    momentCNote: noteC.trimmingCharacters(in: .whitespacesAndNewlines),
-                    declarationId: declId,
-                    completedAtMs: Int(Date().timeIntervalSince1970 * 1000),
-                )
-                guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
-                Task { await viewModel.submitBarPostTradeDebrief(body: data) }
+                let impulsive = declId == nil && undeclared != nil
+                Task {
+                    var captureIds: [String] = []
+                    if let declId {
+                        captureIds = await viewModel.attachUnpostedToTicket(declId)
+                    }
+                    let payload = BarPostTradeDebriefPayload.buildJSONObject(
+                        momentANote: noteA.trimmingCharacters(in: .whitespacesAndNewlines),
+                        adherence: adherence,
+                        momentCContext: momentCIsCooling ? "cooling" : "win",
+                        momentCNote: noteC.trimmingCharacters(in: .whitespacesAndNewlines),
+                        declarationId: declId,
+                        completedAtMs: Int(Date().timeIntervalSince1970 * 1000),
+                        liveNote: liveNoteText,
+                        emotionOut: emotionOut >= 1 ? emotionOut : nil,
+                        captureIds: captureIds,
+                        impulsive: impulsive,
+                        symbol: undeclared?.symbol,
+                        side: undeclared?.side.uppercased(),
+                        quantity: undeclared.map { Double($0.quantity) },
+                        stance: impulsive ? "reactive" : viewModel.barLiveState?.pendingDeclaration?.planSnapshot?.stance
+                    )
+                    guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+                    await viewModel.submitBarPostTradeDebrief(body: data)
+                }
             } label: {
                 HStack(spacing: 8) {
                     if viewModel.barPostTradeDebriefBusy {
@@ -405,6 +434,61 @@ struct BarPostTradeView: View {
             .buttonStyle(.plain)
             .disabled(viewModel.barPostTradeDebriefBusy)
         }
+    }
+
+    private var citedNetDisplay: String {
+        BarDebriefCitedNet.display(
+            optionsOrNfo: viewModel.sessionPnLOwnerMissing || viewModel.declareAssetClass == .options,
+            net: BarDebriefCitedNet.net(
+                symbol: viewModel.barLiveState?.pendingDeclaration?.symbol
+                    ?? viewModel.barLiveState?.undeclaredPosition?.symbol,
+                trips: viewModel.todayClosedTrips.map { ($0.symbol, $0.net) }
+            ),
+            currency: viewModel.formatQuoteCurrency
+        )
+    }
+
+    private var liveNoteText: String {
+        var parts: [String] = []
+        if let avg = viewModel.barLiveState?.pendingDeclaration?.avgFill {
+            parts.append("Avg fill \(BarWorkingCompare.formatPrice(avg))")
+        }
+        if viewModel.declEmotionNow >= 1 {
+            parts.append("emotion now \(viewModel.declEmotionNow)")
+        }
+        let a = noteA.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !a.isEmpty { parts.append(a) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var snapshotStopLine: String {
+        if let sl = viewModel.barLiveState?.pendingDeclaration?.stopLoss {
+            return "Declared SL \(BarWorkingCompare.formatPrice(sl))"
+        }
+        return "Matches your declared stop for this plan."
+    }
+
+    private var snapshotSizeLine: String {
+        if let q = viewModel.barLiveState?.pendingDeclaration?.quantity {
+            return "Declared qty \(BarWorkingCompare.formatQty(q))"
+        }
+        return "No drift vs declared size."
+    }
+
+    private var snapshotInvLine: String {
+        let plan = viewModel.barLiveState?.pendingDeclaration?.planSnapshot
+        if let p = plan?.resolvedInvalidationPrice {
+            return "Invalidation \(BarWorkingCompare.formatPrice(p))"
+        }
+        let line = plan?.resolvedInvalidationLine ?? ""
+        return line.isEmpty ? "You honored the invalidation you wrote." : line
+    }
+
+    private var snapshotTargetLine: String {
+        if let t = viewModel.barLiveState?.pendingDeclaration?.target {
+            return "Target \(BarWorkingCompare.formatPrice(t))"
+        }
+        return "Exit matched thesis / risk plan."
     }
 
     private func tealContinueButton(title: String, enabled: Bool, action: @escaping () -> Void) -> some View {

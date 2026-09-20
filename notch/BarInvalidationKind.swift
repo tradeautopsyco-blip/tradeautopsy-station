@@ -2,6 +2,7 @@ import Foundation
 
 /// Invalidation taxonomy for intraday Bar (#121) — maps to chips in unified reference mockups 3–4.
 enum BarInvalidationKind: String, Equatable, CaseIterable, Identifiable {
+    case price
     case time
     case behaviour
     case context
@@ -10,6 +11,7 @@ enum BarInvalidationKind: String, Equatable, CaseIterable, Identifiable {
 
     var chipTitle: String {
         switch self {
+        case .price: return "Price"
         case .time: return "Time"
         case .behaviour: return "Behaviour"
         case .context: return "Context"
@@ -22,6 +24,8 @@ enum BarInvalidationKind: String, Equatable, CaseIterable, Identifiable {
             return "Describe invalidation condition…"
         }
         switch kind {
+        case .price:
+            return "Exact price that kills the thesis — not the broker stop…"
         case .time:
             return "E.g. time-box exit, session cut-off, or minutes until thesis expires…"
         case .behaviour:

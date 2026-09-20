@@ -28,6 +28,7 @@ public struct JournalSnapshot: Equatable, Sendable {
     public let confidenceScale: Double?
     public let stopLoss: Double?
     public let target: Double?
+    public let stance: String?
 
     public init(
         setupLabel: String?,
@@ -36,7 +37,8 @@ public struct JournalSnapshot: Equatable, Sendable {
         calmScale: Double?,
         confidenceScale: Double?,
         stopLoss: Double?,
-        target: Double?
+        target: Double?,
+        stance: String? = nil
     ) {
         self.setupLabel = setupLabel
         self.invalidationLine = invalidationLine
@@ -45,6 +47,7 @@ public struct JournalSnapshot: Equatable, Sendable {
         self.confidenceScale = confidenceScale
         self.stopLoss = stopLoss
         self.target = target
+        self.stance = stance
     }
 }
 
@@ -311,7 +314,7 @@ public struct JournalWeek: Equatable, Sendable {
             .filter { !coveredSymbols.contains($0.symbol.uppercased()) }
             .map { JournalImpulsiveRow(symbol: $0.symbol, qty: $0.qty, direction: $0.direction) }
 
-        let sidebarDue = false
+        let sidebarDue = citedItems.contains { $0.isPostDue }
 
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let emotionHit = {

@@ -9,42 +9,45 @@ struct BriefLeftView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            briefCapsHeader("Session")
+            briefCapsHeader("Open")
+            openDeskHeader
 
-            BarCard {
-                Text("Pre-market")
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
-                    .foregroundColor(BarDS.Text.section)
-                    .textCase(.uppercase)
-                    .kerning(0.006 * 11)
-                    .padding(.bottom, 8)
+            if !viewModel.openHidesIndexChips {
+                BarCard {
+                    Text("Pre-market")
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                        .foregroundColor(BarDS.Text.section)
+                        .textCase(.uppercase)
+                        .kerning(0.006 * 11)
+                        .padding(.bottom, 8)
 
-                HStack(spacing: 6) {
-                    marketIndex(
-                        "Nifty",
-                        value: viewModel.niftyValue,
-                        change: viewModel.niftyChange
-                    )
-                    marketIndex(
-                        "BNF",
-                        value: viewModel.bnfValue,
-                        change: viewModel.bnfChange
-                    )
-                    marketIndex(
-                        "VIX",
-                        value: viewModel.vixValue,
-                        change: nil,
-                        accent: viewModel.vixValue < 15
-                            ? BarDS.Accent.teal
-                            : viewModel.vixValue < 20
-                                ? BarDS.Accent.amber
-                                : BarDS.Accent.red
-                    )
+                    HStack(spacing: 6) {
+                        marketIndex(
+                            "Nifty",
+                            value: viewModel.niftyValue,
+                            change: viewModel.niftyChange
+                        )
+                        marketIndex(
+                            "BNF",
+                            value: viewModel.bnfValue,
+                            change: viewModel.bnfChange
+                        )
+                        marketIndex(
+                            "VIX",
+                            value: viewModel.vixValue,
+                            change: nil,
+                            accent: viewModel.vixValue < 15
+                                ? BarDS.Accent.teal
+                                : viewModel.vixValue < 20
+                                    ? BarDS.Accent.amber
+                                    : BarDS.Accent.red
+                        )
+                    }
                 }
-            }
 
-            BarDSDivider()
-                .padding(.vertical, 2)
+                BarDSDivider()
+                    .padding(.vertical, 2)
+            }
 
             briefCapsHeader("What matters")
 
@@ -69,10 +72,14 @@ struct BriefLeftView: View {
                 }
             }
 
+            openStartGate
             BarBigButton(label: "Start trading →", style: .primary) {
                 viewModel.startTradingFromMorningBrief()
             }
+            .disabled(!viewModel.openStartUnlocked)
+            .opacity(viewModel.openStartUnlocked ? 1 : 0.45)
             .accessibilityLabel("Start trading, open plan declaration")
+            .accessibilityHint(viewModel.openStartUnlocked ? "Opens Plan" : "Set calm, confidence, and the rule first")
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -86,6 +93,99 @@ struct BriefLeftView: View {
             .kerning(0.006 * BarDS.FontSize.sectionLabel)
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var openDeskHeader: some View {
+        let clock = viewModel.sessionClockPresentation
+        let book = viewModel.selectedMarketBookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let ccy = viewModel.formatQuoteCurrency ?? "—"
+        let undeclared = viewModel.barLiveState?.undeclaredPosition
+        let overnight = viewModel.positions.filter { $0.qty != 0 }
+        let yesterday = viewModel.morningBrief?.sessionPnLKpi
+        let floor = viewModel.dailyLossLimit
+        return BarCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(book.isEmpty ? "No book" : book)
+                    .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                    .foregroundColor(BarDS.Text.primary)
+                HStack {
+                    Text(ccy)
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                        .foregroundColor(BarDS.Text.secondary)
+                    Spacer()
+                    Text(clock.label)
+                        .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                        .foregroundColor(clock.inSession ? BarDS.Accent.teal : BarDS.Text.secondary)
+                        .accessibilityLabel("Session clock \(clock.label)")
+                }
+                Text(overnight.isEmpty ? "No overnight inventory" : "Overnight / open \(overnight.count)")
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                    .foregroundColor(BarDS.Text.secondary)
+                if let undeclared {
+                    Text("Undeclared \(undeclared.symbol) \(undeclared.side) \(undeclared.quantity)")
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                        .foregroundColor(BarDS.Accent.amber)
+                }
+                Text("Yesterday Today \(yesterday.map { viewModel.formatDeskMoney($0) } ?? "—")")
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                    .foregroundColor(BarDS.Text.secondary)
+                Text("Floor \(floor.map { viewModel.formatDeskMoney($0) } ?? "—") · label only, does not fire Kill")
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                    .foregroundColor(BarDS.Text.hint)
+            }
+        }
+    }
+
+    private var openStartGate: some View {
+        BarCard {
+            Text("Start gate")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                .foregroundColor(BarDS.Text.section)
+                .textCase(.uppercase)
+                .padding(.bottom, 8)
+            Text("Calm, confidence, and one local non-negotiable. Plan still asks frustration, excitement, stance, and the 7-box.")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 8)
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { n in
+                    Button {
+                        viewModel.declEmotionalCalm = n
+                    } label: {
+                        Text("C\(n)")
+                            .font(BarDS.monoFont(10, weight: .semibold))
+                            .foregroundColor(viewModel.declEmotionalCalm == n ? Color(hex: "#050505") : BarDS.Text.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(viewModel.declEmotionalCalm == n ? BarDS.Accent.teal : Color.white.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Calm \(n)")
+                }
+            }
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { n in
+                    Button {
+                        viewModel.declEmotionalConfidence = n
+                    } label: {
+                        Text("K\(n)")
+                            .font(BarDS.monoFont(10, weight: .semibold))
+                            .foregroundColor(viewModel.declEmotionalConfidence == n ? Color(hex: "#050505") : BarDS.Text.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(viewModel.declEmotionalConfidence == n ? BarDS.Accent.teal : Color.white.opacity(0.04))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Confidence \(n)")
+                }
+            }
+            .padding(.top, 4)
+            BarInputField(placeholder: "One local non-negotiable", text: $viewModel.openNonNegotiable)
+                .padding(.top, 8)
+        }
     }
 
     private func marketIndex(
@@ -134,12 +234,6 @@ struct BriefLeftView: View {
 
             if BriefMorningBriefPresentation.showsEstablishedBranch(patterns: b.patterns) {
                 establishedBrief(b)
-            } else if BriefMorningBriefPresentation.shouldShowPreM10PatternsStub(
-                isNewUser: b.isNewUser,
-                tradeCount: b.tradeCount,
-                patterns: b.patterns,
-            ) {
-                preM10PatternsStub(b)
             } else {
                 newUserBrief(b)
             }

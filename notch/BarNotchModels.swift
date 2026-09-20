@@ -433,6 +433,10 @@ struct BarPendingDeclaration: Codable {
     let stopLoss: Double?
     let target: Double?
     let planSnapshot: BarPlanSnapshotSummary?
+    let filledQty: Double?
+    let avgFill: Double?
+    let fillSymbol: String?
+    let fillSide: String?
 
     enum CodingKeys: String, CodingKey {
         case id, status, symbol, side, quantity, target
@@ -441,6 +445,10 @@ struct BarPendingDeclaration: Codable {
         case protectiveSlConsent = "protective_sl_consent"
         case stopLoss = "stop_loss"
         case planSnapshot = "plan_snapshot"
+        case filledQty = "filled_qty"
+        case avgFill = "avg_fill"
+        case fillSymbol = "fill_symbol"
+        case fillSide = "fill_side"
     }
 }
 

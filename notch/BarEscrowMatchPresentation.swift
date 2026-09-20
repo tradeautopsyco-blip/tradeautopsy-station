@@ -6,6 +6,7 @@ enum BarEscrowRowTone: Equatable {
     case green
     case amber
     case red
+    case dark
 }
 
 struct BarEscrowRowPresentation: Identifiable, Equatable {
@@ -20,41 +21,131 @@ struct BarEscrowRowPresentation: Identifiable, Equatable {
 enum BarEscrowMatchPresentation {
     static func matchRows(
         from report: BarEscrowMatchReport?,
-        pending: BarPendingDeclaration? = nil
+        pending: BarPendingDeclaration? = nil,
+        last: Double? = nil,
+        lastStatus: String = "unavailable"
     ) -> [BarEscrowRowPresentation] {
-        let data = rows(from: report)
-        if !data.isEmpty { return data }
         if let pending {
-            return pendingDeclaredRows(pending)
+            return pendingDeclaredRows(pending, last: last, lastStatus: lastStatus)
         }
-        return []
+        return rows(from: report)
     }
 
-    /// LiveBook pending when Console escrow has no nodes — declared column only; actual stays —.
-    static func pendingDeclaredRows(_ pending: BarPendingDeclaration) -> [BarEscrowRowPresentation] {
-        let qty = pending.quantity
-        let qtyText = qty == qty.rounded() ? String(Int(qty.rounded())) : String(qty)
+    /// LiveBook pending — declared from Confirm; Actual from fills + labeled last vs invalidation/target.
+    static func pendingDeclaredRows(
+        _ pending: BarPendingDeclaration,
+        last: Double? = nil,
+        lastStatus: String = "unavailable"
+    ) -> [BarEscrowRowPresentation] {
+        let qtyText = BarWorkingCompare.formatQty(pending.quantity)
+        let product = pending.planSnapshot?.product?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let declaredSide = product.isEmpty ? pending.side : "\(pending.side) · \(product)"
+        let fillSym = pending.fillSymbol?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fillSide = pending.fillSide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let filledQty = pending.filledQty
+        let avgFill = pending.avgFill
+        let sideBuy = !pending.side.uppercased().contains("SELL")
+        let snap = pending.planSnapshot
+        let invKind = snap?.resolvedInvalidationKind
+        let invPrice = snap?.resolvedInvalidationPrice
+        let invState = BarWorkingCompare.vsInvalidation(
+            sideBuy: sideBuy,
+            last: last,
+            status: lastStatus,
+            kind: invKind,
+            price: invPrice
+        )
+        let targetVal = pending.target ?? snap?.targetPrice
+        let tgtState = BarWorkingCompare.vsTarget(
+            sideBuy: sideBuy,
+            last: last,
+            status: lastStatus,
+            target: targetVal
+        )
+        let lastText = BarWorkingCompare.labeledLast(last: last, status: lastStatus)
+        let invDeclared: String = {
+            if let p = invPrice, p > 0 {
+                let kind = invKind?.isEmpty == false ? invKind! : "price"
+                return "\(kind) \(BarWorkingCompare.formatPrice(p))"
+            }
+            let line = snap?.resolvedInvalidationLine ?? ""
+            if !line.isEmpty { return line }
+            if let k = invKind, !k.isEmpty { return k }
+            return "—"
+        }()
+        let tgtDeclared = targetVal.map { BarWorkingCompare.formatPrice($0) } ?? "—"
+
         var rows: [BarEscrowRowPresentation] = [
-            row(id: "pending.symbol", label: "Symbol", declared: pending.symbol),
-            row(id: "pending.side", label: "Side / product", declared: pending.side),
-            row(id: "pending.qty", label: "Quantity", declared: qtyText),
+            row(
+                id: "pending.symbol",
+                label: "Symbol",
+                declared: pending.symbol,
+                actual: fillSym.isEmpty ? "—" : fillSym,
+                tone: fillSym.isEmpty ? .amber : .green
+            ),
+            row(
+                id: "pending.side",
+                label: "Side / product",
+                declared: declaredSide,
+                actual: fillSide.isEmpty ? "—" : fillSide,
+                tone: fillSide.isEmpty ? .amber : .green
+            ),
+            row(
+                id: "pending.qty",
+                label: "Quantity",
+                declared: qtyText,
+                actual: filledQty.map { BarWorkingCompare.formatQty($0) } ?? "—",
+                tone: filledQty == nil ? .amber : .green
+            ),
+            row(
+                id: "pending.avg",
+                label: "Avg fill",
+                declared: "—",
+                actual: avgFill.map { BarWorkingCompare.formatPrice($0) } ?? "—",
+                tone: avgFill == nil ? .amber : .green
+            ),
+            row(
+                id: "pending.invalidation",
+                label: "Invalidation",
+                declared: invDeclared,
+                actual: invState == .waiting ? "waiting" : lastText,
+                tone: BarWorkingCompare.tone(for: invState)
+            ),
+            row(
+                id: "pending.target",
+                label: "Target / policy",
+                declared: tgtDeclared,
+                actual: lastText,
+                tone: BarWorkingCompare.tone(for: tgtState)
+            ),
         ]
         if let stop = pending.stopLoss {
-            rows.append(row(id: "pending.stop", label: "Stop / protect", declared: String(stop)))
-        }
-        if let target = pending.target {
-            rows.append(row(id: "pending.target", label: "Target / policy", declared: String(target)))
+            rows.append(
+                row(
+                    id: "pending.stop",
+                    label: "Stop / protect",
+                    declared: BarWorkingCompare.formatPrice(stop),
+                    actual: "—",
+                    tone: .amber
+                )
+            )
         }
         return rows
     }
 
-    private static func row(id: String, label: String, declared: String) -> BarEscrowRowPresentation {
+    private static func row(
+        id: String,
+        label: String,
+        declared: String,
+        actual: String = "—",
+        tone: BarEscrowRowTone = .amber
+    ) -> BarEscrowRowPresentation {
         BarEscrowRowPresentation(
             id: id,
             label: label,
             declared: declared,
-            actual: "—",
-            tone: .amber,
+            actual: actual,
+            tone: tone,
             breakReason: nil
         )
     }
@@ -99,6 +190,7 @@ enum BarEscrowMatchPresentation {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "green": return .green
         case "red": return .red
+        case "dark": return .dark
         default: return .amber
         }
     }

@@ -14,15 +14,19 @@ enum BarLivePlanSnapshotMapping {
     }
 
     static func invalidationDisplay(plan: BarPlanSnapshotSummary?) -> String {
-        let t = plan?.invalidationLine?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let plan else { return "—" }
+        if let kind = plan.resolvedInvalidationKind, kind == "price", let p = plan.resolvedInvalidationPrice {
+            return String(p)
+        }
+        let t = plan.resolvedInvalidationLine
         return t.isEmpty ? "—" : t
     }
 
     /// Entry state line: `Calm 2 · Conf 4` (Mockup 5).
     static func entryStateDisplay(plan: BarPlanSnapshotSummary?) -> String {
         guard let plan else { return "—" }
-        let calm = plan.calmScale
-        let conf = plan.confidenceScale
+        let calm = plan.resolvedCalm
+        let conf = plan.resolvedConfidence
         if calm == nil && conf == nil { return "—" }
         if let c = calm, let f = conf {
             let ci = Int(c.rounded())

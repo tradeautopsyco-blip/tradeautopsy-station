@@ -32,20 +32,61 @@ struct BarIntradayDeclarationSubmitInput: Equatable, Sendable {
     var isUsdm: Bool = false
     var optionLegCount: Int = 0
     var maxPlannedLossText: String = ""
+    var frustration: Int = 0
+    var excitement: Int = 0
+    var stanceRaw: String = ""
+    var intent: String = ""
+    var targetPriceText: String = ""
+    var invalidationPriceText: String = ""
+    var requiresCashProduct: Bool = false
+    var cashProduct: String = ""
+    var gate: BarPlanGateStripState = BarPlanGateStripState()
 }
 
 /// Pure validation helpers for the intraday Bar declaration flow (#116). Observable UI wires selections into these functions.
 enum BarIntradayDeclareValidator {
-    /// Step 1 (emotional check-in): Scale A (calm, 1 best) and Scale B (confidence, 5 best) must both be chosen — never pre-filled.
-    static func canProceedFromEmotionalCheckIn(calm: Int?, confidence: Int?) -> Bool {
-        guard let calm, let confidence else { return false }
-        return (1 ... 5).contains(calm) && (1 ... 5).contains(confidence)
+    /// Four emotion sliders must all be chosen — never pre-filled.
+    static func canProceedFromEmotionalCheckIn(
+        calm: Int?,
+        confidence: Int?,
+        frustration: Int? = nil,
+        excitement: Int? = nil
+    ) -> Bool {
+        BarPlanGateStrip.emotionFilled(
+            calm: calm ?? 0,
+            confidence: confidence ?? 0,
+            frustration: frustration ?? 0,
+            excitement: excitement ?? 0
+        )
     }
 
-    /// #121 sticky “Confirm — enter trade →” gate (unified reference mockup 4): both scales answered **and** a positive stop price.
+    /// Sticky Confirm still needs a positive stop, plus the four sliders.
     static func stickyPreTradeConfirmEnabled(calm: Int?, confidence: Int?, stopLossText: String) -> Bool {
-        guard canProceedFromEmotionalCheckIn(calm: calm, confidence: confidence) else { return false }
+        guard let calm, let confidence else { return false }
+        guard (1 ... 5).contains(calm), (1 ... 5).contains(confidence) else { return false }
         guard let sl = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines)), sl > 0 else { return false }
+        return true
+    }
+
+    static func invalidationSatisfied(_ input: BarIntradayDeclarationSubmitInput) -> Bool {
+        let invKind = input.invalidationTypeRaw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if input.isOptions {
+            return !input.invalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard let kind = BarInvalidationKind(rawValue: invKind) else { return false }
+        if kind == .price {
+            guard let p = Double(input.invalidationPriceText.trimmingCharacters(in: .whitespacesAndNewlines)), p > 0 else {
+                return false
+            }
+            return true
+        }
+        return !input.invalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func targetSatisfied(_ input: BarIntradayDeclarationSubmitInput) -> Bool {
+        guard let t = Double(input.targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)), t > 0 else {
+            return false
+        }
         return true
     }
 
@@ -59,11 +100,25 @@ enum BarIntradayDeclareValidator {
         }
         let calmOpt: Int? = (1 ... 5).contains(input.calm) ? input.calm : nil
         let confOpt: Int? = (1 ... 5).contains(input.confidence) ? input.confidence : nil
-        guard canProceedFromEmotionalCheckIn(calm: calmOpt, confidence: confOpt) else {
-            return (false, "Choose psychological calm and confidence in Step 1.")
+        let frOpt: Int? = (1 ... 5).contains(input.frustration) ? input.frustration : nil
+        let exOpt: Int? = (1 ... 5).contains(input.excitement) ? input.excitement : nil
+        guard canProceedFromEmotionalCheckIn(
+            calm: calmOpt,
+            confidence: confOpt,
+            frustration: frOpt,
+            excitement: exOpt
+        ) else {
+            return (false, "Set calm, confidence, frustration, and excitement.")
         }
         guard stickyPreTradeConfirmEnabled(calm: calmOpt, confidence: confOpt, stopLossText: input.stopLossText) else {
             return (false, "Enter a stop loss price in Step 2.")
+        }
+        let stance = input.stanceRaw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard BarPlanStance(rawValue: stance) != nil else {
+            return (false, "Pick planned or reactive.")
+        }
+        guard !input.intent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return (false, "Write why this, in one sentence.")
         }
         let symTrim = input.symbolRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard BarBrokerTicker.normalize(raw: input.symbolRaw) != nil else {
@@ -71,6 +126,12 @@ enum BarIntradayDeclareValidator {
                 return (false, "Enter a symbol in Step 2 (e.g. RELIANCE).")
             }
             return (false, "Symbol must be a broker ticker (e.g. RELIANCE), not a company name.")
+        }
+        if input.requiresCashProduct {
+            let p = input.cashProduct.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard p == "CNC" || p == "MIS" else {
+                return (false, "Pick CNC or MIS.")
+            }
         }
         if input.isOptions {
             if input.optionLegCount < 1 {
@@ -81,25 +142,42 @@ enum BarIntradayDeclareValidator {
             else {
                 return (false, "Enter max planned loss.")
             }
-            guard !input.invalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                return (false, "Write what would prove this trade wrong.")
-            }
-            return (true, nil)
-        }
-        if !lotsSatisfyQuantity(input) {
+        } else if !lotsSatisfyQuantity(input) {
             guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
-                return (false, input.isOptions ? "Enter lots in Step 2." : "Enter quantity in Step 2.")
+                return (false, "Enter quantity in Step 2.")
             }
         }
-        guard !input.setupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return (false, "Pick a setup type in Step 3.")
+        if !input.isOptions {
+            guard !input.setupType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return (false, "Pick a setup type in Step 3.")
+            }
         }
-        let invKind = input.invalidationTypeRaw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard BarInvalidationKind(rawValue: invKind) != nil else {
-            return (false, "Pick an invalidation type in Step 3.")
+        if !invalidationSatisfied(input) {
+            let invKind = input.invalidationTypeRaw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if BarInvalidationKind(rawValue: invKind) == .price {
+                return (false, "Enter an invalidation price.")
+            }
+            if BarInvalidationKind(rawValue: invKind) == nil, !input.isOptions {
+                return (false, "Pick an invalidation type in Step 3.")
+            }
+            return (false, "Describe your invalidation.")
         }
-        guard !input.invalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return (false, "Describe your invalidation in Step 3.")
+        if !targetSatisfied(input) {
+            return (false, "Enter a target price.")
+        }
+        let emotionOk = BarPlanGateStrip.emotionFilled(
+            calm: input.calm,
+            confidence: input.confidence,
+            frustration: input.frustration,
+            excitement: input.excitement
+        )
+        let exitOk = invalidationSatisfied(input) && targetSatisfied(input)
+        if let gateHint = BarPlanGateStrip.emptyHint(
+            state: input.gate,
+            emotionFilled: emotionOk,
+            exitFilled: exitOk
+        ) {
+            return (false, gateHint)
         }
         if input.declarationKindWire == "scalper_session",
            input.scalperSessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

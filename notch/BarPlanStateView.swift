@@ -49,9 +49,31 @@ struct BarPlanStateView: View {
                         )
                     )
                 )
+            } else if let pending = payload?.pendingDeclaration,
+                      let ccy = viewModel.formatQuoteCurrency
+                        ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug)
+            {
+                DetectCardView(
+                    result: DetectCard.evaluate(
+                        DetectCardInput(
+                            qty: pending.filledQty ?? pending.quantity,
+                            entry: pending.avgFill,
+                            planStop: pending.stopLoss,
+                            liveStop: payload?.slPrice,
+                            sideBuy: !pending.side.uppercased().contains("SELL"),
+                            accountEquity: nil,
+                            tradeCurrency: ccy,
+                            accountCurrency: ccy
+                        )
+                    )
+                )
             }
 
             planStateBanner
+
+            if workingPriceInvalidated {
+                invalidatedWorkingBanner
+            }
 
             if shouldShowMetricStrip { liveMetricStrip }
 
@@ -105,8 +127,14 @@ struct BarPlanStateView: View {
             if embedEscrow {
                 BarEscrowMatchView(
                     report: payload?.escrowMatchReport,
-                    pending: payload?.pendingDeclaration
+                    pending: payload?.pendingDeclaration,
+                    last: viewModel.deskQuoteLast,
+                    lastStatus: viewModel.deskLastStatus
                 )
+            }
+
+            if shouldShowPlanSnapshot {
+                emotionNowRow
             }
 
             if shouldShowExitTradeSection {
@@ -168,6 +196,103 @@ struct BarPlanStateView: View {
     private var syncShowsStaleSuffix: Bool {
         let s = payload?.syncState ?? ""
         return s == "STALE" || s == "EXPIRED"
+    }
+
+    private var workingPriceInvalidated: Bool {
+        guard let pending = payload?.pendingDeclaration else { return false }
+        let sideBuy = !pending.side.uppercased().contains("SELL")
+        return BarWorkingCompare.isPriceInvalidated(
+            sideBuy: sideBuy,
+            last: viewModel.deskQuoteLast,
+            status: viewModel.deskLastStatus,
+            kind: pending.planSnapshot?.resolvedInvalidationKind,
+            price: pending.planSnapshot?.resolvedInvalidationPrice
+        )
+    }
+
+    private var invalidatedWorkingBanner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Invalidated")
+                .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .semibold))
+                .foregroundColor(BarDS.Accent.red)
+            Text("Last crossed the declared invalidation price. Debrief this ticket or Kill the desk — stop does not dismiss Kill.")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                .foregroundColor(BarDS.Text.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button {
+                    viewModel.openWorkingDebrief()
+                } label: {
+                    Text("Debrief")
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                        .foregroundColor(Color(hex: "#050505"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(BarDS.Accent.teal)
+                        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Debrief")
+                Button {
+                    viewModel.presentPlanKillWarning()
+                } label: {
+                    Text("Kill")
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                        .foregroundColor(BarDS.Accent.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(BarDS.Accent.red.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                                .stroke(BarDS.Accent.red.opacity(0.35), lineWidth: BarDS.borderThin)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Kill")
+            }
+        }
+        .padding(12)
+        .background(BarDS.Accent.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: BarDS.Radius.card, style: .continuous)
+                .stroke(BarDS.Accent.red.opacity(0.28), lineWidth: BarDS.borderThin)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Invalidated")
+    }
+
+    private var emotionNowRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("EMOTION NOW")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.38))
+                .tracking(0.6)
+            HStack(spacing: 6) {
+                ForEach(1...5, id: \.self) { n in
+                    Button {
+                        viewModel.declEmotionNow = n
+                    } label: {
+                        Text("\(n)")
+                            .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
+                            .foregroundColor(
+                                viewModel.declEmotionNow == n ? Color(hex: "#050505") : BarDS.Text.secondary
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                viewModel.declEmotionNow == n
+                                    ? BarDS.Accent.teal
+                                    : Color.white.opacity(0.04)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Emotion now \(n)")
+                }
+            }
+        }
     }
 
     private var shouldShowPlanSnapshot: Bool {

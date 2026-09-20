@@ -1287,6 +1287,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
                         symbol,
                         side,
                         qty,
+                        price,
                         broker,
                         filled_at,
                         ..
@@ -1295,6 +1296,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
                             symbol,
                             side,
                             qty,
+                            price: Some(price),
                             broker: Some(broker),
                             filled_at_iso: Some(filled_at),
                         });

@@ -26,11 +26,10 @@ enum BriefMorningBriefPresentation {
         !patterns.isEmpty
     }
 
-    /// Established account but **M10 pattern science not shipped** — honest stub instead of fabricated scores (#9).
+    /// Wave 2 Open dropped M10 / pre-M10 stub. Keep the helper as a hard no so callers cannot resurrect it.
     static func shouldShowPreM10PatternsStub(isNewUser: Bool, tradeCount: Int, patterns: [BriefBehavioralPattern]) -> Bool {
-        guard patterns.isEmpty else { return false }
-        if isNewUser { return false }
-        return tradeCount >= profileTradeThreshold
+        _ = (isNewUser, tradeCount, patterns)
+        return false
     }
 
     static func newUserProgressTitle(tradeCount: Int) -> String {

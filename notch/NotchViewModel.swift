@@ -149,6 +149,11 @@ struct RecentTradeRow: Identifiable, Equatable {
     var filledAtMs: Int
 }
 
+struct TodayClosedTripCite: Equatable {
+    var symbol: String
+    var net: Double
+}
+
 /// One meter inside a venue egress posture (Rust `MeterPosture`). Parsed loosely from SSE JSON.
 struct VenueMeterPosture: Equatable {
     var meter: String
@@ -495,6 +500,7 @@ public final class NotchViewModel: ObservableObject {
     @Published var barLastFetched: Date?
     @Published var barSurfacePhase: BarSurfacePhase = .declaration
     @Published var barDebriefPending: Bool = false
+    @Published var todayClosedTrips: [TodayClosedTripCite] = []
     @Published var planKillPhase: BarPlanKillPhase = .idle
     @Published var stopMeStep: Int = 0
     /// Exit trade / cancel declaration — 0 hidden, 1 confirm, 2 submitting (#144).
@@ -550,6 +556,19 @@ public final class NotchViewModel: ObservableObject {
 
     @Published var declEmotionalCalm: Int = 0
     @Published var declEmotionalConfidence: Int = 0
+    @Published var declEmotionalFrustration: Int = 0
+    @Published var declEmotionalExcitement: Int = 0
+    @Published var declStance: String = ""
+    @Published var declIntent: String = ""
+    @Published var openNonNegotiable: String = ""
+    @Published var declEmotionNow: Int = 0
+    @Published var declInvalidationPrice: String = ""
+    @Published var declCashProduct: String = ""
+    @Published var declGateCapital: Bool = false
+    @Published var declGateOnePercent: Bool = false
+    @Published var declGateMaxLoss: Bool = false
+    @Published var declGateHedge: Bool = false
+    @Published var declGateReview: Bool = false
     @Published var declEntryPrice: String = ""
     /// Set when LTP fetch returns `session_expired` — show reconnect hint on entry field (#149).
     @Published var barLtpFetchError: String?
@@ -1143,6 +1162,12 @@ public final class NotchViewModel: ObservableObject {
         recomputeBarSurfacePhase()
     }
 
+    /// Working price-kind invalidation — lands Debrief without flattening.
+    func openWorkingDebrief() {
+        barDebriefPending = true
+        recomputeBarSurfacePhase()
+    }
+
     func resetStopMeFlow() {
         stopMeStep = 0
         stopMeTapCount = 0
@@ -1672,6 +1697,27 @@ public final class NotchViewModel: ObservableObject {
 
     var showsConfirmControl: Bool {
         BarDeskTemplate.showsConfirmControl(for: declareAssetClass)
+    }
+
+    var requiresCashProduct: Bool { declareAssetClass == .equity }
+
+    var declGateStripState: BarPlanGateStripState {
+        get {
+            BarPlanGateStripState(
+                capitalAck: declGateCapital,
+                onePercentAck: declGateOnePercent,
+                maxLossAck: declGateMaxLoss,
+                hedgeAck: declGateHedge,
+                reviewAck: declGateReview,
+            )
+        }
+        set {
+            declGateCapital = newValue.capitalAck
+            declGateOnePercent = newValue.onePercentAck
+            declGateMaxLoss = newValue.maxLossAck
+            declGateHedge = newValue.hedgeAck
+            declGateReview = newValue.reviewAck
+        }
     }
 
     var canSubmitBarDeclaration: Bool {
@@ -3471,7 +3517,23 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    func sendUnpostedCapture(_ id: UUID, tradeId: String) async {
+    /// T4 — bind tray shots to this ticket before debrief save.
+    func attachUnpostedToTicket(_ declarationId: String) async -> [String] {
+        let ticket = declarationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ticket.isEmpty, UUID(uuidString: ticket) != nil else { return [] }
+        var ids: [String] = []
+        let snapshot = unpostedCaptures
+        for rec in snapshot {
+            let tradeId = linkableRecentTrades.first(where: { UUID(uuidString: $0.id) != nil })?.id ?? ticket
+            if let pending = await sendUnpostedCapture(rec.id, tradeId: tradeId, declarationId: ticket) {
+                ids.append(pending)
+            }
+        }
+        return ids
+    }
+
+    @discardableResult
+    func sendUnpostedCapture(_ id: UUID, tradeId: String, declarationId: String? = nil) async -> String? {
         if let msg = JournalCaptureLinkValidator.validationMessage(
             draftTrimmed: "",
             explicitPending: false,
@@ -3484,27 +3546,28 @@ public final class NotchViewModel: ObservableObject {
                 unpostedStore.update(next)
                 reloadUnpostedCaptures()
             }
-            return
+            return nil
         }
-        guard let rec = unpostedCaptures.first(where: { $0.id == id }) else { return }
+        guard let rec = unpostedCaptures.first(where: { $0.id == id }) else { return nil }
         let fileURL = unpostedStore.fileURL(for: rec)
         guard let pngData = try? Data(contentsOf: fileURL) else {
             var next = rec
             next.lastError = "Local file missing."
             unpostedStore.update(next)
             reloadUnpostedCaptures()
-            return
+            return nil
         }
         unpostedSendBusyId = id
         defer { unpostedSendBusyId = nil }
 
         do {
-            try await uploadScreenshotToTrade(
+            let pendingId = try await uploadScreenshotToTrade(
                 imageData: pngData,
                 contentType: rec.contentType,
                 caption: rec.caption,
                 tradeId: tradeId,
-                existing: rec
+                existing: rec,
+                declarationId: declarationId
             )
             unpostedStore.delete(id: id)
             reloadUnpostedCaptures()
@@ -3512,11 +3575,13 @@ public final class NotchViewModel: ObservableObject {
             persistChartTradeIds()
             journalCaptureLastSuccess = "On the trade note"
             journalCaptureLastError = nil
+            return pendingId
         } catch {
             var next = rec
             next.lastError = error.localizedDescription
             unpostedStore.update(next)
             reloadUnpostedCaptures()
+            return nil
         }
     }
 
@@ -3583,15 +3648,21 @@ public final class NotchViewModel: ObservableObject {
         contentType: String,
         caption: String,
         tradeId: String,
-        existing: UnpostedCaptureRecord
-    ) async throws {
+        existing: UnpostedCaptureRecord,
+        declarationId: String? = nil
+    ) async throws -> String {
         guard isAuthenticated && (sessionState == "active" || sessionState == "expiring_soon") else {
             throw NSError(domain: "Notch", code: 401, userInfo: [NSLocalizedDescriptionKey: "Sign in required to finalize captures."])
         }
         let idem = existing.idempotencyKey?.isEmpty == false ? existing.idempotencyKey! : StationWireClient.makeULID()
         var pendingId = existing.consolePendingId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if pendingId.isEmpty {
-            pendingId = try await acceptImageOnlyCapture(caption: caption, tradeId: tradeId, idempotencyKey: idem)
+            pendingId = try await acceptImageOnlyCapture(
+                caption: caption,
+                tradeId: tradeId,
+                idempotencyKey: idem,
+                declarationId: declarationId
+            )
             var next = existing
             next.consolePendingId = pendingId
             next.idempotencyKey = idem
@@ -3608,19 +3679,28 @@ public final class NotchViewModel: ObservableObject {
         }
         try await patchPendingR2Key(pendingId: pendingId, r2Key: r2Key)
         try await waitUntilPendingFinalized(pendingId: pendingId)
+        return pendingId
     }
 
-    private func acceptImageOnlyCapture(caption: String, tradeId: String, idempotencyKey: String) async throws -> String {
+    private func acceptImageOnlyCapture(
+        caption: String,
+        tradeId: String,
+        idempotencyKey: String,
+        declarationId: String? = nil
+    ) async throws -> String {
         guard let url = URL(string: baseURL() + "/api/daemon/journal/toolbar-capture/accept") else {
             throw NSError(domain: "Notch", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bad daemon URL"])
         }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "draftText": caption,
             "imageOnly": true,
             "tradeId": tradeId,
             "explicitPending": false,
             "idempotencyKey": idempotencyKey,
         ]
+        if let declarationId, UUID(uuidString: declarationId) != nil {
+            body["preTradeDeclarationId"] = declarationId
+        }
         let payload = try JSONSerialization.data(withJSONObject: body)
         let req = authorizedRequest(url: url, method: "POST", body: payload)
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -4602,6 +4682,13 @@ public final class NotchViewModel: ObservableObject {
                 return
             }
             applyPulseHero(hero, degraded: false)
+            let trades = j["trades"] as? [[String: Any]] ?? []
+            todayClosedTrips = trades.compactMap { row in
+                let sym = (row["symbol"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let net = row["netPnlUsd"] as? Double ?? (row["net_pnl_usd"] as? Double)
+                guard !sym.isEmpty, let net, net.isFinite else { return nil }
+                return TodayClosedTripCite(symbol: sym, net: net)
+            }
         } catch {
             lastAlert = error.localizedDescription
         }
@@ -4753,8 +4840,25 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    /// Brief tab CTA — jump to PLAN and surface declaration entry (#127).
+    var openStartUnlocked: Bool {
+        BarOpenStartGate.unlocked(
+            calm: declEmotionalCalm,
+            confidence: declEmotionalConfidence,
+            rule: openNonNegotiable
+        )
+    }
+
+    var openHidesIndexChips: Bool {
+        BarOpenStartGate.hidesIndexChips(
+            bookId: selectedMarketBookId,
+            assetClass: declareAssetClass,
+            slug: resolvedDeskSlug
+        )
+    }
+
+    /// Brief tab CTA — jump to PLAN only when D gate is set. Calm+confidence already live on Plan.
     func startTradingFromMorningBrief() {
+        guard openStartUnlocked else { return }
         activeTab = .plan
         presentBarDeclarationForm()
     }

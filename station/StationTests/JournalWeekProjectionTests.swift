@@ -73,7 +73,7 @@ struct JournalWeekProjectionTests {
         #expect(unmatched.declarations.map(\.id).sorted() == ["c", "e"])
     }
 
-    @Test func emptyPostOnMatchedDoesNotSetSidebarDue() {
+    @Test func emptyPostOnMatchedSetsSidebarDue() {
         let payload = JournalWeekPayload(
             timezone: "Asia/Kolkata",
             weekStart: "2026-09-06T18:30:00.000Z",
@@ -85,7 +85,7 @@ struct JournalWeekProjectionTests {
             days: []
         )
         let all = JournalWeek.build(payload: payload, inventory: [], citedTrips: [], selectedDay: "2026-09-11", facet: .all, query: "")
-        #expect(all.sidebarDue == false)
+        #expect(all.sidebarDue == true)
         #expect(all.declarations.map(\.id).sorted() == ["done", "due"])
         #expect(JournalFacet.allCases == [.all, .matched, .pending, .unmatched, .impulsive])
     }
@@ -101,10 +101,51 @@ struct JournalWeekProjectionTests {
         #expect(labels.contains("SL"))
         #expect(labels.contains("Target"))
         #expect(labels.contains("Setup"))
-        #expect(!labels.contains("Pre"))
-        #expect(!labels.contains("Live"))
-        #expect(!labels.contains("Post"))
+        #expect(labels.contains("Pre"))
+        #expect(labels.contains("Live"))
+        #expect(labels.contains("Post"))
         #expect(!labels.contains("Fidelity"))
+    }
+
+    @Test func reactiveStanceIsAJournalCardOnThatId() {
+        let payload = JournalWeekPayload(
+            timezone: "Asia/Kolkata",
+            weekStart: "2026-09-06T18:30:00.000Z",
+            weekEnd: "2026-09-13T18:30:00.000Z",
+            items: [
+                JournalDeclarationCard(
+                    id: "imp-1",
+                    status: "matched",
+                    declarationKind: "intraday",
+                    symbol: "BANKNIFTY",
+                    side: "BUY",
+                    quantity: 15,
+                    quantityFilled: 15,
+                    localDate: "2026-09-11",
+                    protectiveSlConsent: false,
+                    snapshot: JournalSnapshot(
+                        setupLabel: nil,
+                        invalidationLine: nil,
+                        invalidationKind: nil,
+                        calmScale: nil,
+                        confidenceScale: nil,
+                        stopLoss: nil,
+                        target: nil,
+                        stance: "reactive"
+                    ),
+                    notes: JournalNotes(pre: "", live: "", post: "Filled without a plan."),
+                    fidelity: JournalFidelity(score: nil, dimensions: nil),
+                    attachments: JournalAttachments(shots: 0, voice: false),
+                    citedNet: nil,
+                    citedCurrency: nil
+                )
+            ],
+            days: []
+        )
+        let week = JournalWeek.build(payload: payload, inventory: [], citedTrips: [], selectedDay: "2026-09-11", facet: .all, query: "")
+        #expect(week.declarations.map(\.id) == ["imp-1"])
+        #expect(JournalCardPaint.statusChips(week.declarations[0]).contains("Reactive"))
+        #expect(week.declarations[0].notes.post == "Filled without a plan.")
     }
 
     @Test func impulsiveIsInventoryWithoutDeclarationIdAndHasNoFidelity() {

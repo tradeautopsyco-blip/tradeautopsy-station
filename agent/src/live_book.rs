@@ -52,6 +52,7 @@ pub enum LiveBookEvent {
         symbol: String,
         side: String,
         qty: f64,
+        price: Option<f64>,
         broker: Option<String>,
         filled_at_iso: Option<String>,
     },
@@ -87,14 +88,7 @@ impl LiveBookEvent {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         let s1 = payload.and_then(|p| p.get("s1"));
-        let plan_snapshot = s1.map(|s1| {
-            json!({
-                "setup_label": s1.get("setup_type").and_then(Value::as_str).unwrap_or(""),
-                "invalidation_line": s1.get("invalidation").and_then(Value::as_str).unwrap_or(""),
-                "calm_scale": s1.get("mood_stress").and_then(Value::as_f64),
-                "confidence_scale": s1.get("mood_impulse").and_then(Value::as_f64),
-            })
-        });
+        let plan_snapshot = s1.map(|s1| plan_snapshot_from_s1(s1, body));
         let target = json_f64(body.get("target_price")).or_else(|| json_f64(body.get("target")));
         let book_id = json_string(body.get("book_id")).filter(|id| !id.is_empty());
         let ticket_intent = payload
@@ -227,6 +221,7 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
             symbol,
             side,
             qty,
+            price,
             broker,
             filled_at_iso,
         } => {
@@ -239,6 +234,25 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                 .as_ref()
                 .is_some_and(|s| s.eq_ignore_ascii_case(&side));
             if symbol_ok && side_ok {
+                let prev_qty = pending_f64(book, "filled_qty").unwrap_or(0.0);
+                let prev_avg = pending_f64(book, "avg_fill");
+                let new_qty = prev_qty + qty;
+                let new_avg = match (prev_avg, price, qty > 0.0, new_qty > 0.0) {
+                    (_, Some(px), true, true) if prev_qty <= 0.0 => Some(px),
+                    (Some(avg), Some(px), true, true) => {
+                        Some((avg * prev_qty + px * qty) / new_qty)
+                    }
+                    (avg, None, _, _) => avg,
+                    (_, Some(px), _, _) => Some(px),
+                };
+                if let Some(obj) = pending_map(book) {
+                    obj.insert("fill_symbol".into(), json!(symbol));
+                    obj.insert("fill_side".into(), json!(side.to_ascii_uppercase()));
+                    obj.insert("filled_qty".into(), json!(new_qty));
+                    if let Some(avg) = new_avg {
+                        obj.insert("avg_fill".into(), json!(avg));
+                    }
+                }
                 if let Some(id) = pending_id(book) {
                     notch_map(book).insert("matched_declaration_id".into(), json!(id));
                 }
@@ -255,6 +269,7 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                     "symbol": symbol,
                     "side": side,
                     "quantity": qty_int,
+                    "price": price,
                     "filledAtMs": filled_at_iso,
                     "broker": broker,
                 }),
@@ -295,6 +310,14 @@ fn pending_string(book: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn pending_f64(book: &Value, key: &str) -> Option<f64> {
+    json_f64(
+        book.get("notch")
+            .and_then(|n| n.get("pending_declaration"))
+            .and_then(|p| p.get(key)),
+    )
+}
+
 fn json_string(v: Option<&Value>) -> Option<String> {
     v.and_then(Value::as_str)
         .map(str::trim)
@@ -307,6 +330,57 @@ fn json_f64(v: Option<&Value>) -> Option<f64> {
     v.as_f64()
         .or_else(|| v.as_i64().map(|i| i as f64))
         .or_else(|| v.as_u64().map(|i| i as f64))
+}
+
+fn plan_snapshot_from_s1(s1: &Value, body: &Value) -> Value {
+    let spec = s1.get("invalidation_spec");
+    let kind = spec
+        .and_then(|s| json_string(s.get("kind")))
+        .or_else(|| json_string(s1.get("invalidation_type")))
+        .unwrap_or_default();
+    let price = spec
+        .and_then(|s| json_f64(s.get("price")))
+        .or_else(|| json_f64(s1.get("invalidation_price")));
+    let line = spec
+        .and_then(|s| json_string(s.get("line")))
+        .or_else(|| json_string(s1.get("invalidation")))
+        .unwrap_or_default();
+    let calm = json_f64(s1.get("mood_stress"));
+    let confidence = json_f64(s1.get("mood_impulse"));
+    let frustration = json_f64(s1.get("mood_frustration"));
+    let excitement = json_f64(s1.get("mood_excitement"));
+    let target = json_f64(body.get("target_price")).or_else(|| json_f64(body.get("target")));
+    json!({
+        "setup_label": json_string(s1.get("setup_type")).unwrap_or_default(),
+        "intent": json_string(s1.get("intent")).unwrap_or_default(),
+        "stance": json_string(s1.get("stance")).unwrap_or_default(),
+        "invalidation_line": line,
+        "invalidation_kind": kind,
+        "invalidation_price": price,
+        "calm_scale": calm,
+        "confidence_scale": confidence,
+        "frustration_scale": frustration,
+        "excitement_scale": excitement,
+        "product": json_string(s1.get("product")),
+        "target_price": target,
+        "symbol": json_string(body.get("symbol")).unwrap_or_default(),
+        "side": json_string(body.get("side")).unwrap_or_default().to_ascii_uppercase(),
+        "quantity": json_f64(body.get("quantity")),
+        "stop_loss": json_f64(body.get("stop_loss")),
+        "book_id": json_string(body.get("book_id")),
+        "entry_price": json_f64(body.get("entry_price")),
+        "emotion_in": {
+            "calm": calm,
+            "confidence": confidence,
+            "frustration": frustration,
+            "excitement": excitement,
+        },
+        "invalidation": {
+            "kind": kind,
+            "price": price,
+            "line": line,
+        },
+    })
 }
 
 #[cfg(test)]
@@ -457,6 +531,7 @@ mod tests {
             symbol: "reliance".into(),
             side: "buy".into(),
             qty: 10.0,
+            price: Some(1420.0),
             broker: Some("kotak_neo".into()),
             filled_at_iso: Some("2026-09-19T01:00:00.000Z".into()),
         });
@@ -468,12 +543,52 @@ mod tests {
     }
 
     #[test]
+    fn fill_price_accumulates_qty_weighted_avg() {
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::Declare {
+            local_id: "d1".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            quantity: 2.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: Some(1400.0),
+            target: Some(1500.0),
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Fill {
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: Some(100.0),
+            broker: None,
+            filled_at_iso: None,
+        });
+        book.apply(LiveBookEvent::Fill {
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: Some(102.0),
+            broker: None,
+            filled_at_iso: None,
+        });
+        let snap = book.snapshot().unwrap();
+        let p = pending(&snap);
+        assert_eq!(p["filled_qty"], 2.0);
+        assert_eq!(p["avg_fill"], 101.0);
+        assert_eq!(p["fill_symbol"], "RELIANCE");
+    }
+
+    #[test]
     fn fill_without_pending_is_undeclared_not_zero_pnl() {
         let book = LiveBook::new();
         book.apply(LiveBookEvent::Fill {
             symbol: "RELIANCE".into(),
             side: "BUY".into(),
             qty: 2.0,
+            price: Some(1410.0),
             broker: Some("kotak_neo".into()),
             filled_at_iso: None,
         });
@@ -539,6 +654,50 @@ mod tests {
         assert_eq!(pending["plan_snapshot"]["calm_scale"], 2.0);
         assert_ne!(pending["plan_snapshot"]["setup_label"], Value::Null);
         assert!(pending.get("book_id").is_none());
+    }
+
+    #[test]
+    fn declare_from_body_copies_wave2_snapshot_fields() {
+        let body = json!({
+            "symbol": "RELIANCE",
+            "side": "BUY",
+            "quantity": 10.0,
+            "stop_loss": 1400.0,
+            "target_price": 1500.0,
+            "entry_price": 1420.0,
+            "book_id": "kotak-nse-bse-cash",
+            "declaration_kind": "intraday",
+            "declaration_payload": {
+                "v": 1,
+                "protective_sl_consent": true,
+                "s1": {
+                    "setup_type": "Breakout",
+                    "intent": "Range break, volume confirmed.",
+                    "stance": "planned",
+                    "mood_stress": 2.0,
+                    "mood_impulse": 3.0,
+                    "mood_frustration": 1.0,
+                    "mood_excitement": 2.0,
+                    "invalidation_type": "price",
+                    "invalidation_price": 1390.0,
+                    "invalidation": "Last through 1390.",
+                    "product": "MIS"
+                }
+            }
+        });
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::declare_from_body(&body, "local-cash".into()));
+        let book_snap = book.snapshot().unwrap();
+        let pending = pending(&book_snap);
+        let snap = &pending["plan_snapshot"];
+        assert_eq!(snap["intent"], "Range break, volume confirmed.");
+        assert_eq!(snap["stance"], "planned");
+        assert_eq!(snap["invalidation"]["kind"], "price");
+        assert_eq!(snap["invalidation"]["price"], 1390.0);
+        assert_eq!(snap["product"], "MIS");
+        assert_eq!(snap["target_price"], 1500.0);
+        assert_eq!(snap["emotion_in"]["frustration"], 1.0);
+        assert_eq!(pending["quantity"], 10.0);
     }
 
     #[test]

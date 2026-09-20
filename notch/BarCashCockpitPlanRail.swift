@@ -29,7 +29,7 @@ struct BarCashCockpitPlanRail: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 groupLab("State check")
-                stateCheck
+                BarPlanEmotionCheckView(viewModel: viewModel)
 
                 groupLab("Numbers")
                 numbersFields
@@ -42,12 +42,25 @@ struct BarCashCockpitPlanRail: View {
                     setupChipsRow
                     groupLab("Invalidation")
                     invalidationKindRow
-                    premortem
+                    if selectedInvalidationKind == .price {
+                        labeledField("Invalidation price", placeholder: "Thesis-kill price", text: $viewModel.declInvalidationPrice)
+                    }
+                    if selectedInvalidationKind != .price {
+                        premortem
+                    }
+                    groupLab("Intent")
+                    BarPlanIntentField(text: $viewModel.declIntent)
+                    groupLab("Gate")
+                    BarPlanGateStripView(viewModel: viewModel, exitFilled: cashExitFilled)
                 }
 
                 if isOptions {
                     groupLab("Invalidation")
                     premortem
+                    groupLab("Intent")
+                    BarPlanIntentField(text: $viewModel.declIntent)
+                    groupLab("Gate")
+                    BarPlanGateStripView(viewModel: viewModel, exitFilled: cashExitFilled)
                 }
 
                 if viewModel.showsConfirmControl {
@@ -84,104 +97,30 @@ struct BarCashCockpitPlanRail: View {
         return s.isEmpty ? "—" : s
     }
 
-    // MARK: - State
-
-    @ViewBuilder
-    private var stateCheck: some View {
-        let calm = viewModel.declEmotionalCalm
-        let conf = viewModel.declEmotionalConfidence
-        if (1 ... 5).contains(calm), (1 ... 5).contains(conf) {
-            let cw = ["Calm", "Focused", "Tense", "Anxious", "Angry"][calm - 1]
-            let cf = ["Low", "Flat", "Neutral", "Good", "Sharp"][conf - 1]
-            HStack(spacing: 10) {
-                Text("CALM")
-                    .font(BarDS.monoFont(10, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
-                Text("\(calm) · \(cw)")
-                    .font(BarDS.monoFont(12, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-                Text("CONFIDENCE")
-                    .font(BarDS.monoFont(10, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
-                Text("\(conf) · \(cf)")
-                    .font(BarDS.monoFont(12, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-                Spacer(minLength: 8)
-                Button("change") {
-                    viewModel.declEmotionalCalm = 0
-                    viewModel.declEmotionalConfidence = 0
-                }
-                .buttonStyle(.plain)
-                .font(BarDS.bodyFont(11, weight: .regular))
-                .foregroundColor(BarDS.Text.muted)
-            }
-            .padding(9)
-            .background(BarDS.Fill.elevated)
-            .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Two readings. Answer honestly — it changes what the system flags.")
-                    .font(BarDS.bodyFont(12.5, weight: .regular))
-                    .foregroundColor(BarDS.Text.secondary)
-                scaleRow(
-                    title: "Psychological calm — 1 is best",
-                    labels: ["Calm", "Focused", "Tense", "Anxious", "Angry"],
-                    value: Binding(
-                        get: { viewModel.declEmotionalCalm },
-                        set: { viewModel.declEmotionalCalm = $0 },
-                    ),
-                )
-                if viewModel.declEmotionalCalm >= 4 {
-                    Text("State \(viewModel.declEmotionalCalm) — size halved. Trade will be flagged.")
-                        .font(BarDS.monoFont(10, weight: .regular))
-                        .foregroundColor(BarDS.Accent.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                scaleRow(
-                    title: "Confidence — 5 is best",
-                    labels: ["Low", "Flat", "Neutral", "Good", "Sharp"],
-                    value: Binding(
-                        get: { viewModel.declEmotionalConfidence },
-                        set: { viewModel.declEmotionalConfidence = $0 },
-                    ),
-                )
-            }
+    private var cashExitFilled: Bool {
+        let targetOk = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)).map { $0 > 0 } ?? false
+        if isOptions {
+            return !viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && targetOk
         }
-    }
-
-    private func scaleRow(title: String, labels: [String], value: Binding<Int>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(BarDS.monoFont(9.5, weight: .regular))
-                .foregroundColor(BarDS.Text.muted)
-            HStack(spacing: 7) {
-                ForEach(1 ... 5, id: \.self) { i in
-                    Button {
-                        value.wrappedValue = i
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text("\(i)")
-                                .font(BarDS.monoFont(15, weight: .medium))
-                                .foregroundColor(value.wrappedValue == i ? BarDS.Accent.teal : BarDS.Text.primary)
-                            Text(labels[i - 1])
-                                .font(BarDS.bodyFont(10, weight: .regular))
-                                .foregroundColor(BarDS.Text.muted)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                        .background(value.wrappedValue == i ? BarDS.Accent.teal.opacity(0.06) : Color.clear)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous)
-                                .stroke(
-                                    value.wrappedValue == i ? BarDS.Accent.teal.opacity(0.35) : BarDS.Border.card,
-                                    lineWidth: BarDS.borderThin,
-                                ),
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        return BarIntradayDeclareValidator.invalidationSatisfied(
+            BarIntradayDeclarationSubmitInput(
+                blocksDeclarationSubmit: false,
+                protectiveSlConsent: true,
+                calm: viewModel.declEmotionalCalm,
+                confidence: viewModel.declEmotionalConfidence,
+                stopLossText: stopLossText,
+                symbolRaw: viewModel.barDeclarationSymbol,
+                quantityText: quantityText,
+                setupType: viewModel.declSetupType,
+                invalidationTypeRaw: viewModel.declInvalidationType,
+                invalidationCondition: viewModel.declInvalidationCondition,
+                declarationKindWire: "intraday",
+                scalperSessionId: "",
+                targetPriceText: targetPriceText,
+                invalidationPriceText: viewModel.declInvalidationPrice,
+            )
+        ) && targetOk
     }
 
     // MARK: - Ticket / numbers
@@ -200,6 +139,16 @@ struct BarCashCockpitPlanRail: View {
                     HStack(spacing: 7) {
                         BarChip(label: "Buy", selected: sideBuy) { sideBuy = true }
                         BarChip(label: "Sell", selected: !sideBuy) { sideBuy = false }
+                    }
+                    if viewModel.requiresCashProduct {
+                        HStack(spacing: 7) {
+                            BarChip(label: "CNC", selected: viewModel.declCashProduct == "CNC") {
+                                viewModel.declCashProduct = "CNC"
+                            }
+                            BarChip(label: "MIS", selected: viewModel.declCashProduct == "MIS") {
+                                viewModel.declCashProduct = "MIS"
+                            }
+                        }
                     }
                 }
             } else {
@@ -419,6 +368,8 @@ struct BarCashCockpitPlanRail: View {
     @ViewBuilder
     private func invalidationIcon(for k: BarInvalidationKind) -> some View {
         switch k {
+        case .price:
+            Image(systemName: "flag")
         case .time:
             Image(systemName: "clock")
         case .behaviour:

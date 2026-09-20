@@ -142,6 +142,15 @@ struct BarDeclarationFlowView: View {
                 isUsdm: viewModel.declareAssetClass.isNamedComFutures,
                 optionLegCount: viewModel.optionLegs.count,
                 maxPlannedLossText: viewModel.declMaxPlannedLossText,
+                frustration: viewModel.declEmotionalFrustration,
+                excitement: viewModel.declEmotionalExcitement,
+                stanceRaw: viewModel.declStance,
+                intent: viewModel.declIntent,
+                targetPriceText: targetPriceText,
+                invalidationPriceText: viewModel.declInvalidationPrice,
+                requiresCashProduct: viewModel.requiresCashProduct,
+                cashProduct: viewModel.declCashProduct,
+                gate: viewModel.declGateStripState,
             ),
         )
     }
@@ -189,7 +198,12 @@ struct BarDeclarationFlowView: View {
             guard viewModel.declProtectiveSLConsent else { return nil }
         }
         guard (1 ... 5).contains(viewModel.declEmotionalCalm),
-              (1 ... 5).contains(viewModel.declEmotionalConfidence) else { return nil }
+              (1 ... 5).contains(viewModel.declEmotionalConfidence),
+              (1 ... 5).contains(viewModel.declEmotionalFrustration),
+              (1 ... 5).contains(viewModel.declEmotionalExcitement) else { return nil }
+        guard BarPlanStance(rawValue: viewModel.declStance) != nil else { return nil }
+        let intentTrim = viewModel.declIntent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !intentTrim.isEmpty else { return nil }
         guard BarIntradayDeclareValidator.stickyPreTradeConfirmEnabled(
             calm: viewModel.declEmotionalCalm,
             confidence: viewModel.declEmotionalConfidence,
@@ -216,7 +230,29 @@ struct BarDeclarationFlowView: View {
             guard selectedInvalidationKind != nil else { return nil }
         }
         let invTrim = viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !invTrim.isEmpty else { return nil }
+        let invPrice = Double(viewModel.declInvalidationPrice.trimmingCharacters(in: .whitespacesAndNewlines))
+        if selectedInvalidationKind == .price {
+            guard let invPrice, invPrice > 0 else { return nil }
+        } else {
+            guard !invTrim.isEmpty else { return nil }
+        }
+        let targetTrimForGate = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let targetParsed = Double(targetTrimForGate), targetParsed > 0 else { return nil }
+        if viewModel.requiresCashProduct {
+            let p = viewModel.declCashProduct.uppercased()
+            guard p == "CNC" || p == "MIS" else { return nil }
+        }
+        let emotionOk = BarPlanGateStrip.emotionFilled(
+            calm: viewModel.declEmotionalCalm,
+            confidence: viewModel.declEmotionalConfidence,
+            frustration: viewModel.declEmotionalFrustration,
+            excitement: viewModel.declEmotionalExcitement
+        )
+        guard BarPlanGateStrip.isComplete(
+            state: viewModel.declGateStripState,
+            emotionFilled: emotionOk,
+            exitFilled: true
+        ) else { return nil }
         let wireKind = declarationKindWire(for: viewModel.activeArchetype)
         if wireKind == "scalper_session",
            scalperSessionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -226,15 +262,18 @@ struct BarDeclarationFlowView: View {
         let calm = viewModel.declEmotionalCalm
         let conf = viewModel.declEmotionalConfidence
         let entryTrim = viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines)
-        let targetTrim = targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let includeEntryTarget = isOptions || wireKind == "swing" || wireKind == "positional"
-        let entryOpt = includeEntryTarget && !entryTrim.isEmpty ? Double(entryTrim) : nil
-        let targetOpt = !targetTrim.isEmpty ? Double(targetTrim) : nil
+        let entryOpt = !entryTrim.isEmpty ? Double(entryTrim) : nil
         let typedMax = Double(viewModel.declMaxPlannedLossText.trimmingCharacters(in: .whitespacesAndNewlines))
         let maxLoss = isOptions ? typedMax : planMaxLossINR
         if isOptions, typedMax == nil { return nil }
 
         let first = viewModel.optionLegs.first
+        let invNoteOut: String? = {
+            if selectedInvalidationKind == .price {
+                return invTrim.isEmpty ? nil : invTrim
+            }
+            return invTrim
+        }()
         let obj = BarIntradayDeclarationPayload.buildJSONObject(
             symbol: first?.underlying ?? sym,
             sideBuy: first?.sideBuy ?? sideBuy,
@@ -243,10 +282,10 @@ struct BarDeclarationFlowView: View {
             declarationKind: wireKind,
             moodStress: Double(calm),
             moodImpulse: Double(conf),
-            invalidationNote: invTrim,
+            invalidationNote: invNoteOut,
             protectiveSlConsent: isNamedFutures ? false : (isOptions ? true : viewModel.declProtectiveSLConsent),
             entryPrice: entryOpt,
-            targetPrice: targetOpt,
+            targetPrice: targetParsed,
             scalperSessionId: wireKind == "scalper_session" ? scalperSessionId : nil,
             isSessionLevel: wireKind == "scalper_session",
             setupTypeLabel: isOptions ? nil : (viewModel.declSetupType.isEmpty ? nil : viewModel.declSetupType),
@@ -257,6 +296,13 @@ struct BarDeclarationFlowView: View {
             maxPlannedLossINR: maxLoss,
             bookId: viewModel.declareBookId,
             ticket: ticketForBody,
+            moodFrustration: Double(viewModel.declEmotionalFrustration),
+            moodExcitement: Double(viewModel.declEmotionalExcitement),
+            stance: viewModel.declStance,
+            intent: intentTrim,
+            invalidationPrice: selectedInvalidationKind == .price ? invPrice : nil,
+            cashProduct: viewModel.requiresCashProduct ? viewModel.declCashProduct : nil,
+            gateStrip: viewModel.declGateStripState,
         )
         return try? JSONSerialization.data(withJSONObject: obj, options: [])
     }

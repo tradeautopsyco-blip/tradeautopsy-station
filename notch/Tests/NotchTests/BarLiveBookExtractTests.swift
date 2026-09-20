@@ -17,7 +17,11 @@ struct BarLiveBookExtractTests {
             protectiveSlConsent: true,
             stopLoss: 1400,
             target: nil,
-            planSnapshot: nil
+            planSnapshot: nil,
+            filledQty: nil,
+            avgFill: nil,
+            fillSymbol: nil,
+            fillSide: nil
         )
         vm.barLiveState = BarLiveStateResponse(
             planState: "",

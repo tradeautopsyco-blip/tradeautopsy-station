@@ -82,7 +82,7 @@ struct BarCryptoOptionsDeclareView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 groupLab("State check")
-                stateCheck
+                BarPlanEmotionCheckView(viewModel: viewModel)
 
                 groupLab("Contract")
                 contractFields
@@ -103,6 +103,14 @@ struct BarCryptoOptionsDeclareView: View {
 
                 groupLab("Invalidation")
                 premortem
+                groupLab("Intent")
+                BarPlanIntentField(text: $viewModel.declIntent)
+                groupLab("Gate")
+                BarPlanGateStripView(
+                    viewModel: viewModel,
+                    exitFilled: !viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && (Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) > 0
+                )
 
                 groupLab("Greeks")
                 greeksGrid
@@ -975,7 +983,7 @@ struct BarCryptoOptionsDeclareView: View {
         optionsZone(title: "Plan", note: "what you are declaring") {
             VStack(alignment: .leading, spacing: 16) {
                 groupLab("State check")
-                stateCheck
+                BarPlanEmotionCheckView(viewModel: viewModel)
 
                 groupLab("Contract")
                 contractFields
@@ -994,6 +1002,14 @@ struct BarCryptoOptionsDeclareView: View {
 
                 groupLab("Invalidation")
                 premortem
+                groupLab("Intent")
+                BarPlanIntentField(text: $viewModel.declIntent)
+                groupLab("Gate")
+                BarPlanGateStripView(
+                    viewModel: viewModel,
+                    exitFilled: !viewModel.declInvalidationCondition.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        && (Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) > 0
+                )
             }
         }
     }

@@ -20,7 +20,11 @@ public enum JournalCardPaint {
     }
 
     public static func statusChips(_ card: JournalDeclarationCard) -> [String] {
-        [statusLabel(card.status)]
+        var chips = [statusLabel(card.status)]
+        if (card.snapshot.stance ?? "").lowercased() == "reactive" {
+            chips.append("Reactive")
+        }
+        return chips
     }
 
     public static func drawerRows(_ card: JournalDeclarationCard) -> [JournalDrawerRow] {
@@ -39,7 +43,15 @@ public enum JournalCardPaint {
         if let net = card.citedNet, let ccy = card.citedCurrency {
             rows.append(JournalDrawerRow(label: "Matched net", value: "\(net) \(ccy)"))
         }
+        rows.append(JournalDrawerRow(label: "Pre", value: emptyDash(card.notes.pre)))
+        rows.append(JournalDrawerRow(label: "Live", value: emptyDash(card.notes.live)))
+        rows.append(JournalDrawerRow(label: "Post", value: emptyDash(card.notes.post)))
         return rows
+    }
+
+    private static func emptyDash(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "—" : t
     }
 
     public static func kindLabel(_ k: String) -> String {
