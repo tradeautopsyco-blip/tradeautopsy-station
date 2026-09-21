@@ -100,7 +100,7 @@ public final class TodayViewModel: ObservableObject {
 
     public var sessionPnLUsd: Double? {
         guard presentation.state == .healthyActive else { return nil }
-        return lastPayload?.hero.pnlTodayUsd
+        return lastPayload?.hero.deskClosedPnL
     }
 
     /// Last known desk quote currency from Today payload (R7).

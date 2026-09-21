@@ -24,6 +24,7 @@ mod event_bus;
 mod exchange_info;
 mod fact_outbox;
 mod instruments;
+mod inr_cash_wac;
 mod kill_policy;
 mod kill_switch_audit;
 mod kotak_nfo_scrip;
@@ -36,6 +37,7 @@ mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
 mod round_trip_engine;
+mod share_cited_pnl;
 mod sse_signing;
 mod station_tokens;
 mod today;
@@ -135,6 +137,11 @@ pub use outbox::{
 };
 pub use recent_trades::RecentTradesStore;
 pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
+pub use inr_cash_wac::{
+    aggregate_known_pnl_inr, is_aggregate_eligible as is_inr_cash_aggregate_eligible,
+    is_inr_cash_fill, InrCashReconstructResult, InrCashRoundTrip, InrCashWacEngine, BOOK_ID as INR_CASH_BOOK_ID,
+    CALC_PROFILE_ID as INR_CASH_CALC_PROFILE_ID, OWNER_PATH as INR_CASH_WAC_OWNER_PATH,
+};
 pub use round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, FillTimeFeePriceLookup, PairAssetFeeLookup,
     ReconstructResult, RoundTrip, RoundTripEngine, StablecoinAndBaseAssetFeeLookup, UnhandledFee,
@@ -1451,6 +1458,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         fact_outbox = fact_outbox.with_clock(clock);
     }
     let fact_outbox = Arc::new(fact_outbox);
+    today_service.attach_fact_outbox(fact_outbox.clone());
 
     let jwt_loadable = if injected_station_tokens {
         station_tokens_in_store || (!station_token_store_explicit && loopback_bootstrap_jwt)

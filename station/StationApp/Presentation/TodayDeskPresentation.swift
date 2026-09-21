@@ -96,7 +96,7 @@ public struct TodayDeskPresentation: Equatable, Sendable {
             && showActiveMoney
             && (screen.state == .healthyActive || screen.state == .healthyEmpty)
         let used = DeskRulesPresentation.usedTodayAmount(
-            closedPnL: payload?.hero.pnlTodayUsd,
+            closedPnL: payload?.hero.deskClosedPnL,
             healthy: moneyHealthy
         )
         let remaining: Double?
@@ -174,7 +174,7 @@ public struct TodayDeskPresentation: Equatable, Sendable {
         var cumulative = 0.0
         var points: [TodayClosedChartPoint] = []
         for row in ordered {
-            guard let net = row.netPnlUsd else { continue }
+            guard let net = row.deskNetPnL else { continue }
             cumulative += net
             points.append(TodayClosedChartPoint(closedAt: row.closedAt, cumulativeClosedPnL: cumulative))
         }

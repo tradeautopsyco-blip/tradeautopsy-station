@@ -3,6 +3,10 @@
 use crate::broker_sync::{BrokerRuntimeState, BrokerSyncConfig};
 use crate::broker_sync_control::{BrokerRuntimeCardStatus, BrokerSyncController};
 use crate::exchange_info::{live_com_filters_ready, ExchangeInfoSymbolCache};
+use crate::inr_cash_wac::{
+    aggregate_known_pnl_inr, is_aggregate_eligible as is_inr_eligible, is_inr_cash_fill,
+    InrCashRoundTrip, InrCashWacEngine, CALC_PROFILE_ID as INR_CASH_CALC_PROFILE,
+};
 use crate::recent_trades::RecentTradesStore;
 use crate::round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, RoundTrip, RoundTripEngine,
@@ -29,6 +33,9 @@ pub enum TodayDegradedReason {
 #[serde(rename_all = "camelCase")]
 pub struct TodayHeroPayload {
     pub pnl_today_usd: Option<f64>,
+    /// Kotak cash desk only — DualNoBlend; never copy into pnl_today_usd.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pnl_today_inr: Option<f64>,
     pub trades_today: Option<u32>,
     pub win_rate: Option<f64>,
     /// Eligible closed wins — share, don't refilter rows in Swift (Y3 / S2).
@@ -40,6 +47,7 @@ impl TodayHeroPayload {
     pub fn empty() -> Self {
         Self {
             pnl_today_usd: None,
+            pnl_today_inr: None,
             trades_today: None,
             win_rate: None,
             wins_today: None,
@@ -66,6 +74,9 @@ pub struct TodayTradeRowPayload {
     pub avg_exit: f64,
     pub qty: f64,
     pub net_pnl_usd: Option<f64>,
+    /// Cash desk DualNoBlend — never set alongside a USD blend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub net_pnl_inr: Option<f64>,
     pub primary_flag: String,
     pub flag_severity: String,
     pub data_quality_flags: Vec<String>,
@@ -95,10 +106,13 @@ pub struct TodayService {
     recent_trades: RecentTradesStore,
     store: TodayStore,
     engine: RoundTripEngine,
+    inr_engine: InrCashWacEngine,
     broker_status: Arc<Mutex<BrokerRuntimeState>>,
     broker_sync_control: Arc<BrokerSyncController>,
     broker_limits: BrokerSyncConfig,
     exchange_cache: ExchangeInfoSymbolCache,
+    /// M1: optional A8 share-up outbox for cited INR cash PnL.
+    fact_outbox: Mutex<Option<Arc<crate::fact_outbox::FactOutbox>>>,
 }
 
 impl TodayService {
@@ -114,16 +128,37 @@ impl TodayService {
             recent_trades,
             store,
             engine: RoundTripEngine::with_exchange_info(exchange_cache.clone(), true),
+            inr_engine: InrCashWacEngine::new(),
             broker_status,
             broker_sync_control,
             broker_limits,
             exchange_cache,
+            fact_outbox: Mutex::new(None),
         }
+    }
+
+    /// Attach fact outbox after boot (created later than TodayService).
+    pub fn attach_fact_outbox(&self, outbox: Arc<crate::fact_outbox::FactOutbox>) {
+        if let Ok(mut slot) = self.fact_outbox.lock() {
+            *slot = Some(outbox);
+        }
+    }
+
+    fn share_cited_inr_trips(&self, trips: &[InrCashRoundTrip]) {
+        let Ok(guard) = self.fact_outbox.lock() else {
+            return;
+        };
+        let Some(outbox) = guard.as_ref() else {
+            return;
+        };
+        let _ = outbox.enqueue_cited_cash_pnl(trips);
     }
 
     pub fn refresh_from_fills(&self) -> anyhow::Result<()> {
         let fills = self.recent_trades.fetch_all_fills()?;
-        let result = self.engine.reconstruct(fills);
+        let (usd_fills, _inr_fills) = partition_fills(fills);
+        // Snapshots / signal store remain COM USD book. INR cash uses inr_cash_wac on build_payload.
+        let result = self.engine.reconstruct(usd_fills);
         let today = local_today();
         let today_trips: Vec<RoundTrip> = result
             .round_trips
@@ -159,7 +194,76 @@ impl TodayService {
 
         let fills = self.recent_trades.fetch_all_fills()?;
         let open_positions = count_open_positions(&fills);
-        let result = self.engine.reconstruct(fills);
+        let (usd_fills, inr_fills) = partition_fills(fills);
+        let inr_desk = desk.2.as_deref() == Some(INR_CASH_CALC_PROFILE)
+            || desk.1.as_deref() == Some("INR");
+
+        if inr_desk {
+            let inr_result = self.inr_engine.reconstruct(inr_fills);
+            let today = local_today();
+            let today_trips: Vec<InrCashRoundTrip> = inr_result
+                .round_trips
+                .iter()
+                .filter(|rt| local_date(rt.closed_at) == today)
+                .cloned()
+                .collect();
+            let eligible: Vec<_> = today_trips.iter().filter(|rt| is_inr_eligible(rt)).collect();
+            let pnl = if eligible.is_empty() {
+                None
+            } else {
+                Some(aggregate_known_pnl_inr(&today_trips))
+            };
+            let trades_count = if today_trips.is_empty() {
+                None
+            } else {
+                Some(eligible.len() as u32)
+            };
+            let wins = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) > 0.0)
+                .count() as u32;
+            let losses = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) < 0.0)
+                .count() as u32;
+            let win_rate = if eligible.is_empty() {
+                None
+            } else {
+                Some(wins as f64 / eligible.len() as f64)
+            };
+            let trades = build_inr_trade_rows(&today_trips, 50);
+            self.share_cited_inr_trips(&today_trips);
+            return Ok(TodayPayload {
+                local_date: today.format("%Y-%m-%d").to_string(),
+                performance_basis_not_tax: true,
+                degraded_reason: None,
+                learning_baseline: true,
+                hero: TodayHeroPayload {
+                    pnl_today_usd: None,
+                    pnl_today_inr: pnl,
+                    trades_today: trades_count,
+                    win_rate,
+                    wins_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(wins)
+                    },
+                    losses_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(losses)
+                    },
+                },
+                top_signals: vec![],
+                trades,
+                open_position_count: open_positions,
+                broker_slug: desk.0,
+                quote_currency: desk.1,
+                calc_profile_id: desk.2,
+            });
+        }
+
+        let result = self.engine.reconstruct(usd_fills);
         let today = local_today();
         let today_trips: Vec<RoundTrip> = result
             .round_trips
@@ -207,6 +311,7 @@ impl TodayService {
             learning_baseline: analysis.learning_baseline,
             hero: TodayHeroPayload {
                 pnl_today_usd: pnl,
+                pnl_today_inr: None,
                 trades_today: trades_count,
                 win_rate,
                 wins_today: if eligible.is_empty() {
@@ -356,12 +461,59 @@ fn build_trade_rows(
                 avg_exit: rt.avg_exit_price,
                 qty: rt.qty,
                 net_pnl_usd: rt.realized_pnl_usd,
+                net_pnl_inr: None,
                 primary_flag: flag.label.clone(),
                 flag_severity: flag.severity.as_str().to_string(),
                 data_quality_flags: data_quality_flags(&rt),
             })
         })
         .collect()
+}
+
+fn build_inr_trade_rows(today_trips: &[InrCashRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
+    let mut sorted: Vec<_> = today_trips.to_vec();
+    sorted.sort_by(|a, b| b.closed_at.cmp(&a.closed_at));
+    sorted
+        .into_iter()
+        .take(limit)
+        .map(|rt| {
+            let mut flags = Vec::new();
+            if rt.unknown_basis {
+                flags.push("unknown_basis".to_string());
+            }
+            TodayTradeRowPayload {
+                closed_at: rt.closed_at.to_rfc3339(),
+                symbol: rt.symbol.clone(),
+                avg_entry: rt.avg_entry_price,
+                avg_exit: rt.avg_exit_price,
+                qty: rt.qty,
+                net_pnl_usd: None,
+                net_pnl_inr: rt.realized_pnl_inr,
+                primary_flag: if rt.unknown_basis {
+                    "unknown_basis".to_string()
+                } else {
+                    "none".to_string()
+                },
+                flag_severity: "info".to_string(),
+                data_quality_flags: flags,
+            }
+        })
+        .collect()
+}
+
+fn partition_fills(
+    fills: Vec<crate::broker::BrokerFill>,
+) -> (Vec<crate::broker::BrokerFill>, Vec<crate::broker::BrokerFill>) {
+    let mut usd = Vec::new();
+    let mut inr = Vec::new();
+    for f in fills {
+        if is_inr_cash_fill(&f) {
+            inr.push(f);
+        } else {
+            usd.push(f);
+        }
+    }
+    (usd, inr)
 }
 
 fn build_snapshot(

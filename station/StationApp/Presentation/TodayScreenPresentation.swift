@@ -152,7 +152,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         if !showActiveMoney {
             return dualDeskNoBlend(payload: payload, now: now)
         }
-        let hasClosed = !payload.trades.isEmpty || payload.hero.pnlTodayUsd != nil
+        let hasClosed = !payload.trades.isEmpty || payload.hero.deskClosedPnL != nil
         if !hasClosed && positions.isEmpty {
             return healthyEmpty(payload: payload, now: now, showShallowImpact: showShallowImpact)
         }
@@ -287,7 +287,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
     ) -> TodayScreenPresentation {
         let flagged = payload.trades.filter { $0.flagSeverity == "firing" || $0.flagSeverity == "watch" }.count
         let quote = payload.deskQuoteCurrency ?? "USD"
-        let closedEmpty = payload.trades.isEmpty && payload.hero.pnlTodayUsd == nil
+        let closedEmpty = payload.trades.isEmpty && payload.hero.deskClosedPnL == nil
         let wins = payload.hero.winsToday
         let losses = payload.hero.lossesToday
         return TodayScreenPresentation(
@@ -299,11 +299,11 @@ public struct TodayScreenPresentation: Equatable, Sendable {
                 heroTile(
                     id: "pnl",
                     label: "P&L today",
-                    value: formatMoney(payload.hero.pnlTodayUsd, quoteCurrency: quote),
+                    value: formatMoney(payload.hero.deskClosedPnL, quoteCurrency: quote),
                     caption: closedEmpty
                         ? "No closed round-trips"
                         : "Net of fees · performance basis, not tax",
-                    tone: toneForPnL(payload.hero.pnlTodayUsd)
+                    tone: toneForPnL(payload.hero.deskClosedPnL)
                 ),
                 heroTile(
                     id: "trades",
@@ -388,7 +388,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         _ row: TodayTradeRowPayload,
         quoteCurrency: String
     ) -> TodayTradeRowPresentation {
-        let tone = toneForPnL(row.netPnlUsd)
+        let tone = toneForPnL(row.deskNetPnL)
         let flagTone: TodaySignalTone = switch row.flagSeverity {
         case "firing": .firing
         case "watch": .watch
@@ -400,7 +400,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
             symbol: formatSymbol(row.symbol),
             avgEntryText: formatPrice(row.avgEntry),
             avgExitText: formatPrice(row.avgExit),
-            pnlText: row.netPnlUsd.map { formatSignedMoney($0, quoteCurrency: quoteCurrency) } ?? emDash,
+            pnlText: row.deskNetPnL.map { formatSignedMoney($0, quoteCurrency: quoteCurrency) } ?? emDash,
             pnlTone: tone,
             flagText: row.primaryFlag,
             flagTone: flagTone,
@@ -534,7 +534,7 @@ public struct TodayScreenPresentation: Equatable, Sendable {
         wins: Int?,
         losses: Int?
     ) -> String {
-        guard let pnl = payload.hero.pnlTodayUsd else {
+        guard let pnl = payload.hero.deskClosedPnL else {
             return "Closed round-trips are on the table. Hero stays dash until eligible P&L exists."
         }
         let money = formatSignedMoney(pnl, quoteCurrency: quote)

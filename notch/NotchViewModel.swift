@@ -4705,7 +4705,9 @@ public final class NotchViewModel: ObservableObject {
             return
         }
         if paintsTodayHero {
-            if let p = hero["pnlTodayUsd"] as? Double {
+            if let p = hero["pnlTodayInr"] as? Double {
+                sessionPnL = p
+            } else if let p = hero["pnlTodayUsd"] as? Double {
                 sessionPnL = p
             } else {
                 sessionPnL = 0

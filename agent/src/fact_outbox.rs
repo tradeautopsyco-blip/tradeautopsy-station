@@ -8,12 +8,31 @@ use std::sync::{Arc, Mutex};
 
 pub enum Fact {
     StationOnline,
+    /// M1: Station-cited cash realized PnL for Console consume (A8 Bearer share-up).
+    CitedCashPnl { payload: serde_json::Value },
 }
 
 impl Fact {
     fn signal_type(&self) -> &'static str {
         match self {
             Fact::StationOnline => "station_online",
+            Fact::CitedCashPnl { .. } => crate::share_cited_pnl::SIGNAL_TYPE,
+        }
+    }
+
+    fn payload_json(&self, event_id: &str) -> anyhow::Result<String> {
+        match self {
+            Fact::StationOnline => Ok(serde_json::to_string(&json!({
+                "v": 1,
+                "event_id": event_id,
+            }))?),
+            Fact::CitedCashPnl { payload } => {
+                let mut body = payload.clone();
+                if let Some(obj) = body.as_object_mut() {
+                    obj.insert("event_id".into(), json!(event_id));
+                }
+                Ok(serde_json::to_string(&body)?)
+            }
         }
     }
 }
@@ -96,10 +115,7 @@ impl FactOutbox {
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = self.now_ms();
-        let payload_json = serde_json::to_string(&json!({
-            "v": 1,
-            "event_id": id,
-        }))?;
+        let payload_json = fact.payload_json(&id)?;
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if matches!(fact, Fact::StationOnline) && last_online_send_is_fresh(&conn, now)? {
             return Ok(EnqueueOutcome::Coalesced);
@@ -111,6 +127,26 @@ impl FactOutbox {
             params![id, fact.signal_type(), payload_json, now, now],
         )?;
         Ok(EnqueueOutcome::Enqueued { id })
+    }
+
+    /// M1 share-up: enqueue cited INR cash trips when JWT is present.
+    pub fn enqueue_cited_cash_pnl(
+        &self,
+        trips: &[crate::inr_cash_wac::InrCashRoundTrip],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if trips.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::share_cited_pnl::cited_cash_pnl_payload(trips);
+        let trips_arr = payload
+            .get("trips")
+            .and_then(|t| t.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        if trips_arr == 0 {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        self.enqueue(Fact::CitedCashPnl { payload })
     }
 
     pub async fn drain(&self) -> anyhow::Result<()> {
