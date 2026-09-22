@@ -55,7 +55,8 @@ public final class DeviceLoginViewModel: ObservableObject {
             userCode = challenge.userCode
             verificationURIComplete = challenge.verificationURIComplete
             phase = .awaitingBrowser
-            if let url = URL(string: challenge.verificationURIComplete) {
+            let browserTarget = challenge.browserURL ?? challenge.verificationURIComplete
+            if let url = URL(string: browserTarget) {
                 openURL(url)
             }
         } catch {

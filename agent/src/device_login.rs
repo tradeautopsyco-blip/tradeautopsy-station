@@ -264,6 +264,17 @@ pub async fn prove_station_session(
     serde_json::from_str(&text).context("parse Console station/session")
 }
 
+/// Console-branded device-login page (same Auth UI as `/login`) before WorkOS finishes pairing.
+pub fn station_device_browser_url(console_base: &str, public: &DeviceLoginPublic) -> Result<String> {
+    let base = console_base.trim_end_matches('/');
+    require_console_base_url(base)?;
+    Ok(format!(
+        "{base}/auth/station-device?user_code={}&continue={}",
+        urlencoding_loose(&public.user_code),
+        urlencoding_loose(&public.verification_uri_complete),
+    ))
+}
+
 fn require_console_base_url(base: &str) -> Result<()> {
     if base.starts_with("https://") {
         return Ok(());

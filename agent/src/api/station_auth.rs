@@ -4,8 +4,8 @@
 
 use crate::api::AppState;
 use crate::device_login::{
-    begin_device_login, complete_device_login, prove_station_session, DeviceLoginPublic,
-    StationSessionIdentity,
+    begin_device_login, complete_device_login, prove_station_session,
+    station_device_browser_url, DeviceLoginPublic, StationSessionIdentity,
 };
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -55,7 +55,8 @@ pub async fn station_auth_begin_handler(State(state): State<AppState>) -> Respon
                 .device_login_pending
                 .lock()
                 .expect("device login pending mutex") = Some(pending);
-            (StatusCode::OK, Json(public_to_json(&public))).into_response()
+            let console_base = state.upstream.config.base_url.as_str();
+            (StatusCode::OK, Json(public_to_json(&public, console_base))).into_response()
         }
         Err(err) => (
             StatusCode::BAD_GATEWAY,
@@ -193,12 +194,14 @@ pub async fn station_auth_sign_out_handler(State(state): State<AppState>) -> Res
     }
 }
 
-fn public_to_json(public: &DeviceLoginPublic) -> Value {
+fn public_to_json(public: &DeviceLoginPublic, console_base: &str) -> Value {
     // Explicit map so we never accidentally serialize private fields.
+    let browser_url = station_device_browser_url(console_base, public).ok();
     json!({
         "user_code": public.user_code,
         "verification_uri": public.verification_uri,
         "verification_uri_complete": public.verification_uri_complete,
+        "browser_url": browser_url,
         "expires_in": public.expires_in,
         "interval": public.interval,
     })
@@ -226,8 +229,15 @@ mod tests {
             expires_in: 300,
             interval: 5,
         };
-        let json = public_to_json(&public);
+        let json = public_to_json(
+            &public,
+            "https://www.tradeautopsy.in",
+        );
         assert!(json.get("device_code").is_none());
         assert_eq!(json["user_code"], "RRGQ-BJVS");
+        assert!(json["browser_url"]
+            .as_str()
+            .unwrap()
+            .contains("/auth/station-device"));
     }
 }

@@ -5,6 +5,7 @@ public struct DeviceLoginChallenge: Equatable, Sendable, Codable {
     public let userCode: String
     public let verificationURI: String
     public let verificationURIComplete: String
+    public let browserURL: String?
     public let expiresIn: UInt64
     public let interval: UInt64
 
@@ -12,12 +13,14 @@ public struct DeviceLoginChallenge: Equatable, Sendable, Codable {
         userCode: String,
         verificationURI: String,
         verificationURIComplete: String,
+        browserURL: String? = nil,
         expiresIn: UInt64,
         interval: UInt64
     ) {
         self.userCode = userCode
         self.verificationURI = verificationURI
         self.verificationURIComplete = verificationURIComplete
+        self.browserURL = browserURL
         self.expiresIn = expiresIn
         self.interval = interval
     }
@@ -26,6 +29,7 @@ public struct DeviceLoginChallenge: Equatable, Sendable, Codable {
         case userCode = "user_code"
         case verificationURI = "verification_uri"
         case verificationURIComplete = "verification_uri_complete"
+        case browserURL = "browser_url"
         case expiresIn = "expires_in"
         case interval
     }
