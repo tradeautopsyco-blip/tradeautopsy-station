@@ -1,6 +1,6 @@
 # ADR 0005: Zerodha Kite redirect callback landing point
 
-**Status:** DRAFT (founder accepts — this lane does not mark accepted)
+**Status:** ACCEPTED (founder bundle — go ahead 2026-09-23 IST)
 
 **Date:** 2026-09-23 IST
 
