@@ -171,6 +171,10 @@ mod tests {
 
     /// B6 gate: only signed first-pair slugs may be Enabled. Named next
     /// (`zerodha_kite`) lives in issues sheets only until SIGNED — not here.
+    ///
+    /// W0.8 (F6): Enabled ⇒ sheet SIGNED. Status lines are read at test time
+    /// from the canonical sheets dir via a relative path (no prod-code coupling:
+    /// this test breaks if an Enabled slug has no sheet or a non-SIGNED sheet).
     #[test]
     fn b6_gate_only_signed_first_pair_is_enabled() {
         let enabled: Vec<_> = catalog_v1()
@@ -185,6 +189,29 @@ mod tests {
         assert!(catalog_v1()
             .iter()
             .all(|d| d.availability == BrokerAvailability::Enabled));
+        // W0.8a: Enabled is a subset of the signed first pair, and every
+        // Enabled slug's canonical sheet carries a SIGNED Status line.
+        // (Backticked `SIGNED` required: a RESEARCH sheet saying "not SIGNED"
+        // must NOT satisfy this gate.)
+        let signed_pair = ["binance_com", "kotak_neo"];
+        assert!(
+            enabled.iter().all(|s| signed_pair.contains(&s.as_str())),
+            "Enabled slug outside the signed first pair: {enabled:?}"
+        );
+        let sheets_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../issues/brokers/sheets");
+        for slug in &enabled {
+            let text = std::fs::read_to_string(sheets_dir.join(format!("{slug}.md")))
+                .unwrap_or_else(|_| panic!("B6 sheet missing for Enabled slug {slug}"));
+            let status = text
+                .lines()
+                .find(|l| l.contains("**Status:**"))
+                .unwrap_or_else(|| panic!("{slug}.md has no Status line"));
+            assert!(
+                status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+                "Enabled slug {slug} sheet is not SIGNED: {status}"
+            );
+        }
     }
 
     #[test]

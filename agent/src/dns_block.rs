@@ -124,7 +124,9 @@ const UPSTOX_HOSTS: &[&str] = &["api.upstox.com", "api-v2.upstox.com"];
 pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
     let slug = broker.trim().to_ascii_lowercase();
     match slug.as_str() {
-        "zerodha" | "kite" => ZERODHA_HOSTS,
+        // W0.7 (F5): planned slug `zerodha_kite` reuses ZERODHA_HOSTS.
+        // UNVERIFIED until B6 row 22 cites them; verified Wave 1 Z7.
+        "zerodha" | "kite" | "zerodha_kite" => ZERODHA_HOSTS,
         "upstox" => UPSTOX_HOSTS,
         "kotak" | "kotak_neo" => KOTAK_HOSTS,
         "binance" | "binance_com" => BINANCE_COM_HOSTS,
@@ -555,6 +557,43 @@ mod tests {
                 "host {h} must not be shared across desks"
             );
         }
+    }
+
+    #[test]
+    fn w07_every_catalog_slug_plus_zerodha_kite_resolves_non_empty() {
+        // W0.7 (F5): every catalog_v1 slug + planned `zerodha_kite` must resolve
+        // NON-EMPTY, or L3 Kill silently no-ops for that slug.
+        for descriptor in crate::ubi::catalog_v1() {
+            let hosts = hosts_for_broker(&descriptor.slug);
+            assert!(
+                !hosts.is_empty(),
+                "catalog slug {} must resolve to a non-empty Kill host set (W0.7)",
+                descriptor.slug
+            );
+        }
+        assert!(
+            !hosts_for_broker("zerodha_kite").is_empty(),
+            "planned slug zerodha_kite must resolve to a non-empty Kill host set (W0.7)"
+        );
+    }
+
+    #[test]
+    fn w07_unknown_slug_stays_empty_r8() {
+        // R8 by design: unknown slugs return empty, never a default host set.
+        let hosts = hosts_for_broker("definitely_not_a_broker_xyz");
+        assert!(
+            hosts.is_empty(),
+            "unknown slug must stay empty by design (R8)"
+        );
+    }
+
+    #[test]
+    fn w07_zerodha_kite_set_equals_zerodha_set() {
+        assert_eq!(
+            hosts_for_broker("zerodha_kite"),
+            hosts_for_broker("zerodha"),
+            "zerodha_kite must reuse the Zerodha host set (W0.7)"
+        );
     }
 
     #[test]

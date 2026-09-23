@@ -91,11 +91,17 @@ mod tests {
     }
 
     /// B6: no Wasm component for unsheeted / unsigned slugs (named next included).
+    ///
+    /// W0.8 (F6): the COMPONENTS len-2 guard below is the mechanical half of the
+    /// gate — a third component entry cannot land without touching this test,
+    /// which forces the author to also prove a SIGNED sheet exists for it.
     #[test]
     fn b6_gate_no_component_for_unsheeted_slugs() {
         assert!(component_file_name("zerodha_kite").is_none());
         assert!(component_file_name("interactive_brokers").is_none());
         assert!(component_file_name("binance_us").is_none());
+        // Guard: only the signed first pair ships components. Bump this number
+        // only in the PR that flips a newly SIGNED slug to Enabled (G0→G3).
         assert_eq!(COMPONENTS.len(), 2, "only first-pair components ship");
     }
 
