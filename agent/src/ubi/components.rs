@@ -26,6 +26,11 @@ const COMPONENTS: &[(&str, &str, &str)] = &[
         "ubi_zerodha_kite_adapter.wasm",
         "ubi-zerodha-kite-adapter",
     ),
+    (
+        "upstox",
+        "ubi_upstox_adapter.wasm",
+        "ubi-upstox-adapter",
+    ),
 ];
 
 pub fn component_file_name(slug: &str) -> Option<&'static str> {
@@ -110,7 +115,11 @@ mod tests {
         assert!(component_file_name("binance_us").is_none());
         // Guard: only SIGNED sheets ship components. Bump this number only in the
         // PR that adds another SIGNED slug's Wasm crate (G0→G3).
-        assert_eq!(COMPONENTS.len(), 3, "signed broker components only");
+        assert_eq!(
+            component_file_name("upstox"),
+            Some("ubi_upstox_adapter.wasm")
+        );
+        assert_eq!(COMPONENTS.len(), 4, "signed broker components only");
     }
 
     #[test]

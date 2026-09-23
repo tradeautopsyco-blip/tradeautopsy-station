@@ -81,15 +81,20 @@ struct BrokerBookClassDecisionTests {
     ]
 
     @Test func catalogIsSlugOnlyFirstPair() {
-        #expect(BrokerCatalog.v1.count == 3)
-        #expect(BrokerCatalog.v1.map(\.slug) == ["binance_com", "kotak_neo", "zerodha_kite"])
+        #expect(BrokerCatalog.v1.count == 4)
+        #expect(
+            BrokerCatalog.v1.map(\.slug) == ["binance_com", "kotak_neo", "zerodha_kite", "upstox"]
+        )
         // First-book pointers only — the 4 second books have no catalog row.
         #expect(
             BrokerCatalog.v1.map(\.bookId) == [
                 "binance-com-spot", "kotak-nse-bse-cash", "zerodha-nse-bse-cash",
+                "upstox-nse-bse-cash",
             ]
         )
         #expect(BrokerCatalog.descriptor(for: "zerodha_kite")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "upstox")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "upstox")?.authScheme == .upstoxOAuthBearerSession)
         #expect(BrokerCatalog.descriptor(for: "binance_com")?.bookId == "binance-com-spot")
         #expect(BrokerCatalog.descriptor(for: "kotak_neo")?.bookId == "kotak-nse-bse-cash")
     }

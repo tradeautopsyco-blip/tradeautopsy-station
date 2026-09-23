@@ -9,6 +9,8 @@ public enum BrokerConnectServices {
             return .kotakNeo(environment)
         case "zerodha_kite":
             return .zerodhaKite(environment)
+        case "upstox":
+            return .upstox(environment)
         default:
             // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
             return BrokerConnectionIdentity(
@@ -28,6 +30,8 @@ public enum BrokerConnectServices {
             return KotakNeoSessionCredentialValidator()
         case "zerodha_kite":
             return ZerodhaKiteSessionCredentialValidator()
+        case "upstox":
+            return UpstoxOAuthSessionCredentialValidator()
         default:
             return UnsupportedBrokerCredentialValidator()
         }
@@ -70,6 +74,23 @@ private struct ZerodhaKiteSessionCredentialValidator: BrokerCredentialValidating
     ) async -> BrokerCredentialValidationResult {
         guard identity.brokerSlug == "zerodha_kite",
               credentials.authScheme == .kiteChecksumSession,
+              !credentials.apiKey.isEmpty,
+              !credentials.apiSecret.isEmpty
+        else {
+            return .permanentFailure(.invalidCredentials)
+        }
+        return .success(permissionPosture: .readOnlyConfirmed)
+    }
+}
+
+/// Upstox bearer session vault is agent-owned after browser callback; Station keeps client id/secret only.
+private struct UpstoxOAuthSessionCredentialValidator: BrokerCredentialValidating, Sendable {
+    func validate(
+        credentials: BrokerCredentials,
+        identity: BrokerConnectionIdentity
+    ) async -> BrokerCredentialValidationResult {
+        guard identity.brokerSlug == "upstox",
+              credentials.authScheme == .upstoxOAuthBearerSession,
               !credentials.apiKey.isEmpty,
               !credentials.apiSecret.isEmpty
         else {

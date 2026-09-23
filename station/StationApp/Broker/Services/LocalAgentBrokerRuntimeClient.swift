@@ -21,6 +21,12 @@ public protocol BrokerAgentRuntimeClient {
         apiKey: String,
         apiSecret: String
     ) async throws -> ZerodhaConnectBeginResult
+    /// Mint Upstox connect state + authorize URL (ADR 0006). Browser completes callback on agent.
+    func beginUpstoxConnect(
+        for identity: BrokerConnectionIdentity,
+        clientId: String,
+        clientSecret: String
+    ) async throws -> UpstoxConnectBeginResult
     /// Clear host vault entry for identity (Connect rollback / Delete). Identity-only body.
     func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws
     /// Whether the agent can see a vault blob for this identity (Start presence fallback).
@@ -256,6 +262,51 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         throw BrokerAgentRuntimeError.requestFailed
     }
 
+    public func beginUpstoxConnect(
+        for identity: BrokerConnectionIdentity,
+        clientId: String,
+        clientSecret: String
+    ) async throws -> UpstoxConnectBeginResult {
+        let path = "/api/daemon/broker/upstox/begin"
+        let payload = UpstoxConnectBeginPayload(
+            identity: identity,
+            clientId: clientId,
+            clientSecret: clientSecret
+        )
+        let body = try JSONEncoder().encode(payload)
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BrokerAgentRuntimeError.requestFailed
+        }
+        if http.statusCode == 200 {
+            guard let decoded = try? JSONDecoder().decode(UpstoxConnectBeginResponse.self, from: data),
+                  decoded.ok == true,
+                  let loginURLString = decoded.loginUrl,
+                  let loginURL = URL(string: loginURLString),
+                  let state = decoded.state,
+                  let redirectURI = decoded.redirectUri
+            else {
+                throw BrokerAgentRuntimeError.requestFailed
+            }
+            return UpstoxConnectBeginResult(
+                state: state,
+                loginURL: loginURL,
+                redirectURI: redirectURI
+            )
+        }
+        if let decoded = try? JSONDecoder().decode(UpstoxConnectBeginErrorBody.self, from: data) {
+            throw BrokerAgentRuntimeError.upstoxBeginFailed(
+                errorClass: decoded.errorClass ?? "upstream",
+                message: decoded.message ?? "upstox connect begin failed"
+            )
+        }
+        throw BrokerAgentRuntimeError.requestFailed
+    }
+
     public func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws {
         let path = "/api/daemon/broker/credentials/clear"
         let payload = BrokerCredentialIdentityPayload(identity: identity)
@@ -317,6 +368,7 @@ public enum BrokerAgentRuntimeError: Error, Equatable {
     case requestFailed
     case kotakMintFailed(errorClass: String, message: String)
     case zerodhaBeginFailed(errorClass: String, message: String)
+    case upstoxBeginFailed(errorClass: String, message: String)
 }
 
 /// Identity-only Start body (B2). Secrets stay in Keychain; never encoded here.
@@ -363,6 +415,39 @@ private struct ZerodhaConnectBeginResponse: Decodable {
 }
 
 private struct ZerodhaConnectBeginErrorBody: Decodable {
+    let errorClass: String?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case errorClass = "error_class"
+        case message
+    }
+}
+
+struct UpstoxConnectBeginPayload: Encodable {
+    let brokerSlug: String
+    let brokerConnectionId: String
+    let environment: String
+    let clientId: String
+    let clientSecret: String
+
+    init(identity: BrokerConnectionIdentity, clientId: String, clientSecret: String) {
+        brokerSlug = identity.brokerSlug
+        brokerConnectionId = identity.brokerConnectionID.uuidString
+        environment = identity.environment
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+    }
+}
+
+private struct UpstoxConnectBeginResponse: Decodable {
+    let ok: Bool?
+    let state: String?
+    let loginUrl: String?
+    let redirectUri: String?
+}
+
+private struct UpstoxConnectBeginErrorBody: Decodable {
     let errorClass: String?
     let message: String?
 
@@ -442,6 +527,18 @@ public enum AgentLoopback {
 }
 
 public struct ZerodhaConnectBeginResult: Equatable, Sendable {
+    public let state: String
+    public let loginURL: URL
+    public let redirectURI: String
+
+    public init(state: String, loginURL: URL, redirectURI: String) {
+        self.state = state
+        self.loginURL = loginURL
+        self.redirectURI = redirectURI
+    }
+}
+
+public struct UpstoxConnectBeginResult: Equatable, Sendable {
     public let state: String
     public let loginURL: URL
     public let redirectURI: String

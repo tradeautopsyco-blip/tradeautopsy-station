@@ -1,3 +1,14 @@
+[workspace]
+members = [
+    ".",
+    "ubi-binance-com-adapter",
+    "ubi-fixture-adapter",
+    "ubi-kotak-neo-adapter",
+    "ubi-zerodha-kite-adapter",
+    "ubi-upstox-adapter",
+]
+resolver = "2"
+
 [package]
 name = "tradeautopsy-agent"
 version = "0.1.0"

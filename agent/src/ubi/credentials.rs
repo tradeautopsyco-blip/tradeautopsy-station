@@ -40,6 +40,21 @@ pub enum CredentialBlob {
         #[serde(rename = "userId")]
         user_id: String,
     },
+    #[serde(rename = "upstox_oauth_bearer_session")]
+    UpstoxOAuthBearerSession {
+        #[serde(rename = "clientId")]
+        client_id: String,
+        #[serde(rename = "clientSecret")]
+        client_secret: String,
+        #[serde(rename = "accessToken")]
+        access_token: String,
+        #[serde(rename = "accessTokenExpiryUnixMs")]
+        access_token_expiry_unix_ms: i64,
+        #[serde(rename = "userId")]
+        user_id: String,
+        #[serde(rename = "redirectUri")]
+        redirect_uri: String,
+    },
     #[serde(rename = "kotak_neo_totp_session")]
     KotakNeoTotpSession {
         #[serde(rename = "consumerKey")]
@@ -74,6 +89,7 @@ impl CredentialBlob {
         match self {
             Self::HmacApiKeySecret { api_key, .. } => Some(api_key),
             Self::KiteChecksumSession { api_key, .. } => Some(api_key),
+            Self::UpstoxOAuthBearerSession { client_id, .. } => Some(client_id),
             Self::KotakNeoTotpSession { .. } => None,
         }
     }

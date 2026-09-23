@@ -135,4 +135,19 @@ public extension BrokerConnectionIdentity {
     static var zerodhaKiteProd: BrokerConnectionIdentity {
         zerodhaKite(.prod)
     }
+
+    static let upstoxConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000005")!
+
+    static func upstox(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: upstoxConnectionID,
+            brokerSlug: "upstox",
+            assetClass: "equities",
+            environment: environment.rawValue
+        )
+    }
+
+    static var upstoxProd: BrokerConnectionIdentity {
+        upstox(.prod)
+    }
 }

@@ -13,12 +13,14 @@ mod desk;
 mod host;
 mod http;
 mod kotak_session;
+pub mod upstox_session;
 mod zerodha_session;
 mod wasm_adapter;
 
 pub use allowlist::{
-    host_allowed, zerodha_kite_path_allowed, zerodha_kite_path_refused, ALLOWED_BROKER_HOSTS,
-    KITE_API_HOST, ZERODHA_KITE_BOOK_ID,
+    host_allowed, upstox_path_allowed, upstox_path_refused, zerodha_kite_path_allowed,
+    zerodha_kite_path_refused, ALLOWED_BROKER_HOSTS, KITE_API_HOST, UPSTOX_API_HOST,
+    UPSTOX_ASSETS_HOST, UPSTOX_BOOK_ID, UPSTOX_HFT_HOST, ZERODHA_KITE_BOOK_ID,
 };
 pub use catalog::{
     calc_profile, catalog_v1, compliance_profile, descriptor_for_book_id, descriptor_for_slug,
@@ -50,6 +52,11 @@ pub use http::{
     RESPONSE_HEADER_ALLOWLIST,
 };
 pub use kotak_session::{mint_totp_session, KotakMintRequest, ReqwestKotakSessionHttp};
+pub use upstox_session::{
+    begin_connect as upstox_begin_connect, exchange_auth_code, take_pending_connect as take_upstox_pending_connect,
+    upstox_authorize_url, upstox_bearer_authorization_header_value, upstox_callback_base_url,
+    MintedUpstoxSession, ReqwestUpstoxSessionHttp, UpstoxExchangeError,
+};
 pub use zerodha_session::{
     begin_connect, exchange_request_token, kite_authorization_header_value, kite_login_checksum,
     take_pending_connect, zerodha_callback_base_url, KiteExchangeError, MintedKiteSession,

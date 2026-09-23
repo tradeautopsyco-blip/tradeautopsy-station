@@ -34,6 +34,8 @@ public enum BrokerCredentialValidationFailure: Equatable, Sendable {
     case kotakMintRejected(String)
     /// Kite connect/begin or browser login wait (message redacted for UI).
     case kiteConnectRejected(String)
+    /// Upstox connect/begin or browser login wait (message redacted for UI).
+    case upstoxConnectRejected(String)
 }
 
 public enum BrokerCredentialValidationResult: Equatable, Sendable {

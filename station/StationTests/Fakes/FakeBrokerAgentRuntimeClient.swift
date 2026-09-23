@@ -25,6 +25,11 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     /// When true, vault presence flips after begin (simulates browser callback completing).
     var simulateZerodhaVaultAfterBegin = false
     private var zerodhaBeginCompleted = false
+    private(set) var beginUpstoxConnectCallCount = 0
+    var beginUpstoxConnectResult: UpstoxConnectBeginResult?
+    var beginUpstoxConnectError: BrokerAgentRuntimeError?
+    var simulateUpstoxVaultAfterBegin = false
+    private var upstoxBeginCompleted = false
     private(set) var clearVaultCredentialsCallCount = 0
     private(set) var vaultCredentialsPresentCallCount = 0
     private(set) var lastStartedIdentity: BrokerConnectionIdentity?
@@ -90,6 +95,29 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         )
     }
 
+    func beginUpstoxConnect(
+        for identity: BrokerConnectionIdentity,
+        clientId: String,
+        clientSecret: String
+    ) async throws -> UpstoxConnectBeginResult {
+        _ = (identity, clientId, clientSecret)
+        beginUpstoxConnectCallCount += 1
+        upstoxBeginCompleted = true
+        if let beginUpstoxConnectError {
+            throw beginUpstoxConnectError
+        }
+        if let beginUpstoxConnectResult {
+            return beginUpstoxConnectResult
+        }
+        return UpstoxConnectBeginResult(
+            state: "test-state",
+            loginURL: URL(
+                string: "https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=test"
+            )!,
+            redirectURI: UpstoxConnectContract.loopbackRedirectURI
+        )
+    }
+
     func mintKotakSession(
         for identity: BrokerConnectionIdentity,
         consumerKey: String,
@@ -131,6 +159,9 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
             return vaultPresentOverride
         }
         if simulateZerodhaVaultAfterBegin, zerodhaBeginCompleted {
+            return true
+        }
+        if simulateUpstoxVaultAfterBegin, upstoxBeginCompleted {
             return true
         }
         return credentialStore?.hasCredentials(for: identity) ?? false

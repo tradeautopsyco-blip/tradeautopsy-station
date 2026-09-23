@@ -10,6 +10,7 @@ public enum BrokerAuthScheme: String, Equatable, Sendable, Codable {
     case hmacApiKeySecret = "hmac_api_key_secret"
     case kotakNeoTotpSession = "kotak_neo_totp_session"
     case kiteChecksumSession = "kite_checksum_session"
+    case upstoxOAuthBearerSession = "upstox_oauth_bearer_session"
 }
 
 public enum BrokerAdapterOrigin: String, Equatable, Sendable, Codable {
@@ -100,6 +101,18 @@ public enum BrokerCatalog {
             availability: .planned,
             manifestId: "tradeautopsy:zerodha-kite-cash@0.1.0",
             bookId: "zerodha-nse-bse-cash"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "upstox",
+            displayName: "Upstox",
+            assetClass: "equities",
+            quoteCurrency: "INR",
+            authScheme: .upstoxOAuthBearerSession,
+            calcProfileId: "equities_inr_cash",
+            complianceProfileId: "upstox_compliance",
+            availability: .planned,
+            manifestId: "tradeautopsy:upstox-cash@0.1.0",
+            bookId: "upstox-nse-bse-cash"
         ),
     ]
 

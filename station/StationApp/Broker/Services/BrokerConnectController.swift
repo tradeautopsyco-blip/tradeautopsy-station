@@ -78,6 +78,8 @@ public final class BrokerConnectController {
             return await connectKotakTotp()
         case .kiteChecksumSession:
             return await connectZerodhaKite()
+        case .upstoxOAuthBearerSession:
+            return await connectUpstox()
         }
     }
 
@@ -251,7 +253,7 @@ public final class BrokerConnectController {
 
         openBrowserURL(begin.loginURL)
 
-        let vaultReady = await waitForZerodhaSessionVault()
+        let vaultReady = await waitForAgentSessionVault()
         guard vaultReady else {
             await teardownCredentialsBestEffort()
             return .validationTransientFailure(
@@ -270,7 +272,80 @@ public final class BrokerConnectController {
         )
     }
 
-    private func waitForZerodhaSessionVault() async -> Bool {
+    private func connectUpstox() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+
+        let trimmedClientId = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedClientSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appCredentials = BrokerCredentials(
+            upstoxClientId: trimmedClientId,
+            upstoxClientSecret: trimmedClientSecret
+        )
+
+        isValidating = true
+        defer { isValidating = false }
+
+        let existingMetadata = metadataStore.load(for: identity)
+        let shouldAutoStartSync = existingMetadata?.syncPaused != true
+
+        do {
+            try credentialStore.save(credentials: appCredentials, for: identity)
+        } catch {
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        let begin: UpstoxConnectBeginResult
+        do {
+            begin = try await runtimeClient.beginUpstoxConnect(
+                for: identity,
+                clientId: trimmedClientId,
+                clientSecret: trimmedClientSecret
+            )
+        } catch let BrokerAgentRuntimeError.upstoxBeginFailed(errorClass, message) {
+            await teardownCredentialsBestEffort()
+            return mapUpstoxBeginError(errorClass: errorClass, message: message)
+        } catch BrokerAgentRuntimeError.requestFailed {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        } catch {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        guard begin.redirectURI == UpstoxConnectContract.loopbackRedirectURI else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .upstoxConnectRejected(
+                    "Agent redirect URI mismatch — rebuild agent and register \(UpstoxConnectContract.loopbackRedirectURI) in Upstox."
+                )
+            )
+        }
+
+        openBrowserURL(begin.loginURL)
+
+        let vaultReady = await waitForAgentSessionVault()
+        guard vaultReady else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .upstoxConnectRejected(
+                    "Upstox login timed out or was not completed. Finish login in the browser, then Connect again."
+                )
+            )
+        }
+
+        return await persistMetadataAndMaybeStart(
+            credentials: appCredentials,
+            warning: nil,
+            shouldAutoStartSync: shouldAutoStartSync,
+            existingMetadata: existingMetadata,
+            rewriteCredentialVault: false
+        )
+    }
+
+    private func waitForAgentSessionVault() async -> Bool {
         let pollIntervalMs: UInt64 = 500
         let maxAttempts = 1_200 // ≈10 minutes (matches agent connect state TTL)
         for _ in 0..<maxAttempts {
@@ -290,6 +365,16 @@ public final class BrokerConnectController {
             return .validationPermanentFailure(.kiteConnectRejected(safe))
         default:
             return .validationTransientFailure(.kiteConnectRejected(safe))
+        }
+    }
+
+    private func mapUpstoxBeginError(errorClass: String, message: String) -> BrokerConnectOutcome {
+        let safe = BrokerSecretGuard.sanitizeConnectMessage(message)
+        switch errorClass {
+        case "invalid_credentials":
+            return .validationPermanentFailure(.upstoxConnectRejected(safe))
+        default:
+            return .validationTransientFailure(.upstoxConnectRejected(safe))
         }
     }
 

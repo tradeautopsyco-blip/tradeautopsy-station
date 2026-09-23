@@ -28,10 +28,18 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     "lapi.kotaksecurities.com",
     // zerodha_kite — Kite Connect v3 REST (B6 row 22; login host is browser-only).
     "api.kite.trade",
+    // upstox — REST + BOD instrument gzips (B6 row 22; api-hft refused).
+    "api.upstox.com",
+    "assets.upstox.com",
 ];
 
 pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
 pub const KITE_API_HOST: &str = "api.kite.trade";
+
+pub const UPSTOX_BOOK_ID: &str = "upstox-nse-bse-cash";
+pub const UPSTOX_API_HOST: &str = "api.upstox.com";
+pub const UPSTOX_ASSETS_HOST: &str = "assets.upstox.com";
+pub const UPSTOX_HFT_HOST: &str = "api-hft.upstox.com";
 
 /// Read-only Kite REST path prefixes allowed for book `zerodha-nse-bse-cash`.
 pub fn zerodha_kite_path_allowed(path_norm: &str) -> bool {
@@ -65,6 +73,51 @@ fn zerodha_kite_path_refused_impl(method: &str, path_norm: &str) -> bool {
         && (p == "/orders" || p.starts_with("/orders/"))
 }
 
+/// Read-only Upstox REST paths allowed for book `upstox-nse-bse-cash` (B6 row 2).
+pub fn upstox_path_allowed(host: &str, path_norm: &str) -> bool {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.is_empty() {
+        return false;
+    }
+    if host == UPSTOX_ASSETS_HOST {
+        return p.starts_with("/market-quote/instruments/");
+    }
+    if host != UPSTOX_API_HOST {
+        return false;
+    }
+    p == "/v2/order/trades/get-trades-for-day"
+        || p == "/v2/user/profile"
+        || p == "/v2/portfolio/long-term-holdings"
+        || p == "/v2/portfolio/short-term-positions"
+        || p.starts_with("/v2/order/trades")
+        || p == "/v2/order/retrieve-all"
+        || p.starts_with("/v2/order/details")
+        || p.starts_with("/v2/order/history")
+        || p.starts_with("/v2/charges/historical-trades")
+        || p.starts_with("/v2/instruments/search")
+}
+
+/// Refuse HFT order execution surfaces (B6 row 12).
+pub fn upstox_path_refused(host: &str, method: &str, path_norm: &str) -> bool {
+    upstox_path_refused_impl(host, method, path_norm)
+}
+
+fn upstox_path_refused_impl(host: &str, method: &str, path_norm: &str) -> bool {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if host == UPSTOX_HFT_HOST {
+        return true;
+    }
+    if host == UPSTOX_API_HOST && p.contains("/gtt") {
+        return true;
+    }
+    let upper = method.to_ascii_uppercase();
+    matches!(upper.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
+        && host == UPSTOX_API_HOST
+        && (p.starts_with("/v2/order") || p.starts_with("/v3/order"))
+}
+
 pub fn host_allowed(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
     ALLOWED_BROKER_HOSTS
@@ -90,6 +143,9 @@ mod tests {
         assert!(host_allowed("e43.kotaksecurities.com"));
         assert!(host_allowed("lapi.kotaksecurities.com"));
         assert!(host_allowed("api.kite.trade"));
+        assert!(host_allowed("api.upstox.com"));
+        assert!(host_allowed("assets.upstox.com"));
+        assert!(!host_allowed("api-hft.upstox.com"));
         assert!(!host_allowed("evil.example.com"));
         assert!(!host_allowed("mlhsm.kotaksecurities.com"));
         assert!(!host_allowed("api.binance.us"));
@@ -107,5 +163,38 @@ mod tests {
         assert!(zerodha_kite_path_refused("PUT", "/orders/123"));
         assert!(zerodha_kite_path_refused("DELETE", "/orders/123"));
         assert!(!zerodha_kite_path_refused("GET", "/orders"));
+    }
+
+    #[test]
+    fn upstox_read_paths_allowed_hft_and_order_posts_refused() {
+        assert!(upstox_path_allowed(
+            UPSTOX_API_HOST,
+            "/v2/order/trades/get-trades-for-day"
+        ));
+        assert!(upstox_path_allowed(UPSTOX_API_HOST, "/v2/user/profile"));
+        assert!(upstox_path_allowed(
+            UPSTOX_API_HOST,
+            "/v2/portfolio/long-term-holdings"
+        ));
+        assert!(upstox_path_allowed(
+            UPSTOX_ASSETS_HOST,
+            "/market-quote/instruments/exchange/NSE.json.gz"
+        ));
+        assert!(!upstox_path_allowed(UPSTOX_API_HOST, "/v2/order/place"));
+        assert!(upstox_path_refused(
+            UPSTOX_HFT_HOST,
+            "POST",
+            "/v2/order/place"
+        ));
+        assert!(upstox_path_refused(
+            UPSTOX_API_HOST,
+            "POST",
+            "/v2/order/place"
+        ));
+        assert!(!upstox_path_refused(
+            UPSTOX_API_HOST,
+            "GET",
+            "/v2/order/trades/get-trades-for-day"
+        ));
     }
 }

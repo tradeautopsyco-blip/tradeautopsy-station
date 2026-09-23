@@ -22,29 +22,45 @@ pub fn component_wasm(slug: &str) -> PathBuf {
     let crate_dir = tradeautopsy_agent::component_crate_dir(slug)
         .unwrap_or_else(|| panic!("no component crate for {slug}"));
     let file = tradeautopsy_agent::component_file_name(slug).expect("component file");
-    let wasm = agent_dir()
+    component_wasm_from_crate(crate_dir, file)
+}
+
+/// Build (if needed) a component crate not yet registered in `components.rs` (scaffold / pre-sign).
+pub fn component_wasm_from_crate(crate_dir: &str, wasm_file: &str) -> PathBuf {
+    let workspace_wasm = agent_dir()
+        .join("target/wasm32-wasip2/release")
+        .join(wasm_file);
+    let crate_wasm = agent_dir()
         .join(crate_dir)
         .join("target/wasm32-wasip2/release")
-        .join(file);
-    if wasm.is_file() {
-        return wasm;
+        .join(wasm_file);
+    if workspace_wasm.is_file() {
+        return workspace_wasm;
     }
-    let manifest = agent_dir().join(crate_dir).join("Cargo.toml");
+    if crate_wasm.is_file() {
+        return crate_wasm;
+    }
     let status = Command::new("cargo")
+        .current_dir(agent_dir())
         .args([
             "build",
             "--release",
             "--target",
             "wasm32-wasip2",
-            "--manifest-path",
+            "-p",
+            crate_dir,
         ])
-        .arg(&manifest)
         .status()
         .unwrap_or_else(|e| panic!("spawn cargo build for {crate_dir}: {e}"));
     assert!(
         status.success(),
         "failed to build {crate_dir} (is the wasm32-wasip2 target installed?)"
     );
+    let wasm = if workspace_wasm.is_file() {
+        workspace_wasm
+    } else {
+        crate_wasm
+    };
     assert!(wasm.is_file(), "expected component at {}", wasm.display());
     wasm
 }

@@ -29,6 +29,9 @@ pub enum HostCredentialBlob {
         api_key: String,
         access_token: String,
     },
+    UpstoxSession {
+        access_token: String,
+    },
 }
 
 impl HostCredentialBlob {
@@ -62,13 +65,16 @@ impl HostCredentialBlob {
                 api_key,
                 access_token,
             } => vec![api_key.as_str(), access_token.as_str()],
+            Self::UpstoxSession { access_token } => vec![access_token.as_str()],
         }
     }
 
     pub fn api_key_for_tests(&self) -> Option<&str> {
         match self {
             Self::Hmac { api_key, .. } => Some(api_key),
-            Self::KotakSession { .. } | Self::KiteSession { .. } => None,
+            Self::KotakSession { .. } | Self::KiteSession { .. } | Self::UpstoxSession { .. } => {
+                None
+            }
         }
     }
 }
@@ -102,6 +108,11 @@ impl From<&CredentialBlob> for HostCredentialBlob {
                 api_key: api_key.clone(),
                 access_token: access_token.clone(),
             },
+            CredentialBlob::UpstoxOAuthBearerSession { access_token, .. } => {
+                Self::UpstoxSession {
+                    access_token: access_token.clone(),
+                }
+            }
         }
     }
 }
@@ -146,6 +157,9 @@ pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) ->
         }
         HostCredentialBlob::KiteSession { .. } => {
             crate::ubi::zerodha_session::KITE_API_HOST.to_string()
+        }
+        HostCredentialBlob::UpstoxSession { .. } => {
+            crate::ubi::upstox_session::UPSTOX_API_HOST.to_string()
         }
         HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
     }
@@ -306,6 +320,31 @@ pub fn prepare_request(
             out_headers.push((
                 "X-Kite-Version".to_string(),
                 crate::ubi::zerodha_session::KITE_API_VERSION_HEADER.to_string(),
+            ));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::UpstoxSession { access_token } => {
+            let canonical = query
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let url = if canonical.is_empty() {
+                format!("https://{host}{path}")
+            } else {
+                format!("https://{host}{path}?{canonical}")
+            };
+            out_headers.push((
+                "Authorization".to_string(),
+                crate::ubi::upstox_session::upstox_bearer_authorization_header_value(
+                    access_token,
+                ),
             ));
             out_headers.push(("Accept".to_string(), "application/json".to_string()));
             PreparedHttpRequest {
@@ -501,6 +540,8 @@ fn body_signals_expired_session(body: &str) -> bool {
         || head.contains("Invalid Session")
         || head.contains("Complete the 2fa process")
         || head.contains("TokenException")
+        || head.contains("UDAPI100050")
+        || head.contains("Invalid token")
 }
 
 pub fn redact_response_headers(headers: &[(String, String)]) -> Vec<(String, String)> {

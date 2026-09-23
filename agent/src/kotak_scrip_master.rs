@@ -500,7 +500,9 @@ pub async fn refresh_from_session(
     let creds = HostCredentialBlob::from(&blob);
     let base_url = match &creds {
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
-        HostCredentialBlob::Hmac { .. } | HostCredentialBlob::KiteSession { .. } => {
+        HostCredentialBlob::Hmac { .. }
+        | HostCredentialBlob::KiteSession { .. }
+        | HostCredentialBlob::UpstoxSession { .. } => {
             return Err(InstrumentMasterFetchError::new(
                 InstrumentMasterErrorClass::FilePathsHttp,
                 None,

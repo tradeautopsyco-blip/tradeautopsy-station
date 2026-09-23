@@ -903,8 +903,41 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
         zerodha_kite_cash_manifest(),
+        upstox_cash_manifest(),
         super::amfi::amfi_nav_manifest(),
     ]
+}
+
+/// Upstox NSE/BSE cash D+I (B6 SIGNED). Day-book fills via Wasm trades-for-day.
+pub fn upstox_cash_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["NSE".into(), "BSE".into()],
+        asset_classes: vec!["equity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:upstox-cash@0.1.0".into(),
+        adapter_id: "upstox".into(),
+        book_id: "upstox-nse-bse-cash".into(),
+        implemented: vec!["tradebook".into(), "orderbook".into()],
+        bindings: vec![
+            account_binding(
+                "upstox",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "upstox",
+                "orderbook",
+                "orders",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
 }
 
 pub fn manifest_for_slug(slug: &str) -> Option<SourceManifest> {

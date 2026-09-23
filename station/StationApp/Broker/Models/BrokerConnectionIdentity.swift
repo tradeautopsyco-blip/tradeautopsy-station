@@ -56,6 +56,19 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.expiresAt = nil
     }
 
+    /// Upstox OAuth app credentials (Station Keychain). Bearer session stays agent vault-only.
+    public init(upstoxClientId: String, upstoxClientSecret: String) {
+        self.authScheme = .upstoxOAuthBearerSession
+        self.apiKey = upstoxClientId
+        self.apiSecret = upstoxClientSecret
+        self.consumerKey = nil
+        self.tradeToken = nil
+        self.sid = nil
+        self.baseUrl = nil
+        self.hsServerId = nil
+        self.expiresAt = nil
+    }
+
     public init(
         consumerKey: String,
         tradeToken: String,
@@ -106,7 +119,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(authScheme, forKey: .authScheme)
         switch authScheme {
-        case .hmacApiKeySecret, .kiteChecksumSession:
+        case .hmacApiKeySecret, .kiteChecksumSession, .upstoxOAuthBearerSession:
             try container.encode(apiKey, forKey: .apiKey)
             try container.encode(apiSecret, forKey: .apiSecret)
         case .kotakNeoTotpSession:

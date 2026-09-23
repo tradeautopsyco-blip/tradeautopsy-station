@@ -90,7 +90,9 @@ pub async fn fetch_kotak_private_json(
     let creds = HostCredentialBlob::from(&blob);
     let base_url = match &creds {
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
-        HostCredentialBlob::Hmac { .. } | HostCredentialBlob::KiteSession { .. } => {
+        HostCredentialBlob::Hmac { .. }
+        | HostCredentialBlob::KiteSession { .. }
+        | HostCredentialBlob::UpstoxSession { .. } => {
             return Err(KotakPrivateFetchError::Session)
         }
     };
@@ -703,7 +705,9 @@ pub(crate) async fn fetch_kotak_private_debug(
     let creds = HostCredentialBlob::from(&blob);
     let base_url = match &creds {
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
-        HostCredentialBlob::Hmac { .. } | HostCredentialBlob::KiteSession { .. } => {
+        HostCredentialBlob::Hmac { .. }
+        | HostCredentialBlob::KiteSession { .. }
+        | HostCredentialBlob::UpstoxSession { .. } => {
             return Err(KotakPrivateFetchError::Session)
         }
     };

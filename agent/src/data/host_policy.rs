@@ -64,6 +64,9 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     "lapi.kotaksecurities.com",
     // zerodha_kite — Kite Connect v3 REST (`api.kite.trade`).
     "api.kite.trade",
+    // upstox — REST reads + BOD instruments (B6 row 22; HFT refused).
+    "api.upstox.com",
+    "assets.upstox.com",
     // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
     // Labs vendor only — not a shipping broker, not Kill DNS.
     "www.amfiindia.com",
@@ -206,6 +209,31 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("order_book", "GET", AuthMode::PrivateRead) if is_kotak_depth_path(path) => true,
         ("ohlcv", "GET", AuthMode::PrivateRead) if is_kotak_historical_path(path) => true,
         ("nav", "GET", AuthMode::Public) if is_amfi_nav_path(path) => true,
+        ("fills", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/v2/order/trades/get-trades-for-day" =>
+        {
+            true
+        }
+        ("funds", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/v2/user/profile" =>
+        {
+            true
+        }
+        ("holdings", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/v2/portfolio/long-term-holdings" =>
+        {
+            true
+        }
+        ("positions", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/v2/portfolio/short-term-positions" =>
+        {
+            true
+        }
+        ("instrument_master", "GET", AuthMode::Public)
+            if path.starts_with("/market-quote/instruments/") =>
+        {
+            true
+        }
         _ => false,
     }
 }
@@ -341,6 +369,21 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p).starts_with("/user/") => {
             Ok(("funds", AuthMode::PrivateRead))
         }
+        ("GET", p) if normalize_request_path(p) == "/v2/order/trades/get-trades-for-day" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v2/user/profile" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v2/portfolio/long-term-holdings" => {
+            Ok(("holdings", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v2/portfolio/short-term-positions" => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/market-quote/instruments/") => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -475,6 +518,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !crate::ubi::zerodha_kite_path_allowed(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::UPSTOX_BOOK_ID => {
+            if crate::ubi::upstox_path_refused(&host_norm, "GET", &path_norm) {
+                return Err(HostRefuse::ExecutionEndpoint);
+            }
+            if !crate::ubi::upstox_path_allowed(&host_norm, &path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

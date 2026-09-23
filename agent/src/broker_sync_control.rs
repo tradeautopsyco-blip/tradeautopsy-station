@@ -317,7 +317,10 @@ impl BrokerSyncController {
 
 /// Slugs whose adapter is a Wasm component (ADR 0001). Native COM code is reference only.
 pub fn uses_wasm_component(broker_slug: &str) -> bool {
-    matches!(broker_slug, "binance_com" | "kotak_neo" | "zerodha_kite")
+    matches!(
+        broker_slug,
+        "binance_com" | "kotak_neo" | "zerodha_kite" | "upstox"
+    )
 }
 
 /// Build the sandboxed component adapter for a UBI broker; credentials stay host-side.
@@ -390,7 +393,8 @@ pub fn build_runtime_adapter(
         }
         ("binance_com", CredentialBlob::HmacApiKeySecret { .. })
         | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. })
-        | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. }) => {
+        | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. })
+        | ("upstox", CredentialBlob::UpstoxOAuthBearerSession { .. }) => {
             build_wasm_runtime_adapter(broker_slug, connection_id, blob)
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),

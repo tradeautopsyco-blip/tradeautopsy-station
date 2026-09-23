@@ -184,7 +184,8 @@ public final class BrokersViewModel: ObservableObject {
         let savedApiKey: String
         let scheme = BrokerConnectServices.authScheme(for: slug)
         if prefillConsumerKeyFromVault,
-           scheme == .hmacApiKeySecret || scheme == .kiteChecksumSession {
+           scheme == .hmacApiKeySecret || scheme == .kiteChecksumSession
+            || scheme == .upstoxOAuthBearerSession {
             savedApiKey = (try? credentialStore.read(for: identity))?.apiKey ?? ""
         } else {
             savedApiKey = ""
@@ -409,6 +410,8 @@ public final class BrokersViewModel: ObservableObject {
                 connectMessage = "Enter consumer key, mobile, UCC, TOTP, and MPIN."
             case .kiteChecksumSession:
                 connectMessage = "Enter both Kite API key and secret."
+            case .upstoxOAuthBearerSession:
+                connectMessage = "Enter both Upstox API key and secret."
             case .hmacApiKeySecret:
                 connectMessage = "Enter both API key and secret."
             }
@@ -423,6 +426,10 @@ public final class BrokersViewModel: ObservableObject {
                 clearOneTimeKotakSecrets()
             }
             if case .kiteConnectRejected = failure {
+                connectApiSecret = ""
+                connectSecretFieldsEpoch += 1
+            }
+            if case .upstoxConnectRejected = failure {
                 connectApiSecret = ""
                 connectSecretFieldsEpoch += 1
             }
@@ -470,6 +477,10 @@ public final class BrokersViewModel: ObservableObject {
             case .kiteChecksumSession:
                 syncActionMessage =
                     "Kite session missing or expired — Connect again and finish browser login."
+                presentConnectSheet(for: identity.brokerSlug)
+            case .upstoxOAuthBearerSession:
+                syncActionMessage =
+                    "Upstox session missing or expired — Connect again and finish browser login."
                 presentConnectSheet(for: identity.brokerSlug)
             case .hmacApiKeySecret:
                 syncActionMessage =
@@ -556,6 +567,10 @@ public final class BrokersViewModel: ObservableObject {
             return detail.isEmpty
                 ? "Kite login failed. Check API key and secret, then try Connect again."
                 : detail
+        case .upstoxConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Upstox login failed. Check API key and secret, then try Connect again."
+                : detail
         }
     }
 
@@ -571,6 +586,8 @@ public final class BrokersViewModel: ObservableObject {
                 return "Kotak login rejected. Check consumer key, mobile, UCC, TOTP, and MPIN."
             case .kiteChecksumSession:
                 return "Kite API key or secret rejected. Check Kite developer settings and try again."
+            case .upstoxOAuthBearerSession:
+                return "Upstox API key or secret rejected. Check Upstox developer settings and try again."
             case .hmacApiKeySecret:
                 return "Credentials were rejected by \(brokerName)."
             }
@@ -581,6 +598,10 @@ public final class BrokersViewModel: ObservableObject {
         case .kiteConnectRejected(let detail):
             return detail.isEmpty
                 ? "Kite login rejected. Check API key and secret."
+                : detail
+        case .upstoxConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Upstox login rejected. Check API key and secret."
                 : detail
         case .networkUnavailable, .rateLimited, .brokerUnavailable:
             return transientFailureMessage(failure, slug: slug)
