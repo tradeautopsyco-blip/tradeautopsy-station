@@ -26,7 +26,44 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     "e41.kotaksecurities.com",
     "e43.kotaksecurities.com",
     "lapi.kotaksecurities.com",
+    // zerodha_kite — Kite Connect v3 REST (B6 row 22; login host is browser-only).
+    "api.kite.trade",
 ];
+
+pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
+pub const KITE_API_HOST: &str = "api.kite.trade";
+
+/// Read-only Kite REST path prefixes allowed for book `zerodha-nse-bse-cash`.
+pub fn zerodha_kite_path_allowed(path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.is_empty() || p.contains("/gtt") {
+        return false;
+    }
+    p.starts_with("/session")
+        || p.starts_with("/user")
+        || p == "/orders"
+        || p.starts_with("/orders/")
+        || p == "/trades"
+        || p.starts_with("/portfolio")
+        || p == "/instruments"
+        || p.starts_with("/instruments/")
+        || p.starts_with("/quote")
+}
+
+/// Refuse execution surfaces (orders write verbs, GTT).
+pub fn zerodha_kite_path_refused(method: &str, path_norm: &str) -> bool {
+    zerodha_kite_path_refused_impl(method, path_norm)
+}
+
+fn zerodha_kite_path_refused_impl(method: &str, path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.contains("/gtt") {
+        return true;
+    }
+    let upper = method.to_ascii_uppercase();
+    matches!(upper.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
+        && (p == "/orders" || p.starts_with("/orders/"))
+}
 
 pub fn host_allowed(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
@@ -52,8 +89,23 @@ mod tests {
         assert!(host_allowed("e41.kotaksecurities.com"));
         assert!(host_allowed("e43.kotaksecurities.com"));
         assert!(host_allowed("lapi.kotaksecurities.com"));
+        assert!(host_allowed("api.kite.trade"));
         assert!(!host_allowed("evil.example.com"));
         assert!(!host_allowed("mlhsm.kotaksecurities.com"));
         assert!(!host_allowed("api.binance.us"));
+    }
+
+    #[test]
+    fn zerodha_kite_read_paths_allowed_execution_refused() {
+        assert!(zerodha_kite_path_allowed("/orders"));
+        assert!(zerodha_kite_path_allowed("/trades"));
+        assert!(zerodha_kite_path_allowed("/portfolio/holdings"));
+        assert!(zerodha_kite_path_allowed("/quote/ltp"));
+        assert!(zerodha_kite_path_allowed("/instruments/NSE"));
+        assert!(!zerodha_kite_path_allowed("/gtt/triggers"));
+        assert!(zerodha_kite_path_refused("POST", "/orders"));
+        assert!(zerodha_kite_path_refused("PUT", "/orders/123"));
+        assert!(zerodha_kite_path_refused("DELETE", "/orders/123"));
+        assert!(!zerodha_kite_path_refused("GET", "/orders"));
     }
 }

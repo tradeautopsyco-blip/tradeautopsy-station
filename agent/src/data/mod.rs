@@ -173,7 +173,8 @@ pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
     BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, ZERODHA_KITE_ADAPTER_ID,
+    ZERODHA_NSE_BSE_CASH_BOOK_ID,
 };
 pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,

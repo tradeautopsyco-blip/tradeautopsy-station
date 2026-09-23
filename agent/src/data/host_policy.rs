@@ -62,6 +62,8 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // Cash scrip CSV host from official file-paths `filesPaths` sample (guide +
     // REST.md). F&O CSVs and `/quick/user/trades` stay refused on this host.
     "lapi.kotaksecurities.com",
+    // zerodha_kite — Kite Connect v3 REST (`api.kite.trade`).
+    "api.kite.trade",
     // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
     // Labs vendor only — not a shipping broker, not Kill DNS.
     "www.amfiindia.com",
@@ -81,7 +83,8 @@ pub fn is_mutation(method: &str, path: &str) -> bool {
     if lower.contains("check-margin") || lower.ends_with("/limits") {
         return false;
     }
-    if lower.contains("withdraw")
+    if lower.contains("/gtt")
+        || lower.contains("withdraw")
         || lower.contains("transfer")
         || lower.contains("apikey")
         || lower.contains("placeorder")
@@ -152,6 +155,7 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("fills", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/myTrades"
                 || path.ends_with("/quick/user/trades")
+                || normalize_request_path(path) == "/trades"
                 || normalize_request_path(path) == "/eapi/v1/userTrades"
                 || normalize_request_path(path) == "/fapi/v1/income" =>
         {
@@ -318,6 +322,25 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if is_kotak_latest_quote_path(p) => Ok(("quote", AuthMode::PrivateRead)),
         ("GET", p) if is_kotak_historical_path(p) => Ok(("ohlcv", AuthMode::PrivateRead)),
         ("GET", p) if is_amfi_nav_path(p) => Ok(("nav", AuthMode::Public)),
+        ("GET", p) if normalize_request_path(p) == "/orders" => Ok(("orders", AuthMode::PrivateRead)),
+        ("GET", p) if normalize_request_path(p).starts_with("/orders/") => {
+            Ok(("orders", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/trades" => Ok(("fills", AuthMode::PrivateRead)),
+        ("GET", p) if normalize_request_path(p).starts_with("/portfolio/") => {
+            Ok(("holdings", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/instruments"
+            || normalize_request_path(p).starts_with("/instruments/") =>
+        {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/quote") => {
+            Ok(("quote", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/user/") => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -443,6 +466,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !is_amfi_nav_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::ZERODHA_KITE_BOOK_ID => {
+            if host_norm != crate::ubi::KITE_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::zerodha_kite_path_allowed(&path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

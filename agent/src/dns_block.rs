@@ -113,7 +113,7 @@ const BINANCE_COM_HOSTS: &[&str] = &[
 
 const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
 
-const ZERODHA_HOSTS: &[&str] = &["kite.zerodha.com", "api.kite.trade"];
+const ZERODHA_HOSTS: &[&str] = &["kite.zerodha.com", "api.kite.trade", "ws.kite.trade"];
 
 const UPSTOX_HOSTS: &[&str] = &["api.upstox.com", "api-v2.upstox.com"];
 
@@ -486,6 +486,7 @@ mod tests {
         let hosts = hosts_for_broker("zerodha");
         assert!(hosts.contains(&"kite.zerodha.com"));
         assert!(hosts.contains(&"api.kite.trade"));
+        assert!(hosts.contains(&"ws.kite.trade"));
     }
 
     #[test]
@@ -524,7 +525,7 @@ mod tests {
     #[test]
     fn kill_dns_covers_every_ubi_allowlisted_host() {
         for host in crate::ubi::ALLOWED_BROKER_HOSTS {
-            let covered = ["binance_com", "kotak_neo"]
+            let covered = ["binance_com", "kotak_neo", "zerodha_kite"]
                 .iter()
                 .any(|slug| hosts_for_broker(slug).contains(host));
             assert!(covered, "no Kill DNS entry for allowlisted host {host}");

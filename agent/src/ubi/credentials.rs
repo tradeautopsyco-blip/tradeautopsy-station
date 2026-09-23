@@ -27,6 +27,19 @@ pub enum CredentialBlob {
         #[serde(rename = "apiSecret")]
         api_secret: String,
     },
+    #[serde(rename = "kite_checksum_session")]
+    KiteChecksumSession {
+        #[serde(rename = "apiKey")]
+        api_key: String,
+        #[serde(rename = "apiSecret")]
+        api_secret: String,
+        #[serde(rename = "accessToken")]
+        access_token: String,
+        #[serde(rename = "accessTokenExpiryUnixMs")]
+        access_token_expiry_unix_ms: i64,
+        #[serde(rename = "userId")]
+        user_id: String,
+    },
     #[serde(rename = "kotak_neo_totp_session")]
     KotakNeoTotpSession {
         #[serde(rename = "consumerKey")]
@@ -60,6 +73,7 @@ impl CredentialBlob {
     pub fn api_key_for_tests(&self) -> Option<&str> {
         match self {
             Self::HmacApiKeySecret { api_key, .. } => Some(api_key),
+            Self::KiteChecksumSession { api_key, .. } => Some(api_key),
             Self::KotakNeoTotpSession { .. } => None,
         }
     }
@@ -99,6 +113,22 @@ mod tests {
         let json = r#"{"apiKey":"k","apiSecret":"s"}"#;
         let decoded = decode_credential_blob(json).unwrap();
         assert_eq!(decoded, CredentialBlob::hmac("k", "s"));
+    }
+
+    #[test]
+    fn kite_checksum_session_blob_roundtrip() {
+        let blob = CredentialBlob::KiteChecksumSession {
+            api_key: "key".into(),
+            api_secret: "sec".into(),
+            access_token: "at".into(),
+            access_token_expiry_unix_ms: 1_700_000_000_000,
+            user_id: "AB1234".into(),
+        };
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("kite_checksum_session"));
+        assert!(json.contains("accessTokenExpiryUnixMs"));
+        let decoded = decode_credential_blob(&json).unwrap();
+        assert_eq!(decoded, blob);
     }
 
     #[test]

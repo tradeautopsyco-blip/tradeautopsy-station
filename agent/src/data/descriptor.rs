@@ -55,6 +55,7 @@ pub struct Descriptor {
 
 pub const BINANCE_COM_ADAPTER_ID: &str = "binance_com";
 pub const KOTAK_NEO_ADAPTER_ID: &str = "kotak_neo";
+pub const ZERODHA_KITE_ADAPTER_ID: &str = "zerodha_kite";
 /// Shipping TickBook slot for `binance_com` (locks/binance-com-spot.md).
 pub const BINANCE_COM_SPOT_BOOK_ID: &str = "binance-com-spot";
 /// Named options book (slice 1 last). Same `binance_com` slug; Start still ships spot.
@@ -63,6 +64,8 @@ pub const BINANCE_COM_OPTIONS_BOOK_ID: &str = "binance-com-options";
 pub const KOTAK_NSE_BSE_CASH_BOOK_ID: &str = "kotak-nse-bse-cash";
 /// Named NFO book (Gate 0). Same `kotak_neo` slug; Start still ships cash.
 pub const KOTAK_NSE_NFO_BOOK_ID: &str = "kotak-nse-nfo";
+/// Shipping TickBook slot for `zerodha_kite` (B6 row 21 — founder may rename at Z9).
+pub const ZERODHA_NSE_BSE_CASH_BOOK_ID: &str = "zerodha-nse-bse-cash";
 /// Named USDM book. Same `binance_com` slug; Start still ships spot.
 pub const BINANCE_COM_USDM_BOOK_ID: &str = "binance-com-usdm";
 /// Named Coin-M book. Third identity. Same `binance_com` slug.

@@ -600,7 +600,7 @@ pub async fn fetch_quotes_json(
     let creds = HostCredentialBlob::from(&blob);
     let base_url = match &creds {
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
-        HostCredentialBlob::Hmac { .. } => {
+        HostCredentialBlob::Hmac { .. } | HostCredentialBlob::KiteSession { .. } => {
             return Err(QuoteFetchError {
                 class: QuoteFetchErrorClass::Session,
             });

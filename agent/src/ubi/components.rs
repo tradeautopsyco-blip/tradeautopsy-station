@@ -21,6 +21,11 @@ const COMPONENTS: &[(&str, &str, &str)] = &[
         "ubi_kotak_neo_adapter.wasm",
         "ubi-kotak-neo-adapter",
     ),
+    (
+        "zerodha_kite",
+        "ubi_zerodha_kite_adapter.wasm",
+        "ubi-zerodha-kite-adapter",
+    ),
 ];
 
 pub fn component_file_name(slug: &str) -> Option<&'static str> {
@@ -97,12 +102,15 @@ mod tests {
     /// which forces the author to also prove a SIGNED sheet exists for it.
     #[test]
     fn b6_gate_no_component_for_unsheeted_slugs() {
-        assert!(component_file_name("zerodha_kite").is_none());
+        assert_eq!(
+            component_file_name("zerodha_kite"),
+            Some("ubi_zerodha_kite_adapter.wasm")
+        );
         assert!(component_file_name("interactive_brokers").is_none());
         assert!(component_file_name("binance_us").is_none());
-        // Guard: only the signed first pair ships components. Bump this number
-        // only in the PR that flips a newly SIGNED slug to Enabled (G0→G3).
-        assert_eq!(COMPONENTS.len(), 2, "only first-pair components ship");
+        // Guard: only SIGNED sheets ship components. Bump this number only in the
+        // PR that adds another SIGNED slug's Wasm crate (G0→G3).
+        assert_eq!(COMPONENTS.len(), 3, "signed broker components only");
     }
 
     #[test]

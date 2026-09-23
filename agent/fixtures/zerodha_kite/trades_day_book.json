@@ -1,0 +1,73 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "trade_id": "100001",
+      "order_id": "200001",
+      "exchange_order_id": "NSE123456",
+      "tradingsymbol": "ITBEES",
+      "exchange": "NSE",
+      "instrument_token": "123456",
+      "transaction_type": "BUY",
+      "product": "CNC",
+      "average_price": 25.5,
+      "filled": 100,
+      "fill_timestamp": "2026-07-25 10:15:30",
+      "order_timestamp": "2026-07-25 10:15:00",
+      "exchange_timestamp": "2026-07-25 10:15:30"
+    },
+    {
+      "trade_id": "100002",
+      "order_id": "200002",
+      "exchange_order_id": "NSE998877",
+      "tradingsymbol": "RELIANCE",
+      "exchange": "NSE",
+      "instrument_token": "738561",
+      "transaction_type": "SELL",
+      "product": "MIS",
+      "average_price": 1450.75,
+      "quantity": 5,
+      "fill_timestamp": "2026-07-25 14:05:00",
+      "exchange_timestamp": "2026-07-25 14:05:00"
+    },
+    {
+      "trade_id": "100003",
+      "order_id": "200003",
+      "exchange_order_id": "FO112233",
+      "tradingsymbol": "NIFTY26JUL24000CE",
+      "exchange": "NFO",
+      "instrument_token": "999001",
+      "transaction_type": "BUY",
+      "product": "NRML",
+      "average_price": 112.35,
+      "filled": 50,
+      "fill_timestamp": "2026-07-25 11:00:00"
+    },
+    {
+      "trade_id": "100004",
+      "order_id": "200004",
+      "exchange_order_id": "NSE445566",
+      "tradingsymbol": "TCS",
+      "exchange": "NSE",
+      "instrument_token": "2953217",
+      "transaction_type": "BUY",
+      "product": "NRML",
+      "average_price": 3900.0,
+      "filled": 2,
+      "fill_timestamp": "2026-07-25 09:30:00"
+    },
+    {
+      "trade_id": "100005",
+      "order_id": "200005",
+      "exchange_order_id": "NSE778899",
+      "tradingsymbol": "INFY",
+      "exchange": "NSE",
+      "instrument_token": "408065",
+      "transaction_type": "BUY",
+      "product": "CO",
+      "average_price": 1800.0,
+      "filled": 1,
+      "fill_timestamp": "2026-07-25 09:45:00"
+    }
+  ]
+}

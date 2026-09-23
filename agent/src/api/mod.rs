@@ -46,6 +46,7 @@ pub use kill_switch::{
 mod glance;
 mod history;
 mod kotak_session;
+mod zerodha_session;
 mod manifest;
 mod outbox_status;
 mod phase8;
@@ -226,6 +227,10 @@ pub fn router(state: AppState) -> Router {
             post(kotak_session::mint_handler),
         )
         .route(
+            "/api/daemon/broker/zerodha/connect/begin",
+            post(zerodha_session::connect_begin_handler),
+        )
+        .route(
             "/api/daemon/broker/credentials/clear",
             post(broker_credentials::clear_handler),
         )
@@ -327,6 +332,10 @@ pub fn router(state: AppState) -> Router {
     // Loopback extract so the founder can curl last price without HMAC.
     // Bind remains 127.0.0.1. TickBook ≠ LiveBook. No ingestSignal.
     Router::new()
+        .route(
+            "/api/daemon/broker/zerodha/callback",
+            get(zerodha_session::callback_handler),
+        )
         .route("/api/station/quote", get(quote::handler))
         .route("/api/station/history", get(history::handler))
         .route("/api/station/chain", get(glance::chain_handler))

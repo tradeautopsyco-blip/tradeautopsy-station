@@ -91,7 +91,7 @@ pub use data::{
     ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
     Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS,
+    KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS, ZERODHA_NSE_BSE_CASH_BOOK_ID,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,

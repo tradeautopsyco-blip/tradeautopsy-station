@@ -4,7 +4,7 @@
 //! §1 rows with no row MISSING and no blank-by-accident answer.
 //!
 //! - SIGNED sheets (`binance_com`, `kotak_neo`): Status SIGNED + core rows 0–13.
-//! - RESEARCH sheet (`zerodha_kite`): full surface rows 0–25 (W0.9 widening).
+//! - SIGNED sheet (`zerodha_kite`, P2): full surface rows 0–25 (TBD on 17/20 OK).
 //! - Present-but-TBD is OK (green-with-TBDs); value / refuse / NOT SPECIFIED
 //!   is the ideal; a MISSING row number or a blank answer fails.
 //!
@@ -100,13 +100,13 @@ fn signed_sheets_stay_signed_with_core_rows() {
 }
 
 #[test]
-fn research_sheet_covers_surface_rows_0_to_25() {
+fn signed_zerodha_kite_covers_surface_rows_0_to_25() {
     let slug = "zerodha_kite";
     let text = read_sheet(slug);
     let status = status_line(&text, slug);
     assert!(
-        status.contains("`RESEARCH`"),
-        "{slug}.md is no longer the RESEARCH stub — update this lint's expectations: {status}"
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P2 build: {status}"
     );
     check_rows(slug, &text, 0..=25);
 }

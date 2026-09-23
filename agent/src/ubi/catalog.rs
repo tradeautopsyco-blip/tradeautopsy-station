@@ -32,6 +32,7 @@ pub enum BrokerAvailability {
 pub enum AuthScheme {
     HmacApiKeySecret,
     KotakNeoTotpSession,
+    KiteChecksumSession,
 }
 
 /// Closed asset axis (ADR 0004, Nautilus-aligned). Mirrors the WIT
@@ -240,6 +241,10 @@ pub fn compliance_profile(id: &str) -> Option<ComplianceProfile> {
             id: id.into(),
             block_on_withdraw: false,
         }),
+        "zerodha_kite_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: false,
+        }),
         _ => None,
     }
 }
@@ -288,7 +293,12 @@ pub fn catalog_v1() -> Vec<BrokerDescriptor> {
 }
 
 pub fn descriptor_for_slug(slug: &str) -> Option<BrokerDescriptor> {
-    catalog_v1().into_iter().find(|d| d.slug == slug)
+    if let Some(d) = catalog_v1().into_iter().find(|d| d.slug == slug) {
+        return Some(d);
+    }
+    catalog_books()
+        .into_iter()
+        .find(|d| d.slug == slug && d.availability == BrokerAvailability::Planned)
 }
 
 /// Book-keyed catalog (ADR 0004) — one row per SHIPPING book (CLAIM-REGISTRY.md:
@@ -396,6 +406,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             manifest_id: "kotak_neo.nfo.v1".into(),
             book_id: "kotak-nse-nfo".into(),
         },
+        BrokerDescriptor {
+            slug: "zerodha_kite".into(),
+            display_name: "Zerodha Kite".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::KiteChecksumSession,
+            calc_profile_id: "equities_inr_cash".into(),
+            compliance_profile_id: "zerodha_kite_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:zerodha-kite-cash@0.1.0".into(),
+            book_id: "zerodha-nse-bse-cash".into(),
+        },
     ]
 }
 
@@ -432,7 +457,10 @@ mod tests {
         assert!(cat.iter().all(|d| d.origin == AdapterOrigin::FirstParty));
         assert!(descriptor_for_slug("binance_us").is_none());
         assert!(descriptor_for_slug("binance_com_usdm").is_none());
-        assert!(descriptor_for_slug("zerodha_kite").is_none());
+        let kite = descriptor_for_slug("zerodha_kite").expect("planned slug");
+        assert_eq!(kite.availability, BrokerAvailability::Planned);
+        assert_eq!(kite.book_id, "zerodha-nse-bse-cash");
+        assert_eq!(kite.auth_scheme, AuthScheme::KiteChecksumSession);
         assert!(descriptor_for_slug("interactive_brokers").is_none());
     }
 
@@ -558,9 +586,9 @@ mod tests {
     }
 
     #[test]
-    fn book_catalog_covers_exactly_the_six_shipping_books() {
+    fn book_catalog_covers_shipping_books_plus_planned_zerodha() {
         let books = catalog_books();
-        assert_eq!(books.len(), 6);
+        assert_eq!(books.len(), 7);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -569,9 +597,17 @@ mod tests {
             "binance-com-coinm",
             "kotak-nse-bse-cash",
             "kotak-nse-nfo",
+            "zerodha-nse-bse-cash",
         ] {
             assert!(ids.contains(&expected), "missing book row {expected}");
         }
+        let shipping: Vec<_> = books
+            .iter()
+            .filter(|d| d.availability == BrokerAvailability::Enabled)
+            .collect();
+        assert_eq!(shipping.len(), 6);
+        let zerodha = descriptor_for_book_id("zerodha-nse-bse-cash").expect("planned book");
+        assert_eq!(zerodha.availability, BrokerAvailability::Planned);
         // Every book row's profiles resolve; every row is first-party.
         for d in &books {
             assert!(
@@ -652,6 +688,9 @@ mod tests {
     fn book_rows_agree_with_source_manifests() {
         use crate::data::manifest_for_book_id;
         for descriptor in catalog_books() {
+            if descriptor.availability == BrokerAvailability::Planned {
+                continue;
+            }
             let manifest = manifest_for_book_id(&descriptor.book_id)
                 .unwrap_or_else(|| panic!("book {} has no manifest", descriptor.book_id));
             assert_eq!(
