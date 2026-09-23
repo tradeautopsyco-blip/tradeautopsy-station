@@ -7,6 +7,8 @@ public enum BrokerConnectServices {
             return .binanceCom(environment)
         case "kotak_neo":
             return .kotakNeo(environment)
+        case "zerodha_kite":
+            return .zerodhaKite(environment)
         default:
             // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
             return BrokerConnectionIdentity(
@@ -24,6 +26,8 @@ public enum BrokerConnectServices {
             return BinanceComCredentialValidator()
         case "kotak_neo":
             return KotakNeoSessionCredentialValidator()
+        case "zerodha_kite":
+            return ZerodhaKiteSessionCredentialValidator()
         default:
             return UnsupportedBrokerCredentialValidator()
         }
@@ -54,6 +58,23 @@ private struct KotakNeoSessionCredentialValidator: BrokerCredentialValidating, S
             return .permanentFailure(.invalidCredentials)
         }
         _ = credentials.hsServerId
+        return .success(permissionPosture: .readOnlyConfirmed)
+    }
+}
+
+/// Phase 2: Kite session vault is agent-owned after browser callback; Station keeps app keys only.
+private struct ZerodhaKiteSessionCredentialValidator: BrokerCredentialValidating, Sendable {
+    func validate(
+        credentials: BrokerCredentials,
+        identity: BrokerConnectionIdentity
+    ) async -> BrokerCredentialValidationResult {
+        guard identity.brokerSlug == "zerodha_kite",
+              credentials.authScheme == .kiteChecksumSession,
+              !credentials.apiKey.isEmpty,
+              !credentials.apiSecret.isEmpty
+        else {
+            return .permanentFailure(.invalidCredentials)
+        }
         return .success(permissionPosture: .readOnlyConfirmed)
     }
 }

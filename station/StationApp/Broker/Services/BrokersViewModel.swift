@@ -101,7 +101,7 @@ public final class BrokersViewModel: ObservableObject {
     /// Connection UUIDs Station considers live — input for launch Keychain reconcile.
     private func configuredConnectionIDsForReconcile() -> Set<UUID> {
         var ids = Set<UUID>()
-        for slug in ["binance_com", "kotak_neo"] {
+        for slug in ["binance_com", "kotak_neo", "zerodha_kite"] {
             let identity = BrokerConnectServices.identity(for: slug)
             if metadataStore.load(for: identity)?.lastValidatedAt != nil {
                 ids.insert(identity.brokerConnectionID)
@@ -182,8 +182,9 @@ public final class BrokersViewModel: ObservableObject {
         let identity = BrokerConnectServices.identity(for: slug)
         let savedConsumerKey = ""
         let savedApiKey: String
+        let scheme = BrokerConnectServices.authScheme(for: slug)
         if prefillConsumerKeyFromVault,
-           BrokerConnectServices.authScheme(for: slug) == .hmacApiKeySecret {
+           scheme == .hmacApiKeySecret || scheme == .kiteChecksumSession {
             savedApiKey = (try? credentialStore.read(for: identity))?.apiKey ?? ""
         } else {
             savedApiKey = ""
@@ -403,9 +404,14 @@ public final class BrokersViewModel: ObservableObject {
         switch outcome {
         case .localValidationFailed(let invalidFields):
             connectInvalidFields = invalidFields
-            connectMessage = connectAuthScheme == .kotakNeoTotpSession
-                ? "Enter consumer key, mobile, UCC, TOTP, and MPIN."
-                : "Enter both API key and secret."
+            switch connectAuthScheme {
+            case .kotakNeoTotpSession:
+                connectMessage = "Enter consumer key, mobile, UCC, TOTP, and MPIN."
+            case .kiteChecksumSession:
+                connectMessage = "Enter both Kite API key and secret."
+            case .hmacApiKeySecret:
+                connectMessage = "Enter both API key and secret."
+            }
         case .blockedWithdrawPermission:
             connectMessage = "Withdraw permission detected. Use a key without withdraw access."
         case .validationTransientFailure(let failure):
@@ -415,6 +421,10 @@ public final class BrokersViewModel: ObservableObject {
             if case .kotakMintRejected = failure {
                 // Upstream Kotak rejection — code may be spent; clear for a fresh TOTP.
                 clearOneTimeKotakSecrets()
+            }
+            if case .kiteConnectRejected = failure {
+                connectApiSecret = ""
+                connectSecretFieldsEpoch += 1
             }
         case .validationPermanentFailure(let failure):
             connectMessage = permanentFailureMessage(failure, slug: slug)
@@ -452,11 +462,16 @@ public final class BrokersViewModel: ObservableObject {
         do {
             try await brokerControl.startSync(for: identity)
         } catch BrokerSyncStartError.missingCredentials {
-            if BrokerConnectServices.authScheme(for: identity.brokerSlug) == .kotakNeoTotpSession {
+            switch BrokerConnectServices.authScheme(for: identity.brokerSlug) {
+            case .kotakNeoTotpSession:
                 syncActionMessage =
                     "Session needs a fresh TOTP — unlock with Touch ID, then enter the code."
                 presentKotakTotpRemint(for: identity.brokerSlug)
-            } else {
+            case .kiteChecksumSession:
+                syncActionMessage =
+                    "Kite session missing or expired — Connect again and finish browser login."
+                presentConnectSheet(for: identity.brokerSlug)
+            case .hmacApiKeySecret:
                 syncActionMessage =
                     "Cannot Start — session vault missing. Use Edit / Connect with a fresh TOTP."
             }
@@ -537,6 +552,10 @@ public final class BrokersViewModel: ObservableObject {
             return "Could not validate credentials."
         case .kotakMintRejected(let detail):
             return detail.isEmpty ? "Kotak login failed. Try again shortly." : detail
+        case .kiteConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Kite login failed. Check API key and secret, then try Connect again."
+                : detail
         }
     }
 
@@ -547,12 +566,21 @@ public final class BrokersViewModel: ObservableObject {
         let brokerName = BrokerConnectServices.displayName(for: slug)
         switch failure {
         case .invalidCredentials:
-            return connectAuthScheme == .kotakNeoTotpSession
-                ? "Kotak login rejected. Check consumer key, mobile, UCC, TOTP, and MPIN."
-                : "Credentials were rejected by \(brokerName)."
+            switch connectAuthScheme {
+            case .kotakNeoTotpSession:
+                return "Kotak login rejected. Check consumer key, mobile, UCC, TOTP, and MPIN."
+            case .kiteChecksumSession:
+                return "Kite API key or secret rejected. Check Kite developer settings and try again."
+            case .hmacApiKeySecret:
+                return "Credentials were rejected by \(brokerName)."
+            }
         case .kotakMintRejected(let detail):
             return detail.isEmpty
                 ? "Kotak login rejected. Check consumer key, mobile, UCC, TOTP, and MPIN."
+                : detail
+        case .kiteConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Kite login rejected. Check API key and secret."
                 : detail
         case .networkUnavailable, .rateLimited, .brokerUnavailable:
             return transientFailureMessage(failure, slug: slug)

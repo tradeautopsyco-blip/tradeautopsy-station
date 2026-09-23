@@ -120,4 +120,19 @@ public extension BrokerConnectionIdentity {
     static var kotakNeoProd: BrokerConnectionIdentity {
         kotakNeo(.prod)
     }
+
+    static let zerodhaKiteConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000004")!
+
+    static func zerodhaKite(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: zerodhaKiteConnectionID,
+            brokerSlug: "zerodha_kite",
+            assetClass: "equities",
+            environment: environment.rawValue
+        )
+    }
+
+    static var zerodhaKiteProd: BrokerConnectionIdentity {
+        zerodhaKite(.prod)
+    }
 }

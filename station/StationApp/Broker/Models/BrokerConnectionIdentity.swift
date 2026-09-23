@@ -43,6 +43,19 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.expiresAt = nil
     }
 
+    /// Kite Connect app credentials (Station Keychain). Session access token stays agent vault-only.
+    public init(kiteApiKey: String, kiteApiSecret: String) {
+        self.authScheme = .kiteChecksumSession
+        self.apiKey = kiteApiKey
+        self.apiSecret = kiteApiSecret
+        self.consumerKey = nil
+        self.tradeToken = nil
+        self.sid = nil
+        self.baseUrl = nil
+        self.hsServerId = nil
+        self.expiresAt = nil
+    }
+
     public init(
         consumerKey: String,
         tradeToken: String,
@@ -93,7 +106,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(authScheme, forKey: .authScheme)
         switch authScheme {
-        case .hmacApiKeySecret:
+        case .hmacApiKeySecret, .kiteChecksumSession:
             try container.encode(apiKey, forKey: .apiKey)
             try container.encode(apiSecret, forKey: .apiSecret)
         case .kotakNeoTotpSession:

@@ -23,6 +23,7 @@ public final class BrokerConnectController {
     private let runtimeClient: BrokerAgentRuntimeClient
     private let loginProfileStore: KotakLoginProfileStoring
     private let keychainItems: BrokerKeychainItemStoring
+    private let openBrowserURL: (URL) -> Void
 
     public init(
         identity: BrokerConnectionIdentity,
@@ -33,6 +34,7 @@ public final class BrokerConnectController {
         runtimeClient: BrokerAgentRuntimeClient = LocalAgentBrokerRuntimeClient(),
         loginProfileStore: KotakLoginProfileStoring = KeychainKotakLoginProfileStore(),
         keychainItems: BrokerKeychainItemStoring = SecItemBrokerKeychainItemStore(),
+        openBrowserURL: @escaping (URL) -> Void = BrokerConnectBrowser.openURL,
         behavioralAnalysisOptedOut: Bool = false
     ) {
         self.identity = identity
@@ -43,6 +45,7 @@ public final class BrokerConnectController {
         self.runtimeClient = runtimeClient
         self.loginProfileStore = loginProfileStore
         self.keychainItems = keychainItems
+        self.openBrowserURL = openBrowserURL
         self.behavioralAnalysisOptedOut = behavioralAnalysisOptedOut
         self.authScheme = BrokerConnectServices.authScheme(for: identity.brokerSlug)
         self.permissionWarning = metadataStore.load(for: identity)?.permissionWarning
@@ -73,6 +76,8 @@ public final class BrokerConnectController {
             return await connectHmac()
         case .kotakNeoTotpSession:
             return await connectKotakTotp()
+        case .kiteChecksumSession:
+            return await connectZerodhaKite()
         }
     }
 
@@ -193,6 +198,99 @@ public final class BrokerConnectController {
             existingMetadata: existingMetadata,
             rewriteCredentialVault: false
         )
+    }
+
+    private func connectZerodhaKite() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appCredentials = BrokerCredentials(kiteApiKey: trimmedKey, kiteApiSecret: trimmedSecret)
+
+        isValidating = true
+        defer { isValidating = false }
+
+        let existingMetadata = metadataStore.load(for: identity)
+        let shouldAutoStartSync = existingMetadata?.syncPaused != true
+
+        do {
+            try credentialStore.save(credentials: appCredentials, for: identity)
+        } catch {
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        let begin: ZerodhaConnectBeginResult
+        do {
+            begin = try await runtimeClient.beginZerodhaConnect(
+                for: identity,
+                apiKey: trimmedKey,
+                apiSecret: trimmedSecret
+            )
+        } catch let BrokerAgentRuntimeError.zerodhaBeginFailed(errorClass, message) {
+            await teardownCredentialsBestEffort()
+            return mapZerodhaBeginError(errorClass: errorClass, message: message)
+        } catch BrokerAgentRuntimeError.requestFailed {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        } catch {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        guard begin.redirectURI == ZerodhaKiteConnectContract.loopbackRedirectURI else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .kiteConnectRejected(
+                    "Agent redirect URI mismatch — rebuild agent and register \(ZerodhaKiteConnectContract.loopbackRedirectURI) in Kite."
+                )
+            )
+        }
+
+        openBrowserURL(begin.loginURL)
+
+        let vaultReady = await waitForZerodhaSessionVault()
+        guard vaultReady else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .kiteConnectRejected(
+                    "Kite login timed out or was not completed. Finish login in the browser, then Connect again."
+                )
+            )
+        }
+
+        return await persistMetadataAndMaybeStart(
+            credentials: appCredentials,
+            warning: nil,
+            shouldAutoStartSync: shouldAutoStartSync,
+            existingMetadata: existingMetadata,
+            rewriteCredentialVault: false
+        )
+    }
+
+    private func waitForZerodhaSessionVault() async -> Bool {
+        let pollIntervalMs: UInt64 = 500
+        let maxAttempts = 1_200 // ≈10 minutes (matches agent connect state TTL)
+        for _ in 0..<maxAttempts {
+            if Task.isCancelled { return false }
+            if await runtimeClient.vaultCredentialsPresent(for: identity) {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(pollIntervalMs))
+        }
+        return false
+    }
+
+    private func mapZerodhaBeginError(errorClass: String, message: String) -> BrokerConnectOutcome {
+        let safe = BrokerSecretGuard.sanitizeConnectMessage(message)
+        switch errorClass {
+        case "invalid_credentials":
+            return .validationPermanentFailure(.kiteConnectRejected(safe))
+        default:
+            return .validationTransientFailure(.kiteConnectRejected(safe))
+        }
     }
 
     private func mapKotakMintError(errorClass: String, message: String) -> BrokerConnectOutcome {

@@ -43,6 +43,11 @@ public enum BrokerSecretGuard {
         return false
     }
 
+    /// Drop long token-like tokens from broker error text before UI display.
+    public static func sanitizeConnectMessage(_ message: String) -> String {
+        sanitizeKotakMintMessage(message)
+    }
+
     /// Drop long token-like tokens from Kotak error text before UI display.
     public static func sanitizeKotakMintMessage(_ message: String) -> String {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)

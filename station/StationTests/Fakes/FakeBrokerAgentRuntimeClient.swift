@@ -19,6 +19,12 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     private(set) var fetchRuntimeStatusCallCount = 0
     private(set) var fetchSyncHealthCallCount = 0
     private(set) var mintKotakSessionCallCount = 0
+    private(set) var beginZerodhaConnectCallCount = 0
+    var beginZerodhaConnectResult: ZerodhaConnectBeginResult?
+    var beginZerodhaConnectError: BrokerAgentRuntimeError?
+    /// When true, vault presence flips after begin (simulates browser callback completing).
+    var simulateZerodhaVaultAfterBegin = false
+    private var zerodhaBeginCompleted = false
     private(set) var clearVaultCredentialsCallCount = 0
     private(set) var vaultCredentialsPresentCallCount = 0
     private(set) var lastStartedIdentity: BrokerConnectionIdentity?
@@ -63,6 +69,27 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         )
     }
 
+    func beginZerodhaConnect(
+        for identity: BrokerConnectionIdentity,
+        apiKey: String,
+        apiSecret: String
+    ) async throws -> ZerodhaConnectBeginResult {
+        _ = (identity, apiKey, apiSecret)
+        beginZerodhaConnectCallCount += 1
+        zerodhaBeginCompleted = true
+        if let beginZerodhaConnectError {
+            throw beginZerodhaConnectError
+        }
+        if let beginZerodhaConnectResult {
+            return beginZerodhaConnectResult
+        }
+        return ZerodhaConnectBeginResult(
+            state: "test-state",
+            loginURL: URL(string: "https://kite.zerodha.com/connect/login?v=3&api_key=test")!,
+            redirectURI: ZerodhaKiteConnectContract.loopbackRedirectURI
+        )
+    }
+
     func mintKotakSession(
         for identity: BrokerConnectionIdentity,
         consumerKey: String,
@@ -102,6 +129,9 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         vaultCredentialsPresentCallCount += 1
         if let vaultPresentOverride {
             return vaultPresentOverride
+        }
+        if simulateZerodhaVaultAfterBegin, zerodhaBeginCompleted {
+            return true
         }
         return credentialStore?.hasCredentials(for: identity) ?? false
     }

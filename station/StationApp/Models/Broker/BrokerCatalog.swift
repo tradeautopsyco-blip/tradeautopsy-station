@@ -9,6 +9,7 @@ public enum PlannedBrokerAvailability: Equatable, Sendable {
 public enum BrokerAuthScheme: String, Equatable, Sendable, Codable {
     case hmacApiKeySecret = "hmac_api_key_secret"
     case kotakNeoTotpSession = "kotak_neo_totp_session"
+    case kiteChecksumSession = "kite_checksum_session"
 }
 
 public enum BrokerAdapterOrigin: String, Equatable, Sendable, Codable {
@@ -87,6 +88,18 @@ public enum BrokerCatalog {
             availability: .enabled,
             manifestId: "kotak_neo.s1k.v1",
             bookId: "kotak-nse-bse-cash"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "zerodha_kite",
+            displayName: "Zerodha Kite",
+            assetClass: "equities",
+            quoteCurrency: "INR",
+            authScheme: .kiteChecksumSession,
+            calcProfileId: "equities_inr_cash",
+            complianceProfileId: "zerodha_kite_compliance",
+            availability: .planned,
+            manifestId: "tradeautopsy:zerodha-kite-cash@0.1.0",
+            bookId: "zerodha-nse-bse-cash"
         ),
     ]
 

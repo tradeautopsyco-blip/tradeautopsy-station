@@ -32,6 +32,8 @@ public enum BrokerCredentialValidationFailure: Equatable, Sendable {
     case brokerUnavailable
     /// Kotak venue message already redacted for UI (no secrets).
     case kotakMintRejected(String)
+    /// Kite connect/begin or browser login wait (message redacted for UI).
+    case kiteConnectRejected(String)
 }
 
 public enum BrokerCredentialValidationResult: Equatable, Sendable {
