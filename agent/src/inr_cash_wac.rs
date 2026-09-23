@@ -1,6 +1,8 @@
-//! Kotak NSE/BSE cash INR WAC — sole realized-PnL owner for book `kotak-nse-bse-cash`.
+//! India NSE/BSE cash INR WAC — sole realized-PnL owner for books `kotak-nse-bse-cash`
+//! and `zerodha-nse-bse-cash`.
 //!
-//! Lock: `issues/compliance/locks/kotak-nse-bse-cash.md` (fetch 2026-08-22 IST).
+//! Locks: `issues/compliance/locks/kotak-nse-bse-cash.md` ·
+//! `issues/compliance/locks/zerodha-nse-bse-cash.md`.
 //! Method: WAC. Currency: INR. Products: CNC + MIS only. Lot must be 1.
 //! DualNoBlend: never write USD; never FX-blend fields on the trip struct.
 //!
@@ -102,6 +104,10 @@ pub fn is_inr_cash_fill(fill: &BrokerFill) -> bool {
     classify_cash_fill(fill).is_ok()
 }
 
+fn is_cash_segment(seg: &str) -> bool {
+    matches!(seg, "nse_cm" | "bse_cm" | "nse" | "bse")
+}
+
 fn classify_cash_fill(fill: &BrokerFill) -> Result<(), &'static str> {
     let ccy = fill
         .currency
@@ -119,7 +125,7 @@ fn classify_cash_fill(fill: &BrokerFill) -> Result<(), &'static str> {
                 .as_deref()
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if seg != "nse_cm" && seg != "bse_cm" {
+            if !is_cash_segment(&seg) {
                 return Err("currency_missing_not_cash_segment");
             }
         }
@@ -130,7 +136,7 @@ fn classify_cash_fill(fill: &BrokerFill) -> Result<(), &'static str> {
         .as_deref()
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !seg.is_empty() && seg != "nse_cm" && seg != "bse_cm" {
+    if !seg.is_empty() && !is_cash_segment(&seg) {
         return Err("segment_refused");
     }
 
@@ -407,6 +413,20 @@ mod tests {
         assert_eq!(result.refused.len(), 2);
         assert_eq!(result.refused[0].reason, "product_refused");
         assert_eq!(result.refused[1].reason, "lot_not_1");
+    }
+
+    #[test]
+    fn accepts_kite_nse_bse_exchange_segment() {
+        let engine = InrCashWacEngine::new();
+        let mut buy = fill("b1", "RELIANCE", "BUY", 1.0, 1000.0, t(10, 0), "CNC");
+        buy.exchange_segment = Some("NSE".to_string());
+        buy.currency = Some("INR".to_string());
+        let mut sell = fill("s1", "RELIANCE", "SELL", 1.0, 1100.0, t(11, 0), "CNC");
+        sell.exchange_segment = Some("NSE".to_string());
+        sell.currency = Some("INR".to_string());
+        let result = engine.reconstruct(vec![buy, sell]);
+        assert_eq!(result.round_trips.len(), 1);
+        assert!(result.refused.is_empty());
     }
 
     #[test]

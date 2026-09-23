@@ -12,7 +12,7 @@
 | **Source version** | Kite Connect **v3** (`X-Kite-Version: 3`, login `v=3`) |
 | **Staleness warning** | Re-verify every path, limit, and JSON field against the live docs before implementation. |
 | **Author** | TradeAutopsy Station (P2-Z4 REFERENCE lane) |
-| **B6 sheet** | `issues/brokers/sheets/zerodha_kite.md` — `RESEARCH`, not SIGNED |
+| **B6 sheet** | `issues/brokers/sheets/zerodha_kite.md` — `SIGNED` 2026-09-23 |
 
 ---
 
