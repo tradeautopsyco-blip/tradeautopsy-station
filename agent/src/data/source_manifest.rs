@@ -860,6 +860,38 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
     }
 }
 
+/// Zerodha Kite cash CNC+MIS (B6 SIGNED). Day-book fills via Wasm `GET /trades`.
+pub fn zerodha_kite_cash_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["NSE".into(), "BSE".into()],
+        asset_classes: vec!["equity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:zerodha-kite-cash@0.1.0".into(),
+        adapter_id: "zerodha_kite".into(),
+        book_id: "zerodha-nse-bse-cash".into(),
+        implemented: vec!["tradebook".into(), "orderbook".into()],
+        bindings: vec![
+            account_binding(
+                "zerodha_kite",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "zerodha_kite",
+                "orderbook",
+                "orders",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
 pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
     // Spot then options then USDM then Coin-M so `manifest_for_slug("binance_com")`
     // stays spot (first match). Cash stays before NFO so slug stays cash.
@@ -870,6 +902,7 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         binance_com_coinm_manifest(),
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
+        zerodha_kite_cash_manifest(),
         super::amfi::amfi_nav_manifest(),
     ]
 }
@@ -1576,6 +1609,10 @@ mod tests {
         assert!(shipping_book_id_for_slug("fixture_equity_quote").is_none());
         assert!(shipping_book_id_for_slug("binance-com-usdm").is_none());
         assert!(shipping_book_id_for_slug("kotak-nse-nfo").is_none());
+        assert_eq!(
+            shipping_book_id_for_slug("zerodha_kite").as_deref(),
+            Some("zerodha-nse-bse-cash")
+        );
     }
 
     #[test]

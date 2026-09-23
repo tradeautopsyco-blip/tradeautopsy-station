@@ -317,7 +317,7 @@ impl BrokerSyncController {
 
 /// Slugs whose adapter is a Wasm component (ADR 0001). Native COM code is reference only.
 pub fn uses_wasm_component(broker_slug: &str) -> bool {
-    matches!(broker_slug, "binance_com" | "kotak_neo")
+    matches!(broker_slug, "binance_com" | "kotak_neo" | "zerodha_kite")
 }
 
 /// Build the sandboxed component adapter for a UBI broker; credentials stay host-side.
@@ -389,7 +389,8 @@ pub fn build_runtime_adapter(
             Ok(Arc::new(CountingPollAdapter::new()))
         }
         ("binance_com", CredentialBlob::HmacApiKeySecret { .. })
-        | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. }) => {
+        | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. })
+        | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. }) => {
             build_wasm_runtime_adapter(broker_slug, connection_id, blob)
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),
@@ -538,11 +539,11 @@ mod b5_enforcer_sot_tests {
     use super::*;
 
     #[test]
-    fn first_pair_slugs_are_wasm_components() {
+    fn signed_wasm_slugs_include_zerodha_kite() {
         assert!(uses_wasm_component("binance_com"));
         assert!(uses_wasm_component("kotak_neo"));
+        assert!(uses_wasm_component("zerodha_kite"));
         assert!(!uses_wasm_component("binance_us"));
-        assert!(!uses_wasm_component("zerodha_kite"));
     }
 
     #[test]
@@ -559,14 +560,35 @@ mod b5_enforcer_sot_tests {
     }
 
     #[test]
-    fn unsupported_slug_still_fails_closed() {
+    fn zerodha_kite_rejects_hmac_shape() {
         let result =
             build_runtime_adapter("zerodha_kite", "conn-b5-z", &CredentialBlob::hmac("k", "s"));
         let err = match result {
             Err(e) => e,
-            Ok(_) => panic!("unsigned slug must fail closed"),
+            Ok(_) => panic!("Kite slug must reject HMAC blob"),
         };
         assert!(err.to_string().contains("unsupported broker"), "{}", err);
+    }
+
+    fn kite_blob() -> CredentialBlob {
+        CredentialBlob::KiteChecksumSession {
+            api_key: "k".into(),
+            api_secret: "s".into(),
+            access_token: "tok".into(),
+            access_token_expiry_unix_ms: 4_000_000_000_000,
+            user_id: "AB1234".into(),
+        }
+    }
+
+    #[test]
+    fn zerodha_kite_wasm_start_resolves_cash_book() {
+        assert_eq!(
+            crate::data::shipping_book_id_for_slug("zerodha_kite").as_deref(),
+            Some(crate::data::ZERODHA_NSE_BSE_CASH_BOOK_ID)
+        );
+        let adapter = build_runtime_adapter("zerodha_kite", "conn-z", &kite_blob())
+            .expect("planned slug + Kite blob loads Wasm");
+        assert_eq!(adapter.name(), "ubi_wasm");
     }
 
     fn kotak_blob() -> CredentialBlob {
