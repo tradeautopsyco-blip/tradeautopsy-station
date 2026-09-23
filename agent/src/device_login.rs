@@ -3,6 +3,8 @@
 //! UI-facing types never expose `device_code`. Polling uses the private pending handle.
 
 use anyhow::{anyhow, Context, Result};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -236,6 +238,97 @@ async fn mint_station_tokens(
     })
 }
 
+fn jwt_exp_unix(token: &str) -> Option<u64> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    value.get("exp").and_then(|n| n.as_u64())
+}
+
+/// True when the access JWT is missing `exp` or expires within `skew_secs`.
+pub fn station_access_expiring(access_token: &str, skew_secs: u64) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match jwt_exp_unix(access_token) {
+        Some(exp) => exp <= now.saturating_add(skew_secs),
+        None => true,
+    }
+}
+
+#[derive(Debug)]
+pub enum StationRefreshError {
+    /// Console rejected the refresh token (rotated away, family burned, expired).
+    /// Retrying can never succeed — the human must device-login again.
+    Revoked,
+    /// Network / 429 / 5xx — safe to retry later with backoff.
+    Transient(anyhow::Error),
+}
+
+impl std::fmt::Display for StationRefreshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Revoked => write!(f, "Station refresh token revoked — device login required"),
+            Self::Transient(err) => write!(f, "Station refresh failed: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for StationRefreshError {}
+
+/// Exchange the stored refresh token for a new Station access token.
+/// Console rotates on use and burns the whole family on reuse, so callers must
+/// serialize this (see `UpstreamClient::ensure_fresh_station_access`).
+/// On [`StationRefreshError::Revoked`] the store is cleared so nothing keeps
+/// presenting a dead token.
+pub async fn refresh_stored_station_tokens(
+    http: &reqwest::Client,
+    console_base_url: &str,
+    store: &dyn StationTokenStore,
+) -> std::result::Result<StationTokens, StationRefreshError> {
+    let current = store
+        .load()
+        .map_err(StationRefreshError::Transient)?
+        .ok_or(StationRefreshError::Revoked)?;
+    let base = console_base_url.trim_end_matches('/');
+    require_console_base_url(base).map_err(StationRefreshError::Transient)?;
+
+    let resp = http
+        .post(format!("{base}/api/auth/station/token"))
+        .header("content-type", "application/json")
+        .json(&serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": current.refresh_token,
+        }))
+        .send()
+        .await
+        .map_err(|e| StationRefreshError::Transient(anyhow!(e).context("Console station refresh network")))?;
+
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::BAD_REQUEST {
+        let _ = store.clear();
+        return Err(StationRefreshError::Revoked);
+    }
+    if !status.is_success() {
+        return Err(StationRefreshError::Transient(anyhow!(
+            "Console station refresh HTTP {status}"
+        )));
+    }
+
+    let parsed: ConsoleStationTokenResponse = serde_json::from_str(&text)
+        .map_err(|e| StationRefreshError::Transient(anyhow!(e).context("parse Console station refresh")))?;
+    let tokens = StationTokens {
+        access_token: parsed.access_token,
+        refresh_token: parsed.refresh_token,
+        expires_in: parsed.expires_in,
+        refresh_expires_in: parsed.refresh_expires_in,
+    };
+    store.save(&tokens).map_err(StationRefreshError::Transient)?;
+    Ok(tokens)
+}
+
 /// Prove Keychain Caller against Console who-am-I (A8 Exit II).
 pub async fn prove_station_session(
     http: &reqwest::Client,
@@ -312,6 +405,23 @@ fn urlencoding_loose(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::station_tokens::MemoryStationTokenStore;
+
+    fn jwt_with_exp(exp: u64) -> String {
+        let payload = URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{exp}}}"#));
+        format!("e30.{payload}.sig")
+    }
+
+    #[test]
+    fn station_access_expiring_reads_jwt_exp() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(!station_access_expiring(&jwt_with_exp(now + 600), 90));
+        assert!(station_access_expiring(&jwt_with_exp(now + 30), 90));
+        assert!(station_access_expiring(&jwt_with_exp(now - 1), 90));
+        assert!(station_access_expiring("not-a-jwt", 90));
+    }
     use serial_test::serial;
 
     #[test]

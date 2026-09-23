@@ -95,7 +95,7 @@ pub use data::{
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
-    DeviceLoginPublic, StationSessionIdentity,
+    DeviceLoginPublic, StationRefreshError, StationSessionIdentity,
 };
 pub use dns_block::{arm_venue_ban, clear_venue_ban, hosts_for_broker, BlockReason, BLOCK_MARKER};
 
@@ -255,7 +255,22 @@ impl UpstreamConfig {
 pub struct UpstreamClient {
     pub config: UpstreamConfig,
     pub http: reqwest::Client,
+    pub refresh: Arc<StationRefreshGate>,
 }
+
+/// Serializes Station refresh-token rotation and backs off after failures.
+/// Console burns the refresh family on reuse, so concurrent refreshes with the
+/// same token would log the Station out; unbounded retries flood Console.
+#[derive(Default)]
+pub struct StationRefreshGate {
+    lock: tokio::sync::Mutex<()>,
+    blocked_until_ms: AtomicI64,
+    consecutive_failures: AtomicU64,
+}
+
+const STATION_REFRESH_SKEW_SECS: u64 = 90;
+const STATION_REFRESH_BACKOFF_BASE_MS: i64 = 30_000;
+const STATION_REFRESH_BACKOFF_CAP_MS: i64 = 10 * 60_000;
 
 impl UpstreamClient {
     pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
@@ -267,7 +282,11 @@ impl UpstreamClient {
             .timeout(Duration::from_secs(10))
             .danger_accept_invalid_certs(accept_invalid_certs)
             .build()?;
-        Ok(Self { config, http })
+        Ok(Self {
+            config,
+            http,
+            refresh: Arc::default(),
+        })
     }
 
     /// Brain identity: Station Caller Bearer from Keychain (A8). Never x-user-id.
@@ -296,6 +315,71 @@ impl UpstreamClient {
     ) -> anyhow::Result<reqwest::RequestBuilder> {
         let auth = self.brain_authorization_header()?;
         Ok(builder.header(reqwest::header::AUTHORIZATION, auth))
+    }
+
+    /// Make sure the Keychain access token is usable, refreshing at most once at a time.
+    ///
+    /// `rejected_access` is the token Console just answered 401 for: refresh even if
+    /// its `exp` looks fine, unless another task already rotated past it.
+    pub async fn ensure_fresh_station_access(
+        &self,
+        rejected_access: Option<&str>,
+    ) -> Result<(), StationRefreshError> {
+        if self.config.is_loopback_http_bootstrap() {
+            return Ok(());
+        }
+        let gate = &self.refresh;
+        let now_ms = Utc::now().timestamp_millis();
+        if now_ms < gate.blocked_until_ms.load(Ordering::SeqCst) {
+            return Err(StationRefreshError::Transient(anyhow::anyhow!(
+                "Station refresh backing off after recent failure"
+            )));
+        }
+
+        let _held = gate.lock.lock().await;
+        let store = KeyringStationTokenStore;
+        let current = store
+            .load()
+            .map_err(StationRefreshError::Transient)?
+            .ok_or(StationRefreshError::Revoked)?;
+        let needs_refresh = match rejected_access {
+            Some(rejected) => rejected == current.access_token,
+            None => device_login::station_access_expiring(
+                &current.access_token,
+                STATION_REFRESH_SKEW_SECS,
+            ),
+        };
+        if !needs_refresh {
+            return Ok(());
+        }
+
+        match device_login::refresh_stored_station_tokens(&self.http, &self.config.base_url, &store)
+            .await
+        {
+            Ok(_) => {
+                gate.consecutive_failures.store(0, Ordering::SeqCst);
+                gate.blocked_until_ms.store(0, Ordering::SeqCst);
+                Ok(())
+            }
+            Err(StationRefreshError::Revoked) => {
+                tracing::warn!("Station refresh token revoked; cleared Keychain — device login required");
+                gate.consecutive_failures.store(0, Ordering::SeqCst);
+                Err(StationRefreshError::Revoked)
+            }
+            Err(StationRefreshError::Transient(err)) => {
+                let failures = gate.consecutive_failures.fetch_add(1, Ordering::SeqCst) + 1;
+                let exp = (failures.saturating_sub(1)).min(8) as u32;
+                let delay_ms = STATION_REFRESH_BACKOFF_BASE_MS
+                    .saturating_mul(1_i64 << exp)
+                    .min(STATION_REFRESH_BACKOFF_CAP_MS);
+                gate.blocked_until_ms.store(
+                    Utc::now().timestamp_millis().saturating_add(delay_ms),
+                    Ordering::SeqCst,
+                );
+                tracing::warn!(failures, delay_ms, error = %err, "Station refresh failed; backing off");
+                Err(StationRefreshError::Transient(err))
+            }
+        }
     }
 }
 

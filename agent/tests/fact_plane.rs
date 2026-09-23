@@ -262,3 +262,109 @@ async fn no_jwt_skips_enqueue_and_does_not_post() {
         "no JWT must not POST"
     );
 }
+
+async fn events_401(
+    State(state): State<FakeConsole>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> StatusCode {
+    state.posts.lock().expect("posts").push((headers, body));
+    StatusCode::UNAUTHORIZED
+}
+
+async fn spawn_fake_console(app: Router) -> u16 {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind fake Console");
+    let port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("fake Console");
+    });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    port
+}
+
+fn loopback_upstream(port: u16) -> Arc<UpstreamClient> {
+    Arc::new(
+        UpstreamClient::new(UpstreamConfig {
+            base_url: format!("http://127.0.0.1:{port}"),
+            daemon_secret: "unused-for-facts".to_string(),
+        })
+        .expect("upstream"),
+    )
+}
+
+#[tokio::test]
+#[serial]
+async fn unauthorized_defers_row_and_does_not_hammer_console() {
+    std::env::set_var("STATION_ACCESS_TOKEN", "station.fact-plane.jwt");
+
+    let fake = FakeConsole::default();
+    let port = spawn_fake_console(
+        Router::new()
+            .route("/api/daemon/events", post(events_401))
+            .with_state(fake.clone()),
+    )
+    .await;
+    let db = std::env::temp_dir().join(format!("fact-outbox-401-{}.db", uuid::Uuid::new_v4()));
+    let outbox = FactOutbox::open(&db, loopback_upstream(port)).expect("open");
+
+    let EnqueueOutcome::Enqueued { id } = outbox.enqueue(Fact::StationOnline).expect("enqueue")
+    else {
+        panic!("expected enqueue");
+    };
+
+    outbox.drain().await.expect("drain");
+    let after_first = fake.posts.lock().expect("posts").len();
+    assert!(
+        (1..=2).contains(&after_first),
+        "401 allows at most one retry after refresh, got {after_first} posts"
+    );
+    let row = outbox.row(&id).expect("query").expect("row");
+    assert!(row.done_at_ms.is_none());
+    assert!(
+        row.next_attempt_at_ms > chrono::Utc::now().timestamp_millis() + 60_000,
+        "401 must defer the row for minutes, not retry on the next tick"
+    );
+
+    for _ in 0..5 {
+        outbox.drain().await.expect("repeat drain");
+    }
+    assert_eq!(
+        fake.posts.lock().expect("posts").len(),
+        after_first,
+        "deferred row must not be re-sent on every drain"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn pending_station_online_blocks_new_heartbeat_rows() {
+    std::env::set_var("STATION_ACCESS_TOKEN", "station.fact-plane.jwt");
+
+    let fake = FakeConsole::default();
+    let port = spawn_fake_console(
+        Router::new()
+            .route("/api/daemon/events", post(events_500))
+            .with_state(fake.clone()),
+    )
+    .await;
+    let db = std::env::temp_dir().join(format!("fact-outbox-pending-{}.db", uuid::Uuid::new_v4()));
+    let outbox = FactOutbox::open(&db, loopback_upstream(port)).expect("open");
+
+    assert!(matches!(
+        outbox.enqueue(Fact::StationOnline).expect("enqueue"),
+        EnqueueOutcome::Enqueued { .. }
+    ));
+    outbox.drain().await.expect("drain");
+
+    for _ in 0..10 {
+        assert!(
+            matches!(
+                outbox.enqueue(Fact::StationOnline).expect("enqueue again"),
+                EnqueueOutcome::Coalesced
+            ),
+            "an unsent heartbeat must absorb later ones instead of piling up rows"
+        );
+    }
+}

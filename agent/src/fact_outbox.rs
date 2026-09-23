@@ -1,4 +1,4 @@
-use crate::{StationTokenStore, UpstreamClient};
+use crate::{StationRefreshError, StationTokenStore, UpstreamClient};
 use anyhow::Context;
 use rusqlite::{params, Connection};
 use serde_json::json;
@@ -77,6 +77,17 @@ impl FactOutbox {
              CREATE INDEX IF NOT EXISTS idx_fact_outbox_drain
                ON fact_outbox(done_at_ms, next_attempt_at_ms);",
         )?;
+        // Heartbeats are idempotent; a backlog of unsent ones is noise, not data.
+        conn.execute(
+            "DELETE FROM fact_outbox
+             WHERE signal_type = 'station_online' AND done_at_ms IS NULL
+               AND id NOT IN (
+                 SELECT id FROM fact_outbox
+                 WHERE signal_type = 'station_online' AND done_at_ms IS NULL
+                 ORDER BY created_at_ms DESC LIMIT 1
+               )",
+            [],
+        )?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             upstream,
@@ -117,7 +128,9 @@ impl FactOutbox {
         let now = self.now_ms();
         let payload_json = fact.payload_json(&id)?;
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(fact, Fact::StationOnline) && last_online_send_is_fresh(&conn, now)? {
+        if matches!(fact, Fact::StationOnline)
+            && (last_online_send_is_fresh(&conn, now)? || online_send_pending(&conn)?)
+        {
             return Ok(EnqueueOutcome::Coalesced);
         }
         conn.execute(
@@ -151,9 +164,46 @@ impl FactOutbox {
 
     pub async fn drain(&self) -> anyhow::Result<()> {
         let due = self.due_ids()?;
-        for id in due {
-            self.send_one(&id).await?;
+        if due.is_empty() {
+            return Ok(());
         }
+        if let Err(StationRefreshError::Revoked) =
+            self.upstream.ensure_fresh_station_access(None).await
+        {
+            return Ok(());
+        }
+        let mut refreshed_after_401 = false;
+        for id in due {
+            let mut outcome = self.send_one(&id).await?;
+            if let SendOutcome::Unauthorized { rejected_access } = &outcome {
+                if !refreshed_after_401 {
+                    refreshed_after_401 = true;
+                    if self
+                        .upstream
+                        .ensure_fresh_station_access(Some(rejected_access))
+                        .await
+                        .is_ok()
+                    {
+                        outcome = self.send_one(&id).await?;
+                    }
+                }
+            }
+            // One dead token fails every row; stop instead of replaying the queue at Console.
+            if matches!(outcome, SendOutcome::Unauthorized { .. }) {
+                self.defer(&id, AUTH_BACKOFF_MS)?;
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn defer(&self, id: &str, delay_ms: i64) -> anyhow::Result<()> {
+        let now = self.now_ms();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        conn.execute(
+            "UPDATE fact_outbox SET next_attempt_at_ms = ? WHERE id = ?",
+            params![now.saturating_add(delay_ms), id],
+        )?;
         Ok(())
     }
 
@@ -190,7 +240,7 @@ impl FactOutbox {
         Ok(ids)
     }
 
-    async fn send_one(&self, id: &str) -> anyhow::Result<()> {
+    async fn send_one(&self, id: &str) -> anyhow::Result<SendOutcome> {
         let (signal_type, payload_json) = {
             let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
             conn.query_row(
@@ -208,11 +258,27 @@ impl FactOutbox {
             }]
         });
         let url = format!("{}/api/daemon/events", self.upstream.config.base_url);
-        let req = self
+        let auth = self.upstream.brain_authorization_header()?;
+        let resp = self
             .upstream
-            .authorize_brain(self.upstream.http.post(url).json(&body))?;
-        let resp = req.send().await?;
+            .http
+            .post(url)
+            .header(reqwest::header::AUTHORIZATION, auth.as_str())
+            .json(&body)
+            .send()
+            .await?;
         let status = resp.status().as_u16();
+        let retry_after_ms = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .map(|secs| secs.saturating_mul(1000));
+        if status == 401 {
+            let rejected_access = auth.strip_prefix("Bearer ").unwrap_or(&auth).to_string();
+            return Ok(SendOutcome::Unauthorized { rejected_access });
+        }
+
         let now = self.now_ms();
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         if status == 200 {
@@ -220,26 +286,53 @@ impl FactOutbox {
                 "UPDATE fact_outbox SET done_at_ms = ? WHERE id = ?",
                 params![now, id],
             )?;
-        } else if status >= 500 {
-            let attempts: i64 = conn.query_row(
-                "SELECT attempts FROM fact_outbox WHERE id = ?",
-                [id],
-                |row| row.get(0),
-            )?;
-            let next_attempts = attempts + 1;
-            let delay_ms = retry_delay_ms(next_attempts);
-            conn.execute(
-                "UPDATE fact_outbox SET attempts = ?, next_attempt_at_ms = ? WHERE id = ?",
-                params![next_attempts, now.saturating_add(delay_ms), id],
-            )?;
+            return Ok(SendOutcome::Done);
         }
-        Ok(())
+
+        let attempts: i64 = conn.query_row(
+            "SELECT attempts FROM fact_outbox WHERE id = ?",
+            [id],
+            |row| row.get(0),
+        )?;
+        let next_attempts = attempts + 1;
+        let delay_ms = if status >= 500 {
+            retry_delay_ms(next_attempts)
+        } else {
+            // 4xx will not fix itself on a tight loop; honor Retry-After when Console sends it.
+            retry_after_ms
+                .unwrap_or_else(|| retry_delay_ms(next_attempts))
+                .max(CLIENT_ERROR_MIN_BACKOFF_MS)
+                .min(AUTH_BACKOFF_MS)
+        };
+        conn.execute(
+            "UPDATE fact_outbox SET attempts = ?, next_attempt_at_ms = ? WHERE id = ?",
+            params![next_attempts, now.saturating_add(delay_ms), id],
+        )?;
+        Ok(SendOutcome::Retry)
     }
+}
+
+enum SendOutcome {
+    Done,
+    Retry,
+    Unauthorized { rejected_access: String },
 }
 
 const BASE_BACKOFF_MS: i64 = 300;
 const MAX_BACKOFF_MS: i64 = 30_000;
+const CLIENT_ERROR_MIN_BACKOFF_MS: i64 = 5_000;
+const AUTH_BACKOFF_MS: i64 = 5 * 60_000;
 const COALESCE_MS: i64 = 15_000;
+
+fn online_send_pending(conn: &Connection) -> anyhow::Result<bool> {
+    let pending: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM fact_outbox
+         WHERE signal_type = 'station_online' AND done_at_ms IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(pending > 0)
+}
 
 fn last_online_send_is_fresh(conn: &Connection, now: i64) -> anyhow::Result<bool> {
     let last_done: Option<i64> = conn.query_row(

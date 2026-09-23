@@ -532,6 +532,7 @@ mod tests {
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .expect("client"),
+            refresh: Default::default(),
         };
         let cfg = fixture_cfg();
         post_bar_broker_fill_ingress(
