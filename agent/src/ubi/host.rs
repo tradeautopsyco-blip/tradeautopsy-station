@@ -1,13 +1,20 @@
-//! Wasmtime host for `tradeautopsy:ubi-data/broker-adapter-data` (v0.2.0).
+//! Wasmtime host for `tradeautopsy:ubi-data/broker-adapter-data` (v0.3.0, ADR 0004).
 //!
 //! `agent/wit/ubi.wit` v0.1.0 `fetch_fills` world is unchanged and is not merged here.
 //! Phase 1 fixture mode + Phase 3 live mode: the host attaches auth from the vault
 //! credential blob inside `broker_http_call`, so no secret ever enters component memory.
+//!
+//! Taxonomy (ADR 0004): the host stamps `asset-class`, `instrument-class`, and
+//! `is-inverse` on every fill from the connection's shipping **book** (`UbiHostConfig`
+//! axes, resolved via `descriptor_for_book_id`). The adapter never classifies.
+//! Pre-bump (0.2.0) components fail instantiation and are rejected loudly — there is
+//! no silent legacy-string mapping.
 
 use crate::ubi::http::{
     classify_response, effective_host, prepare_request, redact_response_headers,
     BrokerHttpTransport,
 };
+use super::catalog::{AssetClass, InstrumentClass};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -17,6 +24,11 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 pub use crate::ubi::http::HostCredentialBlob;
 
+/// Live UBI data contract version (ADR 0004). Components built against any older
+/// package (notably `tradeautopsy:ubi-data@0.2.0`, where `asset-class` was a free
+/// string) fail host instantiation and are rejected, never silently mapped.
+pub const UBI_DATA_CONTRACT_VERSION: &str = "0.3.0";
+
 wasmtime::component::bindgen!({
     path: "../docs/contracts",
     world: "broker-adapter-data",
@@ -25,6 +37,46 @@ wasmtime::component::bindgen!({
 pub use tradeautopsy::ubi_data::types::{
     BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, HttpHeader,
 };
+/// WIT-side axis enums (bindgen of `docs/contracts/ubi-data.wit`). The catalog
+/// [`AssetClass`]/[`InstrumentClass`] are the host-canonical taxonomy; the `From`
+/// impls below convert catalog → WIT at the stamp boundary. Two types with one
+/// mapping table, kept total by exhaustive matches.
+pub use tradeautopsy::ubi_data::types::{
+    AssetClass as WitAssetClass, InstrumentClass as WitInstrumentClass,
+};
+
+impl From<AssetClass> for WitAssetClass {
+    fn from(value: AssetClass) -> Self {
+        match value {
+            AssetClass::Fx => Self::Fx,
+            AssetClass::Equity => Self::Equity,
+            AssetClass::Commodity => Self::Commodity,
+            AssetClass::Debt => Self::Debt,
+            AssetClass::Index => Self::Index,
+            AssetClass::Cryptocurrency => Self::Cryptocurrency,
+            AssetClass::Alternative => Self::Alternative,
+        }
+    }
+}
+
+impl From<InstrumentClass> for WitInstrumentClass {
+    fn from(value: InstrumentClass) -> Self {
+        match value {
+            InstrumentClass::Spot => Self::Spot,
+            InstrumentClass::Swap => Self::Swap,
+            InstrumentClass::Future => Self::Future,
+            InstrumentClass::FuturesSpread => Self::FuturesSpread,
+            InstrumentClass::Forward => Self::Forward,
+            InstrumentClass::Cfd => Self::Cfd,
+            InstrumentClass::Bond => Self::Bond,
+            InstrumentClass::Option => Self::Option,
+            InstrumentClass::OptionSpread => Self::OptionSpread,
+            InstrumentClass::Warrant => Self::Warrant,
+            InstrumentClass::SportsBetting => Self::SportsBetting,
+            InstrumentClass::BinaryOption => Self::BinaryOption,
+        }
+    }
+}
 
 /// Headers a component must never set; host strips or rejects (R6).
 pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &["authorization", "x-mbx-apikey", "auth", "sid"];
@@ -53,7 +105,12 @@ pub struct UbiHostConfig {
     pub broker_slug: String,
     /// This connection's shipping book. Fence source for `broker_http_call` — not a catalog slug lookup.
     pub book_id: String,
-    pub asset_class: String,
+    /// Book's asset axis (ADR 0004). Stamped onto every fill; adapter output ignored.
+    pub asset_class: AssetClass,
+    /// Book's instrument axis (ADR 0004). Stamped onto every fill; adapter output ignored.
+    pub instrument_class: InstrumentClass,
+    /// Coin-M margining (ADR 0004). Stamped onto every fill; adapter output ignored.
+    pub is_inverse: bool,
     /// Host-only. Must never appear in `broker_http_call` responses returned to the component.
     pub credentials: HostCredentialBlob,
 }
@@ -63,6 +120,24 @@ pub enum UbiHostError {
     Wasmtime(wasmtime::Error),
     Adapter(String),
     Io(std::io::Error),
+    /// The component bytes are not a loadable `UBI_DATA_CONTRACT_ID` component —
+    /// in particular any pre-bump 0.2.0 build (string `asset-class`, no
+    /// `instrument-class`/`is-inverse`). Loud by design: no silent mapping.
+    ContractMismatch(String),
+}
+
+impl UbiHostError {
+    /// Loud pre-bump rejection. Names the expected contract so a 0.2.0-vs-0.3.0
+    /// mismatch is diagnosable from the message alone.
+    pub fn contract_mismatch(detail: impl Into<String>) -> Self {
+        Self::ContractMismatch(format!(
+            "component rejected: expected tradeautopsy:ubi-data@{} but the bytes failed to load ({}) — \
+             pre-bump (0.2.0) components are rejected, never silently mapped; \
+             rebuild the adapter against docs/contracts/ubi-data.wit",
+            UBI_DATA_CONTRACT_VERSION,
+            detail.into()
+        ))
+    }
 }
 
 impl std::fmt::Display for UbiHostError {
@@ -71,6 +146,7 @@ impl std::fmt::Display for UbiHostError {
             Self::Wasmtime(e) => write!(f, "wasmtime: {e}"),
             Self::Adapter(e) => write!(f, "adapter: {e}"),
             Self::Io(e) => write!(f, "io: {e}"),
+            Self::ContractMismatch(e) => write!(f, "contract mismatch: {e}"),
         }
     }
 }
@@ -339,7 +415,22 @@ impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
     }
 }
 
-/// Load a fixture Wasm component, call `fetch-fills`, inject identity fields (R5 §3.5).
+/// Stamp host-owned identity onto one fill (ADR 0004). Connection, slug, and all
+/// three taxonomy axes come from the connection's shipping **book** config; any
+/// adapter-supplied values are overwritten so a component cannot spoof another
+/// connection or smuggle a legacy class string. Pure function so the stamp table
+/// is unit-testable without a Wasm component (component round-trips stay in the
+/// `ubi_*_component` / realign integration tests).
+pub fn stamp_fill_identity(config: &UbiHostConfig, mut fill: FillEvent) -> FillEvent {
+    fill.connection_id = config.connection_id.clone();
+    fill.broker_slug = config.broker_slug.clone();
+    fill.asset_class = WitAssetClass::from(config.asset_class);
+    fill.instrument_class = WitInstrumentClass::from(config.instrument_class);
+    fill.is_inverse = config.is_inverse;
+    fill
+}
+
+/// Load a fixture Wasm component, call `fetch-fills`, inject identity fields (R5 §3.5, ADR 0004).
 pub fn run_fetch_fills(
     component_path: &Path,
     state: UbiHostState,
@@ -352,19 +443,12 @@ pub fn run_fetch_fills(
         .call_fetch_fills(&mut store, &cursor)?
         .map_err(UbiHostError::Adapter)?;
 
-    let connection_id = store.data().config.connection_id.clone();
-    let broker_slug = store.data().config.broker_slug.clone();
-    let asset_class = store.data().config.asset_class.clone();
+    let config = store.data().config.clone();
 
     // Host injects / overwrites identity fields so a component cannot spoof another connection.
     let fills: Vec<FillEvent> = result
         .into_iter()
-        .map(|mut f| {
-            f.connection_id = connection_id.clone();
-            f.broker_slug = broker_slug.clone();
-            f.asset_class = asset_class.clone();
-            f
-        })
+        .map(|f| stamp_fill_identity(&config, f))
         .collect();
 
     let state = store.into_data();
@@ -407,14 +491,26 @@ fn instantiate_adapter(
     let mut config = wasmtime::Config::new();
     config.wasm_component_model(true);
     let engine = Engine::new(&config)?;
-    let component = Component::from_file(&engine, component_path)?;
+    // A missing file is an operational Io error, not a contract mismatch — keep
+    // the distinction so "adapter not built" never misreports as "pre-bump".
+    if !component_path.exists() {
+        return Err(UbiHostError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("adapter component not found: {}", component_path.display()),
+        )));
+    }
+    // Present-but-unloadable bytes (including every pre-bump 0.2.0 build, whose
+    // exports no longer match the 0.3.0 world) are rejected loudly here.
+    let component = Component::from_file(&engine, component_path)
+        .map_err(|e| UbiHostError::contract_mismatch(format!("load: {e}")))?;
 
     let mut linker = Linker::new(&engine);
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
     BrokerAdapterData::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
 
     let mut store = Store::new(&engine, state);
-    let bindings = BrokerAdapterData::instantiate(&mut store, &component, &linker)?;
+    let bindings = BrokerAdapterData::instantiate(&mut store, &component, &linker)
+        .map_err(|e| UbiHostError::contract_mismatch(format!("instantiate: {e}")))?;
     Ok((store, bindings))
 }
 
@@ -444,7 +540,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
@@ -472,7 +568,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
@@ -513,7 +609,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("KEY", secret),
             },
             fixtures,
@@ -543,7 +639,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
             },
             transport.clone(),
@@ -594,7 +690,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             transport,
@@ -629,7 +725,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "kotak_neo".into(),
                 book_id: crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
-                asset_class: "equities".into(),
+                asset_class: AssetClass::Equity, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::KotakSession {
                     consumer_key: "ck".into(),
                     trade_token: "tt".into(),
@@ -664,7 +760,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
@@ -696,7 +792,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("LIVE_KEY", "LIVE_SECRET"),
             },
             transport.clone(),
@@ -765,7 +861,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: String::new(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             ticker_price_fixtures(),
@@ -786,7 +882,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "not_a_catalog_slug".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("TEST_KEY", "TEST_SECRET"),
             },
             ticker_price_fixtures(),
@@ -808,7 +904,7 @@ mod tests {
                 connection_id: "c".into(),
                 broker_slug: "binance_com".into(),
                 book_id: crate::data::BINANCE_COM_SPOT_BOOK_ID.into(),
-                asset_class: "crypto_spot".into(),
+                asset_class: AssetClass::Cryptocurrency, instrument_class: InstrumentClass::Spot, is_inverse: false,
                 credentials: HostCredentialBlob::hmac("k", "s"),
             },
             HashMap::new(),
@@ -844,7 +940,7 @@ mod tests {
             connection_id: "c".into(),
             broker_slug: "kotak_neo".into(),
             book_id: book_id.into(),
-            asset_class: "equities".into(),
+            asset_class: AssetClass::Equity, instrument_class: InstrumentClass::Spot, is_inverse: false,
             credentials: kotak_session_blob(base_url),
         }
     }
@@ -1015,5 +1111,223 @@ mod tests {
         .expect("Ok response with error_class");
         assert_eq!(resp.error_class.as_deref(), Some("path_not_allowlisted"));
         assert!(state.calls.is_empty());
+    }
+
+    // ---- ADR 0004: stamp-by-book + pre-bump rejection ----
+
+    fn unstamped_fill() -> FillEvent {
+        // Adapter-side placeholders the host must overwrite (spoof values).
+        FillEvent {
+            fill_id: "F-1".into(),
+            broker_slug: "spoof".into(),
+            connection_id: "spoof".into(),
+            asset_class: WitAssetClass::Fx,
+            instrument_class: WitInstrumentClass::Swap,
+            is_inverse: true,
+            symbol: "X".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 1.0,
+            currency: "USD".into(),
+            filled_at_unix_ms: 1,
+            fee_amount: None,
+            fee_currency: None,
+            exchange_segment: None,
+            product: None,
+            trade_id: None,
+        }
+    }
+
+    fn config_for_book(book_id: &str, broker_slug: &str) -> UbiHostConfig {
+        let descriptor = super::super::catalog::descriptor_for_book_id(book_id)
+            .unwrap_or_else(|| panic!("no book row for {book_id}"));
+        assert_eq!(
+            descriptor.slug, broker_slug,
+            "book {book_id} slug drift"
+        );
+        UbiHostConfig {
+            connection_id: "conn-book".into(),
+            broker_slug: broker_slug.into(),
+            book_id: book_id.into(),
+            asset_class: descriptor.asset_class,
+            instrument_class: descriptor.instrument_class,
+            is_inverse: descriptor.is_inverse,
+            credentials: HostCredentialBlob::hmac("k", "s"),
+        }
+    }
+
+    #[test]
+    fn all_six_books_stamp_own_axes_from_book_config() {
+        let cases: &[(&str, &str, WitAssetClass, WitInstrumentClass, bool)] = &[
+            (
+                "binance-com-spot",
+                "binance_com",
+                WitAssetClass::Cryptocurrency,
+                WitInstrumentClass::Spot,
+                false,
+            ),
+            (
+                "binance-com-options",
+                "binance_com",
+                WitAssetClass::Cryptocurrency,
+                WitInstrumentClass::Option,
+                false,
+            ),
+            (
+                "binance-com-usdm",
+                "binance_com",
+                WitAssetClass::Cryptocurrency,
+                WitInstrumentClass::Future,
+                false,
+            ),
+            (
+                "binance-com-coinm",
+                "binance_com",
+                WitAssetClass::Cryptocurrency,
+                WitInstrumentClass::Future,
+                true,
+            ),
+            (
+                "kotak-nse-bse-cash",
+                "kotak_neo",
+                WitAssetClass::Equity,
+                WitInstrumentClass::Spot,
+                false,
+            ),
+            (
+                "kotak-nse-nfo",
+                "kotak_neo",
+                WitAssetClass::Equity,
+                WitInstrumentClass::Option,
+                false,
+            ),
+        ];
+        for (book_id, slug, asset, instrument, inverse) in cases {
+            let config = config_for_book(book_id, slug);
+            let stamped = stamp_fill_identity(&config, unstamped_fill());
+            assert_eq!(stamped.asset_class, *asset, "book {book_id} asset axis");
+            assert_eq!(
+                stamped.instrument_class, *instrument,
+                "book {book_id} instrument axis"
+            );
+            assert_eq!(stamped.is_inverse, *inverse, "book {book_id} inverse leg");
+            assert_eq!(stamped.connection_id, "conn-book");
+            assert_eq!(stamped.broker_slug, *slug);
+            assert_ne!(stamped.broker_slug, "spoof");
+        }
+    }
+
+    #[test]
+    fn nfo_stamp_is_nfo_axes_not_slug_cash_pair_f3_flip() {
+        // The F3 flip at host level: an NFO-book fill must carry NFO axes even
+        // though the slug's first pair (cash) is (equity, spot). The old
+        // `host_stamps_equities_on_nfo_row_f3` integration test (tail lane) goes
+        // red; this inline test locks the flipped behavior.
+        let nfo = stamp_fill_identity(
+            &config_for_book("kotak-nse-nfo", "kotak_neo"),
+            unstamped_fill(),
+        );
+        let cash = stamp_fill_identity(
+            &config_for_book("kotak-nse-bse-cash", "kotak_neo"),
+            unstamped_fill(),
+        );
+        assert_eq!(nfo.asset_class, WitAssetClass::Equity);
+        assert_eq!(nfo.instrument_class, WitInstrumentClass::Option);
+        assert_eq!(cash.instrument_class, WitInstrumentClass::Spot);
+        assert_ne!(
+            nfo.instrument_class, cash.instrument_class,
+            "NFO must not inherit the cash stamp"
+        );
+    }
+
+    #[test]
+    fn coinm_inverse_leg_is_bool_not_class_string() {
+        let stamped = stamp_fill_identity(
+            &config_for_book("binance-com-coinm", "binance_com"),
+            unstamped_fill(),
+        );
+        assert!(stamped.is_inverse);
+        assert_eq!(stamped.instrument_class, WitInstrumentClass::Future);
+        let usdm = stamp_fill_identity(
+            &config_for_book("binance-com-usdm", "binance_com"),
+            unstamped_fill(),
+        );
+        assert!(!usdm.is_inverse);
+        assert_eq!(usdm.instrument_class, WitInstrumentClass::Future);
+    }
+
+    #[test]
+    fn contract_mismatch_names_expected_version() {
+        assert_eq!(UBI_DATA_CONTRACT_VERSION, "0.3.0");
+        let err = UbiHostError::contract_mismatch("test detail");
+        let msg = err.to_string();
+        assert!(msg.contains("tradeautopsy:ubi-data@0.3.0"), "{msg}");
+        assert!(msg.contains("rejected"), "{msg}");
+        assert!(msg.contains("0.2.0"), "{msg}");
+        assert!(msg.contains("test detail"), "{msg}");
+    }
+
+    #[test]
+    fn non_component_bytes_are_rejected_loudly_not_mapped() {
+        // Any present-but-unloadable bytes — the shape a stale 0.2.0 build takes
+        // at the 0.3.0 host — must fail as ContractMismatch naming 0.3.0.
+        let path = std::env::temp_dir().join(format!(
+            "ta-p1a-not-a-component-{}-{}.wasm",
+            std::process::id(),
+            // Tiny uniqueness without new deps: nanos since epoch.
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::write(&path, b"definitely not a wasm component").expect("temp write");
+        let state = UbiHostState::new(
+            config_for_book("binance-com-spot", "binance_com"),
+            HashMap::new(),
+        );
+        let err = match run_fetch_fills(
+            &path,
+            state,
+            FillCursor {
+                since_unix_ms: None,
+                from_id: None,
+                symbol: None,
+            },
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("garbage bytes must not instantiate"),
+        };
+        let msg = err.to_string();
+        assert!(
+            matches!(err, UbiHostError::ContractMismatch(_)),
+            "expected ContractMismatch, got: {msg}"
+        );
+        assert!(msg.contains("tradeautopsy:ubi-data@0.3.0"), "{msg}");
+        assert!(msg.contains("rejected"), "{msg}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn missing_component_stays_io_not_mismatch() {
+        let state = UbiHostState::new(
+            config_for_book("binance-com-spot", "binance_com"),
+            HashMap::new(),
+        );
+        let err = match run_fetch_fills(
+            Path::new("/nonexistent-dir-p1a/no-adapter.wasm"),
+            state,
+            FillCursor {
+                since_unix_ms: None,
+                from_id: None,
+                symbol: None,
+            },
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("missing file must fail"),
+        };
+        assert!(
+            matches!(err, UbiHostError::Io(_)),
+            "missing file must stay Io, got: {err}"
+        );
     }
 }

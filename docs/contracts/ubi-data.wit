@@ -1,15 +1,60 @@
-/// Universal Broker Interface — additive data reads (ADR 0002 / R0).
+/// Universal Broker Interface — additive data reads (ADR 0002 / R0, ADR 0004 taxonomy).
 ///
 /// Kept **outside** `agent/wit/` so Wasmtime bindgen continues to load only v0.1.0
-/// `fetch-fills`. This world is the S0 contract target; it is not wired yet.
-package tradeautopsy:ubi-data@0.2.0;
+/// `fetch_fills`. This world is the S0 contract target and **is wired**: the host
+/// loads it via `wasmtime::component::bindgen!` in `agent/src/ubi/host.rs`, and the
+/// `ubi-*-adapter` crates implement it via `wit_bindgen::generate!` against this dir.
+///
+/// 0.3.0 (ADR 0004): closed two-axis taxonomy. `asset-class` is a closed enum (was
+/// a free string in 0.2.0); new `instrument-class` enum + `is-inverse` bool on every
+/// fill. The host stamps all three axes from the connection's shipping **book**;
+/// the adapter never classifies. Unknown enum value = reject, never default. There
+/// is no silent 0.2.0 → 0.3.0 string mapping: components built against 0.2.0 fail
+/// host instantiation and are rejected loudly (see `UbiHostError::ContractMismatch`).
+package tradeautopsy:ubi-data@0.3.0;
 
 interface types {
+    /// Closed asset taxonomy (ADR 0004, Nautilus-aligned, zero gaps). Wire form is
+    /// snake_case (`cryptocurrency`); the component model carries the discriminant.
+    enum asset-class {
+        fx,
+        equity,
+        commodity,
+        debt,
+        index,
+        cryptocurrency,
+        alternative,
+    }
+
+    /// Closed instrument taxonomy (ADR 0004). `is-inverse` (Coin-M) is a bool on the
+    /// fill, never a class string. There is deliberately no `mixed` member: a mixed
+    /// book (Kotak NFO carries CE/PE/FUT) takes one honest book stamp and documents
+    /// the per-fill limitation in ADR 0004 — it never invents a class.
+    enum instrument-class {
+        spot,
+        swap,
+        // `%`-escaped: `future` and `option` are WIT keywords. Bindgen strips the
+        // escape, so Rust/Wire see `Future`/`future` and `Option`/`option` — the
+        // same closed vocabulary as the host `InstrumentClass` enum.
+        %future,
+        futures-spread,
+        forward,
+        cfd,
+        bond,
+        %option,
+        option-spread,
+        warrant,
+        sports-betting,
+        binary-option,
+    }
+
     record fill-event {
         fill-id: string,
         broker-slug: string,
         connection-id: string,
-        asset-class: string,
+        asset-class: asset-class,
+        instrument-class: instrument-class,
+        is-inverse: bool,
         symbol: string,
         side: string,
         qty: f64,

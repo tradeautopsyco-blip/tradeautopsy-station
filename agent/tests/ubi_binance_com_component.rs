@@ -8,8 +8,9 @@ mod ubi_support;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
-    host_allowed, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
-    TransportResponse, UbiHostConfig, UbiHostState, BINANCE_COM_SPOT_BOOK_ID,
+    host_allowed, run_fetch_fills, run_obtain, AssetClass, BrokerHttpFixture, FillCursor,
+    InstrumentClass, RecordingTransport, TransportResponse, UbiHostConfig, UbiHostState,
+    WitAssetClass, BINANCE_COM_SPOT_BOOK_ID,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_hmac,
@@ -24,7 +25,9 @@ fn config() -> UbiHostConfig {
         connection_id: "conn-com-001".into(),
         broker_slug: "binance_com".into(),
         book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
-        asset_class: "crypto_spot".into(),
+        asset_class: AssetClass::Cryptocurrency,
+        instrument_class: InstrumentClass::Spot,
+        is_inverse: false,
         credentials: sentinel_hmac(),
     }
 }
@@ -72,7 +75,7 @@ fn my_trades_row_maps_to_fill_event() {
     assert_eq!(fill.fill_id, "28457");
     assert_eq!(fill.broker_slug, "binance_com");
     assert_eq!(fill.connection_id, "conn-com-001");
-    assert_eq!(fill.asset_class, "crypto_spot");
+    assert_eq!(fill.asset_class, WitAssetClass::Cryptocurrency);
     assert_eq!(fill.symbol, "BTCUSDT");
     assert_eq!(fill.side, "BUY");
     assert!((fill.qty - 12.0).abs() < 1e-9);

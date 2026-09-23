@@ -10,8 +10,9 @@ mod ubi_support;
 
 use std::collections::HashMap;
 use tradeautopsy_agent::{
-    run_fetch_fills, BrokerHttpFixture, FillCursor, UbiHostConfig, UbiHostState,
-    KOTAK_NSE_BSE_CASH_BOOK_ID,
+    run_fetch_fills, AssetClass, BrokerHttpFixture, FillCursor, InstrumentClass, UbiFillEvent,
+    UbiHostConfig, UbiHostState, WitAssetClass, WitInstrumentClass, descriptor_for_book_id,
+    stamp_fill_identity, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use ubi_support::{assert_component_never_saw_secrets, component_wasm, sentinel_kotak_session};
 
@@ -24,7 +25,9 @@ fn config() -> UbiHostConfig {
         connection_id: "conn-kotak-realign".into(),
         broker_slug: "kotak_neo".into(),
         book_id: KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
-        asset_class: "equities".into(),
+        asset_class: AssetClass::Equity,
+        instrument_class: InstrumentClass::Spot,
+        is_inverse: false,
         credentials: sentinel_kotak_session(),
     }
 }
@@ -147,29 +150,71 @@ fn preserves_raw_segment_product_and_inr() {
     assert_component_never_saw_secrets(&state, &wasm);
 }
 
-/// Audit C12 (F3): the adapter marks NFO rows `"nfo"` but the host stamps every
-/// fill `equities` until the catalog is book-keyed. Lock the current stamp so
-/// the Phase 2 flip is a visible test change, not a silent drift.
+/// Audit C12 (F3), FLIPPED by P1 (ADR 0004 §5): the host stamps every fill from
+/// the connection's BOOK row, never from the slug's first pair.
+///
+/// OLD (pre-P1, `host_stamps_equities_on_nfo_row_f3`): this was a component
+/// round-trip on a *cash-book* connection asserting the NFO row inherited the
+/// slug's cash pair — asset `equities`, no instrument axis. That inheritance was
+/// the F3 second-book STOP: an NFO fill wore cash clothes.
+///
+/// NEW: an NFO-book connection stamps NFO axes — `(equity, option, false)`.
+/// Wasm-free by design (the stamp is a pure host function): it resolves the axes
+/// from the `kotak-nse-nfo` catalog row and proves adapter-supplied identity is
+/// overwritten. The component round-trip variant stays covered by the cash-config
+/// tests above once the 0.3.0 adapters land (PENDING-ADAPTERS).
 #[test]
-fn host_stamps_equities_on_nfo_row_f3() {
-    let wasm = component_wasm("kotak_neo");
-    let body = r#"{
-        "stat": "Ok", "stCode": 200, "data": [
-            {"trdSym": "NIFTY25JUL24000CE", "trnsTp": "B", "fldQty": "50",
-             "avgPrc": "112.35", "exSeg": "nse_fo", "prod": "NRML",
-             "exOrdId": "FO1", "exTm": "25-07-2026 11:00:00"}
-        ]
-    }"#;
-    let state = fixture_state(200, body.to_string());
+fn host_stamps_nfo_axes_on_nfo_book_row_f3_flipped() {
+    let descriptor =
+        descriptor_for_book_id(KOTAK_NSE_NFO_BOOK_ID).expect("kotak-nse-nfo catalog row");
+    assert_eq!(descriptor.slug, "kotak_neo");
+    assert_eq!(descriptor.asset_class, AssetClass::Equity);
+    assert_eq!(descriptor.instrument_class, InstrumentClass::Option);
+    assert!(!descriptor.is_inverse);
 
-    let (fills, _state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
+    let config = UbiHostConfig {
+        connection_id: "conn-kotak-nfo-f3".into(),
+        broker_slug: "kotak_neo".into(),
+        book_id: KOTAK_NSE_NFO_BOOK_ID.into(),
+        asset_class: descriptor.asset_class,
+        instrument_class: descriptor.instrument_class,
+        is_inverse: descriptor.is_inverse,
+        credentials: sentinel_kotak_session(),
+    };
+    // Adapter-side spoof: wrong identity on every field the host owns.
+    let spoofed = UbiFillEvent {
+        fill_id: "FO1".into(),
+        broker_slug: "spoof".into(),
+        connection_id: "spoof".into(),
+        asset_class: WitAssetClass::Fx,
+        instrument_class: WitInstrumentClass::Swap,
+        is_inverse: true,
+        symbol: "NIFTY25JUL24000CE".into(),
+        side: "BUY".into(),
+        qty: 50.0,
+        price: 112.35,
+        currency: "INR".into(),
+        filled_at_unix_ms: 1_784_957_400_000,
+        fee_amount: None,
+        fee_currency: None,
+        exchange_segment: Some("nse_fo".into()),
+        product: Some("NRML".into()),
+        trade_id: Some("FO1".into()),
+    };
 
-    assert_eq!(fills.len(), 1);
-    assert_eq!(fills[0].exchange_segment.as_deref(), Some("nse_fo"));
-    assert_eq!(
-        fills[0].asset_class, "equities",
-        "F3: host overwrites adapter nfo until book-keyed catalog"
+    let stamped = stamp_fill_identity(&config, spoofed);
+
+    assert_eq!(stamped.asset_class, WitAssetClass::Equity);
+    assert_eq!(stamped.instrument_class, WitInstrumentClass::Option);
+    assert!(
+        !stamped.is_inverse,
+        "NFO is linearly margined; Coin-M alone sets is_inverse"
     );
+    assert_eq!(stamped.connection_id, "conn-kotak-nfo-f3");
+    assert_eq!(stamped.broker_slug, "kotak_neo");
+    // Venue truth survives the stamp untouched.
+    assert_eq!(stamped.exchange_segment.as_deref(), Some("nse_fo"));
+    assert_eq!(stamped.symbol, "NIFTY25JUL24000CE");
 }
 
 /// Audit C3: the day book is one `GET /quick/user/trades` with no date-range

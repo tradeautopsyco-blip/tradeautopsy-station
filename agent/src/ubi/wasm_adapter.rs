@@ -5,6 +5,7 @@
 //! Enforcer and the adapter binary has no ambient network authority (ADR 0001).
 
 use crate::broker::{slug_to_slot, BrokerAdapter, BrokerError, BrokerFill};
+use crate::ubi::catalog::{AssetClass, InstrumentClass};
 use crate::ubi::components::component_path_for_slug;
 use crate::ubi::host::{run_fetch_fills, FillCursor, FillEvent, UbiHostConfig, UbiHostState};
 use crate::ubi::http::{BrokerHttpTransport, HostCredentialBlob};
@@ -19,7 +20,11 @@ pub struct WasmBrokerAdapter {
     connection_id: String,
     broker_slug: String,
     book_id: String,
-    asset_class: String,
+    /// Book axes (ADR 0004) — forwarded into `UbiHostConfig` so the host stamps
+    /// every fill from the connection's book. Resolved book-keyed by the caller.
+    asset_class: AssetClass,
+    instrument_class: InstrumentClass,
+    is_inverse: bool,
     credentials: HostCredentialBlob,
     transport: Arc<dyn BrokerHttpTransport>,
     name: &'static str,
@@ -30,7 +35,9 @@ impl WasmBrokerAdapter {
         broker_slug: &str,
         book_id: impl Into<String>,
         connection_id: impl Into<String>,
-        asset_class: impl Into<String>,
+        asset_class: AssetClass,
+        instrument_class: InstrumentClass,
+        is_inverse: bool,
         credentials: HostCredentialBlob,
         transport: Arc<dyn BrokerHttpTransport>,
     ) -> Result<Self> {
@@ -45,7 +52,9 @@ impl WasmBrokerAdapter {
             connection_id: connection_id.into(),
             broker_slug: broker_slug.to_string(),
             book_id: book_id.into(),
-            asset_class: asset_class.into(),
+            asset_class,
+            instrument_class,
+            is_inverse,
             credentials,
             transport,
             name: static_adapter_name(broker_slug),
@@ -58,7 +67,9 @@ impl WasmBrokerAdapter {
                 connection_id: self.connection_id.clone(),
                 broker_slug: self.broker_slug.clone(),
                 book_id: self.book_id.clone(),
-                asset_class: self.asset_class.clone(),
+                asset_class: self.asset_class,
+                instrument_class: self.instrument_class,
+                is_inverse: self.is_inverse,
                 credentials: self.credentials.clone(),
             },
             self.transport.clone(),
@@ -187,13 +198,16 @@ fn nonempty_owned(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ubi::host::{WitAssetClass, WitInstrumentClass};
 
     fn sample_event() -> FillEvent {
         FillEvent {
             fill_id: "28457".into(),
             broker_slug: "binance_com".into(),
             connection_id: "conn-1".into(),
-            asset_class: "crypto_spot".into(),
+            asset_class: WitAssetClass::Cryptocurrency,
+            instrument_class: WitInstrumentClass::Spot,
+            is_inverse: false,
             symbol: "BTCUSDT".into(),
             side: "BUY".into(),
             qty: 12.0,
@@ -213,7 +227,9 @@ mod tests {
             fill_id: "FILL-1".into(),
             broker_slug: "kotak_neo".into(),
             connection_id: "conn-1".into(),
-            asset_class: "equities".into(),
+            asset_class: WitAssetClass::Equity,
+            instrument_class: WitInstrumentClass::Spot,
+            is_inverse: false,
             symbol: "RELIANCE".into(),
             side: "BUY".into(),
             qty: 1.0,
@@ -259,7 +275,9 @@ mod tests {
             fill_id: "NFO-1".into(),
             broker_slug: "kotak_neo".into(),
             connection_id: "conn-1".into(),
-            asset_class: "nfo".into(),
+            asset_class: WitAssetClass::Equity,
+            instrument_class: WitInstrumentClass::Option,
+            is_inverse: false,
             symbol: "NIFTY".into(),
             side: "BUY".into(),
             qty: 15.0,
@@ -291,7 +309,9 @@ mod tests {
             fill_id: "NFO-PE".into(),
             broker_slug: "kotak_neo".into(),
             connection_id: "conn-1".into(),
-            asset_class: "nfo".into(),
+            asset_class: WitAssetClass::Equity,
+            instrument_class: WitInstrumentClass::Option,
+            is_inverse: false,
             symbol: "NIFTY2692221000PE".into(),
             side: "BUY".into(),
             qty: 2.0,

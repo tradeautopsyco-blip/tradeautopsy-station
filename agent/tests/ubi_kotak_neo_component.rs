@@ -8,8 +8,9 @@ mod ubi_support;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tradeautopsy_agent::{
-    run_describe, run_fetch_fills, run_obtain, BrokerHttpFixture, FillCursor, RecordingTransport,
-    UbiHostConfig, UbiHostState, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    run_describe, run_fetch_fills, run_obtain, AssetClass, BrokerHttpFixture, FillCursor,
+    InstrumentClass, RecordingTransport, UbiHostConfig, UbiHostState, WitAssetClass,
+    KOTAK_NSE_BSE_CASH_BOOK_ID,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_kotak_session,
@@ -28,7 +29,9 @@ fn config() -> UbiHostConfig {
         connection_id: "conn-kotak-001".into(),
         broker_slug: "kotak_neo".into(),
         book_id: KOTAK_NSE_BSE_CASH_BOOK_ID.into(),
-        asset_class: "equities".into(),
+        asset_class: AssetClass::Equity,
+        instrument_class: InstrumentClass::Spot,
+        is_inverse: false,
         credentials: sentinel_kotak_session(),
     }
 }
@@ -71,7 +74,7 @@ fn trade_book_rows_map_to_fill_events() {
     assert_eq!(itbees.fill_id, "FILL-1");
     assert_eq!(itbees.broker_slug, "kotak_neo");
     assert_eq!(itbees.connection_id, "conn-kotak-001");
-    assert_eq!(itbees.asset_class, "equities");
+    assert_eq!(itbees.asset_class, WitAssetClass::Equity);
     assert_eq!(itbees.symbol, "ITBEES");
     assert_eq!(itbees.side, "BUY");
     assert!((itbees.qty - 100.0).abs() < 1e-9);

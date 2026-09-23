@@ -17,8 +17,9 @@ mod wasm_adapter;
 
 pub use allowlist::{host_allowed, ALLOWED_BROKER_HOSTS};
 pub use catalog::{
-    calc_profile, catalog_v1, compliance_profile, descriptor_for_slug, AdapterOrigin, AuthScheme,
-    BrokerAvailability, BrokerDescriptor, CalcProfile, ComplianceProfile,
+    calc_profile, catalog_v1, compliance_profile, descriptor_for_book_id, descriptor_for_slug,
+    AdapterOrigin, AssetClass, AuthScheme, BrokerAvailability, BrokerDescriptor, CalcProfile,
+    ComplianceProfile, InstrumentClass,
 };
 pub use components::{
     component_candidate_paths, component_crate_dir, component_file_name, component_path_for_slug,
@@ -33,9 +34,9 @@ pub use credentials::{
 };
 pub use desk::desk_profile_for_slug;
 pub use host::{
-    run_describe, run_fetch_fills, run_obtain, BrokerHttpFixture, BrokerHttpMode, FillCursor,
-    FillEvent, HostCredentialBlob, UbiHostConfig, UbiHostError, UbiHostState,
-    FORBIDDEN_COMPONENT_HEADERS,
+    run_describe, run_fetch_fills, run_obtain, stamp_fill_identity, BrokerHttpFixture,
+    BrokerHttpMode, FillCursor, FillEvent, HostCredentialBlob, UbiHostConfig, UbiHostError,
+    UbiHostState, WitAssetClass, WitInstrumentClass, FORBIDDEN_COMPONENT_HEADERS,
 };
 pub use http::{
     attach_kotak_file_paths_session, classify_response, effective_host, kotak_base_host,

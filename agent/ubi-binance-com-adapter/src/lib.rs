@@ -15,7 +15,8 @@ use crate::exports::tradeautopsy::ubi_data::adapter::Guest as AdapterGuest;
 use crate::exports::tradeautopsy::ubi_data::data_adapter::Guest as DataAdapterGuest;
 use crate::tradeautopsy::ubi_data::broker_http;
 use crate::tradeautopsy::ubi_data::types::{
-    BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, HttpQueryParam,
+    AssetClass, BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, HttpQueryParam,
+    InstrumentClass,
 };
 
 /// COM only — Binance.US is a different venue with its own sheet (B6 §0).
@@ -254,10 +255,13 @@ fn map_my_trades(body: &str) -> Result<Vec<FillEvent>, String> {
 
         out.push(FillEvent {
             fill_id: id.to_string(),
-            // Host overwrites identity fields from the loaded connection (R5 §3.5).
+            // Host overwrites identity + taxonomy axes from the connection book
+            // (R5 §3.5; ADR 0004 §1). Placeholder only — adapter never classifies.
             broker_slug: "binance_com".to_string(),
             connection_id: String::new(),
-            asset_class: "crypto_spot".to_string(),
+            asset_class: AssetClass::Cryptocurrency,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
             currency: quote_asset(&symbol),
             symbol,
             side: if is_buyer { "BUY" } else { "SELL" }.to_string(),

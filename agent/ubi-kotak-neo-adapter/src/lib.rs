@@ -16,7 +16,7 @@ use crate::exports::tradeautopsy::ubi_data::adapter::Guest as AdapterGuest;
 use crate::exports::tradeautopsy::ubi_data::data_adapter::Guest as DataAdapterGuest;
 use crate::tradeautopsy::ubi_data::broker_http;
 use crate::tradeautopsy::ubi_data::types::{
-    BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent,
+    AssetClass, BrokerHttpRequest, BrokerHttpResponse, FillCursor, FillEvent, InstrumentClass,
 };
 
 /// Placeholder host: the Enforcer rewrites this to the base URL held with the session
@@ -149,13 +149,20 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
 
         out.push(FillEvent {
             fill_id,
+            // Host overwrites identity + taxonomy axes from the connection book
+            // (R5 §3.5; ADR 0004 §1). Constructed values mirror the book stamps:
+            // cash → (equity, spot), NFO → (equity, option) per ADR 0004 §5.
+            // The NFO venue marker survives verbatim in exchange_segment/product
+            // (exSeg `nse_fo`); the closed enum has no legacy "nfo" noun by design.
             broker_slug: "kotak_neo".to_string(),
             connection_id: String::new(),
-            asset_class: if nfo {
-                "nfo".to_string()
+            asset_class: AssetClass::Equity,
+            instrument_class: if nfo {
+                InstrumentClass::Option
             } else {
-                "equities".to_string()
+                InstrumentClass::Spot
             },
+            is_inverse: false,
             symbol,
             side: side.to_string(),
             qty,

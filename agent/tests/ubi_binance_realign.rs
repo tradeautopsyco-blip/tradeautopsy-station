@@ -12,8 +12,8 @@ mod ubi_support;
 
 use std::collections::HashMap;
 use tradeautopsy_agent::{
-    run_fetch_fills, BrokerHttpFixture, FillCursor, UbiHostConfig, UbiHostState,
-    BINANCE_COM_SPOT_BOOK_ID,
+    run_fetch_fills, AssetClass, BrokerHttpFixture, FillCursor, InstrumentClass, UbiHostConfig,
+    UbiHostState, BINANCE_COM_SPOT_BOOK_ID,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm, read_fixture, sentinel_hmac,
@@ -27,7 +27,9 @@ fn config() -> UbiHostConfig {
         connection_id: "conn-com-realign".into(),
         broker_slug: "binance_com".into(),
         book_id: BINANCE_COM_SPOT_BOOK_ID.into(),
-        asset_class: "crypto_spot".into(),
+        asset_class: AssetClass::Cryptocurrency,
+        instrument_class: InstrumentClass::Spot,
+        is_inverse: false,
         credentials: sentinel_hmac(),
     }
 }

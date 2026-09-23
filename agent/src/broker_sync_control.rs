@@ -334,6 +334,7 @@ pub fn build_wasm_runtime_adapter(
 
 /// Named-book Start. `book_id` must be a known manifest whose `adapter_id` matches `broker_slug`.
 /// Default Start must not call this — use [`build_wasm_runtime_adapter`].
+/// Fill axes resolve book-keyed (ADR 0004): an NFO Start stamps NFO axes, never the slug's cash pair.
 pub fn build_wasm_runtime_adapter_for_book(
     broker_slug: &str,
     book_id: &str,
@@ -348,8 +349,8 @@ pub fn build_wasm_runtime_adapter_for_book(
             manifest.adapter_id
         );
     }
-    let descriptor = crate::ubi::descriptor_for_slug(broker_slug)
-        .ok_or_else(|| anyhow::anyhow!("no catalog descriptor for {broker_slug}"))?;
+    let descriptor = crate::ubi::descriptor_for_book_id(book_id)
+        .ok_or_else(|| anyhow::anyhow!("no catalog descriptor for book {book_id}"))?;
     let transport = crate::ubi::ReqwestBrokerHttpTransport::shared()
         .map_err(|e| anyhow::anyhow!("ubi transport: {e}"))?;
     Ok(Arc::new(crate::ubi::WasmBrokerAdapter::new(
@@ -357,6 +358,8 @@ pub fn build_wasm_runtime_adapter_for_book(
         manifest.book_id,
         connection_id,
         descriptor.asset_class,
+        descriptor.instrument_class,
+        descriptor.is_inverse,
         HostCredentialBlob::from(blob),
         transport,
     )?))

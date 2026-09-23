@@ -47,7 +47,7 @@ mod tests {
     }
 
     #[test]
-    fn binance_com_desk_is_usd_crypto_spot() {
+    fn binance_com_desk_is_usd_spot() {
         let p = desk_profile_for_slug(Some("binance_com")).expect("com");
         assert_eq!(p.quote_currency, "USD");
         assert_eq!(p.calc_profile_id, "crypto_spot_usd");
