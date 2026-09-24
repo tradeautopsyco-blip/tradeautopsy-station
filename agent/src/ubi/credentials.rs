@@ -171,6 +171,18 @@ pub fn decode_credential_blob(json: &str) -> anyhow::Result<CredentialBlob> {
     // rejects it above; legacy decode would wrongly treat it as Binance-style HMAC.
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
         if let Some(scheme) = value.get("authScheme").and_then(|v| v.as_str()) {
+            // Legacy Station tag — vault fields match HMAC (ADR 0017).
+            if scheme == "kraken_spot_nonce_session" {
+                #[derive(Deserialize)]
+                struct KrakenVault {
+                    #[serde(rename = "apiKey")]
+                    api_key: String,
+                    #[serde(rename = "apiSecret")]
+                    api_secret: String,
+                }
+                let legacy: KrakenVault = serde_json::from_value(value)?;
+                return Ok(CredentialBlob::hmac(legacy.api_key, legacy.api_secret));
+            }
             if scheme != "hmac_api_key_secret" {
                 anyhow::bail!(
                     "incomplete session credential blob (authScheme={scheme}); finish Connect in Station"
@@ -304,6 +316,57 @@ mod tests {
                 assert!(hs_server_id.is_empty());
             }
             _ => panic!("expected kotak"),
+        }
+    }
+
+    #[test]
+    fn coinbase_jwt_es256_session_blob_roundtrip() {
+        let blob = CredentialBlob::CoinbaseJwtEs256Session {
+            api_key: "organizations/test/apiKeys/k".into(),
+            pem_private_key: "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIBdummy\n-----END EC PRIVATE KEY-----\n"
+                .into(),
+        };
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("coinbase_jwt_es256_session"));
+        assert!(json.contains("pemPrivateKey"));
+        let decoded = decode_credential_blob(&json).unwrap();
+        assert_eq!(decoded, blob);
+    }
+
+    #[test]
+    fn legacy_kraken_spot_nonce_tag_decodes_as_hmac() {
+        let json = r#"{"authScheme":"kraken_spot_nonce_session","apiKey":"k","apiSecret":"s"}"#;
+        assert_eq!(
+            decode_credential_blob(json).unwrap(),
+            CredentialBlob::hmac("k", "s")
+        );
+    }
+
+    #[test]
+    fn station_swift_p4_keychain_json_decodes() {
+        let okx_json = r#"{"authScheme":"okx_passphrase_session","apiKey":"k","apiSecret":"s","passphrase":"p"}"#;
+        match decode_credential_blob(okx_json).unwrap() {
+            CredentialBlob::OkxPassphraseSession {
+                api_key,
+                api_secret,
+                passphrase,
+            } => {
+                assert_eq!(api_key, "k");
+                assert_eq!(api_secret, "s");
+                assert_eq!(passphrase, "p");
+            }
+            other => panic!("expected okx blob, got {other:?}"),
+        }
+        let coinbase_json = r#"{"authScheme":"coinbase_jwt_es256_session","apiKey":"kid","pemPrivateKey":"pem"}"#;
+        match decode_credential_blob(coinbase_json).unwrap() {
+            CredentialBlob::CoinbaseJwtEs256Session {
+                api_key,
+                pem_private_key,
+            } => {
+                assert_eq!(api_key, "kid");
+                assert_eq!(pem_private_key, "pem");
+            }
+            other => panic!("expected coinbase blob, got {other:?}"),
         }
     }
 

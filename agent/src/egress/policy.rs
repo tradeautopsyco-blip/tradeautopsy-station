@@ -75,6 +75,17 @@ pub const FYERS: SlotPolicy = SlotPolicy {
     auth_meter_id: "fyers:requests",
 };
 
+/// Dhan — REST v2 reads + consent auth host (B6 row 4); one meter per slot.
+pub const DHAN: SlotPolicy = SlotPolicy {
+    slot_id: "dhan",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "dhan:requests",
+};
+
 /// Groww — REST + assets CSV; one meter per slot (unknown bucket sharing).
 pub const GROWW: SlotPolicy = SlotPolicy {
     slot_id: "groww",
@@ -150,6 +161,7 @@ pub const SLOTS: &[SlotPolicy] = &[
     UPSTOX,
     FYERS,
     GROWW,
+    DHAN,
     BYBIT,
     OKX_COM,
     KRAKEN,
@@ -246,6 +258,13 @@ pub const GROWW_REQUESTS: MeterPolicy = MeterPolicy {
     max_concurrency: 4,
 };
 
+pub const DHAN_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "dhan:requests",
+    slot_id: "dhan",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
 pub const BYBIT_REQUESTS: MeterPolicy = MeterPolicy {
     meter_id: "bybit:requests",
     slot_id: "bybit",
@@ -284,6 +303,7 @@ pub const METERS: &[MeterPolicy] = &[
     UPSTOX_REQUESTS,
     FYERS_REQUESTS,
     GROWW_REQUESTS,
+    DHAN_REQUESTS,
     BYBIT_REQUESTS,
     OKX_COM_REQUESTS,
     KRAKEN_REQUESTS,
@@ -304,6 +324,7 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         crate::ubi::UPSTOX_BOOK_ID => Some(&UPSTOX_REQUESTS),
         crate::ubi::FYERS_BOOK_ID => Some(&FYERS_REQUESTS),
         crate::ubi::GROWW_BOOK_ID => Some(&GROWW_REQUESTS),
+        crate::ubi::DHAN_BOOK_ID => Some(&DHAN_REQUESTS),
         crate::ubi::bybit_session::BYBIT_BOOK_ID => Some(&BYBIT_REQUESTS),
         crate::ubi::OKX_COM_SPOT_BOOK_ID => Some(&OKX_COM_REQUESTS),
         crate::ubi::KRAKEN_BOOK_ID => Some(&KRAKEN_REQUESTS),
@@ -589,6 +610,8 @@ mod tests {
             "fyers"
         );
         assert_eq!(slot_for_host("api.groww.in").unwrap().slot_id, "groww");
+        assert_eq!(slot_for_host("api.dhan.co").unwrap().slot_id, "dhan");
+        assert_eq!(slot_for_host("auth.dhan.co").unwrap().slot_id, "dhan");
     }
 
     #[test]

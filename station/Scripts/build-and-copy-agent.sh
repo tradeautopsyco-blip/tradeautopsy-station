@@ -16,10 +16,14 @@ fi
 
 GIT_SHA="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD)"
 
-echo "Building tradeautopsy-agent (GIT_SHA=${GIT_SHA})..."
+# Parallel `cargo` on macOS can leave corrupt proc-macro .dylibs (dyld: mis-aligned
+# LINKEDIT string pool) → wit-parser/serde "cannot find attribute `serde`". Serialize jobs.
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+
+echo "Building tradeautopsy-agent (GIT_SHA=${GIT_SHA}, jobs=${CARGO_BUILD_JOBS})..."
 (
   cd "${AGENT_DIR}"
-  GIT_SHA="${GIT_SHA}" cargo build --release --locked --bin tradeautopsy-agent
+  GIT_SHA="${GIT_SHA}" cargo build --release --locked -j "${CARGO_BUILD_JOBS}" --bin tradeautopsy-agent
 )
 
 AGENT_BIN="${AGENT_DIR}/target/release/tradeautopsy-agent"
@@ -62,7 +66,7 @@ for entry in "${WASM_PACKAGES[@]}"; do
   wasm_path="${AGENT_DIR}/${pkg}/target/${WASM_TARGET}/${WASM_PROFILE}/${wasm_file}"
   if [ ! -f "${wasm_path}" ]; then
     echo "  cargo build -p ${pkg} --target ${WASM_TARGET} --release"
-    (cd "${AGENT_DIR}" && cargo build --release --target "${WASM_TARGET}" -p "${pkg}")
+    (cd "${AGENT_DIR}" && cargo build --release -j "${CARGO_BUILD_JOBS}" --target "${WASM_TARGET}" -p "${pkg}")
   fi
   if [ -f "${wasm_path}" ]; then
     cp "${wasm_path}" "${DEST}/${wasm_file}"

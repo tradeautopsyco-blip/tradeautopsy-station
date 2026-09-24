@@ -37,4 +37,51 @@ public enum BrokerCredentialFieldValidator {
         }
         return invalid
     }
+
+    public static func invalidDhanFields(
+        dhanClientId: String,
+        apiKey: String,
+        apiSecret: String
+    ) -> Set<BrokerCredentialField> {
+        var invalid = Set<BrokerCredentialField>()
+        if dhanClientId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.consumerKey)
+        }
+        if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.apiKey)
+        }
+        if apiSecret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.apiSecret)
+        }
+        return invalid
+    }
+
+    public static func invalidOkxPassphraseFields(
+        apiKey: String,
+        apiSecret: String,
+        passphrase: String
+    ) -> Set<BrokerCredentialField> {
+        var invalid = invalidFields(apiKey: apiKey, apiSecret: apiSecret)
+        if passphrase.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.passphrase)
+        }
+        return invalid
+    }
+
+    public static func invalidCoinbaseJwtFields(
+        apiKey: String,
+        pemPrivateKey: String
+    ) -> Set<BrokerCredentialField> {
+        var invalid = Set<BrokerCredentialField>()
+        if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            invalid.insert(.apiKey)
+        }
+        let pem = pemPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if pem.isEmpty {
+            invalid.insert(.pemPrivateKey)
+        } else if !pem.contains("BEGIN") || !pem.contains("PRIVATE KEY") {
+            invalid.insert(.pemPrivateKey)
+        }
+        return invalid
+    }
 }

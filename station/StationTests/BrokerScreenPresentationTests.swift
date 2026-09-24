@@ -68,10 +68,16 @@ struct BrokerScreenPresentationTests {
         #expect(cards.first { $0.id == "binance_com" }?.isConnectable == true)
         #expect(cards.first { $0.id == "binance_com" }?.quoteCurrency == "USD")
         #expect(cards.first { $0.id == "kotak_neo" }?.quoteCurrency == "INR")
-        for slug in ["zerodha_kite", "upstox", "fyers", "groww"] {
+        for slug in ["zerodha_kite", "upstox", "fyers", "groww", "dhan"] {
             let card = cards.first { $0.id == slug }
             #expect(card?.plannedLabel == nil)
             #expect(card?.isConnectable == true)
+        }
+        for slug in ["bybit", "okx_com", "kraken", "coinbase_advanced"] {
+            let card = cards.first { $0.id == slug }
+            #expect(card?.plannedLabel == "Planned")
+            #expect(card?.isConnectable == true)
+            #expect(BrokerCatalog.descriptor(for: slug)?.availability == .planned)
         }
     }
 

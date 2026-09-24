@@ -47,6 +47,12 @@ struct BrokerConnectSheetView: View {
                 }
             } else if viewModel.connectAuthScheme == .growwChecksumSession {
                 growwFields
+            } else if viewModel.connectAuthScheme == .dhanConsentSession {
+                dhanFields
+            } else if viewModel.connectAuthScheme == .okxPassphraseSession {
+                okxFields
+            } else if viewModel.connectAuthScheme == .coinbaseJwtEs256Session {
+                coinbaseFields
             } else {
                 hmacFields
             }
@@ -113,6 +119,12 @@ struct BrokerConnectSheetView: View {
                 totp: totpDraft,
                 mpin: mpin
             )
+        } else if viewModel.connectAuthScheme == .dhanConsentSession {
+            viewModel.updateDhanConnectFields(
+                dhanClientId: viewModel.connectConsumerKey,
+                apiKey: viewModel.connectApiKey,
+                apiSecret: viewModel.connectApiSecret
+            )
         }
         await viewModel.submitConnect()
     }
@@ -151,6 +163,172 @@ struct BrokerConnectSheetView: View {
             invalid: viewModel.connectInvalidFields.contains(.apiSecret),
             secure: true
         )
+    }
+
+    @ViewBuilder
+    private var dhanFields: some View {
+        Text(
+            "Register redirect URL \(DhanConnectContract.loopbackRedirectURI) in your Dhan consent app, then enter client ID and app credentials. Station opens Dhan consent login in your browser; the agent saves the session when you finish."
+        )
+        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+        .foregroundStyle(StationDS.Text.muted)
+        .fixedSize(horizontal: false, vertical: true)
+
+        credentialField(
+            title: "Dhan Client ID",
+            text: Binding(
+                get: { viewModel.connectConsumerKey },
+                set: {
+                    viewModel.updateDhanConnectFields(
+                        dhanClientId: $0,
+                        apiKey: viewModel.connectApiKey,
+                        apiSecret: viewModel.connectApiSecret
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.consumerKey)
+        )
+
+        credentialField(
+            title: "App ID",
+            text: Binding(
+                get: { viewModel.connectApiKey },
+                set: {
+                    viewModel.updateDhanConnectFields(
+                        dhanClientId: viewModel.connectConsumerKey,
+                        apiKey: $0,
+                        apiSecret: viewModel.connectApiSecret
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiKey)
+        )
+
+        credentialField(
+            title: "App Secret",
+            text: Binding(
+                get: { viewModel.connectApiSecret },
+                set: {
+                    viewModel.updateDhanConnectFields(
+                        dhanClientId: viewModel.connectConsumerKey,
+                        apiKey: viewModel.connectApiKey,
+                        apiSecret: $0
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiSecret),
+            secure: true
+        )
+    }
+
+    @ViewBuilder
+    private var okxFields: some View {
+        Text("Enter your OKX API key, secret, and passphrase from the OKX API management page. Credentials are stored in the Mac Keychain for the local agent.")
+            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+            .foregroundStyle(StationDS.Text.muted)
+            .fixedSize(horizontal: false, vertical: true)
+
+        credentialField(
+            title: "API Key",
+            text: Binding(
+                get: { viewModel.connectApiKey },
+                set: {
+                    viewModel.updateOkxConnectFields(
+                        apiKey: $0,
+                        apiSecret: viewModel.connectApiSecret,
+                        passphrase: viewModel.connectPassphrase
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiKey)
+        )
+
+        credentialField(
+            title: "API Secret",
+            text: Binding(
+                get: { viewModel.connectApiSecret },
+                set: {
+                    viewModel.updateOkxConnectFields(
+                        apiKey: viewModel.connectApiKey,
+                        apiSecret: $0,
+                        passphrase: viewModel.connectPassphrase
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiSecret),
+            secure: true
+        )
+
+        credentialField(
+            title: "Passphrase",
+            text: Binding(
+                get: { viewModel.connectPassphrase },
+                set: {
+                    viewModel.updateOkxConnectFields(
+                        apiKey: viewModel.connectApiKey,
+                        apiSecret: viewModel.connectApiSecret,
+                        passphrase: $0
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.passphrase),
+            secure: true
+        )
+    }
+
+    @ViewBuilder
+    private var coinbaseFields: some View {
+        Text("Enter your Coinbase Advanced Trade API key name and EC private key (PEM). The private key is stored only in the Mac Keychain — never in Station memory after Connect.")
+            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+            .foregroundStyle(StationDS.Text.muted)
+            .fixedSize(horizontal: false, vertical: true)
+
+        credentialField(
+            title: "API Key Name",
+            text: Binding(
+                get: { viewModel.connectApiKey },
+                set: {
+                    viewModel.updateCoinbaseConnectFields(
+                        apiKey: $0,
+                        pemPrivateKey: viewModel.connectPemPrivateKey
+                    )
+                }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiKey)
+        )
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("PEM Private Key")
+                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .medium))
+                .foregroundStyle(StationDS.Text.labels)
+
+            TextEditor(
+                text: Binding(
+                    get: { viewModel.connectPemPrivateKey },
+                    set: {
+                        viewModel.updateCoinbaseConnectFields(
+                            apiKey: viewModel.connectApiKey,
+                            pemPrivateKey: $0
+                        )
+                    }
+                )
+            )
+            .font(StationDS.monoFont(StationDS.FontSize.bodySmall, weight: .regular))
+            .foregroundStyle(StationDS.Text.primary)
+            .frame(minHeight: 120)
+            .padding(8)
+            .background(StationDS.Fill.input)
+            .overlay(
+                RoundedRectangle(cornerRadius: StationDS.Radius.small)
+                    .stroke(
+                        viewModel.connectInvalidFields.contains(.pemPrivateKey)
+                            ? StationDS.Accent.red
+                            : StationDS.Border.outlineBtn,
+                        lineWidth: StationDS.borderThin
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
+        }
     }
 
     @ViewBuilder

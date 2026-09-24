@@ -1,11 +1,19 @@
 # Dogfood — `zerodha_kite` cash (`zerodha-nse-bse-cash`)
 
-**Status:** OPEN — founder Z11 (catalog stays **Planned** until this record is signed)  
+**Status:** DRAFT — **Tier I** path (steps 1–5; step 6 open)  
 **Lock:** `/Users/bishnu/issues/compliance/locks/zerodha-nse-bse-cash.md`  
 **B6:** `/Users/bishnu/issues/brokers/sheets/zerodha_kite.md` (`SIGNED`)  
-**ADR:** `docs/adr/0005-zerodha-redirect-callback.md` (`ACCEPTED`)
+**ADR:** `docs/adr/0005-zerodha-redirect-callback.md` (`ACCEPTED`)  
+**Ladder:** [ADR 0019](/Users/bishnu/tradeautopsy-station/docs/adr/0019-broker-launch-validation-ladder.md)
 
-> Station shows **Planned** but **Connect / Start** are on for `zerodha_kite` only (`BrokerDogfoodProgram`) until you sign this file and we flip catalog **Enabled**.
+| Tier | Pipeline | This file |
+|------|----------|-----------|
+| **I — Integrator** | Steps **1–5** | **Planned** + Connect; not step 6 |
+| **II — Live** | Step **6** signed | Drills + sign-off → **Enabled** flip |
+
+> Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C). `zerodha_kite`: Connect/Start while **Planned** per `BrokerDogfoodProgram` until Tier II.
+
+---
 
 ## Preconditions
 

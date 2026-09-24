@@ -42,6 +42,11 @@ const COMPONENTS: &[(&str, &str, &str)] = &[
         "ubi-groww-adapter",
     ),
     (
+        "dhan",
+        "ubi_dhan_adapter.wasm",
+        "ubi-dhan-adapter",
+    ),
+    (
         "bybit",
         "ubi_bybit_adapter.wasm",
         "ubi-bybit-adapter",
@@ -96,9 +101,15 @@ pub fn component_candidate_paths(slug: &str) -> Vec<PathBuf> {
             paths.push(dir.join("ubi").join(file));
         }
     }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    paths.push(
+        manifest_dir
+            .join("target/wasm32-wasip2/release")
+            .join(file),
+    );
     if let Some(crate_dir) = component_crate_dir(slug) {
         paths.push(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            manifest_dir
                 .join(crate_dir)
                 .join("target/wasm32-wasip2/release")
                 .join(file),
@@ -157,12 +168,19 @@ mod tests {
             component_file_name("groww"),
             Some("ubi_groww_adapter.wasm")
         );
-        assert_eq!(COMPONENTS.len(), 10, "signed broker components only");
+        assert_eq!(
+            component_file_name("dhan"),
+            Some("ubi_dhan_adapter.wasm")
+        );
+        assert_eq!(COMPONENTS.len(), 11, "signed broker components only");
     }
 
     #[test]
     fn candidate_paths_include_dev_build_output() {
         let paths = component_candidate_paths("kotak_neo");
+        assert!(paths.iter().any(|p| p.ends_with(
+            "target/wasm32-wasip2/release/ubi_kotak_neo_adapter.wasm"
+        )));
         assert!(paths.iter().any(|p| p.ends_with(
             "ubi-kotak-neo-adapter/target/wasm32-wasip2/release/ubi_kotak_neo_adapter.wasm"
         )));

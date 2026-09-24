@@ -1,36 +1,93 @@
 # Dogfood — `kraken` spot (`kraken-com-spot`)
 
-**Status:** DRAFT — founder executes on a live account (catalog stays **Planned** until signed)  
+**Status:** DRAFT — **Tier I** accountless path (steps 4–5 offline; step 6 open)  
+**Accountless exit:** [/Users/bishnu/issues/brokers/P4-ACCOUNTLESS-EXIT.md](/Users/bishnu/issues/brokers/P4-ACCOUNTLESS-EXIT.md)  
+**Offline checklist (all four slugs):** [/Users/bishnu/issues/brokers/plans/P4-offline-g7-checklist.md](/Users/bishnu/issues/brokers/plans/P4-offline-g7-checklist.md)  
 **Lock:** `/Users/bishnu/issues/compliance/locks/kraken-com-spot.md` (SHIPPING)  
 **B6:** `/Users/bishnu/issues/brokers/sheets/kraken.md` (`SIGNED` 2026-09-24 IST)  
-**ADR:** `docs/adr/0017-kraken-spot-nonce-session.md` (`ACCEPTED`)
+**ADR:** `docs/adr/0017-kraken-spot-nonce-session.md` (`ACCEPTED`)  
+**Ladder:** [ADR 0019](/Users/bishnu/tradeautopsy-station/docs/adr/0019-broker-launch-validation-ladder.md)
 
-> Docs only. No invented venue facts — every drill cites its B6 row.
+| Tier | Pipeline | This file |
+|------|----------|-----------|
+| **I — Integrator** | Steps **1–5** | **OFFLINE** section — not step 6; **Planned** only |
+| **II — Live** | Step **6** signed | **LIVE** drills + sign-off |
 
-## Preconditions
+> Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C).
 
-- [ ] B6 `SIGNED` (rows 7/12/22 quote-filter + futures refusal read fully)
-- [ ] ADR 0017 `ACCEPTED` (SHA512 + monotonic nonce; no OAuth)
-- [ ] Adapter built: `ubi-kraken-adapter` + host signer on `api.kraken.com`
-- [ ] Lock SHIPPING for `kraken-com-spot`
-- [ ] Catalog lists `kraken` as **Planned** only (no integrator flip in this slice)
-- [ ] Agent running on `127.0.0.1:9137` (release build)
-- [ ] Live Kraken spot API key + **base64 secret** (production; no spot testnet per B6 row 23)
+---
 
-## Drills
+## OFFLINE — Tier I steps 4–5 (required now — no live account)
 
-| # | Drill | Pass when |
-|---|-------|-----------|
-| 1 | Key-entry → signed `TradesHistory` poll | Host POST attaches `API-Key`/`API-Sign`; fills map with `broker_slug=kraken`; nonce strictly increases across consecutive private calls (row 16) |
-| 2 | Quote-filter | `XBTUSDT` / `ETHUSDT` book; `ETHXBT` (or other non USDT/USDC/USD/EUR quote) skipped or refused — never silently USD (row 7) |
-| 3 | Pagination honesty | `ofs` paging until empty; no claim of unbounded single-call history (rows 4–6) |
-| 4 | Futures host refusal | Fence rejects `futures.kraken.com` on book `kraken-com-spot` (rows 0/12/21) |
-| 5 | Invalid nonce / permission | Force bad nonce or revoked key → pause + reconnect prompt, **never Kill** (row 16 posture) |
-| 6 | Kill drill | L3 blocks `api.kraken.com` for slug `kraken`; slug-scoped (row 22) |
-| 7 | DualNoBlend | Kraken USD strip live alongside COM/Bybit USD + INR strips with no blend hero (row 24) |
+### CI tests
 
-## Sign-off checklist (Planned → Enabled)
+| Check | Command / target | Pass when |
+|-------|------------------|-----------|
+| B6 lint | `cargo test -p tradeautopsy-agent --test b6_sheet_lint` | `kraken` sheet row green |
+| Component contract | `cargo test -p tradeautopsy-agent --test ubi_kraken_component` | secrets-never-seen + fixture sync |
+| Kill + crypto fence | `cargo test -p tradeautopsy-agent --lib dns_block` | `kraken` + `futures.kraken.com` refuse |
 
-- [ ] Drills 1–7 green or STOP documented
-- [ ] **Signed:** — **Date:** —
-- [ ] Enabled flip: separate integrator ticket (catalog/components) — not in Wave 4c scaffold
+- [ ] B6 lint
+- [ ] `ubi_kraken_component`
+- [ ] lib `dns_block`
+
+### Fence (`rg`)
+
+Prod **`api.kraken.com`** only; refuse **`futures.kraken.com`** on spot book (B6 rows 0/12/21).
+
+```bash
+rg -n 'kraken|futures\.kraken' agent/src/ubi/allowlist.rs agent/src/dns_block.rs agent/src/data/host_policy.rs
+```
+
+- [ ] Spot private paths on `api.kraken.com` only
+- [ ] Futures host refused for `kraken-com-spot`
+
+### Wasm build
+
+```bash
+cargo build -p ubi-kraken-adapter --target wasm32-wasip2 --release
+```
+
+- [ ] Release wasm: `target/wasm32-wasip2/release/ubi_kraken_adapter.wasm`
+
+### Swift fake connect (no network)
+
+- [ ] Key-entry → base64 secret vault blob; host signs `API-Key` / `API-Sign`; no network in StationTests stub
+- [ ] Bad nonce / 401 → reconnect posture documented (B6 row 16) — assert in lifecycle test when present
+
+### Quote-filter unit behavior
+
+B6 row 7 — USDT/USDC/USD/EUR desk; non-desk pairs skipped/refused.
+
+- [ ] `cargo test -p tradeautopsy-agent --test ubi_kraken_component quote_filter_skips_non_desk_pairs_without_failing_sync`
+
+---
+
+## LIVE — Tier II step 6 (deferred — no account)
+
+| Drill | Status | Notes |
+|-------|--------|-------|
+| Signed `TradesHistory` poll + monotonic nonce | **DEFERRED — no account** | B6 row 16 |
+| Pagination `ofs` honesty | **DEFERRED — no account** | B6 rows 4–6 |
+| Invalid nonce / permission → reconnect not Kill | **DEFERRED — no account** | B6 row 16 |
+| Rate limit discipline | **DEFERRED — no account** | B6 row 4 |
+| Kill drill L3 on `api.kraken.com` | **DEFERRED — no account** | B6 row 22 |
+| DualNoBlend USD strip | **DEFERRED — no account** | B6 row 24 |
+
+---
+
+## Sign-off
+
+**Tier I (steps 4–5 — offline verification only):**
+
+- [ ] All OFFLINE rows ticked
+- [ ] LIVE table **DEFERRED — no account**
+- [ ] Registry unchanged; `kraken` not in live Enabled set until Tier II
+
+**Tier II (step 6 — live):** sign only after LIVE drills green.
+
+**Signed:** — **Date:** — (IST)
+
+**Enabled flip (Tier II only):** integrator PR — `catalog_v1()` + registry live-slugs + Swift; not from Tier I / accountless exit.
+
+**book_id:** `kraken-com-spot`

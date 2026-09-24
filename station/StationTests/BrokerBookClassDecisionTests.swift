@@ -81,27 +81,41 @@ struct BrokerBookClassDecisionTests {
     ]
 
     @Test func catalogIsSlugOnlyFirstPair() {
-        #expect(BrokerCatalog.v1.count == 5)
+        #expect(BrokerCatalog.v1.count == 11)
         #expect(
             BrokerCatalog.v1.map(\.slug) == [
                 "binance_com", "kotak_neo", "zerodha_kite", "upstox", "fyers",
+                "groww", "dhan", "bybit", "okx_com", "kraken", "coinbase_advanced",
             ]
         )
         // First-book pointers only — the 4 second books have no catalog row.
         #expect(
             BrokerCatalog.v1.map(\.bookId) == [
                 "binance-com-spot", "kotak-nse-bse-cash", "zerodha-nse-bse-cash",
-                "upstox-nse-bse-cash", "fyers-nse-bse-cash",
+                "upstox-nse-bse-cash", "fyers-nse-bse-cash", "groww-nse-bse-cash",
+                "dhan-nse-bse-cash", "bybit-com-spot", "okx-com-spot", "kraken-com-spot",
+                "coinbase-advanced-spot",
             ]
         )
-        #expect(BrokerCatalog.descriptor(for: "zerodha_kite")?.availability == .enabled)
-        #expect(BrokerCatalog.descriptor(for: "upstox")?.availability == .enabled)
+        #expect(BrokerCatalog.descriptor(for: "zerodha_kite")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "upstox")?.availability == .planned)
         #expect(BrokerCatalog.descriptor(for: "upstox")?.authScheme == .upstoxOAuthBearerSession)
-        #expect(BrokerCatalog.descriptor(for: "fyers")?.availability == .enabled)
-        #expect(BrokerCatalog.descriptor(for: "groww")?.availability == .enabled)
+        #expect(BrokerCatalog.descriptor(for: "fyers")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "groww")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "dhan")?.availability == .planned)
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "zerodha_kite"))
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "dhan"))
         #expect(BrokerCatalog.descriptor(for: "fyers")?.authScheme == .fyersOAuthJsonAppIdHashSession)
         #expect(BrokerCatalog.descriptor(for: "binance_com")?.bookId == "binance-com-spot")
         #expect(BrokerCatalog.descriptor(for: "kotak_neo")?.bookId == "kotak-nse-bse-cash")
+        #expect(BrokerCatalog.descriptor(for: "bybit")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "okx_com")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "kraken")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "coinbase_advanced")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "bybit")?.authScheme == .hmacApiKeySecret)
+        #expect(BrokerCatalog.descriptor(for: "okx_com")?.authScheme == .okxPassphraseSession)
+        #expect(BrokerCatalog.descriptor(for: "kraken")?.authScheme == .hmacApiKeySecret)
+        #expect(BrokerCatalog.descriptor(for: "coinbase_advanced")?.authScheme == .coinbaseJwtEs256Session)
     }
 
     @Test func catalogHasNoBookKeyedLookup() {

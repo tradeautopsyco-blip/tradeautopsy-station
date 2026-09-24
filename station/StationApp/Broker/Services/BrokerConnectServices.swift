@@ -15,6 +15,16 @@ public enum BrokerConnectServices {
             return .fyers(environment)
         case "groww":
             return .groww(environment)
+        case "dhan":
+            return .dhan(environment)
+        case "bybit":
+            return .bybit(environment)
+        case "okx_com":
+            return .okxCom(environment)
+        case "kraken":
+            return .kraken(environment)
+        case "coinbase_advanced":
+            return .coinbaseAdvanced(environment)
         default:
             // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
             return BrokerConnectionIdentity(
@@ -40,6 +50,16 @@ public enum BrokerConnectServices {
             return FyersOAuthSessionCredentialValidator()
         case "groww":
             return GrowwChecksumSessionCredentialValidator()
+        case "dhan":
+            return DhanConsentSessionCredentialValidator()
+        case "bybit":
+            return BybitCredentialValidator()
+        case "okx_com":
+            return OkxComCredentialValidator()
+        case "kraken":
+            return KrakenCredentialValidator()
+        case "coinbase_advanced":
+            return CoinbaseAdvancedCredentialValidator()
         default:
             return UnsupportedBrokerCredentialValidator()
         }
@@ -117,6 +137,24 @@ private struct GrowwChecksumSessionCredentialValidator: BrokerCredentialValidati
         guard identity.brokerSlug == "groww",
               credentials.authScheme == .growwChecksumSession,
               !credentials.apiKey.isEmpty
+        else {
+            return .permanentFailure(.invalidCredentials)
+        }
+        return .success(permissionPosture: .readOnlyConfirmed)
+    }
+}
+
+/// Dhan consent session vault is agent-owned after browser callback; Station keeps client/app creds only.
+private struct DhanConsentSessionCredentialValidator: BrokerCredentialValidating, Sendable {
+    func validate(
+        credentials: BrokerCredentials,
+        identity: BrokerConnectionIdentity
+    ) async -> BrokerCredentialValidationResult {
+        guard identity.brokerSlug == "dhan",
+              credentials.authScheme == .dhanConsentSession,
+              let clientId = credentials.consumerKey, !clientId.isEmpty,
+              !credentials.apiKey.isEmpty,
+              !credentials.apiSecret.isEmpty
         else {
             return .permanentFailure(.invalidCredentials)
         }

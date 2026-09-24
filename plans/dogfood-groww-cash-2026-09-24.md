@@ -1,11 +1,19 @@
 # Dogfood — `groww` cash (`groww-nse-bse-cash`)
 
-**Status:** DRAFT — unsigned, founder executes on a live account (catalog stays **Planned** until this record is signed)
-**Lock:** `/Users/bishnu/issues/compliance/locks/groww-nse-bse-cash.md` (must be SHIPPING before drills)
-**B6:** `/Users/bishnu/issues/brokers/sheets/groww.md` (`SIGNED` 2026-09-24 IST)
-**ADR:** `docs/adr/0014-groww-checksum-session.md` (`ACCEPTED` — no-browser checksum; **150/24h mint cap is the binding constraint**)
+**Status:** DRAFT — **Tier I** path (steps 1–5; step 6 open)  
+**Lock:** `/Users/bishnu/issues/compliance/locks/groww-nse-bse-cash.md` (SHIPPING before drills)  
+**B6:** `/Users/bishnu/issues/brokers/sheets/groww.md` (`SIGNED` 2026-09-24 IST)  
+**ADR:** `docs/adr/0014-groww-checksum-session.md` (`ACCEPTED`)  
+**Ladder:** [ADR 0019](/Users/bishnu/tradeautopsy-station/docs/adr/0019-broker-launch-validation-ladder.md)
 
-> Docs only. No invented venue facts — every drill cites its B6 row. Loops back to ADR 0014 on any STOP.
+| Tier | Pipeline | This file |
+|------|----------|-----------|
+| **I — Integrator** | Steps **1–5** | **Planned** + Connect; not step 6 |
+| **II — Live** | Step **6** signed | Drills + sign-off → **Enabled** flip |
+
+> Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C). Venue facts from B6 only; STOP → ADR 0014.
+
+---
 
 ## Preconditions
 

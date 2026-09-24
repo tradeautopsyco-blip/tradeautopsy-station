@@ -34,6 +34,11 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     var connectGrowwError: BrokerAgentRuntimeError?
     var simulateGrowwVaultAfterConnect = false
     private var growwConnectCompleted = false
+    private(set) var beginDhanConnectCallCount = 0
+    var beginDhanConnectResult: DhanConnectBeginResult?
+    var beginDhanConnectError: BrokerAgentRuntimeError?
+    var simulateDhanVaultAfterBegin = false
+    private var dhanBeginCompleted = false
     private(set) var beginFyersConnectCallCount = 0
     var beginFyersConnectResult: FyersConnectBeginResult?
     var beginFyersConnectError: BrokerAgentRuntimeError?
@@ -150,6 +155,29 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         )
     }
 
+    func beginDhanConnect(
+        for identity: BrokerConnectionIdentity,
+        dhanClientId: String,
+        appId: String,
+        appSecret: String
+    ) async throws -> DhanConnectBeginResult {
+        _ = (dhanClientId, appId, appSecret)
+        beginDhanConnectCallCount += 1
+        dhanBeginCompleted = true
+        if let beginDhanConnectError {
+            throw beginDhanConnectError
+        }
+        if let beginDhanConnectResult {
+            return beginDhanConnectResult
+        }
+        return DhanConnectBeginResult(
+            loginURL: URL(
+                string: "https://auth.dhan.co/login/consentApp-login?consentAppId=test-consent"
+            )!,
+            connectionId: identity.brokerConnectionID.uuidString
+        )
+    }
+
     func connectGroww(
         for identity: BrokerConnectionIdentity,
         apiKey: String,
@@ -218,6 +246,9 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
             return true
         }
         if simulateGrowwVaultAfterConnect, growwConnectCompleted {
+            return true
+        }
+        if simulateDhanVaultAfterBegin, dhanBeginCompleted {
             return true
         }
         return credentialStore?.hasCredentials(for: identity) ?? false

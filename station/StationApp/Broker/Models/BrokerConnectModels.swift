@@ -11,6 +11,8 @@ public enum BrokerCredentialField: String, Equatable, Sendable, CaseIterable {
     case ucc
     case totp
     case mpin
+    case passphrase
+    case pemPrivateKey
 }
 
 public enum BrokerPermissionPosture: Equatable, Sendable {
@@ -40,6 +42,8 @@ public enum BrokerCredentialValidationFailure: Equatable, Sendable {
     case fyersConnectRejected(String)
     /// Groww key-entry connect/mint (message redacted for UI). No browser step.
     case growwConnectRejected(String)
+    /// Dhan consent connect/begin or browser login wait (message redacted for UI).
+    case dhanConnectRejected(String)
 }
 
 public enum BrokerCredentialValidationResult: Equatable, Sendable {

@@ -39,6 +39,13 @@ public protocol BrokerAgentRuntimeClient {
         apiKey: String,
         apiSecret: String
     ) async throws
+    /// Mint Dhan consent state + login URL (ADR 0009). Browser completes callback on agent.
+    func beginDhanConnect(
+        for identity: BrokerConnectionIdentity,
+        dhanClientId: String,
+        appId: String,
+        appSecret: String
+    ) async throws -> DhanConnectBeginResult
     /// Clear host vault entry for identity (Connect rollback / Delete). Identity-only body.
     func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws
     /// Whether the agent can see a vault blob for this identity (Start presence fallback).
@@ -267,6 +274,48 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         throw BrokerAgentRuntimeError.requestFailed
     }
 
+    public func beginDhanConnect(
+        for identity: BrokerConnectionIdentity,
+        dhanClientId: String,
+        appId: String,
+        appSecret: String
+    ) async throws -> DhanConnectBeginResult {
+        let path = "/api/daemon/broker/dhan/connect/begin"
+        let payload = DhanConnectBeginPayload(
+            identity: identity,
+            dhanClientId: dhanClientId,
+            appId: appId,
+            appSecret: appSecret
+        )
+        let body = try JSONEncoder().encode(payload)
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BrokerAgentRuntimeError.requestFailed
+        }
+        if http.statusCode == 200 {
+            guard let decoded = try? JSONDecoder().decode(DhanConnectBeginResponse.self, from: data),
+                  decoded.ok == true,
+                  let loginURLString = decoded.loginUrl ?? decoded.consentLoginUrl,
+                  let loginURL = URL(string: loginURLString)
+            else {
+                throw BrokerAgentRuntimeError.requestFailed
+            }
+            let connectionId = decoded.connectionId ?? identity.brokerConnectionID.uuidString
+            return DhanConnectBeginResult(loginURL: loginURL, connectionId: connectionId)
+        }
+        if let decoded = try? JSONDecoder().decode(DhanConnectBeginErrorBody.self, from: data) {
+            throw BrokerAgentRuntimeError.dhanBeginFailed(
+                errorClass: decoded.errorClass ?? "upstream",
+                message: decoded.message ?? "dhan connect begin failed"
+            )
+        }
+        throw BrokerAgentRuntimeError.requestFailed
+    }
+
     public func beginZerodhaConnect(
         for identity: BrokerConnectionIdentity,
         apiKey: String,
@@ -471,6 +520,64 @@ public enum BrokerAgentRuntimeError: Error, Equatable {
     case upstoxBeginFailed(errorClass: String, message: String)
     case fyersBeginFailed(errorClass: String, message: String)
     case growwConnectFailed(errorClass: String, message: String)
+    case dhanBeginFailed(errorClass: String, message: String)
+}
+
+public struct DhanConnectBeginResult: Equatable, Sendable {
+    public let loginURL: URL
+    public let connectionId: String
+
+    public init(loginURL: URL, connectionId: String) {
+        self.loginURL = loginURL
+        self.connectionId = connectionId
+    }
+}
+
+struct DhanConnectBeginPayload: Encodable {
+    let brokerSlug: String
+    let brokerConnectionId: String
+    let environment: String
+    let dhanClientId: String
+    let appId: String
+    let appSecret: String
+
+    init(
+        identity: BrokerConnectionIdentity,
+        dhanClientId: String,
+        appId: String,
+        appSecret: String
+    ) {
+        brokerSlug = identity.brokerSlug
+        brokerConnectionId = identity.brokerConnectionID.uuidString
+        environment = identity.environment
+        self.dhanClientId = dhanClientId
+        self.appId = appId
+        self.appSecret = appSecret
+    }
+}
+
+private struct DhanConnectBeginResponse: Decodable {
+    let ok: Bool?
+    let loginUrl: String?
+    let consentLoginUrl: String?
+    let connectionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case loginUrl
+        case consentLoginUrl = "consent_login_url"
+        case connectionId = "connection_id"
+    }
+}
+
+private struct DhanConnectBeginErrorBody: Decodable {
+    let errorClass: String?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case errorClass = "error_class"
+        case message
+    }
 }
 
 /// Identity-only Start body (B2). Secrets stay in Keychain; never encoded here.

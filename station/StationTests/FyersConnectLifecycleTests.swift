@@ -41,7 +41,7 @@ struct FyersConnectLifecycleTests {
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateFyersVaultAfterBegin = true
         let sync = FakeBrokerSyncControl()
-        var opened: [URL] = []
+        let opened = TestURLCapture()
         let suite = "StationTests.Fyers.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -64,9 +64,9 @@ struct FyersConnectLifecycleTests {
 
         #expect(outcome == .connected(permissionWarning: nil))
         #expect(runtime.beginFyersConnectCallCount == 1)
-        #expect(opened.count == 1)
-        #expect(opened[0].absoluteString.contains("api-t1.fyers.in"))
-        #expect(opened[0].absoluteString.contains("response_type=code"))
+        #expect(opened.urls.count == 1)
+        #expect(opened.urls[0].absoluteString.contains("api-t1.fyers.in"))
+        #expect(opened.urls[0].absoluteString.contains("response_type=code"))
         #expect(sync.startSyncCallCount == 1)
         #expect(store.saveCallCount == 0)
     }
@@ -141,7 +141,8 @@ struct FyersConnectLifecycleTests {
 
     @Test func plannedFyersCatalogRowIsNotEnabled() {
         let fyers = BrokerCatalog.descriptor(for: "fyers")
-        #expect(fyers?.availability == .enabled)
+        #expect(fyers?.availability == .planned)
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "fyers"))
         #expect(fyers?.authScheme == .fyersOAuthJsonAppIdHashSession)
         #expect(fyers?.bookId == "fyers-nse-bse-cash")
     }

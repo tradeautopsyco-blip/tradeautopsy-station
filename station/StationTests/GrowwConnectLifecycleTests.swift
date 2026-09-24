@@ -12,7 +12,7 @@ struct GrowwConnectLifecycleTests {
 
     @Test func emptyGrowwFieldsFailLocalValidationWithoutConnect() async {
         let runtime = FakeBrokerAgentRuntimeClient()
-        let store = MemoryBrokerCredentialStore()
+        let store = FakeBrokerCredentialStore()
         let suite = "StationTests.Groww.\(UUID().uuidString)"
         let identity = BrokerConnectionIdentity(
             brokerConnectionID: UUID(),
@@ -25,7 +25,9 @@ struct GrowwConnectLifecycleTests {
             credentialStore: store,
             validator: BrokerConnectServices.validator(for: "groww"),
             syncControl: FakeBrokerSyncControl(),
-            metadataStore: MemoryBrokerConnectionMetadataStore(),
+            metadataStore: UserDefaultsBrokerMetadataStore(
+                defaults: UserDefaults(suiteName: suite)!
+            ),
             runtimeClient: runtime
         )
         controller.updateFields(apiKey: "", apiSecret: "")
@@ -39,9 +41,9 @@ struct GrowwConnectLifecycleTests {
 
     @Test func keyEntryMintThenVaultPresenceStartsSync() async throws {
         let runtime = FakeBrokerAgentRuntimeClient()
-        runtime.credentialStore = MemoryBrokerCredentialStore()
+        runtime.credentialStore = FakeBrokerCredentialStore()
         runtime.simulateGrowwVaultAfterConnect = true
-        let store = MemoryBrokerCredentialStore()
+        let store = FakeBrokerCredentialStore()
         let sync = FakeBrokerSyncControl()
         let suite = "StationTests.Groww.\(UUID().uuidString)"
         let identity = BrokerConnectionIdentity(
@@ -55,7 +57,9 @@ struct GrowwConnectLifecycleTests {
             credentialStore: store,
             validator: BrokerConnectServices.validator(for: "groww"),
             syncControl: sync,
-            metadataStore: MemoryBrokerConnectionMetadataStore(),
+            metadataStore: UserDefaultsBrokerMetadataStore(
+                defaults: UserDefaults(suiteName: suite)!
+            ),
             runtimeClient: runtime
         )
         controller.updateFields(apiKey: "groww-api-key", apiSecret: "groww-api-secret")

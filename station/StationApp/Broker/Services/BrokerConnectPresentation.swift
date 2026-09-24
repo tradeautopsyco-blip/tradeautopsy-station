@@ -40,6 +40,12 @@ public enum BrokerSecretGuard {
         if let hsServerId = credentials.hsServerId, !hsServerId.isEmpty, value.contains(hsServerId) {
             return true
         }
+        if let passphrase = credentials.passphrase, !passphrase.isEmpty, value.contains(passphrase) {
+            return true
+        }
+        if let pemPrivateKey = credentials.pemPrivateKey, !pemPrivateKey.isEmpty, value.contains(pemPrivateKey) {
+            return true
+        }
         return false
     }
 

@@ -9,6 +9,8 @@ public final class BrokerConnectController {
     public private(set) var ucc = ""
     public private(set) var totp = ""
     public private(set) var mpin = ""
+    public private(set) var passphrase = ""
+    public private(set) var pemPrivateKey = ""
     public private(set) var permissionWarning: BrokerPermissionWarning?
     public private(set) var isValidating = false
 
@@ -59,6 +61,17 @@ public final class BrokerConnectController {
         self.apiSecret = apiSecret
     }
 
+    public func updateOkxFields(apiKey: String, apiSecret: String, passphrase: String) {
+        self.apiKey = apiKey
+        self.apiSecret = apiSecret
+        self.passphrase = passphrase
+    }
+
+    public func updateCoinbaseFields(apiKey: String, pemPrivateKey: String) {
+        self.apiKey = apiKey
+        self.pemPrivateKey = pemPrivateKey
+    }
+
     public func updateKotakLoginFields(
         consumerKey: String,
         mobileNumber: String,
@@ -87,7 +100,21 @@ public final class BrokerConnectController {
             return await connectFyers()
         case .growwChecksumSession:
             return await connectGroww()
+        case .dhanConsentSession:
+            return await connectDhan()
+        case .okxPassphraseSession:
+            return await connectOkxPassphrase()
+        case .krakenSpotNonceSession:
+            return await connectKrakenSpot()
+        case .coinbaseJwtEs256Session:
+            return await connectCoinbaseJwt()
         }
+    }
+
+    public func updateDhanFields(dhanClientId: String, apiKey: String, apiSecret: String) {
+        self.consumerKey = dhanClientId
+        self.apiKey = apiKey
+        self.apiSecret = apiSecret
     }
 
     private func connectHmac() async -> BrokerConnectOutcome {
@@ -99,7 +126,55 @@ public final class BrokerConnectController {
             apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             apiSecret: apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+        return await validatePersistAndStart(credentials: credentials)
+    }
 
+    private func connectKrakenSpot() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+        let credentials = BrokerCredentials(
+            krakenApiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            krakenApiSecret: apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        return await validatePersistAndStart(credentials: credentials)
+    }
+
+    private func connectOkxPassphrase() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidOkxPassphraseFields(
+            apiKey: apiKey,
+            apiSecret: apiSecret,
+            passphrase: passphrase
+        )
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+        let credentials = BrokerCredentials(
+            okxApiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            okxApiSecret: apiSecret.trimmingCharacters(in: .whitespacesAndNewlines),
+            passphrase: passphrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        return await validatePersistAndStart(credentials: credentials)
+    }
+
+    private func connectCoinbaseJwt() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidCoinbaseJwtFields(
+            apiKey: apiKey,
+            pemPrivateKey: pemPrivateKey
+        )
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+        let credentials = BrokerCredentials(
+            coinbaseApiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            pemPrivateKey: pemPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        defer { pemPrivateKey = "" }
+        return await validatePersistAndStart(credentials: credentials)
+    }
+
+    private func validatePersistAndStart(credentials: BrokerCredentials) async -> BrokerConnectOutcome {
         isValidating = true
         defer { isValidating = false }
 
@@ -359,6 +434,78 @@ public final class BrokerConnectController {
         )
     }
 
+    private func connectDhan() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidDhanFields(
+            dhanClientId: consumerKey,
+            apiKey: apiKey,
+            apiSecret: apiSecret
+        )
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+
+        let trimmedClientId = consumerKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAppId = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedAppSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        let appCredentials = BrokerCredentials(
+            dhanClientId: trimmedClientId,
+            dhanAppId: trimmedAppId,
+            dhanAppSecret: trimmedAppSecret
+        )
+
+        isValidating = true
+        defer { isValidating = false }
+
+        let existingMetadata = metadataStore.load(for: identity)
+        let shouldAutoStartSync = existingMetadata?.syncPaused != true
+
+        let begin: DhanConnectBeginResult
+        do {
+            begin = try await runtimeClient.beginDhanConnect(
+                for: identity,
+                dhanClientId: trimmedClientId,
+                appId: trimmedAppId,
+                appSecret: trimmedAppSecret
+            )
+        } catch let BrokerAgentRuntimeError.dhanBeginFailed(errorClass, message) {
+            await teardownCredentialsBestEffort()
+            return mapDhanBeginError(errorClass: errorClass, message: message)
+        } catch BrokerAgentRuntimeError.requestFailed {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        } catch {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        guard DhanConnectContract.isValidConsentLoginURL(begin.loginURL) else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .dhanConnectRejected("Dhan consent login URL failed validation.")
+            )
+        }
+
+        openBrowserURL(begin.loginURL)
+
+        let vaultReady = await waitForAgentSessionVault()
+        guard vaultReady else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .dhanConnectRejected(
+                    "Dhan login timed out or was not completed. Finish login in the browser, then Connect again."
+                )
+            )
+        }
+
+        return await persistMetadataAndMaybeStart(
+            credentials: appCredentials,
+            warning: nil,
+            shouldAutoStartSync: shouldAutoStartSync,
+            existingMetadata: existingMetadata,
+            rewriteCredentialVault: false
+        )
+    }
+
     private func connectGroww() async -> BrokerConnectOutcome {
         let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
         guard invalid.isEmpty else {
@@ -534,6 +681,16 @@ public final class BrokerConnectController {
         }
     }
 
+    private func mapDhanBeginError(errorClass: String, message: String) -> BrokerConnectOutcome {
+        let safe = BrokerSecretGuard.sanitizeConnectMessage(message)
+        switch errorClass {
+        case "invalid_credentials":
+            return .validationPermanentFailure(.dhanConnectRejected(safe))
+        default:
+            return .validationTransientFailure(.dhanConnectRejected(safe))
+        }
+    }
+
     private func mapGrowwConnectError(errorClass: String, message: String) -> BrokerConnectOutcome {
         let safe = BrokerSecretGuard.sanitizeConnectMessage(message)
         switch errorClass {
@@ -592,10 +749,10 @@ public final class BrokerConnectController {
     /// Session blobs (OAuth, Kotak mint, Groww checksum mint) are written by the agent only.
     private static func agentOwnsBrokerCredentialVault(authScheme: BrokerAuthScheme) -> Bool {
         switch authScheme {
-        case .hmacApiKeySecret:
+        case .hmacApiKeySecret, .okxPassphraseSession, .krakenSpotNonceSession, .coinbaseJwtEs256Session:
             return false
         case .kotakNeoTotpSession, .kiteChecksumSession, .upstoxOAuthBearerSession,
-             .fyersOAuthJsonAppIdHashSession, .growwChecksumSession:
+             .fyersOAuthJsonAppIdHashSession, .growwChecksumSession, .dhanConsentSession:
             return true
         }
     }

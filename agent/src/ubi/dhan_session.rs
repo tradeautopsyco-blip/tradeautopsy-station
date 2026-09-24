@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const DHAN_AUTH_HOST: &str = "auth.dhan.co";
 pub const DHAN_API_HOST: &str = "api.dhan.co";
+pub const DHAN_BOOK_ID: &str = "dhan-nse-bse-cash";
 pub const DHAN_GENERATE_CONSENT_PATH: &str = "/app/generate-consent";
 pub const DHAN_CONSUME_CONSENT_PATH: &str = "/app/consumeApp-consent";
 pub const DHAN_CONSENT_LOGIN_PATH: &str = "/login/consentApp-login";
@@ -527,6 +528,27 @@ fn sanitize_dhan_error_message(raw: &str) -> String {
 pub struct ReqwestDhanSessionHttp {
     client: reqwest::Client,
     runtime: tokio::runtime::Runtime,
+}
+
+/// Read-only Dhan v2 paths for book `dhan-nse-bse-cash` (B6 row 2 / lock).
+pub fn dhan_path_allowed(method: &str, path_norm: &str) -> bool {
+    if method.to_ascii_uppercase() != "GET" {
+        return false;
+    }
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.is_empty() {
+        return false;
+    }
+    p == "/v2/trades"
+        || p.starts_with("/v2/trades/")
+        || p == "/v2/orders"
+        || p.starts_with("/v2/orders/")
+        || p == "/v2/holdings"
+        || p == "/v2/positions"
+        || p == "/v2/fundlimit"
+        || p == "/v2/profile"
+        || p.starts_with("/v2/ledger")
+        || p.starts_with("/v2/statement")
 }
 
 impl ReqwestDhanSessionHttp {

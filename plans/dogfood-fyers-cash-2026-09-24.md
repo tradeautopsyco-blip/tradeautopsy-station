@@ -1,9 +1,19 @@
 # Dogfood — `fyers` cash (`fyers-nse-bse-cash`)
 
-**Status:** OPEN — catalog **Planned**  
+**Status:** DRAFT — **Tier I** path (steps 1–5; step 6 open)  
 **Lock:** `issues/compliance/locks/fyers-nse-bse-cash.md`  
 **B6:** `issues/brokers/sheets/fyers.md` (`SIGNED` 2026-09-24)  
-**ADR:** `docs/adr/0007-fyers-appidhash-session.md` (`ACCEPTED`)
+**ADR:** `docs/adr/0007-fyers-appidhash-session.md` (`ACCEPTED`)  
+**Ladder:** [ADR 0019](/Users/bishnu/tradeautopsy-station/docs/adr/0019-broker-launch-validation-ladder.md)
+
+| Tier | Pipeline | This file |
+|------|----------|-----------|
+| **I — Integrator** | Steps **1–5** | **Planned** + Connect; not step 6 |
+| **II — Live** | Step **6** signed | Drills + sign-off → **Enabled** flip |
+
+> Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C).
+
+---
 
 ## Preconditions
 

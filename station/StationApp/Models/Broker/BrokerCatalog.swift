@@ -13,6 +13,10 @@ public enum BrokerAuthScheme: String, Equatable, Sendable, Codable {
     case upstoxOAuthBearerSession = "upstox_oauth_bearer_session"
     case fyersOAuthJsonAppIdHashSession = "fyers_oauth_json_app_id_hash_session"
     case growwChecksumSession = "groww_checksum_session"
+    case dhanConsentSession = "dhan_consent_session"
+    case okxPassphraseSession = "okx_passphrase_session"
+    case krakenSpotNonceSession = "kraken_spot_nonce_session"
+    case coinbaseJwtEs256Session = "coinbase_jwt_es256_session"
 }
 
 public enum BrokerAdapterOrigin: String, Equatable, Sendable, Codable {
@@ -66,7 +70,7 @@ public struct PlannedBrokerDescriptor: Equatable, Identifiable, Sendable {
 }
 
 public enum BrokerCatalog {
-    /// Live first pair only (dogfood). Next brokers live in issues B6 sheets until SIGNED — not in this catalog.
+    /// ADR 0019: Tier II **enabled** = desk-live first pair only. Tier I tracers are **planned** (Connect beta).
     public static let v1: [PlannedBrokerDescriptor] = [
         PlannedBrokerDescriptor(
             slug: "binance_com",
@@ -100,7 +104,7 @@ public enum BrokerCatalog {
             authScheme: .kiteChecksumSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "zerodha_kite_compliance",
-            availability: .enabled,
+            availability: .planned,
             manifestId: "tradeautopsy:zerodha-kite-cash@0.1.0",
             bookId: "zerodha-nse-bse-cash"
         ),
@@ -112,7 +116,7 @@ public enum BrokerCatalog {
             authScheme: .upstoxOAuthBearerSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "upstox_compliance",
-            availability: .enabled,
+            availability: .planned,
             manifestId: "tradeautopsy:upstox-cash@0.1.0",
             bookId: "upstox-nse-bse-cash"
         ),
@@ -124,7 +128,7 @@ public enum BrokerCatalog {
             authScheme: .fyersOAuthJsonAppIdHashSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "fyers_compliance",
-            availability: .enabled,
+            availability: .planned,
             manifestId: "tradeautopsy:fyers-cash@0.1.0",
             bookId: "fyers-nse-bse-cash"
         ),
@@ -139,6 +143,66 @@ public enum BrokerCatalog {
             availability: .enabled,
             manifestId: "tradeautopsy:groww-cash@0.1.0",
             bookId: "groww-nse-bse-cash"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "dhan",
+            displayName: "Dhan",
+            assetClass: "equities",
+            quoteCurrency: "INR",
+            authScheme: .dhanConsentSession,
+            calcProfileId: "equities_inr_cash",
+            complianceProfileId: "dhan_compliance",
+            availability: .planned,
+            manifestId: "tradeautopsy:dhan-cash@0.1.0",
+            bookId: "dhan-nse-bse-cash"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "bybit",
+            displayName: "Bybit",
+            assetClass: "crypto_spot",
+            quoteCurrency: "USD",
+            authScheme: .hmacApiKeySecret,
+            calcProfileId: "crypto_spot_usd",
+            complianceProfileId: "bybit_compliance",
+            availability: .planned,
+            manifestId: "bybit.spot.v1",
+            bookId: "bybit-com-spot"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "okx_com",
+            displayName: "OKX",
+            assetClass: "crypto_spot",
+            quoteCurrency: "USD",
+            authScheme: .okxPassphraseSession,
+            calcProfileId: "crypto_spot_usd",
+            complianceProfileId: "okx_com_compliance",
+            availability: .planned,
+            manifestId: "okx_com.s1.v1",
+            bookId: "okx-com-spot"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "kraken",
+            displayName: "Kraken",
+            assetClass: "crypto_spot",
+            quoteCurrency: "USD",
+            authScheme: .krakenSpotNonceSession,
+            calcProfileId: "crypto_spot_usd",
+            complianceProfileId: "kraken_compliance",
+            availability: .planned,
+            manifestId: "kraken.spot.v1",
+            bookId: "kraken-com-spot"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "coinbase_advanced",
+            displayName: "Coinbase Advanced",
+            assetClass: "crypto_spot",
+            quoteCurrency: "USD",
+            authScheme: .coinbaseJwtEs256Session,
+            calcProfileId: "crypto_spot_usd",
+            complianceProfileId: "coinbase_advanced_compliance",
+            availability: .planned,
+            manifestId: "tradeautopsy:coinbase-advanced-spot@0.1.0",
+            bookId: "coinbase-advanced-spot"
         ),
     ]
 

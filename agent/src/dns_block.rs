@@ -139,6 +139,13 @@ const GROWW_HOSTS: &[&str] = &[
     "socket-api.groww.in",
 ];
 
+const DHAN_HOSTS: &[&str] = &[
+    "api.dhan.co",
+    "auth.dhan.co",
+    "api-feed.dhan.co",
+    "api-order-update.dhan.co",
+];
+
 const COINBASE_ADVANCED_HOSTS: &[&str] = &["api.coinbase.com"];
 
 const BYBIT_HOSTS: &[&str] = &["api.bybit.com"];
@@ -156,6 +163,7 @@ pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
         "upstox" => UPSTOX_HOSTS,
         "fyers" => FYERS_HOSTS,
         "groww" => GROWW_HOSTS,
+        "dhan" => DHAN_HOSTS,
         "coinbase_advanced" | "coinbase" => COINBASE_ADVANCED_HOSTS,
         "okx_com" => OKX_COM_HOSTS,
         "kraken" => KRAKEN_HOSTS,
@@ -564,6 +572,7 @@ mod tests {
                 "upstox",
                 "fyers",
                 "groww",
+                "dhan",
                 "bybit",
                 "okx_com",
                 "coinbase_advanced",

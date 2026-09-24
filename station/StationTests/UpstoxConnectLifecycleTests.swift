@@ -41,7 +41,7 @@ struct UpstoxConnectLifecycleTests {
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateUpstoxVaultAfterBegin = true
         let sync = FakeBrokerSyncControl()
-        var opened: [URL] = []
+        let opened = TestURLCapture()
         let suite = "StationTests.Upstox.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -64,9 +64,9 @@ struct UpstoxConnectLifecycleTests {
 
         #expect(outcome == .connected(permissionWarning: nil))
         #expect(runtime.beginUpstoxConnectCallCount == 1)
-        #expect(opened.count == 1)
-        #expect(opened[0].absoluteString.contains("api.upstox.com"))
-        #expect(opened[0].absoluteString.contains("response_type=code"))
+        #expect(opened.urls.count == 1)
+        #expect(opened.urls[0].absoluteString.contains("api.upstox.com"))
+        #expect(opened.urls[0].absoluteString.contains("response_type=code"))
         #expect(sync.startSyncCallCount == 1)
         #expect(store.saveCallCount == 0)
     }
@@ -141,7 +141,8 @@ struct UpstoxConnectLifecycleTests {
 
     @Test func plannedUpstoxCatalogRowIsNotEnabled() {
         let upstox = BrokerCatalog.descriptor(for: "upstox")
-        #expect(upstox?.availability == .enabled)
+        #expect(upstox?.availability == .planned)
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "upstox"))
         #expect(upstox?.authScheme == .upstoxOAuthBearerSession)
         #expect(upstox?.bookId == "upstox-nse-bse-cash")
     }

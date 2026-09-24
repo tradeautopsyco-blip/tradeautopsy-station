@@ -669,6 +669,48 @@ mod b5_enforcer_sot_tests {
         );
     }
 
+    /// Keychain JSON tags Station writes must decode and reach the Wasm factory (P4 slugs).
+    #[test]
+    fn p4_station_keychain_json_builds_runtime_adapter() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "bybit",
+                r#"{"authScheme":"hmac_api_key_secret","apiKey":"TA_FAKE_BYBIT_KEY","apiSecret":"secret"}"#,
+            ),
+            (
+                "kraken",
+                r#"{"authScheme":"hmac_api_key_secret","apiKey":"TA_FAKE_KRAKEN_KEY","apiSecret":"c2VjcmV0"}"#,
+            ),
+            (
+                "okx_com",
+                r#"{"authScheme":"okx_passphrase_session","apiKey":"TA_FAKE_OKX_KEY","apiSecret":"secret","passphrase":"pass"}"#,
+            ),
+            (
+                "coinbase_advanced",
+                r#"{"authScheme":"coinbase_jwt_es256_session","apiKey":"organizations/test/apiKeys/k","pemPrivateKey":"-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIBdummy\n-----END EC PRIVATE KEY-----\n"}"#,
+            ),
+        ];
+
+        for (slug, json) in cases {
+            let blob = crate::decode_credential_blob(json)
+                .unwrap_or_else(|e| panic!("decode station json for {slug}: {e}"));
+            match build_runtime_adapter(slug, &format!("conn-p4-station-{slug}"), &blob) {
+                Ok(adapter) => assert_eq!(
+                    adapter.name(),
+                    "ubi_wasm",
+                    "{slug} should load Wasm adapter"
+                ),
+                Err(e) => {
+                    let msg = e.to_string();
+                    assert!(
+                        msg.contains("wasm") || msg.contains("component") || msg.contains("transport"),
+                        "{slug}: expected wasm path or load error, got {msg}"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn default_wasm_start_still_resolves_shipping_book() {
         assert_eq!(

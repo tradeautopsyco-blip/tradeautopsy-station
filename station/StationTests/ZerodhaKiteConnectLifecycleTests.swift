@@ -41,7 +41,7 @@ struct ZerodhaKiteConnectLifecycleTests {
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateZerodhaVaultAfterBegin = true
         let sync = FakeBrokerSyncControl()
-        var opened: [URL] = []
+        let opened = TestURLCapture()
         let suite = "StationTests.Zerodha.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -64,8 +64,8 @@ struct ZerodhaKiteConnectLifecycleTests {
 
         #expect(outcome == .connected(permissionWarning: nil))
         #expect(runtime.beginZerodhaConnectCallCount == 1)
-        #expect(opened.count == 1)
-        #expect(opened[0].absoluteString.contains("kite.zerodha.com"))
+        #expect(opened.urls.count == 1)
+        #expect(opened.urls[0].absoluteString.contains("kite.zerodha.com"))
         #expect(sync.startSyncCallCount == 1)
         // Agent owns the session blob after OAuth; Station must not overwrite it with app keys.
         #expect(store.saveCallCount == 0)
@@ -139,7 +139,8 @@ struct ZerodhaKiteConnectLifecycleTests {
 
     @Test func zerodhaCatalogRowIsEnabled() {
         let kite = BrokerCatalog.descriptor(for: "zerodha_kite")
-        #expect(kite?.availability == .enabled)
+        #expect(kite?.availability == .planned)
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "zerodha_kite"))
         #expect(kite?.authScheme == .kiteChecksumSession)
         #expect(kite?.bookId == "zerodha-nse-bse-cash")
     }

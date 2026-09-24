@@ -180,4 +180,79 @@ public extension BrokerConnectionIdentity {
     static var growwProd: BrokerConnectionIdentity {
         groww(.prod)
     }
+
+    static let dhanConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000008")!
+
+    static func dhan(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: dhanConnectionID,
+            brokerSlug: "dhan",
+            assetClass: "equities",
+            environment: environment.rawValue
+        )
+    }
+
+    static var dhanProd: BrokerConnectionIdentity {
+        dhan(.prod)
+    }
+
+    static let bybitConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000009")!
+
+    static func bybit(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: bybitConnectionID,
+            brokerSlug: "bybit",
+            assetClass: "crypto_spot",
+            environment: environment.rawValue
+        )
+    }
+
+    static var bybitProd: BrokerConnectionIdentity {
+        bybit(.prod)
+    }
+
+    static let okxComConnectionID = UUID(uuidString: "00000000-0000-4000-8000-00000000000a")!
+
+    static func okxCom(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: okxComConnectionID,
+            brokerSlug: "okx_com",
+            assetClass: "crypto_spot",
+            environment: environment.rawValue
+        )
+    }
+
+    static var okxComProd: BrokerConnectionIdentity {
+        okxCom(.prod)
+    }
+
+    static let krakenConnectionID = UUID(uuidString: "00000000-0000-4000-8000-00000000000b")!
+
+    static func kraken(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: krakenConnectionID,
+            brokerSlug: "kraken",
+            assetClass: "crypto_spot",
+            environment: environment.rawValue
+        )
+    }
+
+    static var krakenProd: BrokerConnectionIdentity {
+        kraken(.prod)
+    }
+
+    static let coinbaseAdvancedConnectionID = UUID(uuidString: "00000000-0000-4000-8000-00000000000c")!
+
+    static func coinbaseAdvanced(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: coinbaseAdvancedConnectionID,
+            brokerSlug: "coinbase_advanced",
+            assetClass: "crypto_spot",
+            environment: environment.rawValue
+        )
+    }
+
+    static var coinbaseAdvancedProd: BrokerConnectionIdentity {
+        coinbaseAdvanced(.prod)
+    }
 }

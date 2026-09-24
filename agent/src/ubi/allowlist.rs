@@ -36,6 +36,11 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     // groww — REST v1 reads + mint host (B6 row 22; assets CSV host separate).
     "api.groww.in",
     "growwapi-assets.groww.in",
+    // dhan — REST v2 + consent auth (B6 row 22; WS/postback refused as sync).
+    "api.dhan.co",
+    "auth.dhan.co",
+    "api-feed.dhan.co",
+    "api-order-update.dhan.co",
     // bybit — v5 REST prod only (B6 row 22; testnet/demo refused).
     "api.bybit.com",
     // okx_com — global REST only (B6 row 0; us/eea refused).

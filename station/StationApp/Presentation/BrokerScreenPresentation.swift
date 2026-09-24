@@ -81,7 +81,7 @@ public enum BrokerScreenPresentation {
                     descriptor: descriptor,
                     snapshot: snapshot,
                     now: now,
-                    plannedLabel: "Planned"
+                    plannedLabel: "Connect beta"
                 )
             }
             return BrokerCardPresentation(

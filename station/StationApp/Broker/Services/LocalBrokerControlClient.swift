@@ -39,6 +39,11 @@ public final class LocalBrokerControlClient: BrokerControlling {
             displayName: "Groww",
             identity: BrokerConnectionIdentity.groww
         ),
+        V1BrokerEntry(
+            slug: "dhan",
+            displayName: "Dhan",
+            identity: BrokerConnectionIdentity.dhan
+        ),
     ]
 
     /// Agent-owned session vault (OAuth / checksum mint). Station uses metadata + agent `present`.
@@ -48,6 +53,7 @@ public final class LocalBrokerControlClient: BrokerControlling {
         "upstox",
         "fyers",
         "groww",
+        "dhan",
     ]
 
     private weak var agentSupervisor: AgentSupervising?

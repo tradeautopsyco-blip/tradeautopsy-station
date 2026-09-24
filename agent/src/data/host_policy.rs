@@ -72,6 +72,11 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // groww — REST v1 + instrument CSV (B6 row 22).
     "api.groww.in",
     "growwapi-assets.groww.in",
+    // dhan — REST v2 + consent auth (B6 row 22).
+    "api.dhan.co",
+    "auth.dhan.co",
+    "api-feed.dhan.co",
+    "api-order-update.dhan.co",
     // bybit — v5 prod (B6 row 22).
     "api.bybit.com",
     // coinbase_advanced — Advanced Trade prod (B6 row 22; sandbox refused).
@@ -182,7 +187,9 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
                 || normalize_request_path(path) == "/fapi/v1/income"
                 || normalize_request_path(path) == "/api/v3/tradebook"
                 || normalize_request_path(path) == "/v5/execution/list"
-                || normalize_request_path(path) == "/api/v5/trade/fills" =>
+                || normalize_request_path(path) == "/api/v5/trade/fills"
+                || normalize_request_path(path) == "/v2/trades"
+                || normalize_request_path(path).starts_with("/v2/trades/") =>
         {
             true
         }
@@ -198,7 +205,11 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
                 || normalize_request_path(path) == "/fapi/v3/balance"
                 || normalize_request_path(path) == "/dapi/v1/balance"
                 || normalize_request_path(path) == "/api/v3/profile"
-                || normalize_request_path(path) == "/api/v5/account/balance" =>
+                || normalize_request_path(path) == "/api/v5/account/balance"
+                || normalize_request_path(path) == "/v2/fundlimit"
+                || normalize_request_path(path) == "/v2/profile"
+                || normalize_request_path(path).starts_with("/v2/ledger")
+                || normalize_request_path(path).starts_with("/v2/statement") =>
         {
             true
         }
@@ -209,7 +220,10 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             true
         }
         ("orders", "GET", AuthMode::PrivateRead)
-            if path == "/api/v3/openOrders" || path.ends_with("/quick/user/orders") =>
+            if path == "/api/v3/openOrders"
+                || path.ends_with("/quick/user/orders")
+                || normalize_request_path(path) == "/v2/orders"
+                || normalize_request_path(path).starts_with("/v2/orders/") =>
         {
             true
         }
@@ -217,7 +231,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             if path.ends_with("/quick/user/positions")
                 || normalize_request_path(path) == "/eapi/v1/position"
                 || normalize_request_path(path) == "/fapi/v3/positionRisk"
-                || normalize_request_path(path) == "/dapi/v1/positionRisk" =>
+                || normalize_request_path(path) == "/dapi/v1/positionRisk"
+                || normalize_request_path(path) == "/v2/positions" =>
         {
             true
         }
@@ -227,7 +242,10 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         {
             true
         }
-        ("holdings", "GET", AuthMode::PrivateRead) if path.ends_with("/portfolio/v1/holdings") => {
+        ("holdings", "GET", AuthMode::PrivateRead)
+            if path.ends_with("/portfolio/v1/holdings")
+                || normalize_request_path(path) == "/v2/holdings" =>
+        {
             true
         }
         ("margin_estimate", "POST", AuthMode::PrivateRead)
@@ -578,7 +596,30 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         {
             Ok(("instrument_master", AuthMode::Public))
         }
+        ("GET", p) if crate::ubi::dhan_path_allowed("GET", &normalize_request_path(p)) => {
+            infer_dhan_capability(&normalize_request_path(p))
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
+    }
+}
+
+/// B6 `dhan` read paths that pass [`crate::ubi::dhan_path_allowed`].
+fn infer_dhan_capability(path_norm: &str) -> Result<(&'static str, AuthMode), HostRefuse> {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p == "/v2/trades" || p.starts_with("/v2/trades/") {
+        Ok(("fills", AuthMode::PrivateRead))
+    } else if p == "/v2/orders" || p.starts_with("/v2/orders/") {
+        Ok(("orders", AuthMode::PrivateRead))
+    } else if p == "/v2/holdings" {
+        Ok(("holdings", AuthMode::PrivateRead))
+    } else if p == "/v2/positions" {
+        Ok(("positions", AuthMode::PrivateRead))
+    } else if p == "/v2/fundlimit" || p == "/v2/profile" {
+        Ok(("funds", AuthMode::PrivateRead))
+    } else if p.starts_with("/v2/ledger") || p.starts_with("/v2/statement") {
+        Ok(("funds", AuthMode::PrivateRead))
+    } else {
+        Err(HostRefuse::PathNotAllowlisted)
     }
 }
 
@@ -745,6 +786,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !crate::ubi::groww_path_allowed(&host_norm, "GET", &path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::DHAN_BOOK_ID => {
+            if host_norm != crate::ubi::DHAN_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::dhan_path_allowed("GET", &path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

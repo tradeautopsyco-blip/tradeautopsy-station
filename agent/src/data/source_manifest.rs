@@ -906,6 +906,7 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         upstox_cash_manifest(),
         fyers_cash_manifest(),
         groww_cash_manifest(),
+        dhan_cash_manifest(),
         bybit_com_spot_manifest(),
         okx_com_spot_manifest(),
         kraken_com_spot_manifest(),
@@ -938,6 +939,38 @@ pub fn fyers_cash_manifest() -> SourceManifest {
             ),
             account_binding(
                 "fyers",
+                "orderbook",
+                "orders",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
+/// Dhan NSE/BSE cash D+I (B6 SIGNED). Day fills via `GET /v2/trades`.
+pub fn dhan_cash_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["NSE".into(), "BSE".into()],
+        asset_classes: vec!["equity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:dhan-cash@0.1.0".into(),
+        adapter_id: "dhan".into(),
+        book_id: "dhan-nse-bse-cash".into(),
+        implemented: vec!["tradebook".into(), "orderbook".into()],
+        bindings: vec![
+            account_binding(
+                "dhan",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "dhan",
                 "orderbook",
                 "orders",
                 coverage,

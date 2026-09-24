@@ -1,11 +1,19 @@
 # Dogfood — `dhan` cash (`dhan-nse-bse-cash`)
 
-**Status:** DRAFT — unsigned, founder executes on a live account (catalog stays **Planned** until this record is signed)
-**Lock:** `/Users/bishnu/issues/compliance/locks/dhan-nse-bse-cash.md` (must be SHIPPING before drills)
-**B6:** `/Users/bishnu/issues/brokers/sheets/dhan.md` (`SIGNED` 2026-09-24 IST)
-**ADR:** `docs/adr/0009-dhan-consent-session.md` (`ACCEPTED` — loopback accepted on faith; this dogfood proves registrability)
+**Status:** DRAFT — **Tier I** path (steps 1–5; step 6 open)  
+**Lock:** `/Users/bishnu/issues/compliance/locks/dhan-nse-bse-cash.md` (SHIPPING before drills)  
+**B6:** `/Users/bishnu/issues/brokers/sheets/dhan.md` (`SIGNED` 2026-09-24 IST)  
+**ADR:** `docs/adr/0009-dhan-consent-session.md` (`ACCEPTED`)  
+**Ladder:** [ADR 0019](/Users/bishnu/tradeautopsy-station/docs/adr/0019-broker-launch-validation-ladder.md)
 
-> Docs only. No invented venue facts — every drill cites its B6 row. Loops back to ADR 0009 on any STOP.
+| Tier | Pipeline | This file |
+|------|----------|-----------|
+| **I — Integrator** | Steps **1–5** | **Planned** + Connect; not step 6 |
+| **II — Live** | Step **6** signed | Drills + sign-off → **Enabled** flip |
+
+> Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C). Venue facts from B6 only; STOP → ADR 0009.
+
+---
 
 ## Preconditions
 

@@ -92,7 +92,7 @@ struct DhanConnectLifecycleTests {
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateDhanVaultAfterBegin = true
         let sync = FakeBrokerSyncControl()
-        var opened: [URL] = []
+        let opened = TestURLCapture()
         let suite = "StationTests.Dhan.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -116,9 +116,9 @@ struct DhanConnectLifecycleTests {
 
         #expect(outcome == .connected(permissionWarning: nil))
         #expect(runtime.beginDhanConnectCallCount == 1)
-        #expect(opened.count == 1)
-        #expect(opened[0].absoluteString.contains("auth.dhan.co"))
-        #expect(opened[0].absoluteString.contains("consentApp-login"))
+        #expect(opened.urls.count == 1)
+        #expect(opened.urls[0].absoluteString.contains("auth.dhan.co"))
+        #expect(opened.urls[0].absoluteString.contains("consentApp-login"))
         #expect(sync.startSyncCallCount == 1)
         #expect(store.saveCallCount == 0)
     }
@@ -131,7 +131,7 @@ struct DhanConnectLifecycleTests {
             connectionId: "conn-1"
         )
         let sync = FakeBrokerSyncControl()
-        var opened: [URL] = []
+        let opened = TestURLCapture()
         let suite = "StationTests.Dhan.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -153,7 +153,7 @@ struct DhanConnectLifecycleTests {
             Issue.record("expected dhan consent URL mismatch failure, got \(outcome)")
             return
         }
-        #expect(opened.isEmpty)
+        #expect(opened.urls.isEmpty)
         #expect(sync.startSyncCallCount == 0)
         #expect(store.hasCredentials(for: .dhanProd) == false)
     }
@@ -302,9 +302,10 @@ struct DhanConnectLifecycleTests {
         #expect(json?["appSecret"] as? String == "app-secret")
     }
 
-    @Test func plannedDhanCatalogRowIsNotEnabled() {
+    @Test func enabledDhanCatalogRowMatchesContract() {
         let dhan = BrokerCatalog.descriptor(for: "dhan")
         #expect(dhan?.availability == .planned)
+        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "dhan"))
         #expect(dhan?.displayName == "Dhan")
         #expect(dhan?.assetClass == "equities")
         #expect(dhan?.quoteCurrency == "INR")

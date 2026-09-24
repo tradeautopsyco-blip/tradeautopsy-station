@@ -63,9 +63,9 @@ pub use http::{
     RESPONSE_HEADER_ALLOWLIST,
 };
 pub use dhan_session::{
-    begin_connect as dhan_begin_connect, dhan_callback_base_url, exchange_token_id,
-    take_pending_connect as take_dhan_pending_connect, truncate_state, MintedDhanSession,
-    PendingDhanConnect, ReqwestDhanSessionHttp,
+    begin_connect as dhan_begin_connect, dhan_callback_base_url, dhan_path_allowed,
+    exchange_token_id, take_pending_connect as take_dhan_pending_connect, truncate_state,
+    MintedDhanSession, PendingDhanConnect, ReqwestDhanSessionHttp, DHAN_API_HOST, DHAN_BOOK_ID,
 };
 pub use coinbase_session::{
     build_rest_jwt, coinbase_bearer_authorization, coinbase_host_refused, coinbase_path_allowed,

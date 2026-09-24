@@ -20,6 +20,8 @@ public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var connectUcc = ""
     @Published public private(set) var connectTotp = ""
     @Published public private(set) var connectMpin = ""
+    @Published public private(set) var connectPassphrase = ""
+    @Published public private(set) var connectPemPrivateKey = ""
     @Published public private(set) var connectMessage: String?
     @Published public private(set) var connectInvalidFields: Set<BrokerCredentialField> = []
     @Published public private(set) var isConnecting = false
@@ -107,7 +109,7 @@ public final class BrokersViewModel: ObservableObject {
     /// Connection UUIDs Station considers live — input for launch Keychain reconcile.
     private func configuredConnectionIDsForReconcile() -> Set<UUID> {
         var ids = Set<UUID>()
-        for slug in ["binance_com", "kotak_neo", "zerodha_kite", "upstox", "fyers", "groww"] {
+        for slug in ["binance_com", "kotak_neo", "zerodha_kite", "upstox", "fyers", "groww", "dhan"] {
             let identity = BrokerConnectServices.identity(for: slug)
             if metadataStore.load(for: identity)?.lastValidatedAt != nil {
                 ids.insert(identity.brokerConnectionID)
@@ -179,10 +181,14 @@ public final class BrokersViewModel: ObservableObject {
         connectUcc = ""
         connectTotp = ""
         connectMpin = ""
+        connectPassphrase = ""
+        connectPemPrivateKey = ""
         connectMessage = nil
         connectInvalidFields = []
         connectController = makeConnectController(for: slug)
         connectController?.updateFields(apiKey: "", apiSecret: "")
+        connectController?.updateOkxFields(apiKey: "", apiSecret: "", passphrase: "")
+        connectController?.updateCoinbaseFields(apiKey: "", pemPrivateKey: "")
 
         // Never read Kotak broker-credentials from Station (ACL password spam). HMAC may prefill apiKey.
         let identity = BrokerConnectServices.identity(for: slug)
@@ -192,7 +198,9 @@ public final class BrokersViewModel: ObservableObject {
         if prefillConsumerKeyFromVault,
            scheme == .hmacApiKeySecret || scheme == .kiteChecksumSession
             || scheme == .upstoxOAuthBearerSession || scheme == .fyersOAuthJsonAppIdHashSession
-            || scheme == .growwChecksumSession {
+            || scheme == .growwChecksumSession || scheme == .dhanConsentSession
+            || scheme == .okxPassphraseSession
+            || scheme == .coinbaseJwtEs256Session {
             savedApiKey = (try? credentialStore.read(for: identity))?.apiKey ?? ""
         } else {
             savedApiKey = ""
@@ -200,6 +208,8 @@ public final class BrokersViewModel: ObservableObject {
         connectApiKey = savedApiKey
         connectConsumerKey = savedConsumerKey
         connectController?.updateFields(apiKey: savedApiKey, apiSecret: "")
+        connectController?.updateOkxFields(apiKey: savedApiKey, apiSecret: "", passphrase: "")
+        connectController?.updateCoinbaseFields(apiKey: savedApiKey, pemPrivateKey: "")
         connectController?.updateKotakLoginFields(
             consumerKey: savedConsumerKey,
             mobileNumber: "",
@@ -384,6 +394,30 @@ public final class BrokersViewModel: ObservableObject {
         connectController?.updateFields(apiKey: apiKey, apiSecret: apiSecret)
     }
 
+    public func updateOkxConnectFields(apiKey: String, apiSecret: String, passphrase: String) {
+        connectApiKey = apiKey
+        connectApiSecret = apiSecret
+        connectPassphrase = passphrase
+        connectController?.updateOkxFields(apiKey: apiKey, apiSecret: apiSecret, passphrase: passphrase)
+    }
+
+    public func updateCoinbaseConnectFields(apiKey: String, pemPrivateKey: String) {
+        connectApiKey = apiKey
+        connectPemPrivateKey = pemPrivateKey
+        connectController?.updateCoinbaseFields(apiKey: apiKey, pemPrivateKey: pemPrivateKey)
+    }
+
+    public func updateDhanConnectFields(dhanClientId: String, apiKey: String, apiSecret: String) {
+        connectConsumerKey = dhanClientId
+        connectApiKey = apiKey
+        connectApiSecret = apiSecret
+        connectController?.updateDhanFields(
+            dhanClientId: dhanClientId,
+            apiKey: apiKey,
+            apiSecret: apiSecret
+        )
+    }
+
     public func updateKotakLoginFields(
         consumerKey: String,
         mobileNumber: String,
@@ -417,6 +451,23 @@ public final class BrokersViewModel: ObservableObject {
                 totp: connectTotp,
                 mpin: connectMpin
             )
+        } else if connectAuthScheme == .dhanConsentSession {
+            connectController.updateDhanFields(
+                dhanClientId: connectConsumerKey,
+                apiKey: connectApiKey,
+                apiSecret: connectApiSecret
+            )
+        } else if connectAuthScheme == .okxPassphraseSession {
+            connectController.updateOkxFields(
+                apiKey: connectApiKey,
+                apiSecret: connectApiSecret,
+                passphrase: connectPassphrase
+            )
+        } else if connectAuthScheme == .coinbaseJwtEs256Session {
+            connectController.updateCoinbaseFields(
+                apiKey: connectApiKey,
+                pemPrivateKey: connectPemPrivateKey
+            )
         } else {
             connectController.updateFields(apiKey: connectApiKey, apiSecret: connectApiSecret)
         }
@@ -442,10 +493,16 @@ public final class BrokersViewModel: ObservableObject {
                 connectMessage = "Enter both Upstox API key and secret."
             case .fyersOAuthJsonAppIdHashSession:
                 connectMessage = "Enter both Fyers app ID and secret ID."
-            case .hmacApiKeySecret:
+            case .hmacApiKeySecret, .krakenSpotNonceSession:
                 connectMessage = "Enter both API key and secret."
+            case .okxPassphraseSession:
+                connectMessage = "Enter API key, secret, and passphrase."
+            case .coinbaseJwtEs256Session:
+                connectMessage = "Enter API key name and PEM private key."
             case .growwChecksumSession:
                 connectMessage = "Enter both Groww API key and secret."
+            case .dhanConsentSession:
+                connectMessage = "Enter Dhan client ID, app ID, and app secret."
             }
         case .blockedWithdrawPermission:
             connectMessage = "Withdraw permission detected. Use a key without withdraw access."
@@ -473,12 +530,20 @@ public final class BrokersViewModel: ObservableObject {
                 connectApiSecret = ""
                 connectSecretFieldsEpoch += 1
             }
+            if case .dhanConnectRejected = failure {
+                connectApiSecret = ""
+                connectSecretFieldsEpoch += 1
+            }
         case .validationPermanentFailure(let failure):
             connectMessage = permanentFailureMessage(failure, slug: slug)
             clearOneTimeKotakSecrets()
         case .connected:
             connectMessage = nil
             connectMpin = ""
+            connectApiSecret = ""
+            connectPassphrase = ""
+            connectPemPrivateKey = ""
+            connectSecretFieldsEpoch += 1
             connectSheetMode = .full
             clearOneTimeKotakSecrets()
             isConnectSheetPresented = false
@@ -530,9 +595,15 @@ public final class BrokersViewModel: ObservableObject {
                 syncActionMessage =
                     "Groww session missing or expired — Connect again with API key and secret."
                 presentConnectSheet(for: identity.brokerSlug)
-            case .hmacApiKeySecret:
+            case .dhanConsentSession:
                 syncActionMessage =
-                    "Cannot Start — session vault missing. Use Edit / Connect with a fresh TOTP."
+                    "Dhan session missing or expired — Connect again and finish browser login."
+                presentConnectSheet(for: identity.brokerSlug)
+            case .hmacApiKeySecret, .okxPassphraseSession, .krakenSpotNonceSession,
+                 .coinbaseJwtEs256Session:
+                syncActionMessage =
+                    "Cannot Start — credentials missing. Use Connect to enter API keys again."
+                presentConnectSheet(for: identity.brokerSlug)
             }
         } catch BrokerAgentRuntimeError.syncStartFailed(let message) {
             syncActionMessage = Self.sanitizeAgentErrorForUI(message)
@@ -664,6 +735,10 @@ public final class BrokersViewModel: ObservableObject {
             return detail.isEmpty
                 ? "Groww login failed. Check API key and secret, then try Connect again."
                 : detail
+        case .dhanConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Dhan login failed. Check client ID and app credentials, then try Connect again."
+                : detail
         }
     }
 
@@ -683,10 +758,13 @@ public final class BrokersViewModel: ObservableObject {
                 return "Upstox API key or secret rejected. Check Upstox developer settings and try again."
             case .fyersOAuthJsonAppIdHashSession:
                 return "Fyers app ID or secret ID rejected. Check Fyers developer settings and try again."
-            case .hmacApiKeySecret:
+            case .hmacApiKeySecret, .okxPassphraseSession, .krakenSpotNonceSession,
+                 .coinbaseJwtEs256Session:
                 return "Credentials were rejected by \(brokerName)."
             case .growwChecksumSession:
                 return "Groww API key or secret rejected. Check Groww Cloud API Keys and try again."
+            case .dhanConsentSession:
+                return "Dhan client ID or app credentials rejected. Check Dhan API settings and try again."
             }
         case .kotakMintRejected(let detail):
             return detail.isEmpty
@@ -707,6 +785,10 @@ public final class BrokersViewModel: ObservableObject {
         case .growwConnectRejected(let detail):
             return detail.isEmpty
                 ? "Groww login rejected. Check API key and secret."
+                : detail
+        case .dhanConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Dhan login rejected. Check client ID and app credentials."
                 : detail
         case .networkUnavailable, .rateLimited, .brokerUnavailable:
             return transientFailureMessage(failure, slug: slug)
