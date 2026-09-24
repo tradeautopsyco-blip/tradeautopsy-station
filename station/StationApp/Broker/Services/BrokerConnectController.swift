@@ -24,6 +24,7 @@ public final class BrokerConnectController {
     private let loginProfileStore: KotakLoginProfileStoring
     private let keychainItems: BrokerKeychainItemStoring
     private let openBrowserURL: (URL) -> Void
+    private let oauthWebLogin: BrokerOAuthWebLoginRunner?
 
     public init(
         identity: BrokerConnectionIdentity,
@@ -35,6 +36,7 @@ public final class BrokerConnectController {
         loginProfileStore: KotakLoginProfileStoring = KeychainKotakLoginProfileStore(),
         keychainItems: BrokerKeychainItemStoring = SecItemBrokerKeychainItemStore(),
         openBrowserURL: @escaping (URL) -> Void = BrokerConnectBrowser.openURL,
+        oauthWebLogin: BrokerOAuthWebLoginRunner? = nil,
         behavioralAnalysisOptedOut: Bool = false
     ) {
         self.identity = identity
@@ -46,6 +48,7 @@ public final class BrokerConnectController {
         self.loginProfileStore = loginProfileStore
         self.keychainItems = keychainItems
         self.openBrowserURL = openBrowserURL
+        self.oauthWebLogin = oauthWebLogin
         self.behavioralAnalysisOptedOut = behavioralAnalysisOptedOut
         self.authScheme = BrokerConnectServices.authScheme(for: identity.brokerSlug)
         self.permissionWarning = metadataStore.load(for: identity)?.permissionWarning
@@ -222,11 +225,8 @@ public final class BrokerConnectController {
         let existingMetadata = metadataStore.load(for: identity)
         let shouldAutoStartSync = existingMetadata?.syncPaused != true
 
-        do {
-            try credentialStore.save(credentials: appCredentials, for: identity)
-        } catch {
-            return .validationTransientFailure(.networkUnavailable)
-        }
+        // Do not write app keys to the shared Keychain account before OAuth — that overwrites the
+        // agent's full `KiteChecksumSession` and Rust decodes the partial JSON as legacy HMAC.
 
         let begin: ZerodhaConnectBeginResult
         do {
@@ -255,7 +255,15 @@ public final class BrokerConnectController {
             )
         }
 
-        openBrowserURL(begin.loginURL)
+        guard await runBrokerOAuthWebLogin(
+            loginURL: begin.loginURL,
+            callbackPrefix: ZerodhaKiteConnectContract.loopbackRedirectURI
+        ) else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .kiteConnectRejected("Kite login was cancelled.")
+            )
+        }
 
         let vaultReady = await waitForAgentSessionVault()
         guard vaultReady else {
@@ -295,11 +303,7 @@ public final class BrokerConnectController {
         let existingMetadata = metadataStore.load(for: identity)
         let shouldAutoStartSync = existingMetadata?.syncPaused != true
 
-        do {
-            try credentialStore.save(credentials: appCredentials, for: identity)
-        } catch {
-            return .validationTransientFailure(.networkUnavailable)
-        }
+        // Same as Zerodha: never write app credentials to the shared Keychain before OAuth completes.
 
         let begin: UpstoxConnectBeginResult
         do {
@@ -328,7 +332,13 @@ public final class BrokerConnectController {
             )
         }
 
-        openBrowserURL(begin.loginURL)
+        guard await runBrokerOAuthWebLogin(
+            loginURL: begin.loginURL,
+            callbackPrefix: UpstoxConnectContract.loopbackRedirectURI
+        ) else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.upstoxConnectRejected("Upstox login was cancelled."))
+        }
 
         let vaultReady = await waitForAgentSessionVault()
         guard vaultReady else {
@@ -420,11 +430,7 @@ public final class BrokerConnectController {
         let existingMetadata = metadataStore.load(for: identity)
         let shouldAutoStartSync = existingMetadata?.syncPaused != true
 
-        do {
-            try credentialStore.save(credentials: appCredentials, for: identity)
-        } catch {
-            return .validationTransientFailure(.networkUnavailable)
-        }
+        // Same as Zerodha: never write app credentials to the shared Keychain before OAuth completes.
 
         let begin: FyersConnectBeginResult
         do {
@@ -453,7 +459,13 @@ public final class BrokerConnectController {
             )
         }
 
-        openBrowserURL(begin.loginURL)
+        guard await runBrokerOAuthWebLogin(
+            loginURL: begin.loginURL,
+            callbackPrefix: FyersConnectContract.loopbackRedirectURI
+        ) else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(.fyersConnectRejected("Fyers login was cancelled."))
+        }
 
         let vaultReady = await waitForAgentSessionVault()
         guard vaultReady else {
@@ -472,6 +484,11 @@ public final class BrokerConnectController {
             existingMetadata: existingMetadata,
             rewriteCredentialVault: false
         )
+    }
+
+    private func runBrokerOAuthWebLogin(loginURL: URL, callbackPrefix: String) async -> Bool {
+        guard let oauthWebLogin else { return false }
+        return await oauthWebLogin(loginURL, callbackPrefix)
     }
 
     private func waitForAgentSessionVault() async -> Bool {
@@ -572,6 +589,17 @@ public final class BrokerConnectController {
         )
     }
 
+    /// Session blobs (OAuth, Kotak mint, Groww checksum mint) are written by the agent only.
+    private static func agentOwnsBrokerCredentialVault(authScheme: BrokerAuthScheme) -> Bool {
+        switch authScheme {
+        case .hmacApiKeySecret:
+            return false
+        case .kotakNeoTotpSession, .kiteChecksumSession, .upstoxOAuthBearerSession,
+             .fyersOAuthJsonAppIdHashSession, .growwChecksumSession:
+            return true
+        }
+    }
+
     private func persistMetadataAndMaybeStart(
         credentials: BrokerCredentials,
         warning: BrokerPermissionWarning?,
@@ -580,9 +608,11 @@ public final class BrokerConnectController {
         rewriteCredentialVault: Bool
     ) async -> BrokerConnectOutcome {
         do {
-            // HMAC: Station writes the vault. Kotak: agent mint already wrote it — skip rewrite
-            // so tradeautopsy-agent keeps Keychain ACL ownership (no login-password prompt on Start).
-            if rewriteCredentialVault {
+            // HMAC: Station writes the vault. OAuth / mint brokers: agent already wrote the session —
+            // never rewrite from Station or Start will see the wrong credential shape.
+            let mayRewriteVault =
+                rewriteCredentialVault && !Self.agentOwnsBrokerCredentialVault(authScheme: authScheme)
+            if mayRewriteVault {
                 try credentialStore.save(credentials: credentials, for: identity)
             }
             let metadata = BrokerConnectionMetadata(

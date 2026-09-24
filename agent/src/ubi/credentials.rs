@@ -224,7 +224,6 @@ mod tests {
         for json in [
             r#"{"authScheme":"upstox_oauth_bearer_session","apiKey":"c","apiSecret":"s"}"#,
             r#"{"authScheme":"fyers_oauth_json_app_id_hash_session","apiKey":"a","apiSecret":"s"}"#,
-            r#"{"authScheme":"okx_passphrase_session","apiKey":"k","apiSecret":"s","passphrase":"p"}"#,
             r#"{"authScheme":"groww_checksum_session","apiKey":"k","apiSecret":"s"}"#,
             r#"{"authScheme":"dhan_consent_session","apiKey":"a","apiSecret":"s"}"#,
         ] {
@@ -267,8 +266,8 @@ mod tests {
         assert!(json.contains("tokenRefId"));
         assert!(json.contains("mintedAt"));
         // Per-mint inputs are NEVER blob fields — recomputed at each mint (ADR 0014).
-        assert!(!json.contains("checksum"));
-        assert!(!json.contains("timestamp"));
+        assert!(!json.contains(r#""checksum""#));
+        assert!(!json.contains(r#""timestamp""#));
         let decoded = decode_credential_blob(&json).unwrap();
         assert_eq!(decoded, blob);
         assert_eq!(blob.api_key_for_tests(), Some("groww-key"));

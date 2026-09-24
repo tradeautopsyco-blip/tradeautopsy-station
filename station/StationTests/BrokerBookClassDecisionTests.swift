@@ -94,10 +94,11 @@ struct BrokerBookClassDecisionTests {
                 "upstox-nse-bse-cash", "fyers-nse-bse-cash",
             ]
         )
-        #expect(BrokerCatalog.descriptor(for: "zerodha_kite")?.availability == .planned)
-        #expect(BrokerCatalog.descriptor(for: "upstox")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "zerodha_kite")?.availability == .enabled)
+        #expect(BrokerCatalog.descriptor(for: "upstox")?.availability == .enabled)
         #expect(BrokerCatalog.descriptor(for: "upstox")?.authScheme == .upstoxOAuthBearerSession)
-        #expect(BrokerCatalog.descriptor(for: "fyers")?.availability == .planned)
+        #expect(BrokerCatalog.descriptor(for: "fyers")?.availability == .enabled)
+        #expect(BrokerCatalog.descriptor(for: "groww")?.availability == .enabled)
         #expect(BrokerCatalog.descriptor(for: "fyers")?.authScheme == .fyersOAuthJsonAppIdHashSession)
         #expect(BrokerCatalog.descriptor(for: "binance_com")?.bookId == "binance-com-spot")
         #expect(BrokerCatalog.descriptor(for: "kotak_neo")?.bookId == "kotak-nse-bse-cash")

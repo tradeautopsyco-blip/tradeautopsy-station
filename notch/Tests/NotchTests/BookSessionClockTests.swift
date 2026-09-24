@@ -21,10 +21,35 @@ struct BookSessionClockTests {
         #expect(BookSessionClock.hours(bookId: nil, brokerSlug: "binance_com") == .com247)
     }
 
-    @Test func kotakCashAndNfoUseNseHours() {
-        #expect(BookSessionClock.hours(bookId: "kotak-nse-bse-cash", brokerSlug: nil) == .nseCashFo)
-        #expect(BookSessionClock.hours(bookId: "kotak-nse-nfo", brokerSlug: nil) == .nseCashFo)
-        #expect(BookSessionClock.hours(bookId: nil, brokerSlug: "kotak_neo") == .nseCashFo)
+    @Test func kotakCashAndNfoSessionHours() {
+        #expect(BookSessionClock.hours(bookId: "kotak-nse-bse-cash", brokerSlug: nil) == .nseCash)
+        #expect(BookSessionClock.hours(bookId: "kotak-nse-nfo", brokerSlug: nil) == .nseNfo)
+        #expect(BookSessionClock.hours(bookId: nil, brokerSlug: "kotak_neo") == .nseCash)
+    }
+
+    @Test func nfoOpenTenMinutesAfterCashClose() {
+        // 2026-09-21 is Monday.
+        let afterCashClose = istDate(year: 2026, month: 9, day: 21, hour: 15, minute: 35)
+        #expect(!BookSessionClock.isNseCashSession(at: afterCashClose, calendar: ist))
+        #expect(BookSessionClock.isNseNfoSession(at: afterCashClose, calendar: ist))
+        #expect(BookSessionClock.isInSession(.nseCash, at: afterCashClose, calendar: ist) == false)
+        #expect(BookSessionClock.isInSession(.nseNfo, at: afterCashClose, calendar: ist))
+        let cashPres = BookSessionClock.presentation(
+            bookId: "kotak-nse-bse-cash",
+            brokerSlug: "kotak_neo",
+            at: afterCashClose,
+            calendar: ist
+        )
+        #expect(cashPres.inSession == false)
+        #expect(cashPres.label == "NSE closed")
+        let nfoPres = BookSessionClock.presentation(
+            bookId: "kotak-nse-nfo",
+            brokerSlug: "kotak_neo",
+            at: afterCashClose,
+            calendar: ist
+        )
+        #expect(nfoPres.inSession)
+        #expect(nfoPres.label == "NFO 09:15–15:40")
     }
 
     @Test func sundayComPollsKotakDoesNot() {

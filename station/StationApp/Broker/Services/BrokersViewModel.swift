@@ -29,6 +29,12 @@ public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var keychainGrantHint: String?
     /// Bumped when one-time secrets are cleared so the Connect sheet remounts empty SecureFields.
     @Published public private(set) var connectSecretFieldsEpoch = 0
+    /// In-app broker OAuth (same Connect sheet — SwiftUI allows only one `.sheet`).
+    @Published public private(set) var oauthWebLoginRequest: BrokerOAuthWebLoginPresenter.Request?
+    /// After loopback callback, agent vault poll + metadata — keep OAuth sheet up instead of API-key form.
+    @Published public private(set) var oauthWebLoginFinishing = false
+
+    private var oauthWebLoginContinuation: CheckedContinuation<Bool, Never>?
 
     public var connectAuthScheme: BrokerAuthScheme {
         guard let slug = connectBrokerSlug else { return .hmacApiKeySecret }
@@ -101,7 +107,7 @@ public final class BrokersViewModel: ObservableObject {
     /// Connection UUIDs Station considers live — input for launch Keychain reconcile.
     private func configuredConnectionIDsForReconcile() -> Set<UUID> {
         var ids = Set<UUID>()
-        for slug in ["binance_com", "kotak_neo", "zerodha_kite"] {
+        for slug in ["binance_com", "kotak_neo", "zerodha_kite", "upstox", "fyers", "groww"] {
             let identity = BrokerConnectServices.identity(for: slug)
             if metadataStore.load(for: identity)?.lastValidatedAt != nil {
                 ids.insert(identity.brokerConnectionID)
@@ -417,7 +423,11 @@ public final class BrokersViewModel: ObservableObject {
 
         isConnecting = true
         cards = Self.applyValidatingOverlay(cards: cards, validatingSlug: slug)
-        defer { isConnecting = false }
+        defer {
+            isConnecting = false
+            oauthWebLoginRequest = nil
+            oauthWebLoginFinishing = false
+        }
 
         let outcome = await connectController.connect()
         switch outcome {
@@ -575,15 +585,50 @@ public final class BrokersViewModel: ObservableObject {
         isDeleteConfirmationPresented = false
     }
 
+    public func completeOAuthWebLogin(success: Bool) {
+        if success {
+            oauthWebLoginFinishing = true
+        } else {
+            oauthWebLoginRequest = nil
+            oauthWebLoginFinishing = false
+        }
+        oauthWebLoginContinuation?.resume(returning: success)
+        oauthWebLoginContinuation = nil
+    }
+
+    private func runOAuthWebLogin(
+        loginURL: URL,
+        callbackPrefix: String,
+        title: String
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            oauthWebLoginContinuation = continuation
+            oauthWebLoginRequest = BrokerOAuthWebLoginPresenter.Request(
+                loginURL: loginURL,
+                callbackPrefix: callbackPrefix,
+                title: title
+            )
+        }
+    }
+
     private func makeConnectController(for slug: String) -> BrokerConnectController {
-        BrokerConnectController(
+        let displayName = BrokerConnectServices.displayName(for: slug)
+        return BrokerConnectController(
             identity: BrokerConnectServices.identity(for: slug),
             credentialStore: credentialStore,
             validator: BrokerConnectServices.validator(for: slug),
             syncControl: syncControl,
             metadataStore: metadataStore,
             runtimeClient: runtimeClient,
-            loginProfileStore: loginProfileStore
+            loginProfileStore: loginProfileStore,
+            oauthWebLogin: { [weak self] loginURL, callbackPrefix in
+                guard let self else { return false }
+                return await self.runOAuthWebLogin(
+                    loginURL: loginURL,
+                    callbackPrefix: callbackPrefix,
+                    title: "Sign in to \(displayName)"
+                )
+            }
         )
     }
 

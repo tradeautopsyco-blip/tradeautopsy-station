@@ -165,4 +165,19 @@ public extension BrokerConnectionIdentity {
     static var fyersProd: BrokerConnectionIdentity {
         fyers(.prod)
     }
+
+    static let growwConnectionID = UUID(uuidString: "00000000-0000-4000-8000-000000000007")!
+
+    static func groww(_ environment: TradeAutopsyEnvironment) -> BrokerConnectionIdentity {
+        BrokerConnectionIdentity(
+            brokerConnectionID: growwConnectionID,
+            brokerSlug: "groww",
+            assetClass: "equities",
+            environment: environment.rawValue
+        )
+    }
+
+    static var growwProd: BrokerConnectionIdentity {
+        groww(.prod)
+    }
 }

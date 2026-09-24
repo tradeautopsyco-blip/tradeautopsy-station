@@ -90,7 +90,7 @@ struct BrokerCardView: View {
                 .stroke(StationDS.Border.card, lineWidth: StationDS.borderThin)
         )
         .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.card))
-        .opacity(card.plannedLabel != nil ? 0.55 : 1)
+        .opacity(card.plannedLabel != nil && card.identity == nil ? 0.55 : 1)
     }
 
     private var statusBadge: some View {

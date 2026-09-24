@@ -905,6 +905,7 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         zerodha_kite_cash_manifest(),
         upstox_cash_manifest(),
         fyers_cash_manifest(),
+        groww_cash_manifest(),
         bybit_com_spot_manifest(),
         okx_com_spot_manifest(),
         kraken_com_spot_manifest(),
@@ -937,6 +938,38 @@ pub fn fyers_cash_manifest() -> SourceManifest {
             ),
             account_binding(
                 "fyers",
+                "orderbook",
+                "orders",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
+/// Groww NSE/BSE cash D+I (B6 SIGNED). Day fills via order-list fan-out to per-order trades.
+pub fn groww_cash_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["NSE".into(), "BSE".into()],
+        asset_classes: vec!["equity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:groww-cash@0.1.0".into(),
+        adapter_id: "groww".into(),
+        book_id: "groww-nse-bse-cash".into(),
+        implemented: vec!["tradebook".into(), "orderbook".into()],
+        bindings: vec![
+            account_binding(
+                "groww",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "groww",
                 "orderbook",
                 "orders",
                 coverage,

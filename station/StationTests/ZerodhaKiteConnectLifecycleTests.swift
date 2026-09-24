@@ -36,7 +36,7 @@ struct ZerodhaKiteConnectLifecycleTests {
         #expect(store.saveCallCount == 0)
     }
 
-    @Test func successfulBrowserFlowPersistsAppKeysAndAutoStartsSync() async throws {
+    @Test func successfulBrowserFlowAutoStartsSyncWithoutRewritingAgentVault() async throws {
         let store = FakeBrokerCredentialStore()
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateZerodhaVaultAfterBegin = true
@@ -53,7 +53,10 @@ struct ZerodhaKiteConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { opened.append($0) }
+            oauthWebLogin: { url, _ in
+                opened.append(url)
+                return true
+            }
         )
         controller.updateFields(apiKey: "kite-key", apiSecret: "kite-secret")
 
@@ -64,11 +67,8 @@ struct ZerodhaKiteConnectLifecycleTests {
         #expect(opened.count == 1)
         #expect(opened[0].absoluteString.contains("kite.zerodha.com"))
         #expect(sync.startSyncCallCount == 1)
-        #expect(store.saveCallCount == 1)
-        let saved = try store.read(for: .zerodhaKiteProd)
-        #expect(saved?.authScheme == .kiteChecksumSession)
-        #expect(saved?.apiKey == "kite-key")
-        #expect(saved?.apiSecret == "kite-secret")
+        // Agent owns the session blob after OAuth; Station must not overwrite it with app keys.
+        #expect(store.saveCallCount == 0)
     }
 
     @Test func redirectUriMismatchFailsWithoutStartingSync() async {
@@ -91,7 +91,7 @@ struct ZerodhaKiteConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { _ in }
+            oauthWebLogin: { _, _ in true }
         )
         controller.updateFields(apiKey: "k", apiSecret: "s")
 
@@ -137,9 +137,9 @@ struct ZerodhaKiteConnectLifecycleTests {
         #expect(store.hasCredentials(for: .zerodhaKiteProd) == false)
     }
 
-    @Test func plannedZerodhaCatalogRowIsNotEnabled() {
+    @Test func zerodhaCatalogRowIsEnabled() {
         let kite = BrokerCatalog.descriptor(for: "zerodha_kite")
-        #expect(kite?.availability == .planned)
+        #expect(kite?.availability == .enabled)
         #expect(kite?.authScheme == .kiteChecksumSession)
         #expect(kite?.bookId == "zerodha-nse-bse-cash")
     }

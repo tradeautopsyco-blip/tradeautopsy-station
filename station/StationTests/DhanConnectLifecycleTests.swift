@@ -87,7 +87,7 @@ struct DhanConnectLifecycleTests {
         #expect(runtime.beginDhanConnectCallCount == 0)
     }
 
-    @Test func successfulBrowserFlowPersistsAppKeysAndAutoStartsSync() async throws {
+    @Test func successfulBrowserFlowAutoStartsSyncWithoutRewritingAgentVault() async throws {
         let store = FakeBrokerCredentialStore()
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateDhanVaultAfterBegin = true
@@ -120,12 +120,7 @@ struct DhanConnectLifecycleTests {
         #expect(opened[0].absoluteString.contains("auth.dhan.co"))
         #expect(opened[0].absoluteString.contains("consentApp-login"))
         #expect(sync.startSyncCallCount == 1)
-        #expect(store.saveCallCount == 1)
-        let saved = try store.read(for: .dhanProd)
-        #expect(saved?.authScheme == .dhanConsentSession)
-        #expect(saved?.consumerKey == "dhan-client-id")
-        #expect(saved?.apiKey == "dhan-app-id")
-        #expect(saved?.apiSecret == "dhan-app-secret")
+        #expect(store.saveCallCount == 0)
     }
 
     @Test func unexpectedConsentURLFailsWithoutStartingSync() async {

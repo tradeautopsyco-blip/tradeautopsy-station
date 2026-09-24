@@ -70,7 +70,7 @@ struct GrowwConnectLifecycleTests {
 
     @Test func plannedGrowwCatalogRowIsNotEnabled() {
         let groww = BrokerCatalog.descriptor(for: "groww")
-        #expect(groww?.availability == .planned)
+        #expect(groww?.availability == .enabled)
         #expect(groww?.authScheme == .growwChecksumSession)
         #expect(groww?.bookId == "groww-nse-bse-cash")
     }

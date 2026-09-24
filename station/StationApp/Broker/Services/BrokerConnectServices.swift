@@ -13,6 +13,8 @@ public enum BrokerConnectServices {
             return .upstox(environment)
         case "fyers":
             return .fyers(environment)
+        case "groww":
+            return .groww(environment)
         default:
             // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
             return BrokerConnectionIdentity(

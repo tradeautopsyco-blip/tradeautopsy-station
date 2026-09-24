@@ -196,7 +196,7 @@ impl TodayService {
 
         let fills = self.recent_trades.fetch_all_fills()?;
         let open_positions = count_open_positions(&fills);
-        let (usd_fills, inr_fills) = partition_fills(fills);
+        let (usd_fills, inr_fills, _nfo_fills) = partition_fills(fills);
         let inr_desk = desk.2.as_deref() == Some(INR_CASH_CALC_PROFILE)
             || desk.1.as_deref() == Some("INR");
 
@@ -505,17 +505,25 @@ fn build_inr_trade_rows(today_trips: &[InrCashRoundTrip], limit: usize) -> Vec<T
 
 fn partition_fills(
     fills: Vec<crate::broker::BrokerFill>,
-) -> (Vec<crate::broker::BrokerFill>, Vec<crate::broker::BrokerFill>) {
-    let mut usd = Vec::new();
+) -> (
+    Vec<crate::broker::BrokerFill>,
+    Vec<crate::broker::BrokerFill>,
+    Vec<crate::broker::BrokerFill>,
+) {
+    let mut com_spot = Vec::new();
     let mut inr = Vec::new();
+    let mut nfo = Vec::new();
     for f in fills {
         if is_inr_cash_fill(&f) {
             inr.push(f);
-        } else {
-            usd.push(f);
+        } else if is_nfo_fill(&f) {
+            nfo.push(f);
+        } else if is_binance_com_spot_fill(&f) {
+            com_spot.push(f);
         }
+        // USDM / Coin-M / options / other books: excluded from COM WAC and INR/NFO engines here.
     }
-    (usd, inr)
+    (com_spot, inr, nfo)
 }
 
 fn build_snapshot(
@@ -845,6 +853,36 @@ mod tests {
             Some("binance_com"),
             &ExchangeInfoSymbolCache::empty()
         ));
+    }
+
+    #[test]
+    fn nfo_inr_fill_never_partitioned_to_com_spot_wac() {
+        let nfo = crate::broker::BrokerFill {
+            fill_id: "nfo-b1".into(),
+            trade_id: "t-nfo".into(),
+            symbol: "NIFTY2692221000PE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 10.0,
+            filled_at: Utc.with_ymd_and_hms(2026, 8, 28, 10, 0, 0).unwrap(),
+            broker: "kotak_neo".into(),
+            currency: Some("INR".into()),
+            product: Some("NRML".into()),
+            exchange_segment: Some("nse_fo".into()),
+            instrument_type: Some("PE".into()),
+            lot: Some(65),
+            ..Default::default()
+        };
+        let (com_spot, inr, nfo_bucket) = partition_fills(vec![nfo.clone()]);
+        assert!(com_spot.is_empty(), "NFO must not hit round_trip_engine bucket");
+        assert!(inr.is_empty());
+        assert_eq!(nfo_bucket.len(), 1);
+        let engine = crate::round_trip_engine::RoundTripEngine::new();
+        let result = engine.reconstruct(vec![nfo]);
+        assert!(
+            result.round_trips.is_empty(),
+            "round_trip_engine must not reconstruct NFO fills"
+        );
     }
 
     #[test]

@@ -936,11 +936,20 @@ mod tests {
         engine.record(p, &ban_response());
 
         let postures = engine.postures();
-        assert_eq!(postures.len(), 2);
+        assert_eq!(
+            postures.len(),
+            policy::SLOTS.len(),
+            "every egress slot must report posture so one venue cannot blank another"
+        );
         let com = postures.iter().find(|p| p.venue == "binance_com").unwrap();
         let kotak = postures.iter().find(|p| p.venue == "kotak_neo").unwrap();
         assert_eq!(com.posture, "banned");
         assert_eq!(kotak.posture, "live");
+        for p in &postures {
+            if p.venue != "binance_com" {
+                assert_eq!(p.posture, "live", "venue {} must stay live", p.venue);
+            }
+        }
     }
 
     #[test]

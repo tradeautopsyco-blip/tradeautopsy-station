@@ -33,6 +33,7 @@ let package = Package(
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("Security"),
                 .linkedFramework("LocalAuthentication"),
+                .linkedFramework("WebKit"),
             ]
         ),
         .executableTarget(

@@ -36,7 +36,7 @@ struct FyersConnectLifecycleTests {
         #expect(store.saveCallCount == 0)
     }
 
-    @Test func successfulBrowserFlowPersistsAppKeysAndAutoStartsSync() async throws {
+    @Test func successfulBrowserFlowAutoStartsSyncWithoutRewritingAgentVault() async throws {
         let store = FakeBrokerCredentialStore()
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateFyersVaultAfterBegin = true
@@ -53,7 +53,10 @@ struct FyersConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { opened.append($0) }
+            oauthWebLogin: { url, _ in
+                opened.append(url)
+                return true
+            }
         )
         controller.updateFields(apiKey: "fyers-app-id", apiSecret: "fyers-secret-id")
 
@@ -65,11 +68,7 @@ struct FyersConnectLifecycleTests {
         #expect(opened[0].absoluteString.contains("api-t1.fyers.in"))
         #expect(opened[0].absoluteString.contains("response_type=code"))
         #expect(sync.startSyncCallCount == 1)
-        #expect(store.saveCallCount == 1)
-        let saved = try store.read(for: .fyersProd)
-        #expect(saved?.authScheme == .fyersOAuthJsonAppIdHashSession)
-        #expect(saved?.apiKey == "fyers-app-id")
-        #expect(saved?.apiSecret == "fyers-secret-id")
+        #expect(store.saveCallCount == 0)
     }
 
     @Test func redirectUriMismatchFailsWithoutStartingSync() async {
@@ -94,7 +93,7 @@ struct FyersConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { _ in }
+            oauthWebLogin: { _, _ in true }
         )
         controller.updateFields(apiKey: "k", apiSecret: "s")
 
@@ -142,7 +141,7 @@ struct FyersConnectLifecycleTests {
 
     @Test func plannedFyersCatalogRowIsNotEnabled() {
         let fyers = BrokerCatalog.descriptor(for: "fyers")
-        #expect(fyers?.availability == .planned)
+        #expect(fyers?.availability == .enabled)
         #expect(fyers?.authScheme == .fyersOAuthJsonAppIdHashSession)
         #expect(fyers?.bookId == "fyers-nse-bse-cash")
     }

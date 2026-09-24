@@ -9,6 +9,26 @@ struct BrokerConnectSheetView: View {
     @State private var secretFieldsEpoch = 0
 
     var body: some View {
+        Group {
+            if let oauthRequest = viewModel.oauthWebLoginRequest {
+                BrokerOAuthLoginSheet(
+                    request: oauthRequest,
+                    isFinishing: viewModel.oauthWebLoginFinishing
+                ) { success in
+                    viewModel.completeOAuthWebLogin(success: success)
+                }
+            } else {
+                connectForm
+            }
+        }
+        .onChange(of: viewModel.isConnectSheetPresented) { _, presented in
+            if !presented, viewModel.oauthWebLoginRequest != nil, !viewModel.oauthWebLoginFinishing {
+                viewModel.completeOAuthWebLogin(success: false)
+            }
+        }
+    }
+
+    private var connectForm: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(sheetTitle)
                 .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))

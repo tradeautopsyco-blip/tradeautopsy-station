@@ -36,7 +36,7 @@ struct UpstoxConnectLifecycleTests {
         #expect(store.saveCallCount == 0)
     }
 
-    @Test func successfulBrowserFlowPersistsAppKeysAndAutoStartsSync() async throws {
+    @Test func successfulBrowserFlowAutoStartsSyncWithoutRewritingAgentVault() async throws {
         let store = FakeBrokerCredentialStore()
         let runtime = FakeBrokerAgentRuntimeClient()
         runtime.simulateUpstoxVaultAfterBegin = true
@@ -53,7 +53,10 @@ struct UpstoxConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { opened.append($0) }
+            oauthWebLogin: { url, _ in
+                opened.append(url)
+                return true
+            }
         )
         controller.updateFields(apiKey: "upstox-client-id", apiSecret: "upstox-client-secret")
 
@@ -65,11 +68,7 @@ struct UpstoxConnectLifecycleTests {
         #expect(opened[0].absoluteString.contains("api.upstox.com"))
         #expect(opened[0].absoluteString.contains("response_type=code"))
         #expect(sync.startSyncCallCount == 1)
-        #expect(store.saveCallCount == 1)
-        let saved = try store.read(for: .upstoxProd)
-        #expect(saved?.authScheme == .upstoxOAuthBearerSession)
-        #expect(saved?.apiKey == "upstox-client-id")
-        #expect(saved?.apiSecret == "upstox-client-secret")
+        #expect(store.saveCallCount == 0)
     }
 
     @Test func redirectUriMismatchFailsWithoutStartingSync() async {
@@ -94,7 +93,7 @@ struct UpstoxConnectLifecycleTests {
             metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
             runtimeClient: runtime,
             loginProfileStore: FakeKotakLoginProfileStore(),
-            openBrowserURL: { _ in }
+            oauthWebLogin: { _, _ in true }
         )
         controller.updateFields(apiKey: "k", apiSecret: "s")
 
@@ -142,7 +141,7 @@ struct UpstoxConnectLifecycleTests {
 
     @Test func plannedUpstoxCatalogRowIsNotEnabled() {
         let upstox = BrokerCatalog.descriptor(for: "upstox")
-        #expect(upstox?.availability == .planned)
+        #expect(upstox?.availability == .enabled)
         #expect(upstox?.authScheme == .upstoxOAuthBearerSession)
         #expect(upstox?.bookId == "upstox-nse-bse-cash")
     }

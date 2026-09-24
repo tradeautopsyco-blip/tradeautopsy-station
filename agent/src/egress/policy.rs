@@ -108,6 +108,28 @@ pub const OKX_COM: SlotPolicy = SlotPolicy {
     auth_meter_id: "okx_com:requests",
 };
 
+/// Kraken spot REST — B6 row 4: EAPI:Rate limit exceeded; no 418 on this lock.
+pub const KRAKEN: SlotPolicy = SlotPolicy {
+    slot_id: "kraken",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "kraken:requests",
+};
+
+/// Coinbase Advanced Trade — B6 row 4: 429 documented; no 418 on this lock.
+pub const COINBASE_ADVANCED: SlotPolicy = SlotPolicy {
+    slot_id: "coinbase_advanced",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "coinbase_advanced:requests",
+};
+
 pub const KOTAK_NEO: SlotPolicy = SlotPolicy {
     slot_id: "kotak_neo",
     // india/kotak-neo/REST.md:226 — 429 "Too many requests to the API".
@@ -130,6 +152,8 @@ pub const SLOTS: &[SlotPolicy] = &[
     GROWW,
     BYBIT,
     OKX_COM,
+    KRAKEN,
+    COINBASE_ADVANCED,
 ];
 
 /// One metered budget inside a slot.
@@ -236,6 +260,20 @@ pub const OKX_COM_REQUESTS: MeterPolicy = MeterPolicy {
     max_concurrency: 4,
 };
 
+pub const KRAKEN_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "kraken:requests",
+    slot_id: "kraken",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const COINBASE_ADVANCED_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "coinbase_advanced:requests",
+    slot_id: "coinbase_advanced",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
 pub const METERS: &[MeterPolicy] = &[
     BINANCE_COM_API_WEIGHT,
     BINANCE_COM_EAPI,
@@ -248,6 +286,8 @@ pub const METERS: &[MeterPolicy] = &[
     GROWW_REQUESTS,
     BYBIT_REQUESTS,
     OKX_COM_REQUESTS,
+    KRAKEN_REQUESTS,
+    COINBASE_ADVANCED_REQUESTS,
 ];
 
 /// Book id → (slot, meter). Book ids are the same strings the R0 fence keys on
@@ -266,6 +306,8 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         crate::ubi::GROWW_BOOK_ID => Some(&GROWW_REQUESTS),
         crate::ubi::bybit_session::BYBIT_BOOK_ID => Some(&BYBIT_REQUESTS),
         crate::ubi::OKX_COM_SPOT_BOOK_ID => Some(&OKX_COM_REQUESTS),
+        crate::ubi::KRAKEN_BOOK_ID => Some(&KRAKEN_REQUESTS),
+        crate::ubi::coinbase_session::COINBASE_BOOK_ID => Some(&COINBASE_ADVANCED_REQUESTS),
         _ => None,
     }
 }
@@ -542,7 +584,10 @@ mod tests {
     fn india_broker_api_hosts_map_to_slots() {
         assert_eq!(slot_for_host("api.kite.trade").unwrap().slot_id, "zerodha_kite");
         assert_eq!(slot_for_host("api.upstox.com").unwrap().slot_id, "upstox");
-        assert_eq!(slot_for_host("api.fyers.in").unwrap().slot_id, "fyers");
+        assert_eq!(
+            slot_for_host(crate::ubi::FYERS_API_HOST).unwrap().slot_id,
+            "fyers"
+        );
         assert_eq!(slot_for_host("api.groww.in").unwrap().slot_id, "groww");
     }
 

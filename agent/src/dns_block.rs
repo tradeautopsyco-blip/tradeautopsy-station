@@ -564,6 +564,10 @@ mod tests {
                 "upstox",
                 "fyers",
                 "groww",
+                "bybit",
+                "okx_com",
+                "coinbase_advanced",
+                "kraken",
             ]
                 .iter()
                 .any(|slug| hosts_for_broker(slug).contains(host));

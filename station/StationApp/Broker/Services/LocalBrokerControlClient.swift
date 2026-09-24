@@ -24,6 +24,30 @@ public final class LocalBrokerControlClient: BrokerControlling {
             displayName: "Zerodha Kite",
             identity: BrokerConnectionIdentity.zerodhaKite
         ),
+        V1BrokerEntry(
+            slug: "upstox",
+            displayName: "Upstox",
+            identity: BrokerConnectionIdentity.upstox
+        ),
+        V1BrokerEntry(
+            slug: "fyers",
+            displayName: "Fyers",
+            identity: BrokerConnectionIdentity.fyers
+        ),
+        V1BrokerEntry(
+            slug: "groww",
+            displayName: "Groww",
+            identity: BrokerConnectionIdentity.groww
+        ),
+    ]
+
+    /// Agent-owned session vault (OAuth / checksum mint). Station uses metadata + agent `present`.
+    private static let agentVaultBrokerSlugs: Set<String> = [
+        "kotak_neo",
+        "zerodha_kite",
+        "upstox",
+        "fyers",
+        "groww",
     ]
 
     private weak var agentSupervisor: AgentSupervising?
@@ -67,7 +91,7 @@ public final class LocalBrokerControlClient: BrokerControlling {
             let identity = entry.identity(environment)
             let metadata = metadataStore.load(for: identity)
             let isConfigured: Bool
-            if entry.slug == "kotak_neo" || entry.slug == "zerodha_kite" {
+            if Self.agentVaultBrokerSlugs.contains(entry.slug) {
                 // Metadata marks Connect success. Avoid Station SecItem reads on every Brokers refresh
                 // (each cross-process read can re-prompt Keychain ACL).
                 if metadata?.lastValidatedAt != nil {
