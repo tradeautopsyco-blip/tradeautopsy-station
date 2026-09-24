@@ -1,0 +1,58 @@
+{
+  "s": "ok",
+  "code": 200,
+  "message": "",
+  "tradeBook": [
+    {
+      "symbol": "NSE:NIFTY2625024000CE",
+      "row": 1,
+      "orderDateTime": "25-07-2026 11:30:00",
+      "orderNumber": "23121800000101",
+      "tradeNumber": "600001",
+      "tradePrice": 100.0,
+      "tradeValue": 200.0,
+      "tradedQty": 2,
+      "side": 1,
+      "productType": "MARGIN",
+      "exchangeOrderNo": "220000000000101",
+      "segment": 11,
+      "exchange": 10,
+      "fyToken": "10100000052166",
+      "orderTag": "1:Untagged"
+    },
+    {
+      "symbol": "NSE:NIFTY2625024000CE",
+      "row": 2,
+      "orderDateTime": "25-07-2026 12:00:00",
+      "orderNumber": "23121800000102",
+      "tradeNumber": "600002",
+      "tradePrice": 110.0,
+      "tradeValue": 220.0,
+      "tradedQty": 2,
+      "side": -1,
+      "productType": "MARGIN",
+      "exchangeOrderNo": "220000000000102",
+      "segment": 11,
+      "exchange": 10,
+      "fyToken": "10100000052166",
+      "orderTag": "1:Untagged"
+    },
+    {
+      "symbol": "NSE:RELIANCE-EQ",
+      "row": 3,
+      "orderDateTime": "25-07-2026 09:00:00",
+      "orderNumber": "23121800000099",
+      "tradeNumber": "500099",
+      "tradePrice": 2500.0,
+      "tradeValue": 2500.0,
+      "tradedQty": 1,
+      "side": 1,
+      "productType": "CNC",
+      "exchangeOrderNo": "220000000000099",
+      "segment": 10,
+      "exchange": 10,
+      "fyToken": "10100000000738",
+      "orderTag": "1:Untagged"
+    }
+  ]
+}

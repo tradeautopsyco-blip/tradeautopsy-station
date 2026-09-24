@@ -38,23 +38,6 @@
       "orderTag": "1:Untagged"
     },
     {
-      "symbol": "NSE:NIFTY26JUL24000CE",
-      "row": 3,
-      "orderDateTime": "25-07-2026 11:00:00",
-      "orderNumber": "23121800000003",
-      "tradeNumber": "500003",
-      "tradePrice": 112.35,
-      "tradeValue": 5617.5,
-      "tradedQty": 50,
-      "side": 1,
-      "productType": "INTRADAY",
-      "exchangeOrderNo": "220000000000003",
-      "segment": 11,
-      "exchange": 10,
-      "fyToken": "10100000052166",
-      "orderTag": "1:Untagged"
-    },
-    {
       "symbol": "NSE:TCS-EQ",
       "row": 4,
       "orderDateTime": "25-07-2026 09:30:00",

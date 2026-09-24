@@ -1,9 +1,9 @@
 //! `fyers` adapter component (ADR 0001 · B6 `fyers` · R5).
 //!
 //! Day-book fills via host `broker_http_call` → `GET /api/v3/tradebook`.
-//! `Authorization: <app_id>:<access_token>` is attached outside Wasm (R6). First book:
-//! NSE/BSE cash segments with product types intraday (`1` / `INTRADAY`) and CNC (`2` / `CNC`)
-//! only; derivatives, MTF, and margin rows are skipped in the mapper.
+//! `Authorization: <app_id>:<access_token>` is attached outside Wasm (R6). Cash book:
+//! NSE/BSE CM (`segment` 10/12) + CNC/INTRADAY only. NFO book: `segment` 11 +
+//! `MARGIN`/`INTRADAY` → `exchange_segment` `nse_fo` (host split parity with Kite).
 
 #![allow(clippy::all)]
 
@@ -23,9 +23,15 @@ const HOST: &str = "api-t1.fyers.in";
 const TRADEBOOK_PATH: &str = "/api/v3/tradebook";
 /// Fyers appendix: NSE CM = 10, BSE CM = 12.
 const ALLOWED_CASH_SEGMENTS: &[i64] = &[10, 12];
+/// Fyers appendix: NSE FO = 11 (B6 row 1).
+const NFO_SEGMENT_CODE: i64 = 11;
+/// Host split + NFO PnL owner key off `nse_fo`, not the `NSE:` symbol prefix.
+const NFO_SEGMENT: &str = "nse_fo";
 /// Wire strings plus numeric appendix codes (1 = intraday, 2 = CNC).
 const ALLOWED_CASH_PRODUCT_STRINGS: &[&str] = &["INTRADAY", "CNC"];
 const ALLOWED_CASH_PRODUCT_CODES: &[i64] = &[1, 2];
+const ALLOWED_NFO_PRODUCT_STRINGS: &[&str] = &["MARGIN", "INTRADAY"];
+const ALLOWED_NFO_PRODUCT_CODES: &[i64] = &[3, 1];
 /// Trade timestamps are IST with no zone marker (`DD-MM-YYYY hh:mm:ss`).
 const IST_OFFSET_SECONDS: i64 = 5 * 3600 + 30 * 60;
 
@@ -105,7 +111,11 @@ fn map_tradebook(body: &str) -> Result<Vec<FillEvent>, String> {
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        if !is_supported_cash_row(row) {
+        let nfo = is_nfo_row(row);
+        if !nfo && !is_supported_cash_row(row) {
+            continue;
+        }
+        if nfo && !is_supported_nfo_row(row) {
             continue;
         }
 
@@ -121,15 +131,27 @@ fn map_tradebook(body: &str) -> Result<Vec<FillEvent>, String> {
             .or_else(|| string_field(row, "id_fill"))
             .unwrap_or_else(|| format!("{symbol}-{side}-{filled_at_unix_ms}"));
         let trade_id = string_field(row, "orderNumber").or_else(|| string_field(row, "id"));
-        let exchange_segment = exchange_label(row);
-        let product = normalize_product(row);
+        let exchange_segment = if nfo {
+            Some(NFO_SEGMENT.to_string())
+        } else {
+            exchange_label(row)
+        };
+        let product = if nfo {
+            normalize_nfo_product(row)
+        } else {
+            normalize_product(row)
+        };
 
         out.push(FillEvent {
             fill_id,
             broker_slug: "fyers".to_string(),
             connection_id: String::new(),
             asset_class: AssetClass::Equity,
-            instrument_class: InstrumentClass::Spot,
+            instrument_class: if nfo {
+                nfo_instrument_class(&symbol)
+            } else {
+                InstrumentClass::Spot
+            },
             is_inverse: false,
             symbol,
             side: side.to_string(),
@@ -145,6 +167,63 @@ fn map_tradebook(body: &str) -> Result<Vec<FillEvent>, String> {
         });
     }
     Ok(out)
+}
+
+fn nfo_instrument_class(symbol: &str) -> InstrumentClass {
+    let upper = symbol.trim().to_ascii_uppercase();
+    if upper.ends_with("FUT") {
+        InstrumentClass::Future
+    } else {
+        InstrumentClass::Option
+    }
+}
+
+fn is_nfo_row(row: &serde_json::Value) -> bool {
+    i64_field(row, "segment") == Some(NFO_SEGMENT_CODE)
+}
+
+fn is_supported_nfo_row(row: &serde_json::Value) -> bool {
+    nfo_product_code(row)
+        .map(|code| ALLOWED_NFO_PRODUCT_CODES.contains(&code))
+        .unwrap_or_else(|| {
+            string_field(row, "productType")
+                .or_else(|| string_field(row, "product_type"))
+                .map(|p| {
+                    ALLOWED_NFO_PRODUCT_STRINGS
+                        .iter()
+                        .any(|allowed| p.eq_ignore_ascii_case(allowed))
+                })
+                .unwrap_or(false)
+        })
+}
+
+fn nfo_product_code(row: &serde_json::Value) -> Option<i64> {
+    if let Some(code) = i64_field(row, "productType").or_else(|| i64_field(row, "product_type")) {
+        return Some(code);
+    }
+    let s = string_field(row, "productType").or_else(|| string_field(row, "product_type"))?;
+    match s.to_ascii_uppercase().as_str() {
+        "INTRADAY" | "MIS" => Some(1),
+        "MARGIN" | "NRML" => Some(3),
+        _ => None,
+    }
+}
+
+/// Map Fyers FO wire products to host `nse_fo` NRML/MIS (Kite/Kotak parity).
+fn normalize_nfo_product(row: &serde_json::Value) -> Option<String> {
+    match nfo_product_code(row) {
+        Some(1) => Some("MIS".to_string()),
+        Some(3) => Some("NRML".to_string()),
+        None => {
+            let s = string_field(row, "productType").or_else(|| string_field(row, "product_type"))?;
+            match s.to_ascii_uppercase().as_str() {
+                "INTRADAY" => Some("MIS".to_string()),
+                "MARGIN" => Some("NRML".to_string()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn tradebook_rows(root: &serde_json::Value) -> Result<&[serde_json::Value], String> {
