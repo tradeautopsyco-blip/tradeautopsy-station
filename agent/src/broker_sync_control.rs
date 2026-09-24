@@ -79,6 +79,7 @@ pub struct BrokerSyncController {
     active: Arc<Mutex<Option<ActiveSync>>>,
     account_book: Arc<Mutex<AccountBook>>,
     nfo_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+    instruments: Option<Arc<crate::instruments::InstrumentStore>>,
     /// Integration-test hook: fixed adapter for all runtime starts.
     pub test_runtime_adapter: Option<Arc<dyn BrokerAdapter>>,
     /// Integration-test hook: records api keys resolved on each start (host-side only).
@@ -102,6 +103,7 @@ impl BrokerSyncController {
         credential_vault: Arc<dyn BrokerCredentialVault>,
         account_book: Arc<Mutex<AccountBook>>,
         nfo_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+        instruments: Option<Arc<crate::instruments::InstrumentStore>>,
     ) -> Self {
         Self {
             status_arc,
@@ -115,6 +117,7 @@ impl BrokerSyncController {
             active: Arc::new(Mutex::new(None)),
             account_book,
             nfo_master,
+            instruments,
             test_runtime_adapter,
             test_start_key_log,
             today_service,
@@ -216,6 +219,7 @@ impl BrokerSyncController {
                 .clone(),
             self.account_book.clone(),
             self.nfo_master.clone(),
+            self.instruments.clone(),
         );
 
         *self.active.lock().expect("active sync") = Some(ActiveSync {
@@ -482,6 +486,7 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(
                 crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
             )),
+            None,
         )
     }
 
@@ -559,6 +564,7 @@ mod b2_keychain_only_tests {
             Arc::new(Mutex::new(
                 crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
             )),
+            None,
         );
         ctrl.start(&identity_request()).expect("start");
         assert_eq!(

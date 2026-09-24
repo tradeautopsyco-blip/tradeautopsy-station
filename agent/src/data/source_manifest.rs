@@ -586,6 +586,45 @@ pub fn kotak_neo_s1k_manifest() -> SourceManifest {
 /// (`docs/reference/india/kotak-neo/NFO-SCRIP-MASTER.md`, header 2026-08-28).
 /// Slice 3: `optionchain` = master rows for (underlying, expiry) + optional last.
 /// Catalog / Start slug still ships cash.
+/// NSE CD / `cde_fo` on the same `kotak_neo` adapter (P9-B tracer).
+pub fn kotak_neo_cds_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["cde_fo".into()],
+        asset_classes: vec!["fx".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "kotak_neo.cds.v1".into(),
+        adapter_id: "kotak_neo".into(),
+        book_id: "kotak-nse-cds".into(),
+        implemented: vec![
+            "quotes".into(),
+            "instruments".into(),
+            "tradebook".into(),
+            "funds".into(),
+        ],
+        bindings: vec![
+            quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            account_binding(
+                "kotak_neo",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "funds",
+                "funds",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
 pub fn kotak_neo_nfo_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["nse_fo".into()],
@@ -861,6 +900,32 @@ pub fn binance_com_coinm_manifest() -> SourceManifest {
 }
 
 /// Zerodha Kite cash CNC+MIS (B6 SIGNED). Day-book fills via Wasm `GET /trades`.
+/// Named NFO book on slug `zerodha_kite`. Day-book + Kite instruments master (NFO CSV).
+pub fn zerodha_kite_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:zerodha-kite-nfo@0.1.0".into(),
+        adapter_id: "zerodha_kite".into(),
+        book_id: "zerodha-nse-nfo".into(),
+        implemented: vec!["tradebook".into(), "instruments".into()],
+        bindings: vec![
+            account_binding(
+                "zerodha_kite",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            instruments_binding("zerodha_kite", coverage, AuthMode::PrivateRead),
+        ],
+    }
+}
+
 pub fn zerodha_kite_cash_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["NSE".into(), "BSE".into()],
@@ -902,7 +967,9 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         binance_com_coinm_manifest(),
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
+        kotak_neo_cds_manifest(),
         zerodha_kite_cash_manifest(),
+        zerodha_kite_nfo_manifest(),
         upstox_cash_manifest(),
         fyers_cash_manifest(),
         groww_cash_manifest(),
@@ -1730,6 +1797,9 @@ mod tests {
         assert_eq!(shared_budget(&options), 60);
         assert!(manifest_for_book_id("binance-com-stocks").is_none());
         assert!(manifest_for_book_id("kotak-nse-nfo").is_some());
+        let zerodha_nfo = manifest_for_book_id("zerodha-nse-nfo").expect("zerodha nfo");
+        assert_eq!(zerodha_nfo.manifest_id, "tradeautopsy:zerodha-kite-nfo@0.1.0");
+        assert!(zerodha_nfo.implemented.contains(&"instruments".to_string()));
         assert_eq!(
             manifest_for_slug("binance_com").unwrap().manifest_id,
             "binance_com.s1.v1"

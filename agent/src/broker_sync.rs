@@ -10,6 +10,7 @@ use crate::data::{
 };
 use crate::event_bus::{AgentEvent, EventBus};
 use crate::kotak_nfo_scrip::KotakNfoScripMaster;
+use crate::instruments::{stamp_zerodha_kite_nfo_fills, InstrumentStore};
 use crate::recent_trades::RecentTradesStore;
 use crate::UpstreamClient;
 use chrono::{DateTime, Utc};
@@ -326,6 +327,7 @@ pub fn spawn_broker_poll_loop(
     today_service: Option<Arc<crate::today::TodayService>>,
     account_book: Arc<std::sync::Mutex<AccountBook>>,
     nfo_master: Arc<Mutex<KotakNfoScripMaster>>,
+    instruments: Option<Arc<InstrumentStore>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let broker_label = adapter.name().to_owned();
@@ -417,6 +419,14 @@ pub fn spawn_broker_poll_loop(
                         stamp_nfo_fills(nfo_rows, &*master);
                     }
                     split
+                } else if adapter_name == "zerodha_kite" {
+                    let mut split = split_fills_by_book(adapter_name, fills.clone(), None);
+                    if let Some(store) = instruments.as_ref() {
+                        if let Some(nfo_rows) = split.get_mut(crate::data::ZERODHA_NSE_NFO_BOOK_ID) {
+                            stamp_zerodha_kite_nfo_fills(nfo_rows, store);
+                        }
+                    }
+                    split
                 } else {
                     split_fills_by_book(adapter_name, fills.clone(), None)
                 };
@@ -439,6 +449,16 @@ pub fn spawn_broker_poll_loop(
                             for book_id in [
                                 crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID,
                                 crate::data::KOTAK_NSE_NFO_BOOK_ID,
+                                crate::data::KOTAK_NSE_CDS_BOOK_ID,
+                            ] {
+                                let rows = split.get(book_id).cloned().unwrap_or_default();
+                                book.replace_fills(book_id, rows, path, ok_ms);
+                            }
+                        }
+                        "zerodha_kite" => {
+                            for book_id in [
+                                crate::data::ZERODHA_NSE_BSE_CASH_BOOK_ID,
+                                crate::data::ZERODHA_NSE_NFO_BOOK_ID,
                             ] {
                                 let rows = split.get(book_id).cloned().unwrap_or_default();
                                 book.replace_fills(book_id, rows, path, ok_ms);
@@ -816,6 +836,7 @@ mod tests {
             None,
             account_book,
             Arc::new(Mutex::new(KotakNfoScripMaster::empty())),
+            None,
         );
         tokio::time::sleep(Duration::from_millis(250)).await;
         cancel.store(true, Ordering::Relaxed);

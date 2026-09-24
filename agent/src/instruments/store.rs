@@ -218,6 +218,55 @@ impl InstrumentStore {
             .optional()
             .map_err(Into::into)
     }
+
+    /// NFO row lot from Kite `GET /instruments` CSV (`exchange` = NFO).
+    pub fn nfo_lot_for_tradingsymbol(&self, tradingsymbol: &str) -> anyhow::Result<Option<i64>> {
+        let guard = self.conn.lock().expect("sqlite mutex poisoned");
+        let lot: Option<f64> = guard
+            .query_row(
+                "SELECT lot_size FROM instruments
+                 WHERE trading_symbol = ?1 AND exchange = 'NFO'
+                 LIMIT 1",
+                params![tradingsymbol],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(lot.filter(|l| l.is_finite() && *l > 0.0).map(|l| l as i64))
+    }
+}
+
+/// Stamp `nse_fo` Zerodha fills from the instruments master (P6 — no invented lot).
+pub fn stamp_zerodha_kite_nfo_fills(
+    fills: &mut [crate::broker::BrokerFill],
+    store: &InstrumentStore,
+) {
+    for fill in fills {
+        let seg = fill
+            .exchange_segment
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        if seg != "nse_fo" {
+            continue;
+        }
+        if let Ok(Some(lot)) = store.nfo_lot_for_tradingsymbol(&fill.symbol) {
+            fill.lot = Some(lot);
+        }
+        if fill.instrument_type.is_none() {
+            fill.instrument_type = nfo_ce_pe_fut_from_symbol(&fill.symbol);
+        }
+    }
+}
+
+fn nfo_ce_pe_fut_from_symbol(symbol: &str) -> Option<String> {
+    let upper = symbol.trim().to_ascii_uppercase();
+    for suffix in ["CE", "PE", "FUT"] {
+        if upper.ends_with(suffix) {
+            return Some(suffix.to_string());
+        }
+    }
+    None
 }
 
 fn flush_batch(
@@ -316,6 +365,42 @@ mod tests {
             (tick - 0.05).abs() < 1e-12,
             "tick_size from venue CSV must be stored, got {tick}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nfo_lot_stamps_zerodha_kite_fills() {
+        let dir =
+            std::env::temp_dir().join(format!("ta-instruments-nfo-stamp-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("instruments.db");
+        let _ = std::fs::remove_file(&path);
+        let store = InstrumentStore::new(path.to_str().unwrap()).expect("open");
+        let csv = "instrument_token,tradingsymbol,name,exchange,segment,instrument_type,expiry,last_price,lot_size,tick_size\n\
+12009984,NIFTY2625024000CE,NIFTY,NFO,NFO,CE,2026-02-25,0,50,0.05\n";
+        store.load_csv(csv.as_bytes()).expect("load nfo csv");
+        assert_eq!(
+            store.nfo_lot_for_tradingsymbol("NIFTY2625024000CE").expect("lot"),
+            Some(50)
+        );
+        let mut fill = crate::broker::BrokerFill {
+            fill_id: "f1".into(),
+            trade_id: "t1".into(),
+            symbol: "NIFTY2625024000CE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 100.0,
+            filled_at: Utc::now(),
+            broker: "zerodha_kite".into(),
+            exchange_segment: Some("nse_fo".into()),
+            product: Some("NRML".into()),
+            currency: Some("INR".into()),
+            ..Default::default()
+        };
+        let mut fills = [fill];
+        stamp_zerodha_kite_nfo_fills(&mut fills, &store);
+        assert_eq!(fills[0].lot, Some(50));
+        assert_eq!(fills[0].instrument_type.as_deref(), Some("CE"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 use super::descriptor::{
     BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    BINANCE_COM_USDM_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
 };
 
 fn funds_book_allowed(book_id: &str) -> bool {
@@ -21,6 +22,7 @@ fn funds_book_allowed(book_id: &str) -> bool {
             | BINANCE_COM_COINM_BOOK_ID
             | KOTAK_NSE_BSE_CASH_BOOK_ID
             | KOTAK_NSE_NFO_BOOK_ID
+            | KOTAK_NSE_CDS_BOOK_ID
     )
 }
 
@@ -32,6 +34,7 @@ fn positions_book_allowed(book_id: &str) -> bool {
             | BINANCE_COM_COINM_BOOK_ID
             | KOTAK_NSE_BSE_CASH_BOOK_ID
             | KOTAK_NSE_NFO_BOOK_ID
+            | KOTAK_NSE_CDS_BOOK_ID
     )
 }
 
@@ -191,6 +194,11 @@ impl AccountBook {
             &[BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID]
         } else if lower.contains("kotak") {
             &[KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID]
+        } else if lower.contains("zerodha") {
+            &[
+                crate::data::ZERODHA_NSE_BSE_CASH_BOOK_ID,
+                crate::data::ZERODHA_NSE_NFO_BOOK_ID,
+            ]
         } else {
             &[]
         }

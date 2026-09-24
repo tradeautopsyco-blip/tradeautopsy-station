@@ -1,7 +1,7 @@
 mod store;
 mod ticker;
 
-pub use store::InstrumentStore;
+pub use store::{stamp_zerodha_kite_nfo_fills, InstrumentStore};
 pub use ticker::normalize_broker_ticker;
 
 fn env_flag_truthy(raw: &str) -> bool {

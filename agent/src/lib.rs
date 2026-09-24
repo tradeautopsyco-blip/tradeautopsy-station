@@ -17,6 +17,7 @@ mod broker_sync_control;
 mod broker_validation;
 mod coinm_realized_pnl;
 mod money_matrix;
+mod fx_cds_realized_pnl;
 mod nfo_realized_pnl;
 mod options_realized_pnl;
 mod data;
@@ -97,7 +98,7 @@ pub use data::{
     ObtainEnvelope, ObtainStatus, Physics, ProvenanceLine, QuoteEnvelope, QuoteStatus, QuoteTick,
     Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS, ZERODHA_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS, ZERODHA_NSE_BSE_CASH_BOOK_ID,
     ZERODHA_NSE_NFO_BOOK_ID,
 };
 pub use device_login::{
@@ -1359,6 +1360,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         credential_vault,
         account_book.clone(),
         kotak_nfo_scrip_master.clone(),
+        Some(instruments.clone()),
     ));
 
     let today_service = Arc::new(TodayService::new(

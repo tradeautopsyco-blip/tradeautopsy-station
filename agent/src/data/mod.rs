@@ -173,7 +173,8 @@ pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
     BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID, ZERODHA_KITE_ADAPTER_ID,
+    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    ZERODHA_KITE_ADAPTER_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 pub use extract::{
@@ -221,7 +222,8 @@ pub use kotak_private::{
     kotak_cash_limits_jdata_body, kotak_jdata_form_body, kotak_nfo_limits_jdata_body,
 };
 pub use kotak_quotes::{
-    is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
+    is_cds_segment, is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json,
+    nfo_open_interest_from_kotak_json,
     parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,
     tick_cash_builders_from_kotak_json, NfoOiSessionSlice, NfoOpenInterest, QUOTE_TYPE_ALL,
@@ -236,7 +238,8 @@ pub use resample::extract_resample;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use router::RouteOutcome;
 pub use source_manifest::{
-    describe, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest, load_first_party_manifests,
+    describe, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest, zerodha_kite_nfo_manifest,
+    load_first_party_manifests,
     manifest_for_book_id, obtain, shared_budget, shipping_book_id_for_slug, ObtainEnvelope,
     ObtainStatus, SourceManifest,
 };

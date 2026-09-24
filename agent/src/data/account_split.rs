@@ -5,7 +5,8 @@ use crate::kotak_nfo_scrip::{KotakNfoContract, KotakNfoScripMaster};
 use std::collections::HashMap;
 
 use super::descriptor::{
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 
@@ -27,6 +28,20 @@ fn norm_seg(s: &str) -> String {
 
 fn is_kotak_nfo_segment(segment: &str) -> bool {
     segment == "nse_fo"
+}
+
+fn is_kotak_cds_segment(segment: &str) -> bool {
+    segment == "cde_fo"
+}
+
+fn kotak_cds_fill_ok(fill: &BrokerFill) -> bool {
+    let product = fill
+        .product
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(product.as_str(), "NRML" | "MIS")
 }
 
 fn is_kotak_cash_segment(segment: &str) -> bool {
@@ -118,9 +133,12 @@ pub fn split_fills_by_book(
             let master = nfo_master.unwrap_or(&empty);
             let mut cash = Vec::new();
             let mut nfo = Vec::new();
+            let mut cds = Vec::new();
             for fill in fills {
                 let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
-                if is_kotak_nfo_segment(&segment) && kotak_nfo_fill_ok(&fill, master) {
+                if is_kotak_cds_segment(&segment) && kotak_cds_fill_ok(&fill) {
+                    cds.push(fill);
+                } else if is_kotak_nfo_segment(&segment) && kotak_nfo_fill_ok(&fill, master) {
                     nfo.push(fill);
                 } else if is_kotak_cash_segment(&segment) && kotak_cash_fill_ok(&fill) {
                     cash.push(fill);
@@ -129,6 +147,7 @@ pub fn split_fills_by_book(
             let mut out = HashMap::new();
             out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
             out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
+            out.insert(KOTAK_NSE_CDS_BOOK_ID.to_string(), cds);
             out
         }
         "zerodha_kite" => {
@@ -178,6 +197,7 @@ pub fn fills_provenance_path(adapter_name: &str) -> &str {
     match normalize_adapter_name(adapter_name) {
         "binance_com" => "/api/v3/myTrades",
         "kotak_neo" => "/quick/user/trades",
+        "zerodha_kite" => "/trades",
         _ => "",
     }
 }
@@ -324,6 +344,21 @@ mod tests {
             Some(0)
         );
         assert_eq!(split.get(KOTAK_NSE_NFO_BOOK_ID).map(|v| v.len()), Some(1));
+    }
+
+    #[test]
+    fn kotak_cde_fo_routes_to_cds_book() {
+        let master = KotakNfoScripMaster::empty();
+        let fills = vec![kotak_fill("cde_fo", "NRML", Some(1000))];
+        let split = split_fills_by_book("kotak_neo", fills, Some(&master));
+        assert_eq!(
+            split.get(KOTAK_NSE_CDS_BOOK_ID).map(|v| v.len()),
+            Some(1)
+        );
+        assert_eq!(
+            split.get(KOTAK_NSE_BSE_CASH_BOOK_ID).map(|v| v.len()),
+            Some(0)
+        );
     }
 
     #[test]
