@@ -73,8 +73,8 @@ fn trades_day_book_maps_to_fill_events() {
 
     assert_eq!(
         fills.len(),
-        2,
-        "cash I/D only; NFO, MTF, and CO dropped"
+        3,
+        "cash I/D plus NFO D; MTF and CO dropped"
     );
     let itbees = &fills[0];
     assert_eq!(itbees.fill_id, "500001");
@@ -92,14 +92,20 @@ fn trades_day_book_maps_to_fill_events() {
     assert_eq!(itbees.filled_at_unix_ms, ITBEES_FILLED_AT_MS);
     assert!(itbees.fee_amount.is_none());
 
-    let reliance = &fills[1];
+    let nifty = &fills[1];
+    assert_eq!(nifty.symbol, "NIFTY26JUL24000CE");
+    assert_eq!(nifty.exchange_segment.as_deref(), Some("nse_fo"));
+    assert_eq!(nifty.product.as_deref(), Some("NRML"));
+    assert_eq!(nifty.fill_id, "500003");
+
+    let reliance = &fills[2];
     assert_eq!(reliance.symbol, "RELIANCE-EQ");
     assert_eq!(reliance.side, "SELL");
     assert_eq!(reliance.product.as_deref(), Some("D"));
     assert_eq!(reliance.filled_at_unix_ms, RELIANCE_FILLED_AT_MS);
     assert_eq!(reliance.fill_id, "500002");
 
-    assert!(!fills.iter().any(|f| f.symbol.starts_with("TCS") || f.symbol.starts_with("NIFTY")));
+    assert!(!fills.iter().any(|f| f.symbol.starts_with("TCS")));
     assert_component_never_saw_secrets(&state, &wasm);
 }
 

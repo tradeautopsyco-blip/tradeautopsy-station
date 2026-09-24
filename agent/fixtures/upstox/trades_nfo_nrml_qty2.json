@@ -1,0 +1,45 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "trade_id": "600001",
+      "order_id": "0800000000000101",
+      "exchange_order_id": "220000000000101",
+      "tradingsymbol": "NIFTY2625024000CE",
+      "exchange": "NFO",
+      "instrument_token": "NSE_FO|52166",
+      "transaction_type": "BUY",
+      "product": "D",
+      "average_price": 100.0,
+      "quantity": 2,
+      "exchange_timestamp": "2026-07-25 11:30:00",
+      "order_timestamp": "2026-07-25 11:29:55"
+    },
+    {
+      "trade_id": "600002",
+      "order_id": "0800000000000102",
+      "exchange_order_id": "220000000000102",
+      "tradingsymbol": "NIFTY2625024000CE",
+      "exchange": "NFO",
+      "instrument_token": "NSE_FO|52166",
+      "transaction_type": "SELL",
+      "product": "D",
+      "average_price": 110.0,
+      "quantity": 2,
+      "exchange_timestamp": "2026-07-25 12:00:00",
+      "order_timestamp": "2026-07-25 11:59:55"
+    },
+    {
+      "trade_id": "600003",
+      "order_id": "0800000000000103",
+      "tradingsymbol": "RELIANCE-EQ",
+      "exchange": "NSE",
+      "transaction_type": "BUY",
+      "product": "I",
+      "average_price": 2500.0,
+      "quantity": 1,
+      "exchange_timestamp": "2026-07-25 09:00:00",
+      "order_timestamp": "2026-07-25 08:59:50"
+    }
+  ]
+}
