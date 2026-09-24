@@ -11,7 +11,6 @@ use tradeautopsy_agent::{
 use ubi_support::{assert_component_never_saw_secrets, component_wasm_from_crate, sentinel_hmac};
 
 const TRADES_PATH: &str = "/v2/order/trades/get-trades-for-day";
-/// Named NFO book (host fence lands in integrator); wasm tests use cash book_id for allowlist.
 const UPSTOX_NSE_NFO_BOOK_ID: &str = "upstox-nse-nfo";
 const UPSTOX_NSE_BSE_CASH_BOOK_ID: &str = "upstox-nse-bse-cash";
 /// 2026-07-25 11:30:00 IST (aligned with kite NFO anchor).
@@ -35,7 +34,7 @@ fn nfo_config() -> UbiHostConfig {
     UbiHostConfig {
         connection_id: "conn-upstox-nfo-001".into(),
         broker_slug: "upstox".into(),
-        book_id: UPSTOX_NSE_BSE_CASH_BOOK_ID.into(),
+        book_id: UPSTOX_NSE_NFO_BOOK_ID.into(),
         asset_class: AssetClass::Equity,
         instrument_class: InstrumentClass::Option,
         is_inverse: false,

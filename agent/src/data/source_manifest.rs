@@ -1269,14 +1269,17 @@ pub fn upstox_nfo_manifest() -> SourceManifest {
         manifest_id: "tradeautopsy:upstox-nfo@0.1.0".into(),
         adapter_id: "upstox".into(),
         book_id: "upstox-nse-nfo".into(),
-        implemented: vec!["tradebook".into()],
-        bindings: vec![account_binding(
-            "upstox",
-            "tradebook",
-            "fills",
-            coverage,
-            Limits::default(),
-        )],
+        implemented: vec!["tradebook".into(), "instruments".into()],
+        bindings: vec![
+            account_binding(
+                "upstox",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            instruments_binding("upstox", coverage, AuthMode::Public),
+        ],
     }
 }
 
@@ -1292,14 +1295,17 @@ pub fn fyers_nfo_manifest() -> SourceManifest {
         manifest_id: "tradeautopsy:fyers-nfo@0.1.0".into(),
         adapter_id: "fyers".into(),
         book_id: "fyers-nse-nfo".into(),
-        implemented: vec!["tradebook".into()],
-        bindings: vec![account_binding(
-            "fyers",
-            "tradebook",
-            "fills",
-            coverage,
-            Limits::default(),
-        )],
+        implemented: vec!["tradebook".into(), "instruments".into()],
+        bindings: vec![
+            account_binding(
+                "fyers",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            instruments_binding("fyers", coverage, AuthMode::Public),
+        ],
     }
 }
 

@@ -5,16 +5,16 @@ mod ubi_support;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tradeautopsy_agent::{
-    fill_event_to_broker_fill, run_fetch_fills, NfoRealizedPnlEngine, AssetClass,
-    BrokerHttpFixture, FillCursor, InstrumentClass, UbiHostConfig, UbiHostState, WitAssetClass,
-    WitInstrumentClass,
+    fill_event_to_broker_fill, run_fetch_fills, split_fills_by_book, NfoRealizedPnlEngine,
+    AssetClass, BrokerHttpFixture, FillCursor, InstrumentClass, UbiHostConfig, UbiHostState,
+    WitAssetClass, WitInstrumentClass,
 };
 use ubi_support::{
     assert_component_never_saw_secrets, component_wasm_from_crate, sentinel_hmac,
 };
 
 const TRADEBOOK_PATH: &str = "/api/v3/tradebook";
-/// Wasm lane book stamp (host allowlist for `fyers-nse-nfo` lands in a later fence PR).
+const FYERS_NSE_NFO_BOOK_ID: &str = "fyers-nse-nfo";
 const FYERS_NSE_BSE_CASH_BOOK_ID: &str = "fyers-nse-bse-cash";
 /// 2026-07-25 11:30:00 IST (aligned with kite NFO fixture).
 const NFO_BUY_MS: i64 = 1_784_959_200_000;
@@ -37,7 +37,7 @@ fn nfo_config() -> UbiHostConfig {
     UbiHostConfig {
         connection_id: "conn-fyers-nfo-001".into(),
         broker_slug: "fyers".into(),
-        book_id: FYERS_NSE_BSE_CASH_BOOK_ID.into(),
+        book_id: FYERS_NSE_NFO_BOOK_ID.into(),
         asset_class: AssetClass::Equity,
         instrument_class: InstrumentClass::Option,
         is_inverse: false,
@@ -103,6 +103,28 @@ fn nfo_margin_trades_map_to_nse_fo_fill_events() {
         "cash row still present for host split"
     );
     assert_component_never_saw_secrets(&state, &wasm);
+}
+
+#[test]
+fn split_puts_nfo_on_fyers_nse_nfo_book_only() {
+    let wasm = fyers_component_wasm();
+    let (fills, _) = run_fetch_fills(
+        &wasm,
+        fixture_state(200, read_fyers_fixture("tradebook_nfo_margin_qty2.json")),
+        empty_cursor(),
+    )
+    .expect("fetch_fills");
+
+    let broker_fills: Vec<_> = fills.iter().map(fill_event_to_broker_fill).collect();
+    let split = split_fills_by_book("fyers", broker_fills.clone(), None);
+    assert_eq!(
+        split.get(FYERS_NSE_NFO_BOOK_ID).map(|v| v.len()),
+        Some(2)
+    );
+    assert_eq!(
+        split.get(FYERS_NSE_BSE_CASH_BOOK_ID).map(|v| v.len()),
+        Some(1)
+    );
 }
 
 #[test]
