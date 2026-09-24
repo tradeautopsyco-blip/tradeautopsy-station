@@ -319,7 +319,16 @@ impl BrokerSyncController {
 pub fn uses_wasm_component(broker_slug: &str) -> bool {
     matches!(
         broker_slug,
-        "binance_com" | "kotak_neo" | "zerodha_kite" | "upstox"
+        "binance_com"
+            | "kotak_neo"
+            | "zerodha_kite"
+            | "upstox"
+            | "fyers"
+            | "groww"
+            | "bybit"
+            | "okx_com"
+            | "kraken"
+            | "coinbase_advanced"
     )
 }
 
@@ -396,8 +405,28 @@ pub fn build_runtime_adapter(
         | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. })
         | ("upstox", CredentialBlob::UpstoxOAuthBearerSession { .. })
         | ("fyers", CredentialBlob::FyersOAuthJsonAppIdHashSession { .. })
-        | ("groww", CredentialBlob::GrowwChecksumSession { .. }) => {
+        | ("groww", CredentialBlob::GrowwChecksumSession { .. })
+        | ("bybit", CredentialBlob::HmacApiKeySecret { .. })
+        | ("kraken", CredentialBlob::HmacApiKeySecret { .. })
+        | ("okx_com", CredentialBlob::OkxPassphraseSession { .. })
+        | ("coinbase_advanced", CredentialBlob::CoinbaseJwtEs256Session { .. }) => {
             build_wasm_runtime_adapter(broker_slug, connection_id, blob)
+        }
+        (slug, CredentialBlob::HmacApiKeySecret { .. })
+            if matches!(
+                slug,
+                "zerodha_kite"
+                    | "upstox"
+                    | "fyers"
+                    | "groww"
+                    | "dhan"
+                    | "okx_com"
+                    | "coinbase_advanced"
+            ) =>
+        {
+            anyhow::bail!(
+                "broker session vault incomplete for {slug} — Delete the connection in Station, then Connect again and finish browser login"
+            )
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),
     }
@@ -573,7 +602,11 @@ mod b5_enforcer_sot_tests {
             Err(e) => e,
             Ok(_) => panic!("Kite slug must reject HMAC blob"),
         };
-        assert!(err.to_string().contains("unsupported broker"), "{}", err);
+        assert!(
+            err.to_string().contains("session vault incomplete"),
+            "{}",
+            err
+        );
     }
 
     fn kite_blob() -> CredentialBlob {

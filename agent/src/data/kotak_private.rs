@@ -95,7 +95,9 @@ pub async fn fetch_kotak_private_json(
         | HostCredentialBlob::UpstoxSession { .. }
         | HostCredentialBlob::FyersSession { .. }
         | HostCredentialBlob::GrowwSession { .. }
-        | HostCredentialBlob::DhanSession { .. } => {
+        | HostCredentialBlob::DhanSession { .. }
+        | HostCredentialBlob::OkxSession { .. }
+        | HostCredentialBlob::CoinbaseJwt { .. } => {
             return Err(KotakPrivateFetchError::Session)
         }
     };
@@ -713,7 +715,9 @@ pub(crate) async fn fetch_kotak_private_debug(
         | HostCredentialBlob::UpstoxSession { .. }
         | HostCredentialBlob::FyersSession { .. }
         | HostCredentialBlob::GrowwSession { .. }
-        | HostCredentialBlob::DhanSession { .. } => {
+        | HostCredentialBlob::DhanSession { .. }
+        | HostCredentialBlob::OkxSession { .. }
+        | HostCredentialBlob::CoinbaseJwt { .. } => {
             return Err(KotakPrivateFetchError::Session)
         }
     };

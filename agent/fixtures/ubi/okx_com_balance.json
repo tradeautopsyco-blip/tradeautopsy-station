@@ -1,0 +1,25 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "adjEq": "",
+      "details": [
+        {
+          "ccy": "BTC",
+          "eq": "0.5",
+          "cashBal": "0.5",
+          "availBal": "0.5"
+        },
+        {
+          "ccy": "USDT",
+          "eq": "1000",
+          "cashBal": "1000",
+          "availBal": "1000"
+        }
+      ],
+      "totalEq": "1000",
+      "uTime": "1499865549590"
+    }
+  ]
+}

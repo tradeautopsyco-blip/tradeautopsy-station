@@ -128,12 +128,20 @@ const FYERS_HOSTS: &[&str] = &[
     "api-t2.fyers.in",
 ];
 
+const OKX_COM_HOSTS: &[&str] = &["www.okx.com"];
+
+const KRAKEN_HOSTS: &[&str] = &["api.kraken.com"];
+
 const GROWW_HOSTS: &[&str] = &[
     "api.groww.in",
     "growwapi-assets.groww.in",
     // Socket host confirmed at dogfood if Z7 adds it; sinkhole early per lock row 22.
     "socket-api.groww.in",
 ];
+
+const COINBASE_ADVANCED_HOSTS: &[&str] = &["api.coinbase.com"];
+
+const BYBIT_HOSTS: &[&str] = &["api.bybit.com"];
 
 /// Broker slug → sinkhole hostnames (pure, testable).
 ///
@@ -148,9 +156,13 @@ pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
         "upstox" => UPSTOX_HOSTS,
         "fyers" => FYERS_HOSTS,
         "groww" => GROWW_HOSTS,
+        "coinbase_advanced" | "coinbase" => COINBASE_ADVANCED_HOSTS,
+        "okx_com" => OKX_COM_HOSTS,
+        "kraken" => KRAKEN_HOSTS,
         "kotak" | "kotak_neo" => KOTAK_HOSTS,
         "binance" | "binance_com" => BINANCE_COM_HOSTS,
         "binance_us" => BINANCE_US_HOSTS,
+        "bybit" => BYBIT_HOSTS,
         _ => &[],
     }
 }

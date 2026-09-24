@@ -1,0 +1,17 @@
+[package]
+name = "ubi-coinbase-advanced-adapter"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "UBI Wasm component for coinbase_advanced spot fills (B6 coinbase_advanced, ADR 0018)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde_json = "1"
+wit-bindgen = { version = "0.46", default-features = false, features = ["macros", "realloc"] }
+
+[profile.release]
+opt-level = "s"

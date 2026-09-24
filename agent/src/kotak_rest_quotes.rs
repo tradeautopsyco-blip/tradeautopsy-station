@@ -605,7 +605,9 @@ pub async fn fetch_quotes_json(
         | HostCredentialBlob::UpstoxSession { .. }
         | HostCredentialBlob::FyersSession { .. }
         | HostCredentialBlob::GrowwSession { .. }
-        | HostCredentialBlob::DhanSession { .. } => {
+        | HostCredentialBlob::DhanSession { .. }
+        | HostCredentialBlob::OkxSession { .. }
+        | HostCredentialBlob::CoinbaseJwt { .. } => {
             return Err(QuoteFetchError {
                 class: QuoteFetchErrorClass::Session,
             });

@@ -33,6 +33,7 @@ mod kotak_rest_quotes;
 mod kotak_scrip_master;
 mod live_book;
 mod loopback_oauth_tls;
+pub mod rustls_crypto;
 mod metrics;
 mod oauth_loopback;
 mod outbox;
@@ -170,8 +171,10 @@ pub use ubi::{
     KeyringBrokerCredentialVault, MemoryBrokerCredentialVault, PreparedHttpRequest,
     RecordingTransport, ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig,
     UbiHostError, UbiHostState, WasmBrokerAdapter, WitAssetClass, WitInstrumentClass,
-    ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE, COMPONENT_DIR_ENV,
-    FORBIDDEN_COMPONENT_HEADERS, KOTAK_SESSION_KEYCHAIN_SERVICE, RESPONSE_HEADER_ALLOWLIST,
+    ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE, BYBIT_API_HOST, BYBIT_BOOK_ID,
+    BYBIT_RECV_WINDOW, COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, KRAKEN_API_HOST,
+    KRAKEN_BOOK_ID, OKX_COM_SPOT_BOOK_ID, OKX_API_HOST,
+    KOTAK_SESSION_KEYCHAIN_SERVICE, RESPONSE_HEADER_ALLOWLIST,
 };
 pub use usdm_realized_pnl::{
     income_realized_from_json, realized_pnl_usd, usdm_income_call, UsdmIncomeCall, UsdmIncomeRow,
@@ -1267,6 +1270,8 @@ fn plant_binance_options_fills(account_book: &Arc<Mutex<crate::data::AccountBook
 }
 
 pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
+    rustls_crypto::ensure_installed();
+
     let event_bus = EventBus::new(2048);
     // Per-venue egress posture reaches Notch over the same SSE stream as broker
     // sync. Every slot is reported on every change, so a banned venue never

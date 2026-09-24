@@ -1,0 +1,29 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "list": [
+      {
+        "accountType": "UNIFIED",
+        "coin": [
+          {
+            "coin": "BTC",
+            "walletBalance": "0.015",
+            "locked": "0"
+          },
+          {
+            "coin": "USDT",
+            "walletBalance": "1000",
+            "locked": "0"
+          },
+          {
+            "coin": "ETH",
+            "walletBalance": "0",
+            "locked": "0"
+          }
+        ]
+      }
+    ]
+  },
+  "time": 1700000000000
+}

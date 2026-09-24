@@ -4,6 +4,8 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tradeautopsy_agent::rustls_crypto::ensure_installed();
+
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "tradeautopsy_agent=debug,info".into());
 

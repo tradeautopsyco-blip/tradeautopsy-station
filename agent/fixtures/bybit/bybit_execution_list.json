@@ -1,0 +1,30 @@
+{
+  "retCode": 0,
+  "retMsg": "OK",
+  "result": {
+    "category": "spot",
+    "list": [
+      {
+        "symbol": "BTCUSDT",
+        "orderId": "8c065341-7b52-4ca9-ac2c-37e31ac55c94",
+        "orderLinkId": "",
+        "side": "Buy",
+        "orderPrice": "42000",
+        "orderQty": "0.01",
+        "leavesQty": "0",
+        "execType": "Trade",
+        "execFee": "0.000015",
+        "feeCurrency": "BTC",
+        "feeRate": "0.001",
+        "execPrice": "42100.5",
+        "execQty": "0.01",
+        "execValue": "421.005",
+        "execTime": "1700000123456",
+        "isMaker": false,
+        "execId": "e0cbe81d-0f18-5866-9415-cf319b5dab3b"
+      }
+    ],
+    "nextPageCursor": ""
+  },
+  "time": 1700000200000
+}

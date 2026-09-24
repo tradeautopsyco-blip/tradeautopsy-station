@@ -4,7 +4,8 @@
 
 use crate::api::AppState;
 use crate::ubi::{
-    begin_connect, exchange_request_token, take_pending_connect, ReqwestKiteSessionHttp,
+    begin_connect, exchange_request_token, take_pending_connect, take_single_active_pending_connect,
+    ReqwestKiteSessionHttp,
 };
 use axum::extract::{Query, State};
 use axum::http::{header, StatusCode};
@@ -92,35 +93,51 @@ pub async fn callback_handler(
             "Kite login failed. Return to Station and try Connect again.",
         );
     }
-    let Some(state_nonce) = query.state.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
-        tracing::warn!("zerodha callback missing state");
-        return connect_html_response(StatusCode::BAD_REQUEST, "Invalid callback (missing state).");
-    };
     let Some(request_token) = query
         .request_token
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
     else {
-        tracing::warn!(
-            "zerodha callback missing request_token state={}",
-            truncate_state(state_nonce)
-        );
+        tracing::warn!("zerodha callback missing request_token");
         return connect_html_response(
             StatusCode::BAD_REQUEST,
             "Invalid callback (missing request token).",
         );
     };
-    let Some(pending) = take_pending_connect(state_nonce) else {
+
+    let state_nonce = query.state.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let pending = if let Some(state_nonce) = state_nonce {
+        match take_pending_connect(state_nonce) {
+            Some(p) => p,
+            None => {
+                tracing::warn!(
+                    "zerodha callback stale or unknown state={}",
+                    truncate_state(state_nonce)
+                );
+                return connect_html_response(
+                    StatusCode::BAD_REQUEST,
+                    "Connect session expired or already used. Start Connect again from Station.",
+                );
+            }
+        }
+    } else {
         tracing::warn!(
-            "zerodha callback stale or unknown state={}",
-            truncate_state(state_nonce)
+            "zerodha callback missing state — using single active connect fallback (Kite redirect)"
         );
-        return connect_html_response(
-            StatusCode::BAD_REQUEST,
-            "Connect session expired or already used. Start Connect again from Station.",
-        );
+        match take_single_active_pending_connect() {
+            Some(p) => p,
+            None => {
+                return connect_html_response(
+                    StatusCode::BAD_REQUEST,
+                    "Invalid callback (missing state). Start Connect again from Station.",
+                );
+            }
+        }
     };
+    let state_log = state_nonce
+        .map(truncate_state)
+        .unwrap_or_else(|| "fallback".into());
 
     let mint_result = tokio::task::spawn_blocking({
         let api_key = pending.api_key.clone();
@@ -144,7 +161,7 @@ pub async fn callback_handler(
             tracing::warn!(
                 "zerodha token exchange failed class={} state={}",
                 e.class.as_str(),
-                truncate_state(state_nonce)
+                state_log
             );
             return connect_html_response(
                 StatusCode::BAD_REQUEST,
@@ -166,20 +183,14 @@ pub async fn callback_handler(
         &pending.connection_id,
         &blob,
     ) {
-        tracing::warn!(
-            "zerodha session vault save failed: {e} state={}",
-            truncate_state(state_nonce)
-        );
+        tracing::warn!("zerodha session vault save failed: {e} state={}", state_log);
         return connect_html_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Could not save session. Return to Station and try Connect again.",
         );
     }
 
-    tracing::info!(
-        "zerodha connect succeeded state={}",
-        truncate_state(state_nonce)
-    );
+    tracing::info!("zerodha connect succeeded state={}", state_log);
     connect_html_response(
         StatusCode::OK,
         "Kite login complete. You can return to TradeAutopsy Station.",

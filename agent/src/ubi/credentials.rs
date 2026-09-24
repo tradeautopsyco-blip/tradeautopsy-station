@@ -96,6 +96,23 @@ pub enum CredentialBlob {
         #[serde(rename = "expiryTime")]
         expiry_time: String,
     },
+    #[serde(rename = "okx_passphrase_session")]
+    OkxPassphraseSession {
+        #[serde(rename = "apiKey")]
+        api_key: String,
+        #[serde(rename = "apiSecret")]
+        api_secret: String,
+        passphrase: String,
+    },
+    #[serde(rename = "coinbase_jwt_es256_session")]
+    CoinbaseJwtEs256Session {
+        /// CDP API key name (`kid` / JWT `sub`).
+        #[serde(rename = "apiKey")]
+        api_key: String,
+        /// PEM-encoded EC private key (vault-only; never in Wasm).
+        #[serde(rename = "pemPrivateKey")]
+        pem_private_key: String,
+    },
     #[serde(rename = "groww_checksum_session")]
     GrowwChecksumSession {
         #[serde(rename = "apiKey")]
@@ -136,6 +153,8 @@ impl CredentialBlob {
             Self::KiteChecksumSession { api_key, .. } => Some(api_key),
             Self::UpstoxOAuthBearerSession { client_id, .. } => Some(client_id),
             Self::FyersOAuthJsonAppIdHashSession { app_id, .. } => Some(app_id),
+            Self::OkxPassphraseSession { api_key, .. } => Some(api_key),
+            Self::CoinbaseJwtEs256Session { api_key, .. } => Some(api_key),
             Self::GrowwChecksumSession { api_key, .. } => Some(api_key),
             Self::DhanConsentSession { app_id, .. } => Some(app_id),
             Self::KotakNeoTotpSession { .. } => None,
@@ -147,6 +166,17 @@ impl CredentialBlob {
 pub fn decode_credential_blob(json: &str) -> anyhow::Result<CredentialBlob> {
     if let Ok(blob) = serde_json::from_str::<CredentialBlob>(json) {
         return Ok(blob);
+    }
+    // Station app-only OAuth JSON shares `apiKey`/`apiSecret` but lacks session fields — serde
+    // rejects it above; legacy decode would wrongly treat it as Binance-style HMAC.
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+        if let Some(scheme) = value.get("authScheme").and_then(|v| v.as_str()) {
+            if scheme != "hmac_api_key_secret" {
+                anyhow::bail!(
+                    "incomplete session credential blob (authScheme={scheme}); finish Connect in Station"
+                );
+            }
+        }
     }
     #[derive(Deserialize)]
     struct Legacy {
@@ -177,6 +207,32 @@ mod tests {
         let json = r#"{"apiKey":"k","apiSecret":"s"}"#;
         let decoded = decode_credential_blob(json).unwrap();
         assert_eq!(decoded, CredentialBlob::hmac("k", "s"));
+    }
+
+    #[test]
+    fn station_kite_app_only_json_does_not_decode_as_hmac() {
+        let json = r#"{"authScheme":"kite_checksum_session","apiKey":"k","apiSecret":"s"}"#;
+        let err = decode_credential_blob(json).unwrap_err();
+        assert!(
+            err.to_string().contains("kite_checksum_session"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn station_oauth_app_only_json_never_decodes_as_hmac() {
+        for json in [
+            r#"{"authScheme":"upstox_oauth_bearer_session","apiKey":"c","apiSecret":"s"}"#,
+            r#"{"authScheme":"fyers_oauth_json_app_id_hash_session","apiKey":"a","apiSecret":"s"}"#,
+            r#"{"authScheme":"okx_passphrase_session","apiKey":"k","apiSecret":"s","passphrase":"p"}"#,
+            r#"{"authScheme":"groww_checksum_session","apiKey":"k","apiSecret":"s"}"#,
+            r#"{"authScheme":"dhan_consent_session","apiKey":"a","apiSecret":"s"}"#,
+        ] {
+            assert!(
+                decode_credential_blob(json).is_err(),
+                "expected error for {json}"
+            );
+        }
     }
 
     #[test]
@@ -250,6 +306,20 @@ mod tests {
             }
             _ => panic!("expected kotak"),
         }
+    }
+
+    #[test]
+    fn okx_passphrase_session_blob_roundtrip() {
+        let blob = CredentialBlob::OkxPassphraseSession {
+            api_key: "key".into(),
+            api_secret: "sec".into(),
+            passphrase: "phrase".into(),
+        };
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("okx_passphrase_session"));
+        assert!(json.contains("passphrase"));
+        let decoded = decode_credential_blob(&json).unwrap();
+        assert_eq!(decoded, blob);
     }
 
     #[test]

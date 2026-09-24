@@ -505,7 +505,9 @@ pub async fn refresh_from_session(
         | HostCredentialBlob::UpstoxSession { .. }
         | HostCredentialBlob::FyersSession { .. }
         | HostCredentialBlob::GrowwSession { .. }
-        | HostCredentialBlob::DhanSession { .. } => {
+        | HostCredentialBlob::DhanSession { .. }
+        | HostCredentialBlob::OkxSession { .. }
+        | HostCredentialBlob::CoinbaseJwt { .. } => {
             return Err(InstrumentMasterFetchError::new(
                 InstrumentMasterErrorClass::FilePathsHttp,
                 None,

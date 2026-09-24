@@ -7,6 +7,8 @@ use crate::inr_cash_wac::{
     aggregate_known_pnl_inr, is_aggregate_eligible as is_inr_eligible, is_inr_cash_fill,
     InrCashRoundTrip, InrCashWacEngine, CALC_PROFILE_ID as INR_CASH_CALC_PROFILE,
 };
+use crate::money_matrix::is_binance_com_spot_fill;
+use crate::nfo_realized_pnl::is_nfo_fill;
 use crate::recent_trades::RecentTradesStore;
 use crate::round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, RoundTrip, RoundTripEngine,
@@ -156,7 +158,7 @@ impl TodayService {
 
     pub fn refresh_from_fills(&self) -> anyhow::Result<()> {
         let fills = self.recent_trades.fetch_all_fills()?;
-        let (usd_fills, _inr_fills) = partition_fills(fills);
+        let (usd_fills, _inr_fills, _nfo_fills) = partition_fills(fills);
         // Snapshots / signal store remain COM USD book. INR cash uses inr_cash_wac on build_payload.
         let result = self.engine.reconstruct(usd_fills);
         let today = local_today();

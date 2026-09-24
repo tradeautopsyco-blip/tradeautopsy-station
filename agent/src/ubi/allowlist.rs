@@ -36,6 +36,14 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     // groww — REST v1 reads + mint host (B6 row 22; assets CSV host separate).
     "api.groww.in",
     "growwapi-assets.groww.in",
+    // bybit — v5 REST prod only (B6 row 22; testnet/demo refused).
+    "api.bybit.com",
+    // okx_com — global REST only (B6 row 0; us/eea refused).
+    "www.okx.com",
+    // coinbase_advanced — Advanced Trade REST (B6 row 22; sandbox refused).
+    "api.coinbase.com",
+    // kraken — spot REST prod only (B6 row 22; futures hosts refused on kraken-com-spot).
+    "api.kraken.com",
 ];
 
 pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
@@ -54,6 +62,9 @@ pub const GROWW_API_HOST: &str = "api.groww.in";
 pub const GROWW_ASSETS_HOST: &str = "growwapi-assets.groww.in";
 /// Mandatory on every Groww REST call (B6 row 2 / D4).
 pub const GROWW_API_VERSION_HEADER: &str = "1.0";
+
+pub const OKX_COM_SPOT_BOOK_ID: &str = "okx-com-spot";
+pub const OKX_API_HOST: &str = "www.okx.com";
 
 /// Read-only Kite REST path prefixes allowed for book `zerodha-nse-bse-cash`.
 pub fn zerodha_kite_path_allowed(path_norm: &str) -> bool {
@@ -189,6 +200,36 @@ fn groww_path_refused_impl(method: &str, path_norm: &str) -> bool {
         && p != "/v1/order/list"
 }
 
+/// Read-only OKX v5 paths for book `okx-com-spot` (B6 row 2).
+pub fn okx_path_allowed(method: &str, path_norm: &str) -> bool {
+    if method.to_ascii_uppercase() != "GET" {
+        return false;
+    }
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.is_empty() {
+        return false;
+    }
+    p == "/api/v5/trade/fills"
+        || p == "/api/v5/account/balance"
+        || p == "/api/v5/public/instruments"
+        || p == "/api/v5/public/time"
+        || p == "/api/v5/market/candles"
+        || p == "/api/v5/market/tickers"
+}
+
+/// Refuse sandbox header path and trading mutations on the global book.
+pub fn okx_path_refused(method: &str, path_norm: &str) -> bool {
+    okx_path_refused_impl(method, path_norm)
+}
+
+fn okx_path_refused_impl(method: &str, path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    let upper = method.to_ascii_uppercase();
+    matches!(upper.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
+        && p.starts_with("/api/v5/trade")
+        && p != "/api/v5/trade/fills"
+}
+
 pub fn host_allowed(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
     ALLOWED_BROKER_HOSTS
@@ -219,6 +260,9 @@ mod tests {
         assert!(host_allowed("api-t1.fyers.in"));
         assert!(host_allowed("api.groww.in"));
         assert!(host_allowed("growwapi-assets.groww.in"));
+        assert!(host_allowed("www.okx.com"));
+        assert!(!host_allowed("us.okx.com"));
+        assert!(!host_allowed("eea.okx.com"));
         assert!(!host_allowed("api-hft.upstox.com"));
         assert!(!host_allowed("evil.example.com"));
         assert!(!host_allowed("mlhsm.kotaksecurities.com"));
@@ -284,6 +328,16 @@ mod tests {
 
     #[test]
     fn groww_read_paths_allowed_order_posts_refused() {
+        assert!(host_allowed("api.coinbase.com"));
+        assert!(!host_allowed("api-sandbox.coinbase.com"));
+        assert!(crate::ubi::coinbase_session::coinbase_path_allowed(
+            "GET",
+            crate::ubi::coinbase_session::COINBASE_FILLS_PATH
+        ));
+        assert!(!crate::ubi::coinbase_session::coinbase_path_allowed(
+            "POST",
+            "/api/v3/brokerage/orders"
+        ));
         assert!(groww_path_allowed(GROWW_API_HOST, "GET", "/v1/order/list"));
         assert!(groww_path_allowed(
             GROWW_API_HOST,

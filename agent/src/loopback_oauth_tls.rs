@@ -36,6 +36,7 @@ fn load_or_create_pem() -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
 
 /// Serve `router` on `127.0.0.1:{port}` with a persisted loopback self-signed cert.
 pub fn spawn(router: Router, port: u16) -> anyhow::Result<()> {
+    crate::rustls_crypto::ensure_installed();
     let (cert_pem, key_pem) = load_or_create_pem()?;
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tokio::spawn(async move {

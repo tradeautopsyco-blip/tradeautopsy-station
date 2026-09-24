@@ -1,0 +1,21 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "instType": "SPOT",
+      "instId": "BTC-USDT",
+      "tradeId": "28457",
+      "ordId": "100234",
+      "clOrdId": "",
+      "billId": "551409",
+      "fillPx": "40000.1",
+      "fillSz": "0.012",
+      "side": "buy",
+      "execType": "T",
+      "feeCcy": "USDT",
+      "fee": "-0.012",
+      "ts": "1499865549590"
+    }
+  ]
+}

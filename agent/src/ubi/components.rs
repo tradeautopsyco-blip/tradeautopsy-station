@@ -41,6 +41,26 @@ const COMPONENTS: &[(&str, &str, &str)] = &[
         "ubi_groww_adapter.wasm",
         "ubi-groww-adapter",
     ),
+    (
+        "bybit",
+        "ubi_bybit_adapter.wasm",
+        "ubi-bybit-adapter",
+    ),
+    (
+        "okx_com",
+        "ubi_okx_adapter.wasm",
+        "ubi-okx-adapter",
+    ),
+    (
+        "kraken",
+        "ubi_kraken_adapter.wasm",
+        "ubi-kraken-adapter",
+    ),
+    (
+        "coinbase_advanced",
+        "ubi_coinbase_advanced_adapter.wasm",
+        "ubi-coinbase-advanced-adapter",
+    ),
 ];
 
 pub fn component_file_name(slug: &str) -> Option<&'static str> {
@@ -137,7 +157,7 @@ mod tests {
             component_file_name("groww"),
             Some("ubi_groww_adapter.wasm")
         );
-        assert_eq!(COMPONENTS.len(), 6, "signed broker components only");
+        assert_eq!(COMPONENTS.len(), 10, "signed broker components only");
     }
 
     #[test]

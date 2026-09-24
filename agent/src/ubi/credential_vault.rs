@@ -76,7 +76,16 @@ fn uses_kotak_session_service(broker_slug: &str) -> bool {
 fn read_keyring_blob(service: &str, account: &str) -> Result<Option<CredentialBlob>> {
     let entry = keyring::Entry::new(service, account).context("broker credential keyring entry")?;
     match entry.get_password() {
-        Ok(s) if !s.trim().is_empty() => Ok(Some(decode_credential_blob(&s)?)),
+        Ok(s) if !s.trim().is_empty() => match decode_credential_blob(&s) {
+            Ok(blob) => Ok(Some(blob)),
+            Err(e) => {
+                tracing::warn!(
+                    account = %account,
+                    "broker credential blob unreadable (treating as absent): {e}"
+                );
+                Ok(None)
+            }
+        },
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => bail!("keyring get broker credentials: {e}"),
     }

@@ -54,12 +54,13 @@ pub fn zerodha_callback_base_url() -> String {
     crate::oauth_loopback::https_oauth_callback_url("/api/daemon/broker/zerodha/callback")
 }
 
-pub fn kite_login_url(api_key: &str) -> String {
+pub fn kite_login_url(api_key: &str, state: &str) -> String {
     let redirect = zerodha_callback_base_url();
     format!(
-        "https://kite.zerodha.com/connect/login?v=3&api_key={}&redirect_uri={}",
+        "https://kite.zerodha.com/connect/login?v=3&api_key={}&redirect_uri={}&state={}",
         url_encode_component(api_key),
-        url_encode_component(&redirect)
+        url_encode_component(&redirect),
+        url_encode_component(state),
     )
 }
 
@@ -91,7 +92,7 @@ pub fn begin_connect(
     }
     purge_expired_pending();
     let state = generate_state_nonce();
-    let login_url = kite_login_url(api_key.trim());
+    let login_url = kite_login_url(api_key.trim(), &state);
     let pending = PendingZerodhaConnect {
         environment: environment.trim().to_string(),
         connection_id: connection_id.trim().to_string(),
@@ -129,6 +130,27 @@ pub fn take_pending_connect(state: &str) -> Option<PendingZerodhaConnect> {
     let mut map = pending_store().lock().ok()?;
     let pending = map.remove(state)?;
     if pending.expires_at_unix_ms <= now_unix_ms() {
+        return None;
+    }
+    Some(pending)
+}
+
+/// Kite often omits `state` on the loopback redirect — if exactly one connect is pending, use it.
+pub fn take_single_active_pending_connect() -> Option<PendingZerodhaConnect> {
+    purge_expired_pending();
+    let mut map = pending_store().lock().ok()?;
+    let now = now_unix_ms();
+    let keys: Vec<String> = map
+        .iter()
+        .filter(|(_, v)| v.expires_at_unix_ms > now)
+        .map(|(k, _)| k.clone())
+        .collect();
+    if keys.len() != 1 {
+        return None;
+    }
+    let key = keys[0].clone();
+    let pending = map.remove(&key)?;
+    if pending.expires_at_unix_ms <= now {
         return None;
     }
     Some(pending)
@@ -397,8 +419,18 @@ mod tests {
         assert_eq!(state.len(), 32);
         assert!(login.contains("api_key=abc123"));
         assert!(login.contains("redirect_uri="));
+        assert!(login.contains("state="));
+        assert!(login.contains(&state));
         assert!(take_pending_connect(&state).is_some());
         assert!(take_pending_connect(&state).is_none(), "state is single-use");
+    }
+
+    #[test]
+    fn single_active_pending_fallback_when_kite_omits_state() {
+        let (_state, _) = begin_connect("prod", "conn-1", "abc123", "secret").unwrap();
+        let pending = take_single_active_pending_connect().expect("one active");
+        assert_eq!(pending.connection_id, "conn-1");
+        assert!(take_single_active_pending_connect().is_none());
     }
 
     #[test]

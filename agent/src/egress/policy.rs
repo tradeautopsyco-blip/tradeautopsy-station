@@ -41,6 +41,73 @@ pub const BINANCE_COM: SlotPolicy = SlotPolicy {
     auth_meter_id: "binance_com:api_weight",
 };
 
+/// Zerodha Kite — B6 row 2: 10 rps on most endpoints, 1 rps on quote; numeric window
+/// not modeled as a hard ledger here (same pattern as Kotak NotSpecified).
+pub const ZERODHA_KITE: SlotPolicy = SlotPolicy {
+    slot_id: "zerodha_kite",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "zerodha_kite:requests",
+};
+
+/// Upstox — numeric window NOT SPECIFIED on the B6 lock; pace/freeze only (429).
+pub const UPSTOX: SlotPolicy = SlotPolicy {
+    slot_id: "upstox",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "upstox:requests",
+};
+
+/// Fyers — same NotSpecified pattern as other India OAuth brokers.
+pub const FYERS: SlotPolicy = SlotPolicy {
+    slot_id: "fyers",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "fyers:requests",
+};
+
+/// Groww — REST + assets CSV; one meter per slot (unknown bucket sharing).
+pub const GROWW: SlotPolicy = SlotPolicy {
+    slot_id: "groww",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "groww:requests",
+};
+
+/// Bybit v5 — B6 row 4: 429 / retCode 10006; no documented 418 on this lock.
+pub const BYBIT: SlotPolicy = SlotPolicy {
+    slot_id: "bybit",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "bybit:requests",
+};
+
+/// OKX v5 global — B6 row 4: code 50011 rate limit; no 418 on this lock.
+pub const OKX_COM: SlotPolicy = SlotPolicy {
+    slot_id: "okx_com",
+    rate_limit_statuses: &[429],
+    ban_statuses: &[],
+    default_backoff_ms: 60_000,
+    default_ban_ms: 300_000,
+    ban_escalation_ms: &[300_000],
+    auth_meter_id: "okx_com:requests",
+};
+
 pub const KOTAK_NEO: SlotPolicy = SlotPolicy {
     slot_id: "kotak_neo",
     // india/kotak-neo/REST.md:226 — 429 "Too many requests to the API".
@@ -54,7 +121,16 @@ pub const KOTAK_NEO: SlotPolicy = SlotPolicy {
     auth_meter_id: "kotak_neo:requests",
 };
 
-pub const SLOTS: &[SlotPolicy] = &[BINANCE_COM, KOTAK_NEO];
+pub const SLOTS: &[SlotPolicy] = &[
+    BINANCE_COM,
+    KOTAK_NEO,
+    ZERODHA_KITE,
+    UPSTOX,
+    FYERS,
+    GROWW,
+    BYBIT,
+    OKX_COM,
+];
 
 /// One metered budget inside a slot.
 #[derive(Debug, Clone, Copy)]
@@ -118,12 +194,60 @@ pub const KOTAK_NEO_REQUESTS: MeterPolicy = MeterPolicy {
     max_concurrency: 4,
 };
 
+pub const ZERODHA_KITE_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "zerodha_kite:requests",
+    slot_id: "zerodha_kite",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const UPSTOX_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "upstox:requests",
+    slot_id: "upstox",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const FYERS_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "fyers:requests",
+    slot_id: "fyers",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const GROWW_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "groww:requests",
+    slot_id: "groww",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const BYBIT_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "bybit:requests",
+    slot_id: "bybit",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
+pub const OKX_COM_REQUESTS: MeterPolicy = MeterPolicy {
+    meter_id: "okx_com:requests",
+    slot_id: "okx_com",
+    budget: Budget::NotSpecified,
+    max_concurrency: 4,
+};
+
 pub const METERS: &[MeterPolicy] = &[
     BINANCE_COM_API_WEIGHT,
     BINANCE_COM_EAPI,
     BINANCE_COM_FAPI,
     BINANCE_COM_DAPI,
     KOTAK_NEO_REQUESTS,
+    ZERODHA_KITE_REQUESTS,
+    UPSTOX_REQUESTS,
+    FYERS_REQUESTS,
+    GROWW_REQUESTS,
+    BYBIT_REQUESTS,
+    OKX_COM_REQUESTS,
 ];
 
 /// Book id → (slot, meter). Book ids are the same strings the R0 fence keys on
@@ -136,6 +260,12 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         "binance-com-usdm" => Some(&BINANCE_COM_FAPI),
         "binance-com-coinm" => Some(&BINANCE_COM_DAPI),
         "kotak-nse-bse-cash" | "kotak-nse-nfo" => Some(&KOTAK_NEO_REQUESTS),
+        crate::ubi::ZERODHA_KITE_BOOK_ID => Some(&ZERODHA_KITE_REQUESTS),
+        crate::ubi::UPSTOX_BOOK_ID => Some(&UPSTOX_REQUESTS),
+        crate::ubi::FYERS_BOOK_ID => Some(&FYERS_REQUESTS),
+        crate::ubi::GROWW_BOOK_ID => Some(&GROWW_REQUESTS),
+        crate::ubi::bybit_session::BYBIT_BOOK_ID => Some(&BYBIT_REQUESTS),
+        crate::ubi::OKX_COM_SPOT_BOOK_ID => Some(&OKX_COM_REQUESTS),
         _ => None,
     }
 }
@@ -286,6 +416,13 @@ mod tests {
         );
         assert_eq!(route_book("kotak-nse-nfo").unwrap().slot_id, "kotak_neo");
         assert_eq!(
+            route_book(crate::ubi::ZERODHA_KITE_BOOK_ID).unwrap().slot_id,
+            "zerodha_kite"
+        );
+        assert_eq!(route_book(crate::ubi::UPSTOX_BOOK_ID).unwrap().slot_id, "upstox");
+        assert_eq!(route_book(crate::ubi::FYERS_BOOK_ID).unwrap().slot_id, "fyers");
+        assert_eq!(route_book(crate::ubi::GROWW_BOOK_ID).unwrap().slot_id, "groww");
+        assert_eq!(
             route_book("binance-com-usdm").unwrap().meter_id,
             "binance_com:fapi"
         );
@@ -322,6 +459,10 @@ mod tests {
         assert_eq!(BINANCE_COM_FAPI.budget, Budget::NotSpecified);
         assert_eq!(BINANCE_COM_DAPI.budget, Budget::NotSpecified);
         assert_eq!(KOTAK_NEO_REQUESTS.budget, Budget::NotSpecified);
+        assert_eq!(ZERODHA_KITE_REQUESTS.budget, Budget::NotSpecified);
+        assert_eq!(UPSTOX_REQUESTS.budget, Budget::NotSpecified);
+        assert_eq!(FYERS_REQUESTS.budget, Budget::NotSpecified);
+        assert_eq!(GROWW_REQUESTS.budget, Budget::NotSpecified);
         assert_eq!(forecast_weight(&BINANCE_COM_EAPI, "/eapi/v1/ticker", ""), 0);
         assert_eq!(used_weight_header(&BINANCE_COM_EAPI), None);
     }
@@ -378,6 +519,31 @@ mod tests {
     fn kotak_has_no_documented_ip_ban() {
         assert!(KOTAK_NEO.ban_statuses.is_empty());
         assert_eq!(BINANCE_COM.ban_statuses, &[418]);
+    }
+
+    /// Every shipping book in `catalog_books()` must egress-route or Wasm sync gets `wrong_book`.
+    #[test]
+    fn every_catalog_book_routes_to_egress() {
+        let mut seen = std::collections::BTreeSet::new();
+        for descriptor in crate::ubi::catalog_books() {
+            if !seen.insert(descriptor.book_id.clone()) {
+                continue;
+            }
+            assert!(
+                route_book(&descriptor.book_id).is_some(),
+                "book {} (slug {}) missing route_book row",
+                descriptor.book_id,
+                descriptor.slug
+            );
+        }
+    }
+
+    #[test]
+    fn india_broker_api_hosts_map_to_slots() {
+        assert_eq!(slot_for_host("api.kite.trade").unwrap().slot_id, "zerodha_kite");
+        assert_eq!(slot_for_host("api.upstox.com").unwrap().slot_id, "upstox");
+        assert_eq!(slot_for_host("api.fyers.in").unwrap().slot_id, "fyers");
+        assert_eq!(slot_for_host("api.groww.in").unwrap().slot_id, "groww");
     }
 
     #[test]

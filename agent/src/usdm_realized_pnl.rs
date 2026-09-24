@@ -5,7 +5,8 @@
 //! Identity: `GET /fapi/v1/income?incomeType=REALIZED_PNL` (SDK AccountApi
 //! `get_income_history`, cite only — no cargo-depend). Venue `unRealizedProfit`
 //! on positionRisk stays a published display string, not a second realized book.
-//! COMMISSION is not this sum (fees later, same owner file). Force-order is
+//! COMMISSION / FUNDING_FEE are not summed into realized (follow-up in this file).
+//! Force-order is
 //! ineligible. TRADE is not this identity. This file owns the refusal to let
 //! `round_trip_engine.rs` eat USDM.
 
@@ -13,6 +14,13 @@ use serde::Deserialize;
 use serde_json::Value;
 
 pub const OWNER_PATH: &str = "agent/src/usdm_realized_pnl.rs";
+
+/// Follow-up: fold venue `COMMISSION` rows into fees — not into realized sum today.
+pub const DEFER_COMMISSION_IN_REALIZED_SUM: &str =
+    "usdm_income_commission_not_in_realized_pnl_sum";
+/// Follow-up: `FUNDING_FEE` income rows stay out of realized until lock names them.
+pub const DEFER_FUNDING_FEE_IN_REALIZED_SUM: &str =
+    "usdm_income_funding_fee_not_in_realized_pnl_sum";
 
 /// SDK `GetIncomeHistoryResponseInner` (cite). `income` is a string amount.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -177,6 +185,21 @@ mod tests {
         assert_eq!(income_realized_from_json(MIXED), Some(7.25));
         assert_ne!(income_realized_from_json(MIXED), Some(6.25));
         assert_ne!(income_realized_from_json(MIXED), Some(7.50));
+    }
+
+    #[test]
+    fn commission_and_funding_deferred_from_realized_sum() {
+        assert_eq!(
+            DEFER_COMMISSION_IN_REALIZED_SUM,
+            "usdm_income_commission_not_in_realized_pnl_sum"
+        );
+        assert_eq!(
+            DEFER_FUNDING_FEE_IN_REALIZED_SUM,
+            "usdm_income_funding_fee_not_in_realized_pnl_sum"
+        );
+        let mixed = income_realized_from_json(MIXED).expect("realized only");
+        assert_ne!(mixed, 6.25, "COMMISSION must not reduce realized");
+        assert_ne!(mixed, 7.50, "FUNDING_FEE must not add to realized");
     }
 
     #[test]

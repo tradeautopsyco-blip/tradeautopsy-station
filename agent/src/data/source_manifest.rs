@@ -905,6 +905,10 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         zerodha_kite_cash_manifest(),
         upstox_cash_manifest(),
         fyers_cash_manifest(),
+        bybit_com_spot_manifest(),
+        okx_com_spot_manifest(),
+        kraken_com_spot_manifest(),
+        coinbase_advanced_spot_manifest(),
         super::amfi::amfi_nav_manifest(),
     ]
 }
@@ -939,6 +943,112 @@ pub fn fyers_cash_manifest() -> SourceManifest {
                 Limits::default(),
             ),
         ],
+    }
+}
+
+/// Bybit v5 spot (B6 SIGNED). Fills + public klines `history`.
+pub fn bybit_com_spot_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["bybit.com".into()],
+        asset_classes: vec!["crypto_spot".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    let history_coverage = Coverage {
+        venues: vec!["bybit.com".into()],
+        asset_classes: vec!["crypto_spot".into()],
+        history_range: None,
+        intervals: [
+            "1", "3", "5", "15", "30", "60", "120", "240", "360", "720", "D", "W", "M",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect(),
+    };
+    SourceManifest {
+        manifest_id: "bybit.spot.v1".into(),
+        adapter_id: "bybit".into(),
+        book_id: "bybit-com-spot".into(),
+        implemented: vec!["tradebook".into(), "history".into()],
+        bindings: vec![
+            account_binding(
+                "bybit",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            history_binding("bybit", history_coverage, AuthMode::Public),
+        ],
+    }
+}
+
+/// OKX global SPOT (B6 SIGNED). Recent fills poll only v1.
+pub fn okx_com_spot_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["okx.com".into()],
+        asset_classes: vec!["crypto_spot".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "okx_com.s1.v1".into(),
+        adapter_id: "okx_com".into(),
+        book_id: "okx-com-spot".into(),
+        implemented: vec!["tradebook".into()],
+        bindings: vec![account_binding(
+            "okx_com",
+            "tradebook",
+            "fills",
+            coverage,
+            Limits::default(),
+        )],
+    }
+}
+
+/// Kraken spot REST (B6 SIGNED). TradesHistory fills poll v1.
+pub fn kraken_com_spot_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["kraken.com".into()],
+        asset_classes: vec!["crypto_spot".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "kraken.spot.v1".into(),
+        adapter_id: "kraken".into(),
+        book_id: "kraken-com-spot".into(),
+        implemented: vec!["tradebook".into()],
+        bindings: vec![account_binding(
+            "kraken",
+            "tradebook",
+            "fills",
+            coverage,
+            Limits::default(),
+        )],
+    }
+}
+
+/// Coinbase Advanced Trade spot (B6 SIGNED). List-fills poll v1.
+pub fn coinbase_advanced_spot_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["coinbase.com".into()],
+        asset_classes: vec!["crypto_spot".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:coinbase-advanced-spot@0.1.0".into(),
+        adapter_id: "coinbase_advanced".into(),
+        book_id: "coinbase-advanced-spot".into(),
+        implemented: vec!["tradebook".into()],
+        bindings: vec![account_binding(
+            "coinbase_advanced",
+            "tradebook",
+            "fills",
+            coverage,
+            Limits::default(),
+        )],
     }
 }
 

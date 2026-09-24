@@ -36,6 +36,9 @@ pub enum AuthScheme {
     UpstoxOAuthBearerSession,
     FyersOAuthJsonAppIdHashSession,
     GrowwChecksumSession,
+    OkxPassphraseSession,
+    KrakenSpotNonceSession,
+    CoinbaseJwtEs256Session,
 }
 
 /// Closed asset axis (ADR 0004, Nautilus-aligned). Mirrors the WIT
@@ -260,6 +263,22 @@ pub fn compliance_profile(id: &str) -> Option<ComplianceProfile> {
             id: id.into(),
             block_on_withdraw: false,
         }),
+        "bybit_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: true,
+        }),
+        "okx_com_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: true,
+        }),
+        "kraken_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: true,
+        }),
+        "coinbase_advanced_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: true,
+        }),
         _ => None,
     }
 }
@@ -313,7 +332,13 @@ pub fn descriptor_for_slug(slug: &str) -> Option<BrokerDescriptor> {
     }
     catalog_books()
         .into_iter()
-        .find(|d| d.slug == slug && d.availability == BrokerAvailability::Planned)
+        .find(|d| {
+            d.slug == slug
+                && matches!(
+                    d.availability,
+                    BrokerAvailability::Planned | BrokerAvailability::Enabled
+                )
+        })
 }
 
 /// Book-keyed catalog (ADR 0004) — one row per SHIPPING book (CLAIM-REGISTRY.md:
@@ -431,7 +456,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::KiteChecksumSession,
             calc_profile_id: "equities_inr_cash".into(),
             compliance_profile_id: "zerodha_kite_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:zerodha-kite-cash@0.1.0".into(),
             book_id: "zerodha-nse-bse-cash".into(),
@@ -446,7 +471,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::UpstoxOAuthBearerSession,
             calc_profile_id: "equities_inr_cash".into(),
             compliance_profile_id: "upstox_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:upstox-cash@0.1.0".into(),
             book_id: "upstox-nse-bse-cash".into(),
@@ -461,7 +486,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::FyersOAuthJsonAppIdHashSession,
             calc_profile_id: "equities_inr_cash".into(),
             compliance_profile_id: "fyers_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:fyers-cash@0.1.0".into(),
             book_id: "fyers-nse-bse-cash".into(),
@@ -476,10 +501,70 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::GrowwChecksumSession,
             calc_profile_id: "equities_inr_cash".into(),
             compliance_profile_id: "groww_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:groww-cash@0.1.0".into(),
             book_id: "groww-nse-bse-cash".into(),
+        },
+        BrokerDescriptor {
+            slug: "bybit".into(),
+            display_name: "Bybit".into(),
+            asset_class: AssetClass::Cryptocurrency,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "USD".into(),
+            auth_scheme: AuthScheme::HmacApiKeySecret,
+            calc_profile_id: "crypto_spot_usd".into(),
+            compliance_profile_id: "bybit_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "bybit.spot.v1".into(),
+            book_id: "bybit-com-spot".into(),
+        },
+        BrokerDescriptor {
+            slug: "okx_com".into(),
+            display_name: "OKX".into(),
+            asset_class: AssetClass::Cryptocurrency,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "USD".into(),
+            auth_scheme: AuthScheme::OkxPassphraseSession,
+            calc_profile_id: "crypto_spot_usd".into(),
+            compliance_profile_id: "okx_com_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "okx_com.s1.v1".into(),
+            book_id: "okx-com-spot".into(),
+        },
+        BrokerDescriptor {
+            slug: "kraken".into(),
+            display_name: "Kraken".into(),
+            asset_class: AssetClass::Cryptocurrency,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "USD".into(),
+            auth_scheme: AuthScheme::KrakenSpotNonceSession,
+            calc_profile_id: "crypto_spot_usd".into(),
+            compliance_profile_id: "kraken_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "kraken.spot.v1".into(),
+            book_id: "kraken-com-spot".into(),
+        },
+        BrokerDescriptor {
+            slug: "coinbase_advanced".into(),
+            display_name: "Coinbase Advanced".into(),
+            asset_class: AssetClass::Cryptocurrency,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "USD".into(),
+            auth_scheme: AuthScheme::CoinbaseJwtEs256Session,
+            calc_profile_id: "crypto_spot_usd".into(),
+            compliance_profile_id: "coinbase_advanced_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:coinbase-advanced-spot@0.1.0".into(),
+            book_id: "coinbase-advanced-spot".into(),
         },
     ]
 }
@@ -517,12 +602,12 @@ mod tests {
         assert!(cat.iter().all(|d| d.origin == AdapterOrigin::FirstParty));
         assert!(descriptor_for_slug("binance_us").is_none());
         assert!(descriptor_for_slug("binance_com_usdm").is_none());
-        let kite = descriptor_for_slug("zerodha_kite").expect("planned slug");
-        assert_eq!(kite.availability, BrokerAvailability::Planned);
+        let kite = descriptor_for_slug("zerodha_kite").expect("zerodha slug");
+        assert_eq!(kite.availability, BrokerAvailability::Enabled);
         assert_eq!(kite.book_id, "zerodha-nse-bse-cash");
         assert_eq!(kite.auth_scheme, AuthScheme::KiteChecksumSession);
-        let groww = descriptor_for_slug("groww").expect("planned groww slug");
-        assert_eq!(groww.availability, BrokerAvailability::Planned);
+        let groww = descriptor_for_slug("groww").expect("groww slug");
+        assert_eq!(groww.availability, BrokerAvailability::Enabled);
         assert_eq!(groww.book_id, "groww-nse-bse-cash");
         assert_eq!(groww.auth_scheme, AuthScheme::GrowwChecksumSession);
         assert!(descriptor_for_slug("interactive_brokers").is_none());
@@ -652,7 +737,7 @@ mod tests {
     #[test]
     fn book_catalog_covers_shipping_books_plus_planned_zerodha() {
         let books = catalog_books();
-        assert_eq!(books.len(), 10);
+        assert_eq!(books.len(), 14);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -665,6 +750,10 @@ mod tests {
             "upstox-nse-bse-cash",
             "fyers-nse-bse-cash",
             "groww-nse-bse-cash",
+            "bybit-com-spot",
+            "okx-com-spot",
+            "kraken-com-spot",
+            "coinbase-advanced-spot",
         ] {
             assert!(ids.contains(&expected), "missing book row {expected}");
         }
@@ -672,20 +761,34 @@ mod tests {
             .iter()
             .filter(|d| d.availability == BrokerAvailability::Enabled)
             .collect();
-        assert_eq!(shipping.len(), 6);
-        let zerodha = descriptor_for_book_id("zerodha-nse-bse-cash").expect("planned book");
-        assert_eq!(zerodha.availability, BrokerAvailability::Planned);
-        let upstox = descriptor_for_book_id("upstox-nse-bse-cash").expect("planned upstox");
-        assert_eq!(upstox.availability, BrokerAvailability::Planned);
+        assert_eq!(shipping.len(), 10);
+        for (book, scheme) in [
+            ("bybit-com-spot", AuthScheme::HmacApiKeySecret),
+            ("okx-com-spot", AuthScheme::OkxPassphraseSession),
+            ("kraken-com-spot", AuthScheme::KrakenSpotNonceSession),
+            (
+                "coinbase-advanced-spot",
+                AuthScheme::CoinbaseJwtEs256Session,
+            ),
+        ] {
+            let row = descriptor_for_book_id(book).expect("p4 crypto book");
+            assert_eq!(row.availability, BrokerAvailability::Planned);
+            assert_eq!(row.auth_scheme, scheme);
+            assert_eq!(row.calc_profile_id, "crypto_spot_usd");
+        }
+        let zerodha = descriptor_for_book_id("zerodha-nse-bse-cash").expect("zerodha book");
+        assert_eq!(zerodha.availability, BrokerAvailability::Enabled);
+        let upstox = descriptor_for_book_id("upstox-nse-bse-cash").expect("upstox book");
+        assert_eq!(upstox.availability, BrokerAvailability::Enabled);
         assert_eq!(upstox.auth_scheme, AuthScheme::UpstoxOAuthBearerSession);
-        let fyers = descriptor_for_book_id("fyers-nse-bse-cash").expect("planned fyers");
-        assert_eq!(fyers.availability, BrokerAvailability::Planned);
+        let fyers = descriptor_for_book_id("fyers-nse-bse-cash").expect("fyers book");
+        assert_eq!(fyers.availability, BrokerAvailability::Enabled);
         assert_eq!(
             fyers.auth_scheme,
             AuthScheme::FyersOAuthJsonAppIdHashSession
         );
-        let groww = descriptor_for_book_id("groww-nse-bse-cash").expect("planned groww");
-        assert_eq!(groww.availability, BrokerAvailability::Planned);
+        let groww = descriptor_for_book_id("groww-nse-bse-cash").expect("groww book");
+        assert_eq!(groww.availability, BrokerAvailability::Enabled);
         assert_eq!(groww.slug, "groww");
         assert_eq!(groww.display_name, "Groww");
         assert_eq!(groww.auth_scheme, AuthScheme::GrowwChecksumSession);

@@ -136,3 +136,51 @@ fn signed_fyers_covers_surface_rows_0_to_25() {
     );
     check_rows(slug, &text, 0..=25);
 }
+
+#[test]
+fn signed_bybit_covers_surface_rows_0_to_25() {
+    let slug = "bybit";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P4 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
+fn signed_okx_covers_surface_rows_0_to_25() {
+    let slug = "okx_com";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P4 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
+fn signed_kraken_covers_surface_rows_0_to_25() {
+    let slug = "kraken";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P4 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
+fn signed_coinbase_covers_surface_rows_0_to_25() {
+    let slug = "coinbase_advanced";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P4 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}

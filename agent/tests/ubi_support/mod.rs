@@ -72,6 +72,14 @@ pub fn sentinel_hmac() -> HostCredentialBlob {
     )
 }
 
+pub fn sentinel_okx() -> HostCredentialBlob {
+    HostCredentialBlob::OkxSession {
+        api_key: "TEST_OKX_KEY_NEVER_IN_COMPONENT".into(),
+        api_secret: "TEST_OKX_SECRET_NEVER_IN_COMPONENT".into(),
+        passphrase: "TEST_OKX_PASSPHRASE_NEVER_IN_COMPONENT".into(),
+    }
+}
+
 pub fn sentinel_kotak_session() -> HostCredentialBlob {
     HostCredentialBlob::KotakSession {
         consumer_key: "TEST_CONSUMER_KEY_NEVER_IN_COMPONENT".into(),

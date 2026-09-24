@@ -79,7 +79,19 @@ impl From<InstrumentClass> for WitInstrumentClass {
 }
 
 /// Headers a component must never set; host strips or rejects (R6).
-pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &["authorization", "x-mbx-apikey", "auth", "sid"];
+pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &[
+    "authorization",
+    "x-mbx-apikey",
+    "auth",
+    "sid",
+    "ok-access-key",
+    "ok-access-sign",
+    "ok-access-timestamp",
+    "ok-access-passphrase",
+    "x-simulated-trading",
+    "api-key",
+    "api-sign",
+];
 
 /// Fixture response keyed by path (contract tests — no live HTTP).
 #[derive(Debug, Clone)]

@@ -25,7 +25,9 @@ pub fn query_symbol(query: &str) -> Option<&str> {
 /// stays the Kotak gate.
 pub fn book_accepts_symbol(book_id: &str, symbol: &str) -> bool {
     match book_id {
-        "binance-com-spot" => !is_dated_option_contract(symbol) && !symbol.contains('|'),
+        "binance-com-spot" | crate::ubi::bybit_session::BYBIT_BOOK_ID => {
+            !is_dated_option_contract(symbol) && !symbol.contains('|')
+        }
         "binance-com-options" => is_dated_option_contract(symbol),
         _ => true,
     }

@@ -5,6 +5,7 @@
 //! (Kotak `Auth`/`Sid`) here, outside Wasm memory, and redacts the response.
 
 use crate::ubi::credentials::CredentialBlob;
+use crate::ubi::okx_session::{okx_access_timestamp_iso, okx_sign_request, OKX_API_HOST};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::sync::{Arc, OnceLock};
@@ -42,6 +43,15 @@ pub enum HostCredentialBlob {
     DhanSession {
         app_id: String,
         access_token: String,
+    },
+    OkxSession {
+        api_key: String,
+        api_secret: String,
+        passphrase: String,
+    },
+    CoinbaseJwt {
+        api_key: String,
+        pem_private_key: String,
     },
 }
 
@@ -86,6 +96,19 @@ impl HostCredentialBlob {
                 app_id,
                 access_token,
             } => vec![app_id.as_str(), access_token.as_str()],
+            Self::OkxSession {
+                api_key,
+                api_secret,
+                passphrase,
+            } => vec![
+                api_key.as_str(),
+                api_secret.as_str(),
+                passphrase.as_str(),
+            ],
+            Self::CoinbaseJwt {
+                api_key,
+                pem_private_key,
+            } => vec![api_key.as_str(), pem_private_key.as_str()],
         }
     }
 
@@ -97,7 +120,9 @@ impl HostCredentialBlob {
             | Self::UpstoxSession { .. }
             | Self::FyersSession { .. }
             | Self::GrowwSession { .. }
-            | Self::DhanSession { .. } => None,
+            | Self::DhanSession { .. }
+            | Self::OkxSession { .. }
+            | Self::CoinbaseJwt { .. } => None,
         }
     }
 }
@@ -155,6 +180,22 @@ impl From<&CredentialBlob> for HostCredentialBlob {
                 app_id: app_id.clone(),
                 access_token: access_token.clone(),
             },
+            CredentialBlob::OkxPassphraseSession {
+                api_key,
+                api_secret,
+                passphrase,
+            } => Self::OkxSession {
+                api_key: api_key.clone(),
+                api_secret: api_secret.clone(),
+                passphrase: passphrase.clone(),
+            },
+            CredentialBlob::CoinbaseJwtEs256Session {
+                api_key,
+                pem_private_key,
+            } => Self::CoinbaseJwt {
+                api_key: api_key.clone(),
+                pem_private_key: pem_private_key.clone(),
+            },
         }
     }
 }
@@ -209,6 +250,10 @@ pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) ->
         HostCredentialBlob::GrowwSession { .. } => crate::ubi::GROWW_API_HOST.to_string(),
         HostCredentialBlob::DhanSession { .. } => {
             crate::ubi::dhan_session::DHAN_API_HOST.to_string()
+        }
+        HostCredentialBlob::OkxSession { .. } => OKX_API_HOST.to_string(),
+        HostCredentialBlob::CoinbaseJwt { .. } => {
+            crate::ubi::coinbase_session::COINBASE_API_HOST.to_string()
         }
         HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
     }
@@ -266,7 +311,7 @@ fn encode(value: &str) -> String {
     out
 }
 
-fn sign_query(api_secret: &str, query: &str) -> String {
+pub(crate) fn sign_query(api_secret: &str, query: &str) -> String {
     let mut mac =
         HmacSha256::new_from_slice(api_secret.as_bytes()).expect("HMAC accepts any key length");
     mac.update(query.as_bytes());
@@ -290,6 +335,33 @@ pub fn prepare_request(
         .collect();
 
     match credentials {
+        HostCredentialBlob::Hmac {
+            api_key,
+            api_secret,
+        } if host.trim().eq_ignore_ascii_case(crate::ubi::bybit_session::BYBIT_API_HOST) => {
+            return crate::ubi::bybit_session::prepare_bybit_signed_get(
+                host,
+                path,
+                query,
+                api_key,
+                api_secret,
+                now_unix_ms,
+            );
+        }
+        HostCredentialBlob::Hmac {
+            api_key,
+            api_secret,
+        } if host.trim().eq_ignore_ascii_case(crate::ubi::kraken_session::KRAKEN_API_HOST) => {
+            return crate::ubi::kraken_session::prepare_kraken_signed_post(
+                host,
+                path,
+                body.unwrap_or(""),
+                api_key,
+                api_secret,
+                Some(now_unix_ms),
+            )
+            .unwrap_or_else(|e| panic!("kraken sign: {e}"));
+        }
         HostCredentialBlob::Hmac {
             api_key,
             api_secret,
@@ -486,6 +558,62 @@ pub fn prepare_request(
                 headers: out_headers,
                 body: body.map(|b| b.to_string()),
             }
+        }
+        HostCredentialBlob::OkxSession {
+            api_key,
+            api_secret,
+            passphrase,
+        } => {
+            let mut pairs: Vec<(String, String)> = query.to_vec();
+            pairs.sort_by(|a, b| a.0.cmp(&b.0));
+            let canonical = pairs
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let request_path = if canonical.is_empty() {
+                path.to_string()
+            } else {
+                format!("{path}?{canonical}")
+            };
+            let timestamp = okx_access_timestamp_iso(now_unix_ms);
+            let body_str = body.unwrap_or("");
+            let sign = okx_sign_request(
+                api_secret,
+                &timestamp,
+                method,
+                &request_path,
+                Some(body_str),
+            );
+            let url = format!("https://{host}{request_path}");
+            out_headers.push(("OK-ACCESS-KEY".to_string(), api_key.clone()));
+            out_headers.push(("OK-ACCESS-SIGN".to_string(), sign));
+            out_headers.push(("OK-ACCESS-TIMESTAMP".to_string(), timestamp));
+            out_headers.push(("OK-ACCESS-PASSPHRASE".to_string(), passphrase.clone()));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::CoinbaseJwt {
+            api_key,
+            pem_private_key,
+        } => {
+            return crate::ubi::coinbase_session::prepare_coinbase_authenticated_request(
+                method,
+                host,
+                path,
+                query,
+                headers,
+                body,
+                api_key,
+                pem_private_key,
+                now_unix_ms,
+            )
+            .unwrap_or_else(|e| panic!("coinbase jwt attach: {e}"));
         }
     }
 }

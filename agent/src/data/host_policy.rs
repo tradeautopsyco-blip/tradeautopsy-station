@@ -72,6 +72,14 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // groww — REST v1 + instrument CSV (B6 row 22).
     "api.groww.in",
     "growwapi-assets.groww.in",
+    // bybit — v5 prod (B6 row 22).
+    "api.bybit.com",
+    // coinbase_advanced — Advanced Trade prod (B6 row 22; sandbox refused).
+    "api.coinbase.com",
+    // okx_com — global REST (B6 row 0).
+    "www.okx.com",
+    // kraken — spot REST prod (B6 row 22; futures hosts refused on kraken-com-spot).
+    "api.kraken.com",
     // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
     // Labs vendor only — not a shipping broker, not Kill DNS.
     "www.amfiindia.com",
@@ -115,12 +123,16 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             if path == "/api/v3/ticker/price"
                 || normalize_request_path(path) == "/eapi/v1/ticker"
                 || normalize_request_path(path) == "/fapi/v1/ticker/price"
-                || normalize_request_path(path) == "/dapi/v1/ticker/price" =>
+                || normalize_request_path(path) == "/dapi/v1/ticker/price"
+                || normalize_request_path(path) == "/api/v5/market/tickers"
+                || normalize_request_path(path) == "/api/v5/public/time" =>
         {
             true
         }
         ("ohlcv", "GET", AuthMode::Public)
             if path == "/api/v3/klines"
+                || normalize_request_path(path) == "/v5/market/kline"
+                || normalize_request_path(path) == "/api/v5/market/candles"
                 || normalize_request_path(path) == "/eapi/v1/klines"
                 || normalize_request_path(path) == "/fapi/v1/klines"
                 || normalize_request_path(path) == "/dapi/v1/klines" =>
@@ -144,6 +156,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         }
         ("instrument_master", "GET", AuthMode::Public)
             if path == "/api/v3/exchangeInfo"
+                || normalize_request_path(path) == "/v5/market/instruments-info"
+                || normalize_request_path(path) == "/api/v5/public/instruments"
                 || normalize_request_path(path) == "/eapi/v1/exchangeInfo"
                 || normalize_request_path(path) == "/fapi/v1/exchangeInfo"
                 || normalize_request_path(path) == "/dapi/v1/exchangeInfo"
@@ -166,20 +180,34 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
                 || normalize_request_path(path) == "/trades"
                 || normalize_request_path(path) == "/eapi/v1/userTrades"
                 || normalize_request_path(path) == "/fapi/v1/income"
-                || normalize_request_path(path) == "/api/v3/tradebook" =>
+                || normalize_request_path(path) == "/api/v3/tradebook"
+                || normalize_request_path(path) == "/v5/execution/list"
+                || normalize_request_path(path) == "/api/v5/trade/fills" =>
+        {
+            true
+        }
+        ("fills", "POST", AuthMode::PrivateRead)
+            if normalize_request_path(path).eq_ignore_ascii_case("/0/private/TradesHistory") =>
         {
             true
         }
         ("funds", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/account"
+                || normalize_request_path(path) == "/v5/account/wallet-balance"
                 || normalize_request_path(path) == "/eapi/v1/marginAccount"
                 || normalize_request_path(path) == "/fapi/v3/balance"
                 || normalize_request_path(path) == "/dapi/v1/balance"
-                || normalize_request_path(path) == "/api/v3/profile" =>
+                || normalize_request_path(path) == "/api/v3/profile"
+                || normalize_request_path(path) == "/api/v5/account/balance" =>
         {
             true
         }
         ("funds", "POST", AuthMode::PrivateRead) if path.ends_with("/quick/user/limits") => true,
+        ("funds", "POST", AuthMode::PrivateRead)
+            if normalize_request_path(path).eq_ignore_ascii_case("/0/private/Balance") =>
+        {
+            true
+        }
         ("orders", "GET", AuthMode::PrivateRead)
             if path == "/api/v3/openOrders" || path.ends_with("/quick/user/orders") =>
         {
@@ -243,7 +271,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         }
         ("fills", "GET", AuthMode::PrivateRead)
             if normalize_request_path(path) == "/v1/order/list"
-                || normalize_request_path(path).starts_with("/v1/order/trades/") =>
+                || normalize_request_path(path).starts_with("/v1/order/trades/")
+                || normalize_request_path(path) == "/v5/execution/list" =>
         {
             true
         }
@@ -271,6 +300,28 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         ("orders", "GET", AuthMode::PrivateRead)
             if normalize_request_path(path).starts_with("/v1/order/status/")
                 || normalize_request_path(path).starts_with("/v1/order/detail/") =>
+        {
+            true
+        }
+        ("fills", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path)
+                == crate::ubi::coinbase_session::COINBASE_FILLS_PATH =>
+        {
+            true
+        }
+        ("funds", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path)
+                == crate::ubi::coinbase_session::COINBASE_ACCOUNTS_PATH =>
+        {
+            true
+        }
+        ("instrument_master", "GET", AuthMode::Public)
+            if normalize_request_path(path)
+                == crate::ubi::coinbase_session::COINBASE_PRODUCTS_PATH
+                || normalize_request_path(path).starts_with(&format!(
+                    "{}/products/",
+                    crate::ubi::coinbase_session::COINBASE_REST_PREFIX
+                )) =>
         {
             true
         }
@@ -430,6 +481,18 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p) == "/api/v3/profile" => {
             Ok(("funds", AuthMode::PrivateRead))
         }
+        ("GET", p) if normalize_request_path(p) == "/v5/execution/list" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v5/account/wallet-balance" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v5/market/kline" => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/v5/market/instruments-info" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
         ("GET", p) if normalize_request_path(p) == "/v1/order/list" => {
             Ok(("fills", AuthMode::PrivateRead))
         }
@@ -453,6 +516,66 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
             Ok(("funds", AuthMode::PrivateRead))
         }
         ("GET", p) if normalize_request_path(p) == "/instruments/instrument.csv" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("POST", p)
+            if normalize_request_path(p).eq_ignore_ascii_case("/0/private/TradesHistory") =>
+        {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("POST", p) if normalize_request_path(p).eq_ignore_ascii_case("/0/private/Balance") => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).eq_ignore_ascii_case("/0/public/OHLC") => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p).eq_ignore_ascii_case("/0/public/AssetPairs") => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p).eq_ignore_ascii_case("/0/public/Ticker") => {
+            Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p).eq_ignore_ascii_case("/0/public/Depth") => {
+            Ok(("order_book", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/trade/fills" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/account/balance" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/public/instruments" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/public/time" => {
+            Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/market/candles" => {
+            Ok(("ohlcv", AuthMode::Public))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v5/market/tickers" => {
+            Ok(("quote", AuthMode::Public))
+        }
+        ("GET", p)
+            if normalize_request_path(p)
+                == crate::ubi::coinbase_session::COINBASE_FILLS_PATH =>
+        {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p)
+            if normalize_request_path(p)
+                == crate::ubi::coinbase_session::COINBASE_ACCOUNTS_PATH =>
+        {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p)
+            if normalize_request_path(p) == crate::ubi::coinbase_session::COINBASE_PRODUCTS_PATH
+                || normalize_request_path(p)
+                    .starts_with(&format!(
+                        "{}/products/",
+                        crate::ubi::coinbase_session::COINBASE_REST_PREFIX
+                    )) =>
+        {
             Ok(("instrument_master", AuthMode::Public))
         }
         _ => Err(HostRefuse::PathNotAllowlisted),
@@ -622,6 +745,59 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !crate::ubi::groww_path_allowed(&host_norm, "GET", &path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::bybit_session::BYBIT_BOOK_ID => {
+            if host_norm != crate::ubi::bybit_session::BYBIT_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if crate::ubi::bybit_session::bybit_host_refused(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::bybit_session::bybit_path_allowed(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::OKX_COM_SPOT_BOOK_ID => {
+            if host_norm != crate::ubi::OKX_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if crate::ubi::OKX_REFUSED_HOSTS
+                .iter()
+                .any(|h| host_norm == *h)
+            {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::okx_path_allowed("GET", &path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::coinbase_session::COINBASE_BOOK_ID => {
+            if host_norm != crate::ubi::coinbase_session::COINBASE_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if crate::ubi::coinbase_session::coinbase_host_refused(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::coinbase_session::coinbase_path_allowed("GET", &path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::kraken_session::KRAKEN_BOOK_ID => {
+            if host_norm != crate::ubi::kraken_session::KRAKEN_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if crate::ubi::kraken_session::kraken_host_refused(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::kraken_session::kraken_path_allowed("POST", &path_norm)
+                && !crate::ubi::kraken_session::kraken_path_allowed("GET", &path_norm)
+            {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

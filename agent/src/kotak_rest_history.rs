@@ -96,7 +96,9 @@ async fn fetch_historical_json(
         | HostCredentialBlob::UpstoxSession { .. }
         | HostCredentialBlob::FyersSession { .. }
         | HostCredentialBlob::GrowwSession { .. }
-        | HostCredentialBlob::DhanSession { .. } => return None,
+        | HostCredentialBlob::DhanSession { .. }
+        | HostCredentialBlob::OkxSession { .. }
+        | HostCredentialBlob::CoinbaseJwt { .. } => return None,
     };
     kotak_base_host(&base_url)?;
     let path = query_path(neosymbol, interval, fromdate, todate);
