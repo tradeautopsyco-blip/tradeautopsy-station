@@ -19,6 +19,11 @@ public final class LocalBrokerControlClient: BrokerControlling {
             displayName: "Kotak Neo",
             identity: BrokerConnectionIdentity.kotakNeo
         ),
+        V1BrokerEntry(
+            slug: "zerodha_kite",
+            displayName: "Zerodha Kite",
+            identity: BrokerConnectionIdentity.zerodhaKite
+        ),
     ]
 
     private weak var agentSupervisor: AgentSupervising?
@@ -62,7 +67,7 @@ public final class LocalBrokerControlClient: BrokerControlling {
             let identity = entry.identity(environment)
             let metadata = metadataStore.load(for: identity)
             let isConfigured: Bool
-            if entry.slug == "kotak_neo" {
+            if entry.slug == "kotak_neo" || entry.slug == "zerodha_kite" {
                 // Metadata marks Connect success. Avoid Station SecItem reads on every Brokers refresh
                 // (each cross-process read can re-prompt Keychain ACL).
                 if metadata?.lastValidatedAt != nil {

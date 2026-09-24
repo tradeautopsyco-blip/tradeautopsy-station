@@ -395,7 +395,8 @@ pub fn build_runtime_adapter(
         | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. })
         | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. })
         | ("upstox", CredentialBlob::UpstoxOAuthBearerSession { .. })
-        | ("fyers", CredentialBlob::FyersOAuthJsonAppIdHashSession { .. }) => {
+        | ("fyers", CredentialBlob::FyersOAuthJsonAppIdHashSession { .. })
+        | ("groww", CredentialBlob::GrowwChecksumSession { .. }) => {
             build_wasm_runtime_adapter(broker_slug, connection_id, blob)
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),

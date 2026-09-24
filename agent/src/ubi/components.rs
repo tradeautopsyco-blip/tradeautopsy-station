@@ -36,6 +36,11 @@ const COMPONENTS: &[(&str, &str, &str)] = &[
         "ubi_fyers_adapter.wasm",
         "ubi-fyers-adapter",
     ),
+    (
+        "groww",
+        "ubi_groww_adapter.wasm",
+        "ubi-groww-adapter",
+    ),
 ];
 
 pub fn component_file_name(slug: &str) -> Option<&'static str> {
@@ -128,7 +133,11 @@ mod tests {
             component_file_name("fyers"),
             Some("ubi_fyers_adapter.wasm")
         );
-        assert_eq!(COMPONENTS.len(), 5, "signed broker components only");
+        assert_eq!(
+            component_file_name("groww"),
+            Some("ubi_groww_adapter.wasm")
+        );
+        assert_eq!(COMPONENTS.len(), 6, "signed broker components only");
     }
 
     #[test]

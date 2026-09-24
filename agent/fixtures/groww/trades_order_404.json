@@ -1,0 +1,8 @@
+{
+  "status": "FAILURE",
+  "error": {
+    "code": "GA004",
+    "message": "Order does not exist",
+    "metadata": {}
+  }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "ubi-dhan-adapter"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "UBI Wasm component for dhan equities fills (B6 dhan, R5)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde_json = "1"
+wit-bindgen = { version = "0.46", default-features = false, features = ["macros", "realloc"] }
+
+[profile.release]
+opt-level = "s"

@@ -55,7 +55,7 @@ struct BrokerScreenPresentationTests {
         #expect(binance?.identity == binanceIdentity)
     }
 
-    @Test func catalogShowsExactlyFirstPairCards() {
+    @Test func catalogShowsEnabledPairAndPlannedIndiaCash() {
         let snapshot = BrokerControlSnapshot(
             configuredConnections: [],
             agentAvailable: true,
@@ -63,13 +63,28 @@ struct BrokerScreenPresentationTests {
         )
 
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
-        #expect(cards.count == 2)
-        #expect(cards.map(\.id) == ["binance_com", "kotak_neo"])
-        #expect(cards.allSatisfy { $0.plannedLabel == nil })
+        #expect(cards.count == BrokerCatalog.v1.count)
         #expect(cards.first { $0.id == "kotak_neo" }?.isConnectable == true)
         #expect(cards.first { $0.id == "binance_com" }?.isConnectable == true)
         #expect(cards.first { $0.id == "binance_com" }?.quoteCurrency == "USD")
         #expect(cards.first { $0.id == "kotak_neo" }?.quoteCurrency == "INR")
+        #expect(cards.first { $0.id == "upstox" }?.isConnectable == false)
+        #expect(cards.first { $0.id == "upstox" }?.plannedLabel == "Planned")
+    }
+
+    @Test func plannedZerodhaDogfoodShowsConnectWhenAgentOnline() {
+        let snapshot = BrokerControlSnapshot(
+            configuredConnections: [],
+            agentAvailable: true,
+            runtimeStatusByConnectionID: [:]
+        )
+
+        let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
+        let kite = cards.first { $0.id == "zerodha_kite" }
+
+        #expect(kite?.plannedLabel == "Planned")
+        #expect(kite?.isConnectable == true)
+        #expect(kite?.isStartEnabled == false)
     }
 
     @Test func connectionMetadataCarriesIdentityFields() {

@@ -30,6 +30,10 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     var beginUpstoxConnectError: BrokerAgentRuntimeError?
     var simulateUpstoxVaultAfterBegin = false
     private var upstoxBeginCompleted = false
+    private(set) var connectGrowwCallCount = 0
+    var connectGrowwError: BrokerAgentRuntimeError?
+    var simulateGrowwVaultAfterConnect = false
+    private var growwConnectCompleted = false
     private(set) var beginFyersConnectCallCount = 0
     var beginFyersConnectResult: FyersConnectBeginResult?
     var beginFyersConnectError: BrokerAgentRuntimeError?
@@ -146,6 +150,24 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         )
     }
 
+    func connectGroww(
+        for identity: BrokerConnectionIdentity,
+        apiKey: String,
+        apiSecret: String
+    ) async throws {
+        _ = (apiKey, apiSecret)
+        connectGrowwCallCount += 1
+        growwConnectCompleted = true
+        if let connectGrowwError {
+            throw connectGrowwError
+        }
+        guard let credentialStore else { return }
+        try credentialStore.save(
+            credentials: BrokerCredentials(growwApiKey: "minted-key", growwApiSecret: "agent-vault"),
+            for: identity
+        )
+    }
+
     func mintKotakSession(
         for identity: BrokerConnectionIdentity,
         consumerKey: String,
@@ -193,6 +215,9 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
             return true
         }
         if simulateFyersVaultAfterBegin, fyersBeginCompleted {
+            return true
+        }
+        if simulateGrowwVaultAfterConnect, growwConnectCompleted {
             return true
         }
         return credentialStore?.hasCredentials(for: identity) ?? false

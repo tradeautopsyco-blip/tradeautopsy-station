@@ -1,0 +1,63 @@
+{
+  "status": "SUCCESS",
+  "payload": {
+    "order_list": [
+      {
+        "groww_order_id": "GWKFILLMULTI01",
+        "order_status": "EXECUTED",
+        "trading_symbol": "RELIANCE",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 100,
+        "filled_quantity": 100,
+        "remaining_quantity": 0,
+        "average_fill_price": 1451.42,
+        "deliverable_quantity": 100
+      },
+      {
+        "groww_order_id": "GWKFILLSINGLE02",
+        "order_status": "FILLED",
+        "trading_symbol": "SBIN",
+        "transaction_type": "SELL",
+        "product": "MIS",
+        "segment": "CASH",
+        "exchange": "BSE",
+        "quantity": 5,
+        "filled_quantity": 5,
+        "remaining_quantity": 0,
+        "average_fill_price": 585.25,
+        "deliverable_quantity": 0
+      },
+      {
+        "groww_order_id": "GWKOPEN03",
+        "order_status": "OPEN",
+        "trading_symbol": "INFY",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 10,
+        "filled_quantity": 0,
+        "remaining_quantity": 10,
+        "average_fill_price": 0.0,
+        "deliverable_quantity": 0
+      },
+      {
+        "groww_order_id": "GWKREJ04",
+        "order_status": "REJECTED",
+        "trading_symbol": "TCS",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 2,
+        "filled_quantity": 0,
+        "remaining_quantity": 2,
+        "average_fill_price": 0.0,
+        "deliverable_quantity": 0
+      }
+    ]
+  }
+}

@@ -603,7 +603,9 @@ pub async fn fetch_quotes_json(
         HostCredentialBlob::Hmac { .. }
         | HostCredentialBlob::KiteSession { .. }
         | HostCredentialBlob::UpstoxSession { .. }
-        | HostCredentialBlob::FyersSession { .. } => {
+        | HostCredentialBlob::FyersSession { .. }
+        | HostCredentialBlob::GrowwSession { .. }
+        | HostCredentialBlob::DhanSession { .. } => {
             return Err(QuoteFetchError {
                 class: QuoteFetchErrorClass::Session,
             });

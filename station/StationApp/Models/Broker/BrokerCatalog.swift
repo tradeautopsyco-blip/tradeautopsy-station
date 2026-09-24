@@ -12,6 +12,7 @@ public enum BrokerAuthScheme: String, Equatable, Sendable, Codable {
     case kiteChecksumSession = "kite_checksum_session"
     case upstoxOAuthBearerSession = "upstox_oauth_bearer_session"
     case fyersOAuthJsonAppIdHashSession = "fyers_oauth_json_app_id_hash_session"
+    case growwChecksumSession = "groww_checksum_session"
 }
 
 public enum BrokerAdapterOrigin: String, Equatable, Sendable, Codable {
@@ -126,6 +127,18 @@ public enum BrokerCatalog {
             availability: .planned,
             manifestId: "tradeautopsy:fyers-cash@0.1.0",
             bookId: "fyers-nse-bse-cash"
+        ),
+        PlannedBrokerDescriptor(
+            slug: "groww",
+            displayName: "Groww",
+            assetClass: "equities",
+            quoteCurrency: "INR",
+            authScheme: .growwChecksumSession,
+            calcProfileId: "equities_inr_cash",
+            complianceProfileId: "groww_compliance",
+            availability: .planned,
+            manifestId: "tradeautopsy:groww-cash@0.1.0",
+            bookId: "groww-nse-bse-cash"
         ),
     ]
 

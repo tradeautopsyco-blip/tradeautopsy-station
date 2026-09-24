@@ -82,6 +82,8 @@ public final class BrokerConnectController {
             return await connectUpstox()
         case .fyersOAuthJsonAppIdHashSession:
             return await connectFyers()
+        case .growwChecksumSession:
+            return await connectGroww()
         }
     }
 
@@ -347,6 +349,61 @@ public final class BrokerConnectController {
         )
     }
 
+    private func connectGroww() async -> BrokerConnectOutcome {
+        let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
+        guard invalid.isEmpty else {
+            return .localValidationFailed(invalidFields: invalid)
+        }
+
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSecret = apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        isValidating = true
+        defer {
+            isValidating = false
+            apiSecret = ""
+        }
+
+        let existingMetadata = metadataStore.load(for: identity)
+        let shouldAutoStartSync = existingMetadata?.syncPaused != true
+
+        do {
+            try await runtimeClient.connectGroww(
+                for: identity,
+                apiKey: trimmedKey,
+                apiSecret: trimmedSecret
+            )
+        } catch let BrokerAgentRuntimeError.growwConnectFailed(errorClass, message) {
+            return mapGrowwConnectError(errorClass: errorClass, message: message)
+        } catch BrokerAgentRuntimeError.requestFailed {
+            return .validationTransientFailure(.networkUnavailable)
+        } catch {
+            return .validationTransientFailure(.networkUnavailable)
+        }
+
+        let present = await runtimeClient.vaultCredentialsPresent(for: identity)
+        guard present else {
+            await teardownCredentialsBestEffort()
+            return .validationTransientFailure(
+                .growwConnectRejected(
+                    "Session minted but agent vault is empty — rebuild agent with keyring apple-native."
+                )
+            )
+        }
+
+        let vaultMarker = BrokerCredentials(
+            growwApiKey: trimmedKey,
+            growwApiSecret: "agent-vault"
+        )
+        return await persistMetadataAndMaybeStart(
+            credentials: vaultMarker,
+            warning: nil,
+            shouldAutoStartSync: shouldAutoStartSync,
+            existingMetadata: existingMetadata,
+            rewriteCredentialVault: false
+        )
+    }
+
     private func connectFyers() async -> BrokerConnectOutcome {
         let invalid = BrokerCredentialFieldValidator.invalidFields(apiKey: apiKey, apiSecret: apiSecret)
         guard invalid.isEmpty else {
@@ -457,6 +514,18 @@ public final class BrokerConnectController {
             return .validationPermanentFailure(.fyersConnectRejected(safe))
         default:
             return .validationTransientFailure(.fyersConnectRejected(safe))
+        }
+    }
+
+    private func mapGrowwConnectError(errorClass: String, message: String) -> BrokerConnectOutcome {
+        let safe = BrokerSecretGuard.sanitizeConnectMessage(message)
+        switch errorClass {
+        case "invalid_credentials":
+            return .validationPermanentFailure(.growwConnectRejected(safe))
+        case "rate_limited":
+            return .validationTransientFailure(.growwConnectRejected(safe))
+        default:
+            return .validationTransientFailure(.growwConnectRejected(safe))
         }
     }
 

@@ -46,6 +46,8 @@ pub use kill_switch::{
 mod glance;
 mod history;
 mod kotak_session;
+mod dhan_session;
+mod groww_session;
 mod fyers_session;
 mod upstox_session;
 mod zerodha_session;
@@ -239,6 +241,18 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/broker/fyers/begin",
             post(fyers_session::connect_begin_handler),
+        )
+        .route(
+            "/api/daemon/broker/dhan/connect/begin",
+            post(dhan_session::connect_begin_handler),
+        )
+        .route(
+            "/api/daemon/broker/dhan/callback",
+            get(dhan_session::callback_handler),
+        )
+        .route(
+            "/api/daemon/broker/groww/connect",
+            post(groww_session::connect_handler),
         )
         .route(
             "/api/daemon/broker/credentials/clear",

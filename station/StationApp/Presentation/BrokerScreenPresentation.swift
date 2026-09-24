@@ -76,6 +76,14 @@ public enum BrokerScreenPresentation {
         now: Date
     ) -> BrokerCardPresentation {
         if descriptor.availability == .planned {
+            if BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: descriptor.slug) {
+                return buildOperationalCard(
+                    descriptor: descriptor,
+                    snapshot: snapshot,
+                    now: now,
+                    plannedLabel: "Planned"
+                )
+            }
             return BrokerCardPresentation(
                 id: descriptor.slug,
                 displayName: descriptor.displayName,
@@ -117,6 +125,20 @@ public enum BrokerScreenPresentation {
             )
         }
 
+        return buildOperationalCard(
+            descriptor: descriptor,
+            snapshot: snapshot,
+            now: now,
+            plannedLabel: nil
+        )
+    }
+
+    private static func buildOperationalCard(
+        descriptor: PlannedBrokerDescriptor,
+        snapshot: BrokerControlSnapshot,
+        now: Date,
+        plannedLabel: String?
+    ) -> BrokerCardPresentation {
         let connection = snapshot.configuredConnections.first {
             $0.identity.brokerSlug == descriptor.slug
         }
@@ -135,7 +157,7 @@ public enum BrokerScreenPresentation {
             assetClass: descriptor.assetClass,
             quoteCurrency: descriptor.quoteCurrency,
             status: status,
-            statusLabel: status.rawValue,
+            statusLabel: plannedLabel == nil ? status.rawValue : "Planned",
             isConnectable: connection == nil && snapshot.agentAvailable,
             isEditEnabled: connection != nil,
             isStartEnabled: controls.start,
@@ -144,7 +166,7 @@ public enum BrokerScreenPresentation {
             lastValidatedAtText: formatValidatedAt(connection?.lastValidatedAt, now: now),
             lastSyncSummary: connection?.lastSyncSummary,
             lastSyncedAtText: formatRelativeSyncedAt(connection?.lastSyncedAtMs, now: now),
-            plannedLabel: nil,
+            plannedLabel: plannedLabel,
             permissionWarning: connection?.permissionWarning,
             identity: connection?.identity
         )

@@ -33,6 +33,9 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     "assets.upstox.com",
     // fyers — v3 REST reads (B6 row 22; siblings refused in Kill DNS).
     "api-t1.fyers.in",
+    // groww — REST v1 reads + mint host (B6 row 22; assets CSV host separate).
+    "api.groww.in",
+    "growwapi-assets.groww.in",
 ];
 
 pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
@@ -45,6 +48,12 @@ pub const UPSTOX_HFT_HOST: &str = "api-hft.upstox.com";
 
 pub const FYERS_BOOK_ID: &str = "fyers-nse-bse-cash";
 pub const FYERS_API_HOST: &str = "api-t1.fyers.in";
+
+pub const GROWW_BOOK_ID: &str = "groww-nse-bse-cash";
+pub const GROWW_API_HOST: &str = "api.groww.in";
+pub const GROWW_ASSETS_HOST: &str = "growwapi-assets.groww.in";
+/// Mandatory on every Groww REST call (B6 row 2 / D4).
+pub const GROWW_API_VERSION_HEADER: &str = "1.0";
 
 /// Read-only Kite REST path prefixes allowed for book `zerodha-nse-bse-cash`.
 pub fn zerodha_kite_path_allowed(path_norm: &str) -> bool {
@@ -144,6 +153,42 @@ fn fyers_path_refused_impl(method: &str, path_norm: &str) -> bool {
         && (p.starts_with("/api/v3/orders") || p.starts_with("/api/v3/order"))
 }
 
+/// Read-only Groww v1 paths for book `groww-nse-bse-cash` (B6 row 2 / lock).
+pub fn groww_path_allowed(host: &str, method: &str, path_norm: &str) -> bool {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if method.to_ascii_uppercase() != "GET" {
+        return false;
+    }
+    if host == GROWW_ASSETS_HOST {
+        return p == "/instruments/instrument.csv";
+    }
+    if host != GROWW_API_HOST {
+        return false;
+    }
+    p == "/v1/order/list"
+        || p.starts_with("/v1/order/trades/")
+        || p.starts_with("/v1/order/status/")
+        || p.starts_with("/v1/order/detail/")
+        || p.starts_with("/v1/holdings/")
+        || p.starts_with("/v1/positions/")
+        || p.starts_with("/v1/margins/")
+        || p.starts_with("/v1/user/")
+}
+
+/// Refuse Groww order mutation surfaces (create/modify/cancel).
+pub fn groww_path_refused(method: &str, path_norm: &str) -> bool {
+    groww_path_refused_impl(method, path_norm)
+}
+
+fn groww_path_refused_impl(method: &str, path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    let upper = method.to_ascii_uppercase();
+    matches!(upper.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
+        && p.starts_with("/v1/order")
+        && p != "/v1/order/list"
+}
+
 pub fn host_allowed(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
     ALLOWED_BROKER_HOSTS
@@ -172,6 +217,8 @@ mod tests {
         assert!(host_allowed("api.upstox.com"));
         assert!(host_allowed("assets.upstox.com"));
         assert!(host_allowed("api-t1.fyers.in"));
+        assert!(host_allowed("api.groww.in"));
+        assert!(host_allowed("growwapi-assets.groww.in"));
         assert!(!host_allowed("api-hft.upstox.com"));
         assert!(!host_allowed("evil.example.com"));
         assert!(!host_allowed("mlhsm.kotaksecurities.com"));
@@ -233,5 +280,23 @@ mod tests {
         assert!(fyers_path_refused("POST", "/api/v3/orders"));
         assert!(fyers_path_refused("POST", "/api/v3/order"));
         assert!(!fyers_path_refused("GET", "/api/v3/tradebook"));
+    }
+
+    #[test]
+    fn groww_read_paths_allowed_order_posts_refused() {
+        assert!(groww_path_allowed(GROWW_API_HOST, "GET", "/v1/order/list"));
+        assert!(groww_path_allowed(
+            GROWW_API_HOST,
+            "GET",
+            "/v1/order/trades/GWK01"
+        ));
+        assert!(groww_path_allowed(
+            GROWW_ASSETS_HOST,
+            "GET",
+            "/instruments/instrument.csv"
+        ));
+        assert!(!groww_path_allowed(GROWW_API_HOST, "GET", "/v1/order/place"));
+        assert!(groww_path_refused("POST", "/v1/order/create"));
+        assert!(!groww_path_refused("GET", "/v1/order/list"));
     }
 }

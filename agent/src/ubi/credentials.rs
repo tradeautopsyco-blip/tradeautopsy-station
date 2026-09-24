@@ -83,6 +83,38 @@ pub enum CredentialBlob {
         #[serde(default, rename = "expiresAt")]
         expires_at: Option<String>,
     },
+    #[serde(rename = "dhan_consent_session")]
+    DhanConsentSession {
+        #[serde(rename = "dhanClientId")]
+        dhan_client_id: String,
+        #[serde(rename = "appId")]
+        app_id: String,
+        #[serde(rename = "appSecret")]
+        app_secret: String,
+        #[serde(rename = "accessToken")]
+        access_token: String,
+        #[serde(rename = "expiryTime")]
+        expiry_time: String,
+    },
+    #[serde(rename = "groww_checksum_session")]
+    GrowwChecksumSession {
+        #[serde(rename = "apiKey")]
+        api_key: String,
+        /// Vault-only: host presents it at mint (checksum preimage); never leaves the agent.
+        #[serde(rename = "apiSecret")]
+        api_secret: String,
+        /// Minted session token (`token`); Bearer-attached by the host on private paths.
+        #[serde(rename = "token")]
+        token: String,
+        /// ISO-8601 as returned by the mint (`expiry`); read per mint, never derived.
+        #[serde(rename = "expiry")]
+        expiry: String,
+        #[serde(rename = "tokenRefId")]
+        token_ref_id: String,
+        /// Mint time (ISO-8601); `checksum` and `timestamp` are NOT fields — recomputed per mint.
+        #[serde(rename = "mintedAt")]
+        minted_at: String,
+    },
 }
 
 impl CredentialBlob {
@@ -104,6 +136,8 @@ impl CredentialBlob {
             Self::KiteChecksumSession { api_key, .. } => Some(api_key),
             Self::UpstoxOAuthBearerSession { client_id, .. } => Some(client_id),
             Self::FyersOAuthJsonAppIdHashSession { app_id, .. } => Some(app_id),
+            Self::GrowwChecksumSession { api_key, .. } => Some(api_key),
+            Self::DhanConsentSession { app_id, .. } => Some(app_id),
             Self::KotakNeoTotpSession { .. } => None,
         }
     }
@@ -159,6 +193,29 @@ mod tests {
         assert!(json.contains("accessTokenExpiryUnixMs"));
         let decoded = decode_credential_blob(&json).unwrap();
         assert_eq!(decoded, blob);
+    }
+
+    #[test]
+    fn groww_checksum_session_blob_roundtrip() {
+        let blob = CredentialBlob::GrowwChecksumSession {
+            api_key: "groww-key".into(),
+            api_secret: "vault-secret".into(),
+            token: "minted-token".into(),
+            expiry: "2026-09-25T06:00:00+05:30".into(),
+            token_ref_id: "ref-1".into(),
+            minted_at: "2026-09-24T18:00:00+05:30".into(),
+        };
+        let json = serde_json::to_string(&blob).unwrap();
+        assert!(json.contains("groww_checksum_session"));
+        assert!(json.contains("apiKey"));
+        assert!(json.contains("tokenRefId"));
+        assert!(json.contains("mintedAt"));
+        // Per-mint inputs are NEVER blob fields — recomputed at each mint (ADR 0014).
+        assert!(!json.contains("checksum"));
+        assert!(!json.contains("timestamp"));
+        let decoded = decode_credential_blob(&json).unwrap();
+        assert_eq!(decoded, blob);
+        assert_eq!(blob.api_key_for_tests(), Some("groww-key"));
     }
 
     #[test]

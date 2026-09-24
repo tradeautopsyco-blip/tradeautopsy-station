@@ -25,6 +25,8 @@ struct BrokerConnectSheetView: View {
                 } else {
                     kotakFullFields
                 }
+            } else if viewModel.connectAuthScheme == .growwChecksumSession {
+                growwFields
             } else {
                 hmacFields
             }
@@ -93,6 +95,42 @@ struct BrokerConnectSheetView: View {
             )
         }
         await viewModel.submitConnect()
+    }
+
+    /// Groww key entry (B6 row 10, ADR 0014): API key + secret from the Groww
+    /// Cloud API Keys page. Station sends them to the local agent over signed
+    /// loopback — the agent stores them in Keychain and mints the session. No
+    /// browser step; the secret is typed once and never retained in Station.
+    @ViewBuilder
+    private var growwFields: some View {
+        Text("Enter your Groww API key and secret from the Groww Cloud API Keys page. No browser step — the local agent mints the session and confirms it automatically.")
+            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+            .foregroundStyle(StationDS.Text.muted)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Text("Requires an active Groww Trading API subscription (₹499 + taxes/month). Approval keys need daily approval on the Groww Cloud API Keys page.")
+            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+            .foregroundStyle(StationDS.Text.muted)
+            .fixedSize(horizontal: false, vertical: true)
+
+        credentialField(
+            title: "API Key",
+            text: Binding(
+                get: { viewModel.connectApiKey },
+                set: { viewModel.updateConnectFields(apiKey: $0, apiSecret: viewModel.connectApiSecret) }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiKey)
+        )
+
+        credentialField(
+            title: "API Secret",
+            text: Binding(
+                get: { viewModel.connectApiSecret },
+                set: { viewModel.updateConnectFields(apiKey: viewModel.connectApiKey, apiSecret: $0) }
+            ),
+            invalid: viewModel.connectInvalidFields.contains(.apiSecret),
+            secure: true
+        )
     }
 
     @ViewBuilder

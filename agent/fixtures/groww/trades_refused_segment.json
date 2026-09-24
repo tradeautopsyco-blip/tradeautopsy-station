@@ -1,0 +1,38 @@
+{
+  "status": "SUCCESS",
+  "payload": {
+    "trade_list": [
+      {
+        "groww_trade_id": "GT-SEG-01",
+        "exchange_trade_id": "11000012345801",
+        "exchange_order_id": "20000012345801",
+        "trading_symbol": "TCS",
+        "trade_status": "EXECUTED",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 2,
+        "price": 3900.0,
+        "trade_date_time": "2026-09-24T09:30:00+05:30",
+        "created_at": "2026-09-24T09:30:00+05:30",
+        "settlement_number": "20260924"
+      },
+      {
+        "groww_trade_id": "GT-SEG-02",
+        "exchange_trade_id": "11000012345802",
+        "trading_symbol": "NIFTY26OCT25000CE",
+        "trade_status": "EXECUTED",
+        "transaction_type": "BUY",
+        "product": "MIS",
+        "segment": "FNO",
+        "exchange": "NSE",
+        "quantity": 50,
+        "price": 112.35,
+        "trade_date_time": "2026-09-24T09:31:00+05:30",
+        "created_at": "2026-09-24T09:31:00+05:30",
+        "settlement_number": "20260924"
+      }
+    ]
+  }
+}

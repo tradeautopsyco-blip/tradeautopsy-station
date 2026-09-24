@@ -1,0 +1,45 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "orderId": "100001",
+      "exchangeOrderId": "10000012345678",
+      "exchangeTradeId": "900001",
+      "tradingSymbol": "ITBEES",
+      "securityId": "25034",
+      "isin": "INF732E01037",
+      "transactionType": "BUY",
+      "productType": "CNC",
+      "exchangeSegment": "NSE_EQ",
+      "tradedQuantity": 100,
+      "tradedPrice": 25.5,
+      "exchangeTime": "2026-07-25 10:15:30",
+      "createTime": "NA",
+      "updateTime": "NA",
+      "sebiTax": 0.05,
+      "stt": 12.5,
+      "brokerageCharges": 17.7,
+      "serviceTax": 3.19,
+      "exchangeTransactionCharges": 8.85,
+      "stampDuty": 2.5
+    },
+    {
+      "orderId": "100002",
+      "exchangeOrderId": "10000012345679",
+      "exchangeTradeId": "900002",
+      "tradingSymbol": "RELIANCE",
+      "securityId": "2885",
+      "isin": "INE002A01018",
+      "transactionType": "SELL",
+      "productType": "INTRADAY",
+      "exchangeSegment": "NSE_EQ",
+      "tradedQuantity": 5,
+      "tradedPrice": 1450.75,
+      "exchangeTime": "2026-07-25 14:05:00",
+      "createTime": "2026-07-25 14:04:52",
+      "updateTime": "2026-07-25 14:05:00",
+      "stt": 31.25,
+      "brokerageCharges": 17.7
+    }
+  ]
+}

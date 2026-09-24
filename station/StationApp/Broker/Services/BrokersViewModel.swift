@@ -185,7 +185,8 @@ public final class BrokersViewModel: ObservableObject {
         let scheme = BrokerConnectServices.authScheme(for: slug)
         if prefillConsumerKeyFromVault,
            scheme == .hmacApiKeySecret || scheme == .kiteChecksumSession
-            || scheme == .upstoxOAuthBearerSession || scheme == .fyersOAuthJsonAppIdHashSession {
+            || scheme == .upstoxOAuthBearerSession || scheme == .fyersOAuthJsonAppIdHashSession
+            || scheme == .growwChecksumSession {
             savedApiKey = (try? credentialStore.read(for: identity))?.apiKey ?? ""
         } else {
             savedApiKey = ""
@@ -416,6 +417,8 @@ public final class BrokersViewModel: ObservableObject {
                 connectMessage = "Enter both Fyers app ID and secret ID."
             case .hmacApiKeySecret:
                 connectMessage = "Enter both API key and secret."
+            case .growwChecksumSession:
+                connectMessage = "Enter both Groww API key and secret."
             }
         case .blockedWithdrawPermission:
             connectMessage = "Withdraw permission detected. Use a key without withdraw access."
@@ -436,6 +439,10 @@ public final class BrokersViewModel: ObservableObject {
                 connectSecretFieldsEpoch += 1
             }
             if case .fyersConnectRejected = failure {
+                connectApiSecret = ""
+                connectSecretFieldsEpoch += 1
+            }
+            if case .growwConnectRejected = failure {
                 connectApiSecret = ""
                 connectSecretFieldsEpoch += 1
             }
@@ -491,6 +498,10 @@ public final class BrokersViewModel: ObservableObject {
             case .fyersOAuthJsonAppIdHashSession:
                 syncActionMessage =
                     "Fyers session missing or expired — Connect again and finish browser login."
+                presentConnectSheet(for: identity.brokerSlug)
+            case .growwChecksumSession:
+                syncActionMessage =
+                    "Groww session missing or expired — Connect again with API key and secret."
                 presentConnectSheet(for: identity.brokerSlug)
             case .hmacApiKeySecret:
                 syncActionMessage =
@@ -585,6 +596,10 @@ public final class BrokersViewModel: ObservableObject {
             return detail.isEmpty
                 ? "Fyers login failed. Check app ID and secret ID, then try Connect again."
                 : detail
+        case .growwConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Groww login failed. Check API key and secret, then try Connect again."
+                : detail
         }
     }
 
@@ -606,6 +621,8 @@ public final class BrokersViewModel: ObservableObject {
                 return "Fyers app ID or secret ID rejected. Check Fyers developer settings and try again."
             case .hmacApiKeySecret:
                 return "Credentials were rejected by \(brokerName)."
+            case .growwChecksumSession:
+                return "Groww API key or secret rejected. Check Groww Cloud API Keys and try again."
             }
         case .kotakMintRejected(let detail):
             return detail.isEmpty
@@ -622,6 +639,10 @@ public final class BrokersViewModel: ObservableObject {
         case .fyersConnectRejected(let detail):
             return detail.isEmpty
                 ? "Fyers login rejected. Check app ID and secret ID."
+                : detail
+        case .growwConnectRejected(let detail):
+            return detail.isEmpty
+                ? "Groww login rejected. Check API key and secret."
                 : detail
         case .networkUnavailable, .rateLimited, .brokerUnavailable:
             return transientFailureMessage(failure, slug: slug)

@@ -1,0 +1,67 @@
+{
+  "status": "SUCCESS",
+  "payload": {
+    "trade_list": [
+      {
+        "groww_trade_id": "GT-REF-01",
+        "exchange_trade_id": "11000012345701",
+        "exchange_order_id": "20000012345701",
+        "trading_symbol": "INFY",
+        "trade_status": "EXECUTED",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 10,
+        "price": 1800.0,
+        "trade_date_time": "2026-09-24T11:00:00+05:30",
+        "created_at": "2026-09-24T11:00:00+05:30",
+        "settlement_number": "20260924"
+      },
+      {
+        "groww_trade_id": "GT-REF-02",
+        "exchange_trade_id": "11000012345702",
+        "trading_symbol": "RELIANCE",
+        "trade_status": "EXECUTED",
+        "transaction_type": "BUY",
+        "product": "INTRADAY",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 1,
+        "price": 1450.0,
+        "trade_date_time": "2026-09-24T11:01:00+05:30",
+        "created_at": "2026-09-24T11:01:00+05:30",
+        "settlement_number": "20260924"
+      },
+      {
+        "groww_trade_id": "GT-REF-03",
+        "exchange_trade_id": "11000012345703",
+        "trading_symbol": "TCS",
+        "trade_status": "EXECUTED",
+        "transaction_type": "SELL",
+        "product": "MARGIN",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 2,
+        "price": 3900.0,
+        "trade_date_time": "2026-09-24T11:02:00+05:30",
+        "created_at": "2026-09-24T11:02:00+05:30",
+        "settlement_number": "20260924"
+      },
+      {
+        "groww_trade_id": "GT-REF-04",
+        "exchange_trade_id": "11000012345704",
+        "trading_symbol": "HDFCBANK",
+        "trade_status": "EXECUTED",
+        "transaction_type": "BUY",
+        "segment": "CASH",
+        "exchange": "NSE",
+        "quantity": 3,
+        "price": 1600.0,
+        "trade_date_time": "2026-09-24T11:03:00+05:30",
+        "created_at": "2026-09-24T11:03:00+05:30",
+        "settlement_number": "20260924"
+      }
+    ]
+  }
+}

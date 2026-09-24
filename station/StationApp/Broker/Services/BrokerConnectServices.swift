@@ -36,6 +36,8 @@ public enum BrokerConnectServices {
             return UpstoxOAuthSessionCredentialValidator()
         case "fyers":
             return FyersOAuthSessionCredentialValidator()
+        case "groww":
+            return GrowwChecksumSessionCredentialValidator()
         default:
             return UnsupportedBrokerCredentialValidator()
         }
@@ -97,6 +99,22 @@ private struct FyersOAuthSessionCredentialValidator: BrokerCredentialValidating,
               credentials.authScheme == .fyersOAuthJsonAppIdHashSession,
               !credentials.apiKey.isEmpty,
               !credentials.apiSecret.isEmpty
+        else {
+            return .permanentFailure(.invalidCredentials)
+        }
+        return .success(permissionPosture: .readOnlyConfirmed)
+    }
+}
+
+/// Groww session vault is agent-owned after checksum mint; Station keeps api key marker only.
+private struct GrowwChecksumSessionCredentialValidator: BrokerCredentialValidating, Sendable {
+    func validate(
+        credentials: BrokerCredentials,
+        identity: BrokerConnectionIdentity
+    ) async -> BrokerCredentialValidationResult {
+        guard identity.brokerSlug == "groww",
+              credentials.authScheme == .growwChecksumSession,
+              !credentials.apiKey.isEmpty
         else {
             return .permanentFailure(.invalidCredentials)
         }

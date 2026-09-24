@@ -35,6 +35,7 @@ pub enum AuthScheme {
     KiteChecksumSession,
     UpstoxOAuthBearerSession,
     FyersOAuthJsonAppIdHashSession,
+    GrowwChecksumSession,
 }
 
 /// Closed asset axis (ADR 0004, Nautilus-aligned). Mirrors the WIT
@@ -255,6 +256,10 @@ pub fn compliance_profile(id: &str) -> Option<ComplianceProfile> {
             id: id.into(),
             block_on_withdraw: false,
         }),
+        "groww_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: false,
+        }),
         _ => None,
     }
 }
@@ -461,6 +466,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             manifest_id: "tradeautopsy:fyers-cash@0.1.0".into(),
             book_id: "fyers-nse-bse-cash".into(),
         },
+        BrokerDescriptor {
+            slug: "groww".into(),
+            display_name: "Groww".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::GrowwChecksumSession,
+            calc_profile_id: "equities_inr_cash".into(),
+            compliance_profile_id: "groww_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:groww-cash@0.1.0".into(),
+            book_id: "groww-nse-bse-cash".into(),
+        },
     ]
 }
 
@@ -501,6 +521,10 @@ mod tests {
         assert_eq!(kite.availability, BrokerAvailability::Planned);
         assert_eq!(kite.book_id, "zerodha-nse-bse-cash");
         assert_eq!(kite.auth_scheme, AuthScheme::KiteChecksumSession);
+        let groww = descriptor_for_slug("groww").expect("planned groww slug");
+        assert_eq!(groww.availability, BrokerAvailability::Planned);
+        assert_eq!(groww.book_id, "groww-nse-bse-cash");
+        assert_eq!(groww.auth_scheme, AuthScheme::GrowwChecksumSession);
         assert!(descriptor_for_slug("interactive_brokers").is_none());
     }
 
@@ -628,7 +652,7 @@ mod tests {
     #[test]
     fn book_catalog_covers_shipping_books_plus_planned_zerodha() {
         let books = catalog_books();
-        assert_eq!(books.len(), 9);
+        assert_eq!(books.len(), 10);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -640,6 +664,7 @@ mod tests {
             "zerodha-nse-bse-cash",
             "upstox-nse-bse-cash",
             "fyers-nse-bse-cash",
+            "groww-nse-bse-cash",
         ] {
             assert!(ids.contains(&expected), "missing book row {expected}");
         }
@@ -659,6 +684,14 @@ mod tests {
             fyers.auth_scheme,
             AuthScheme::FyersOAuthJsonAppIdHashSession
         );
+        let groww = descriptor_for_book_id("groww-nse-bse-cash").expect("planned groww");
+        assert_eq!(groww.availability, BrokerAvailability::Planned);
+        assert_eq!(groww.slug, "groww");
+        assert_eq!(groww.display_name, "Groww");
+        assert_eq!(groww.auth_scheme, AuthScheme::GrowwChecksumSession);
+        assert_eq!(groww.quote_currency, "INR");
+        assert_eq!(groww.calc_profile_id, "equities_inr_cash");
+        assert_eq!(groww.manifest_id, "tradeautopsy:groww-cash@0.1.0");
         // Every book row's profiles resolve; every row is first-party.
         for d in &books {
             assert!(

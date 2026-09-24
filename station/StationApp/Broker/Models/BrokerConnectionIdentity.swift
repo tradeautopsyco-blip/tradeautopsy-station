@@ -82,6 +82,21 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.expiresAt = nil
     }
 
+    /// Groww checksum-session app credentials. Written to the Keychain blob by
+    /// the agent over signed loopback (ADR 0014); the minted `token` + `expiry`
+    /// + `tokenRefId` stay agent vault-only alongside them.
+    public init(growwApiKey: String, growwApiSecret: String) {
+        self.authScheme = .growwChecksumSession
+        self.apiKey = growwApiKey
+        self.apiSecret = growwApiSecret
+        self.consumerKey = nil
+        self.tradeToken = nil
+        self.sid = nil
+        self.baseUrl = nil
+        self.hsServerId = nil
+        self.expiresAt = nil
+    }
+
     public init(
         consumerKey: String,
         tradeToken: String,
@@ -133,7 +148,7 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         try container.encode(authScheme, forKey: .authScheme)
         switch authScheme {
         case .hmacApiKeySecret, .kiteChecksumSession, .upstoxOAuthBearerSession,
-             .fyersOAuthJsonAppIdHashSession:
+             .fyersOAuthJsonAppIdHashSession, .growwChecksumSession:
             try container.encode(apiKey, forKey: .apiKey)
             try container.encode(apiSecret, forKey: .apiSecret)
         case .kotakNeoTotpSession:

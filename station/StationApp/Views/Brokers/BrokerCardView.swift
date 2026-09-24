@@ -36,7 +36,7 @@ struct BrokerCardView: View {
                 statusBadge
             }
 
-            if card.plannedLabel == nil {
+            if card.plannedLabel == nil || BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: card.id) {
                 if let validated = card.lastValidatedAtText {
                     metadataRow(label: "Last validated", value: validated)
                 }

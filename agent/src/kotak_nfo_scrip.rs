@@ -499,7 +499,9 @@ pub async fn refresh_from_session(
         HostCredentialBlob::Hmac { .. }
         | HostCredentialBlob::KiteSession { .. }
         | HostCredentialBlob::UpstoxSession { .. }
-        | HostCredentialBlob::FyersSession { .. } => {
+        | HostCredentialBlob::FyersSession { .. }
+        | HostCredentialBlob::GrowwSession { .. }
+        | HostCredentialBlob::DhanSession { .. } => {
             return Err(InstrumentMasterFetchError::new(
                 InstrumentMasterErrorClass::FilePathsHttp,
                 None,

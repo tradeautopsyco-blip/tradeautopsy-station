@@ -69,6 +69,9 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     "assets.upstox.com",
     // fyers — v3 REST reads (B6 row 22).
     "api-t1.fyers.in",
+    // groww — REST v1 + instrument CSV (B6 row 22).
+    "api.groww.in",
+    "growwapi-assets.groww.in",
     // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
     // Labs vendor only — not a shipping broker, not Kill DNS.
     "www.amfiindia.com",
@@ -238,6 +241,39 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
         {
             true
         }
+        ("fills", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path) == "/v1/order/list"
+                || normalize_request_path(path).starts_with("/v1/order/trades/") =>
+        {
+            true
+        }
+        ("instrument_master", "GET", AuthMode::Public)
+            if normalize_request_path(path) == "/instruments/instrument.csv" =>
+        {
+            true
+        }
+        ("holdings", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path).starts_with("/v1/holdings/") =>
+        {
+            true
+        }
+        ("positions", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path).starts_with("/v1/positions/") =>
+        {
+            true
+        }
+        ("funds", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path).starts_with("/v1/margins/")
+                || normalize_request_path(path).starts_with("/v1/user/") =>
+        {
+            true
+        }
+        ("orders", "GET", AuthMode::PrivateRead)
+            if normalize_request_path(path).starts_with("/v1/order/status/")
+                || normalize_request_path(path).starts_with("/v1/order/detail/") =>
+        {
+            true
+        }
         _ => false,
     }
 }
@@ -394,6 +430,31 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p) == "/api/v3/profile" => {
             Ok(("funds", AuthMode::PrivateRead))
         }
+        ("GET", p) if normalize_request_path(p) == "/v1/order/list" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/v1/order/trades/") => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/v1/order/status/")
+            || normalize_request_path(p).starts_with("/v1/order/detail/") =>
+        {
+            Ok(("orders", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/v1/holdings/") => {
+            Ok(("holdings", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/v1/positions/") => {
+            Ok(("positions", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p).starts_with("/v1/margins/")
+            || normalize_request_path(p).starts_with("/v1/user/") =>
+        {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/instruments/instrument.csv" => {
+            Ok(("instrument_master", AuthMode::Public))
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -546,6 +607,21 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::HostNotAllowed);
             }
             if !crate::ubi::fyers_path_allowed(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::GROWW_BOOK_ID => {
+            if host_norm == crate::ubi::GROWW_ASSETS_HOST {
+                if path_norm != "/instruments/instrument.csv" {
+                    return Err(HostRefuse::PathNotAllowlisted);
+                }
+                return Ok(());
+            }
+            if host_norm != crate::ubi::GROWW_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::groww_path_allowed(&host_norm, "GET", &path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

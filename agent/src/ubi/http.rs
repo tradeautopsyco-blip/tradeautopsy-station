@@ -36,6 +36,13 @@ pub enum HostCredentialBlob {
         app_id: String,
         access_token: String,
     },
+    GrowwSession {
+        token: String,
+    },
+    DhanSession {
+        app_id: String,
+        access_token: String,
+    },
 }
 
 impl HostCredentialBlob {
@@ -74,6 +81,11 @@ impl HostCredentialBlob {
                 app_id,
                 access_token,
             } => vec![app_id.as_str(), access_token.as_str()],
+            Self::GrowwSession { token } => vec![token.as_str()],
+            Self::DhanSession {
+                app_id,
+                access_token,
+            } => vec![app_id.as_str(), access_token.as_str()],
         }
     }
 
@@ -83,7 +95,9 @@ impl HostCredentialBlob {
             Self::KotakSession { .. }
             | Self::KiteSession { .. }
             | Self::UpstoxSession { .. }
-            | Self::FyersSession { .. } => None,
+            | Self::FyersSession { .. }
+            | Self::GrowwSession { .. }
+            | Self::DhanSession { .. } => None,
         }
     }
 }
@@ -127,6 +141,17 @@ impl From<&CredentialBlob> for HostCredentialBlob {
                 access_token,
                 ..
             } => Self::FyersSession {
+                app_id: app_id.clone(),
+                access_token: access_token.clone(),
+            },
+            CredentialBlob::GrowwChecksumSession { token, .. } => Self::GrowwSession {
+                token: token.clone(),
+            },
+            CredentialBlob::DhanConsentSession {
+                app_id,
+                access_token,
+                ..
+            } => Self::DhanSession {
                 app_id: app_id.clone(),
                 access_token: access_token.clone(),
             },
@@ -180,6 +205,10 @@ pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) ->
         }
         HostCredentialBlob::FyersSession { .. } => {
             crate::ubi::fyers_session::FYERS_API_HOST.to_string()
+        }
+        HostCredentialBlob::GrowwSession { .. } => crate::ubi::GROWW_API_HOST.to_string(),
+        HostCredentialBlob::DhanSession { .. } => {
+            crate::ubi::dhan_session::DHAN_API_HOST.to_string()
         }
         HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
     }
@@ -399,6 +428,60 @@ pub fn prepare_request(
             ));
             PreparedHttpRequest {
                 method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::GrowwSession { token } => {
+            let canonical = query
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let url = if canonical.is_empty() {
+                format!("https://{host}{path}")
+            } else {
+                format!("https://{host}{path}?{canonical}")
+            };
+            out_headers.push((
+                "Authorization".to_string(),
+                format!("Bearer {}", token.trim()),
+            ));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            out_headers.push((
+                "X-API-VERSION".to_string(),
+                crate::ubi::GROWW_API_VERSION_HEADER.to_string(),
+            ));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::DhanSession {
+            app_id,
+            access_token,
+        } => {
+            let canonical = query
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let url = if canonical.is_empty() {
+                format!("https://{host}{path}")
+            } else {
+                format!("https://{host}{path}?{canonical}")
+            };
+            out_headers.push(("access-token".to_string(), access_token.trim().to_string()));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            let method_upper = method.to_ascii_uppercase();
+            if method_upper == "POST" && path.starts_with("/marketfeed") {
+                out_headers.push(("client-id".to_string(), app_id.trim().to_string()));
+            }
+            PreparedHttpRequest {
+                method: method_upper,
                 url,
                 headers: out_headers,
                 body: body.map(|b| b.to_string()),
