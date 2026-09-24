@@ -1,6 +1,6 @@
 //! SHIPPING book → realized-PnL owner path (CLAIM-REGISTRY eleven rows).
 
-use crate::data::book_identity::book_accepts_symbol;
+use crate::data::book_accepts_symbol;
 use crate::data::is_dated_option_contract;
 use crate::broker::BrokerFill;
 use crate::inr_cash_wac;

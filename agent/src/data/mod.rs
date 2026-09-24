@@ -221,7 +221,7 @@ pub use kotak_private::{
     kotak_cash_limits_jdata_body, kotak_jdata_form_body, kotak_nfo_limits_jdata_body,
 };
 pub use kotak_quotes::{
-    kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
+    is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json, nfo_open_interest_from_kotak_json,
     parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,
     tick_cash_builders_from_kotak_json, NfoOiSessionSlice, NfoOpenInterest, QUOTE_TYPE_ALL,

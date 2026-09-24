@@ -6,7 +6,7 @@
 //! DualNoBlend: never `round_trip_engine.rs`, never USD, never `netPnL * exchange_rate`.
 
 use crate::broker::BrokerFill;
-use crate::data::kotak_quotes::is_nfo_segment;
+use crate::data::is_nfo_segment;
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 
