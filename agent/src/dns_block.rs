@@ -109,6 +109,10 @@ const BINANCE_COM_HOSTS: &[&str] = &[
     "stream.binance.com",
     "fstream.binance.com",
     "dstream.binance.com",
+    // Web terminal + auth (K5): not `broker_http_call` targets; L3 must sinkhole them.
+    "www.binance.com",
+    "accounts.binance.com",
+    "login.binance.com",
 ];
 
 const BINANCE_US_HOSTS: &[&str] = &["api.binance.us"];
@@ -519,6 +523,9 @@ mod tests {
     fn binance_com_maps_to_com_host_never_the_us_venue() {
         let hosts = hosts_for_broker("binance_com");
         assert!(hosts.contains(&"api.binance.com"));
+        assert!(hosts.contains(&"www.binance.com"));
+        assert!(hosts.contains(&"accounts.binance.com"));
+        assert!(hosts.contains(&"login.binance.com"));
         assert!(!hosts.contains(&"api.binance.us"));
         assert!(hosts_for_broker("binance_us").contains(&"api.binance.us"));
     }
@@ -621,6 +628,9 @@ mod tests {
         assert!(com.contains(&"fstream.binance.com"));
         assert!(com.contains(&"dstream.binance.com"));
         assert!(com.contains(&"stream.binance.com"));
+        assert!(com.contains(&"www.binance.com"));
+        assert!(com.contains(&"accounts.binance.com"));
+        assert!(com.contains(&"login.binance.com"));
 
         let kotak = hosts_for_broker("kotak_neo");
         assert_eq!(kotak, KOTAK_HOSTS);
