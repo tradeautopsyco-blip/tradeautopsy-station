@@ -25,13 +25,15 @@ pub mod kraken_session;
 mod wasm_adapter;
 
 pub use allowlist::{
-    fyers_path_allowed, fyers_path_refused, groww_path_allowed, groww_path_refused, host_allowed,
-    okx_path_allowed, okx_path_refused, OKX_API_HOST, OKX_COM_SPOT_BOOK_ID,
-    upstox_path_allowed, upstox_path_refused, zerodha_kite_path_allowed, zerodha_kite_path_refused,
-    ALLOWED_BROKER_HOSTS, FYERS_API_HOST, FYERS_BOOK_ID, GROWW_API_HOST, GROWW_API_VERSION_HEADER,
-    GROWW_ASSETS_HOST, GROWW_BOOK_ID, KITE_API_HOST, UPSTOX_API_HOST, UPSTOX_ASSETS_HOST,
-    UPSTOX_BOOK_ID, UPSTOX_HFT_HOST, UPSTOX_NFO_BOOK_ID, ZERODHA_KITE_BOOK_ID,
-    ZERODHA_KITE_NFO_BOOK_ID, FYERS_NFO_BOOK_ID,
+    fyers_path_allowed, fyers_path_refused, fyers_sym_details_stem, groww_path_allowed,
+    groww_path_refused, host_allowed, is_fyers_cash_sym_path, is_fyers_nfo_sym_path,
+    is_upstox_cash_bod_path, is_upstox_complete_bod_path, is_upstox_nfo_bod_path,
+    okx_path_allowed, okx_path_refused, upstox_exchange_bod_stem, upstox_path_allowed,
+    upstox_path_refused, zerodha_kite_path_allowed, zerodha_kite_path_refused, ALLOWED_BROKER_HOSTS,
+    FYERS_API_HOST, FYERS_BOOK_ID, FYERS_NFO_BOOK_ID, FYERS_PUBLIC_HOST, GROWW_API_HOST,
+    GROWW_API_VERSION_HEADER, GROWW_ASSETS_HOST, GROWW_BOOK_ID, KITE_API_HOST, OKX_API_HOST,
+    OKX_COM_SPOT_BOOK_ID, UPSTOX_API_HOST, UPSTOX_ASSETS_HOST, UPSTOX_BOOK_ID, UPSTOX_HFT_HOST,
+    UPSTOX_NFO_BOOK_ID, ZERODHA_KITE_BOOK_ID, ZERODHA_KITE_NFO_BOOK_ID,
 };
 pub use catalog::{
     calc_profile, catalog_books, catalog_v1, compliance_profile, descriptor_for_book_id,

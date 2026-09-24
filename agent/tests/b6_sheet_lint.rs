@@ -138,6 +138,30 @@ fn signed_fyers_covers_surface_rows_0_to_25() {
 }
 
 #[test]
+fn signed_dhan_covers_surface_rows_0_to_25() {
+    let slug = "dhan";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P3 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
+fn signed_groww_covers_surface_rows_0_to_25() {
+    let slug = "groww";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P3 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
 fn signed_bybit_covers_surface_rows_0_to_25() {
     let slug = "bybit";
     let text = read_sheet(slug);

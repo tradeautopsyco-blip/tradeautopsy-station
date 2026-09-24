@@ -67,8 +67,9 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // upstox — REST reads + BOD instruments (B6 row 22; HFT refused).
     "api.upstox.com",
     "assets.upstox.com",
-    // fyers — v3 REST reads (B6 row 22).
+    // fyers — v3 REST reads + public sym master (B6 row 22).
     "api-t1.fyers.in",
+    "public.fyers.in",
     // groww — REST v1 + instrument CSV (B6 row 22).
     "api.groww.in",
     "growwapi-assets.groww.in",
@@ -814,23 +815,74 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
-        crate::ubi::UPSTOX_BOOK_ID | crate::ubi::UPSTOX_NFO_BOOK_ID => {
+        crate::ubi::UPSTOX_BOOK_ID => {
             if crate::ubi::upstox_path_refused(&host_norm, "GET", &path_norm) {
                 return Err(HostRefuse::ExecutionEndpoint);
+            }
+            if crate::ubi::is_upstox_nfo_bod_path(&host_norm, &path_norm)
+                || crate::ubi::is_upstox_complete_bod_path(&host_norm, &path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if crate::ubi::upstox_exchange_bod_stem(&path_norm).is_some()
+                && !crate::ubi::is_upstox_cash_bod_path(&host_norm, &path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
             }
             if !crate::ubi::upstox_path_allowed(&host_norm, &path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
         }
-        crate::ubi::FYERS_BOOK_ID | crate::ubi::FYERS_NFO_BOOK_ID => {
-            if host_norm != crate::ubi::FYERS_API_HOST {
-                return Err(HostRefuse::HostNotAllowed);
+        crate::ubi::UPSTOX_NFO_BOOK_ID => {
+            if crate::ubi::upstox_path_refused(&host_norm, "GET", &path_norm) {
+                return Err(HostRefuse::ExecutionEndpoint);
             }
-            if !crate::ubi::fyers_path_allowed(&path_norm) {
+            if crate::ubi::is_upstox_cash_bod_path(&host_norm, &path_norm)
+                || crate::ubi::is_upstox_complete_bod_path(&host_norm, &path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if crate::ubi::upstox_exchange_bod_stem(&path_norm).is_some()
+                && !crate::ubi::is_upstox_nfo_bod_path(&host_norm, &path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if !crate::ubi::upstox_path_allowed(&host_norm, &path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())
+        }
+        crate::ubi::FYERS_BOOK_ID => {
+            if host_norm == crate::ubi::FYERS_API_HOST {
+                if !crate::ubi::fyers_path_allowed(&path_norm) {
+                    return Err(HostRefuse::PathNotAllowlisted);
+                }
+                return Ok(());
+            }
+            if host_norm == crate::ubi::FYERS_PUBLIC_HOST {
+                if !crate::ubi::is_fyers_cash_sym_path(&host_norm, &path_norm) {
+                    return Err(HostRefuse::PathNotAllowlisted);
+                }
+                return Ok(());
+            }
+            Err(HostRefuse::HostNotAllowed)
+        }
+        crate::ubi::FYERS_NFO_BOOK_ID => {
+            if host_norm == crate::ubi::FYERS_API_HOST {
+                let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+                if p != "/api/v3/tradebook" && p != "/api/v3/profile" {
+                    return Err(HostRefuse::PathNotAllowlisted);
+                }
+                return Ok(());
+            }
+            if host_norm == crate::ubi::FYERS_PUBLIC_HOST {
+                if !crate::ubi::is_fyers_nfo_sym_path(&host_norm, &path_norm) {
+                    return Err(HostRefuse::PathNotAllowlisted);
+                }
+                return Ok(());
+            }
+            Err(HostRefuse::HostNotAllowed)
         }
         crate::ubi::GROWW_BOOK_ID => {
             if host_norm == crate::ubi::GROWW_ASSETS_HOST {
@@ -2417,6 +2469,46 @@ mod tests {
                 "/instruments/nfo",
             )
             .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn upstox_nfo_book_fence_splits_bod_gzip_from_cash() {
+        use crate::ubi::{UPSTOX_ASSETS_HOST, UPSTOX_BOOK_ID, UPSTOX_NFO_BOOK_ID};
+
+        let nfo_bod = "/market-quote/instruments/exchange/NFO.json.gz";
+        let cash_bod = "/market-quote/instruments/exchange/NSE.json.gz";
+        authorize_book_fence(UPSTOX_NFO_BOOK_ID, UPSTOX_ASSETS_HOST, nfo_bod)
+            .expect("NFO book may fetch NFO BOD");
+        assert_eq!(
+            authorize_book_fence(UPSTOX_NFO_BOOK_ID, UPSTOX_ASSETS_HOST, cash_bod).unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        authorize_book_fence(UPSTOX_BOOK_ID, UPSTOX_ASSETS_HOST, cash_bod)
+            .expect("cash book may fetch NSE BOD");
+        assert_eq!(
+            authorize_book_fence(UPSTOX_BOOK_ID, UPSTOX_ASSETS_HOST, nfo_bod).unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
+    fn fyers_nfo_book_fence_splits_sym_master_from_cash() {
+        use crate::ubi::{FYERS_BOOK_ID, FYERS_NFO_BOOK_ID, FYERS_PUBLIC_HOST};
+
+        let nfo_csv = "/sym_details/NSE_FO.csv";
+        let cash_csv = "/sym_details/NSE_CM.csv";
+        authorize_book_fence(FYERS_NFO_BOOK_ID, FYERS_PUBLIC_HOST, nfo_csv)
+            .expect("NFO book may fetch NSE_FO.csv");
+        assert_eq!(
+            authorize_book_fence(FYERS_NFO_BOOK_ID, FYERS_PUBLIC_HOST, cash_csv).unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        authorize_book_fence(FYERS_BOOK_ID, FYERS_PUBLIC_HOST, cash_csv)
+            .expect("cash book may fetch NSE_CM.csv");
+        assert_eq!(
+            authorize_book_fence(FYERS_BOOK_ID, FYERS_PUBLIC_HOST, nfo_csv).unwrap_err(),
             HostRefuse::PathNotAllowlisted
         );
     }

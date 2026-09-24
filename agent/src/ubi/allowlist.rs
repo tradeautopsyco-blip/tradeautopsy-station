@@ -31,8 +31,9 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     // upstox — REST + BOD instrument gzips (B6 row 22; api-hft refused).
     "api.upstox.com",
     "assets.upstox.com",
-    // fyers — v3 REST reads (B6 row 22; siblings refused in Kill DNS).
+    // fyers — v3 REST reads + public sym master (B6 row 22; siblings refused in Kill DNS).
     "api-t1.fyers.in",
+    "public.fyers.in",
     // groww — REST v1 reads + mint host (B6 row 22; assets CSV host separate).
     "api.groww.in",
     "growwapi-assets.groww.in",
@@ -64,6 +65,67 @@ pub const UPSTOX_HFT_HOST: &str = "api-hft.upstox.com";
 pub const FYERS_BOOK_ID: &str = "fyers-nse-bse-cash";
 pub const FYERS_NFO_BOOK_ID: &str = "fyers-nse-nfo";
 pub const FYERS_API_HOST: &str = "api-t1.fyers.in";
+pub const FYERS_PUBLIC_HOST: &str = "public.fyers.in";
+
+/// Stem from `/market-quote/instruments/exchange/{stem}.json.gz` on Upstox assets host.
+pub fn upstox_exchange_bod_stem(path_norm: &str) -> Option<String> {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    let prefix = "/market-quote/instruments/exchange/";
+    if !p.starts_with(prefix) || !p.ends_with(".json.gz") {
+        return None;
+    }
+    let stem = &p[prefix.len()..p.len() - 8];
+    if stem.is_empty() {
+        return None;
+    }
+    Some(stem.to_string())
+}
+
+pub fn is_upstox_complete_bod_path(host: &str, path_norm: &str) -> bool {
+    host.trim().trim_end_matches('.').to_ascii_lowercase() == UPSTOX_ASSETS_HOST
+        && upstox_exchange_bod_stem(path_norm).as_deref() == Some("complete")
+}
+
+pub fn is_upstox_cash_bod_path(host: &str, path_norm: &str) -> bool {
+    if host.trim().trim_end_matches('.').to_ascii_lowercase() != UPSTOX_ASSETS_HOST {
+        return false;
+    }
+    matches!(
+        upstox_exchange_bod_stem(path_norm).as_deref(),
+        Some("nse") | Some("bse")
+    )
+}
+
+pub fn is_upstox_nfo_bod_path(host: &str, path_norm: &str) -> bool {
+    host.trim().trim_end_matches('.').to_ascii_lowercase() == UPSTOX_ASSETS_HOST
+        && upstox_exchange_bod_stem(path_norm).as_deref() == Some("nfo")
+}
+
+pub fn fyers_sym_details_stem(path_norm: &str) -> Option<String> {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    let prefix = "/sym_details/";
+    if !p.starts_with(prefix) || !p.ends_with(".csv") {
+        return None;
+    }
+    let stem = &p[prefix.len()..p.len() - 4];
+    if stem.is_empty() {
+        return None;
+    }
+    Some(stem.to_string())
+}
+
+pub fn is_fyers_cash_sym_path(host: &str, path_norm: &str) -> bool {
+    host.trim().trim_end_matches('.').to_ascii_lowercase() == FYERS_PUBLIC_HOST
+        && matches!(
+            fyers_sym_details_stem(path_norm).as_deref(),
+            Some("nse_cm") | Some("bse_cm")
+        )
+}
+
+pub fn is_fyers_nfo_sym_path(host: &str, path_norm: &str) -> bool {
+    host.trim().trim_end_matches('.').to_ascii_lowercase() == FYERS_PUBLIC_HOST
+        && fyers_sym_details_stem(path_norm).as_deref() == Some("nse_fo")
+}
 
 pub const GROWW_BOOK_ID: &str = "groww-nse-bse-cash";
 pub const GROWW_API_HOST: &str = "api.groww.in";

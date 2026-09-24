@@ -126,6 +126,7 @@ const FYERS_HOSTS: &[&str] = &[
     "api-t1.fyers.in",
     "api.fyers.in",
     "api-t2.fyers.in",
+    "public.fyers.in",
 ];
 
 const OKX_COM_HOSTS: &[&str] = &["www.okx.com"];
