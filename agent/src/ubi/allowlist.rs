@@ -52,6 +52,7 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
 ];
 
 pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
+pub const ZERODHA_KITE_NFO_BOOK_ID: &str = "zerodha-nse-nfo";
 pub const KITE_API_HOST: &str = "api.kite.trade";
 
 pub const UPSTOX_BOOK_ID: &str = "upstox-nse-bse-cash";

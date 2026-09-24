@@ -356,7 +356,7 @@ pub fn descriptor_for_slug(slug: &str) -> Option<BrokerDescriptor> {
 /// - `binance-com-usdm` → (cryptocurrency, future, false)
 /// - `binance-com-coinm` → (cryptocurrency, future, true)
 /// - `kotak-nse-bse-cash` → (equity, spot, false)
-/// - `kotak-nse-nfo` → (equity, option, false) + documented FUT limitation
+/// - `kotak-nse-nfo` / `zerodha-nse-nfo` → (equity, option, false) + documented FUT limitation
 ///   (ADR 0004 §"NFO book stamp": the book is mixed CE/PE/FUT; per-fill precision
 ///   lives in `BrokerFill.instrument_type`, never in this stamp).
 pub fn catalog_books() -> Vec<BrokerDescriptor> {
@@ -465,6 +465,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:zerodha-kite-cash@0.1.0".into(),
             book_id: "zerodha-nse-bse-cash".into(),
+        },
+        BrokerDescriptor {
+            slug: "zerodha_kite".into(),
+            display_name: "Zerodha Kite NFO".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Option,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::KiteChecksumSession,
+            calc_profile_id: "equities_inr_nfo".into(),
+            compliance_profile_id: "zerodha_kite_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:zerodha-kite-nfo@0.1.0".into(),
+            book_id: "zerodha-nse-nfo".into(),
         },
         BrokerDescriptor {
             slug: "upstox".into(),
@@ -795,7 +810,7 @@ mod tests {
     /// Tier I Wave 2/3 tracers stay Planned until signed dogfood (step 6).
     fn book_catalog_covers_shipping_books_adr_0019_tiers() {
         let books = catalog_books();
-        assert_eq!(books.len(), 15);
+        assert_eq!(books.len(), 16);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -805,6 +820,7 @@ mod tests {
             "kotak-nse-bse-cash",
             "kotak-nse-nfo",
             "zerodha-nse-bse-cash",
+            "zerodha-nse-nfo",
             "upstox-nse-bse-cash",
             "fyers-nse-bse-cash",
             "groww-nse-bse-cash",

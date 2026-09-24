@@ -320,7 +320,9 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         "binance-com-usdm" => Some(&BINANCE_COM_FAPI),
         "binance-com-coinm" => Some(&BINANCE_COM_DAPI),
         "kotak-nse-bse-cash" | "kotak-nse-nfo" => Some(&KOTAK_NEO_REQUESTS),
-        crate::ubi::ZERODHA_KITE_BOOK_ID => Some(&ZERODHA_KITE_REQUESTS),
+        crate::ubi::ZERODHA_KITE_BOOK_ID | crate::ubi::ZERODHA_KITE_NFO_BOOK_ID => {
+            Some(&ZERODHA_KITE_REQUESTS)
+        }
         crate::ubi::UPSTOX_BOOK_ID => Some(&UPSTOX_REQUESTS),
         crate::ubi::FYERS_BOOK_ID => Some(&FYERS_REQUESTS),
         crate::ubi::GROWW_BOOK_ID => Some(&GROWW_REQUESTS),
@@ -478,6 +480,10 @@ mod tests {
             "kotak_neo"
         );
         assert_eq!(route_book("kotak-nse-nfo").unwrap().slot_id, "kotak_neo");
+        assert_eq!(
+            route_book(crate::ubi::ZERODHA_KITE_NFO_BOOK_ID).unwrap().slot_id,
+            "zerodha_kite"
+        );
         assert_eq!(
             route_book(crate::ubi::ZERODHA_KITE_BOOK_ID).unwrap().slot_id,
             "zerodha_kite"

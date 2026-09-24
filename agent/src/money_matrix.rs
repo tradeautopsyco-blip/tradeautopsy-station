@@ -1,4 +1,4 @@
-//! SHIPPING book → realized-PnL owner path (CLAIM-REGISTRY eleven rows).
+//! SHIPPING book → realized-PnL owner path (CLAIM-REGISTRY twelve rows).
 
 use crate::data::book_accepts_symbol;
 use crate::data::is_dated_option_contract;
@@ -6,7 +6,7 @@ use crate::broker::BrokerFill;
 use crate::inr_cash_wac;
 use crate::nfo_realized_pnl;
 
-pub const SHIPPING_BOOK_COUNT: usize = 11;
+pub const SHIPPING_BOOK_COUNT: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoneyOwner {
@@ -22,7 +22,7 @@ pub struct BookMoneyRow {
     pub owner: MoneyOwner,
 }
 
-/// All eleven SHIPPING books from `issues/compliance/CLAIM-REGISTRY.md`.
+/// All twelve SHIPPING books from `issues/compliance/CLAIM-REGISTRY.md`.
 pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
     [
         BookMoneyRow {
@@ -55,6 +55,10 @@ pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
         },
         BookMoneyRow {
             book_id: "kotak-nse-nfo",
+            owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "zerodha-nse-nfo",
             owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
         },
         BookMoneyRow {
@@ -112,12 +116,13 @@ mod tests {
     use chrono::Utc;
 
     #[test]
-    fn all_eleven_shipping_books_covered() {
+    fn all_twelve_shipping_books_covered() {
         let matrix = shipping_money_matrix();
         assert_eq!(matrix.len(), SHIPPING_BOOK_COUNT);
         let ids: Vec<_> = matrix.iter().map(|r| r.book_id).collect();
         assert_eq!(ids.len(), ids.iter().collect::<std::collections::BTreeSet<_>>().len());
         assert!(ids.contains(&"kotak-nse-nfo"));
+        assert!(ids.contains(&"zerodha-nse-nfo"));
         assert!(ids.contains(&"binance-com-options"));
         assert!(ids.contains(&"binance-com-coinm"));
     }
