@@ -272,11 +272,28 @@ public final class BrokersViewModel: ObservableObject {
             syncActionMessage = "Sync started — credentials OK."
         } catch BrokerSyncStartError.missingCredentials {
             presentConnectSheet(for: slug)
+        } catch BrokerAgentRuntimeError.syncStartFailed(let message) {
+            syncActionMessage = Self.sanitizeAgentErrorForUI(message)
         } catch {
             syncActionMessage =
                 "Start failed. If a Keychain password dialog appeared, click Always Allow, then Start again."
         }
         await load()
+    }
+
+    private static func sanitizeAgentErrorForUI(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.localizedCaseInsensitiveContains("component")
+            || trimmed.localizedCaseInsensitiveContains(".wasm")
+        {
+            return "Start failed — broker adapter missing from the app bundle. Rebuild Station in Xcode (Product → Build), quit, reopen, then Start again."
+        }
+        if trimmed.count > 240 {
+            return String(trimmed.prefix(240)) + "…"
+        }
+        return trimmed.isEmpty
+            ? "Start failed. Rebuild Station, quit, reopen, then Start again."
+            : trimmed
     }
 
     /// Poll briefly so Connect does not treat post-Start transitional `stale` as success.
@@ -507,6 +524,8 @@ public final class BrokersViewModel: ObservableObject {
                 syncActionMessage =
                     "Cannot Start — session vault missing. Use Edit / Connect with a fresh TOTP."
             }
+        } catch BrokerAgentRuntimeError.syncStartFailed(let message) {
+            syncActionMessage = Self.sanitizeAgentErrorForUI(message)
         } catch {
             syncActionMessage =
                 "Start failed. If a Keychain password dialog appeared, click Always Allow, then Start again."

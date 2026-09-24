@@ -161,7 +161,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\nchmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\n";
+			shellScript = "set -e\n\"${SRCROOT}/Scripts/build-and-copy-agent.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

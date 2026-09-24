@@ -170,8 +170,14 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            if let http = response as? HTTPURLResponse,
+               let decoded = try? JSONDecoder().decode(BrokerSyncStartErrorBody.self, from: data),
+               let message = decoded.error, !message.isEmpty
+            {
+                throw BrokerAgentRuntimeError.syncStartFailed(message: message)
+            }
             throw BrokerAgentRuntimeError.requestFailed
         }
     }
@@ -453,8 +459,13 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
     }
 }
 
+private struct BrokerSyncStartErrorBody: Decodable {
+    let error: String?
+}
+
 public enum BrokerAgentRuntimeError: Error, Equatable {
     case requestFailed
+    case syncStartFailed(message: String)
     case kotakMintFailed(errorClass: String, message: String)
     case zerodhaBeginFailed(errorClass: String, message: String)
     case upstoxBeginFailed(errorClass: String, message: String)

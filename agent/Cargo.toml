@@ -8,6 +8,7 @@ members = [
     "ubi-upstox-adapter",
     "ubi-fyers-adapter",
     "ubi-groww-adapter",
+    "ubi-dhan-adapter",
 ]
 resolver = "2"
 

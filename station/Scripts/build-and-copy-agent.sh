@@ -42,15 +42,40 @@ mkdir -p "${DEST}"
 cp "${AGENT_BIN}" "${DEST}/tradeautopsy-agent"
 chmod +x "${DEST}/tradeautopsy-agent"
 
-# First-pair Wasm next to agent (B5 / T2 dogfood)
-COM_WASM="${AGENT_DIR}/ubi-binance-com-adapter/target/wasm32-wasip2/release/ubi_binance_com_adapter.wasm"
-KOTAK_WASM="${AGENT_DIR}/ubi-kotak-neo-adapter/target/wasm32-wasip2/release/ubi_kotak_neo_adapter.wasm"
-[ -f "${COM_WASM}" ] && cp "${COM_WASM}" "${DEST}/ubi_binance_com_adapter.wasm"
-[ -f "${KOTAK_WASM}" ] && cp "${KOTAK_WASM}" "${DEST}/ubi_kotak_neo_adapter.wasm"
+# UBI Wasm components next to the agent (ADR 0001). Build if missing.
+WASM_TARGET="wasm32-wasip2"
+WASM_PROFILE="release"
+WASM_PACKAGES=(
+  "ubi-binance-com-adapter:ubi_binance_com_adapter.wasm"
+  "ubi-kotak-neo-adapter:ubi_kotak_neo_adapter.wasm"
+  "ubi-zerodha-kite-adapter:ubi_zerodha_kite_adapter.wasm"
+  "ubi-upstox-adapter:ubi_upstox_adapter.wasm"
+  "ubi-fyers-adapter:ubi_fyers_adapter.wasm"
+  "ubi-groww-adapter:ubi_groww_adapter.wasm"
+  "ubi-dhan-adapter:ubi_dhan_adapter.wasm"
+)
+
+echo "Building UBI adapter Wasm components..."
+for entry in "${WASM_PACKAGES[@]}"; do
+  pkg="${entry%%:*}"
+  wasm_file="${entry##*:}"
+  wasm_path="${AGENT_DIR}/${pkg}/target/${WASM_TARGET}/${WASM_PROFILE}/${wasm_file}"
+  if [ ! -f "${wasm_path}" ]; then
+    echo "  cargo build -p ${pkg} --target ${WASM_TARGET} --release"
+    (cd "${AGENT_DIR}" && cargo build --release --target "${WASM_TARGET}" -p "${pkg}")
+  fi
+  if [ -f "${wasm_path}" ]; then
+    cp "${wasm_path}" "${DEST}/${wasm_file}"
+    echo "  copied ${wasm_file}"
+  else
+    echo "warning: missing ${wasm_path} — Start will fail for that broker slug" >&2
+  fi
+done
 
 # Ad-hoc sign so app codesign accepts nested unsigned wasm
-for f in tradeautopsy-agent ubi_binance_com_adapter.wasm ubi_kotak_neo_adapter.wasm; do
-  [ -f "${DEST}/${f}" ] && codesign --force --sign - "${DEST}/${f}" || true
+codesign --force --sign - "${DEST}/tradeautopsy-agent" || true
+for wasm in "${DEST}"/ubi_*_adapter.wasm; do
+  [ -f "${wasm}" ] && codesign --force --sign - "${wasm}" || true
 done
 
 VERSION="$(grep -E '^version\s*=' "${AGENT_DIR}/Cargo.toml" | head -1 | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')"
