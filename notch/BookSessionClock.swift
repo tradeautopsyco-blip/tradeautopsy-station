@@ -20,8 +20,11 @@ enum BookSessionClock {
         if book.hasPrefix("binance-com") {
             return .com247
         }
-        if book == "kotak-nse-nfo" {
+        if book.hasSuffix("-nse-nfo") {
             return .nseNfo
+        }
+        if book.hasSuffix("-nse-bse-cash") {
+            return .nseCash
         }
         if book.hasPrefix("kotak") {
             return .nseCash

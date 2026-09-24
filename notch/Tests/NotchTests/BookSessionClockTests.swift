@@ -24,6 +24,8 @@ struct BookSessionClockTests {
     @Test func kotakCashAndNfoSessionHours() {
         #expect(BookSessionClock.hours(bookId: "kotak-nse-bse-cash", brokerSlug: nil) == .nseCash)
         #expect(BookSessionClock.hours(bookId: "kotak-nse-nfo", brokerSlug: nil) == .nseNfo)
+        #expect(BookSessionClock.hours(bookId: "zerodha-nse-nfo", brokerSlug: nil) == .nseNfo)
+        #expect(BookSessionClock.hours(bookId: "zerodha-nse-bse-cash", brokerSlug: nil) == .nseCash)
         #expect(BookSessionClock.hours(bookId: nil, brokerSlug: "kotak_neo") == .nseCash)
     }
 
