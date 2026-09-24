@@ -234,6 +234,16 @@ pub fn calc_profile(id: &str) -> Option<CalcProfile> {
             quote_currency: "INR".into(),
             asset_class: AssetClass::Equity,
         }),
+        "fx_cds_inr" => Some(CalcProfile {
+            id: id.into(),
+            quote_currency: "INR".into(),
+            asset_class: AssetClass::Fx,
+        }),
+        "commodity_inr_mcx" => Some(CalcProfile {
+            id: id.into(),
+            quote_currency: "INR".into(),
+            asset_class: AssetClass::Commodity,
+        }),
         _ => None,
     }
 }
@@ -450,6 +460,36 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             origin: AdapterOrigin::FirstParty,
             manifest_id: "kotak_neo.nfo.v1".into(),
             book_id: "kotak-nse-nfo".into(),
+        },
+        BrokerDescriptor {
+            slug: "kotak_neo".into(),
+            display_name: "Kotak Neo CDS".into(),
+            asset_class: AssetClass::Fx,
+            instrument_class: InstrumentClass::Future,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::KotakNeoTotpSession,
+            calc_profile_id: "fx_cds_inr".into(),
+            compliance_profile_id: "kotak_neo_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "kotak_neo.cds.v1".into(),
+            book_id: "kotak-nse-cds".into(),
+        },
+        BrokerDescriptor {
+            slug: "kotak_neo".into(),
+            display_name: "Kotak Neo MCX".into(),
+            asset_class: AssetClass::Commodity,
+            instrument_class: InstrumentClass::Future,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::KotakNeoTotpSession,
+            calc_profile_id: "commodity_inr_mcx".into(),
+            compliance_profile_id: "kotak_neo_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "kotak_neo.mcx.v1".into(),
+            book_id: "kotak-mcx-future".into(),
         },
         BrokerDescriptor {
             slug: "zerodha_kite".into(),
@@ -810,7 +850,7 @@ mod tests {
     /// Tier I Wave 2/3 tracers stay Planned until signed dogfood (step 6).
     fn book_catalog_covers_shipping_books_adr_0019_tiers() {
         let books = catalog_books();
-        assert_eq!(books.len(), 16);
+        assert_eq!(books.len(), 18);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -819,6 +859,8 @@ mod tests {
             "binance-com-coinm",
             "kotak-nse-bse-cash",
             "kotak-nse-nfo",
+            "kotak-nse-cds",
+            "kotak-mcx-future",
             "zerodha-nse-bse-cash",
             "zerodha-nse-nfo",
             "upstox-nse-bse-cash",
@@ -873,6 +915,11 @@ mod tests {
         let dhan = descriptor_for_book_id("dhan-nse-bse-cash").expect("dhan book");
         assert_eq!(dhan.availability, BrokerAvailability::Planned);
         assert_eq!(dhan.slug, "dhan");
+        let cds = descriptor_for_book_id("kotak-nse-cds").expect("kotak cds book");
+        assert_eq!(cds.availability, BrokerAvailability::Planned);
+        assert_eq!(cds.asset_class, AssetClass::Fx);
+        assert_eq!(cds.instrument_class, InstrumentClass::Future);
+        assert_eq!(cds.calc_profile_id, "fx_cds_inr");
         assert_eq!(dhan.auth_scheme, AuthScheme::DhanConsentSession);
         // Every book row's profiles resolve; every row is first-party.
         for d in &books {
@@ -935,6 +982,14 @@ mod tests {
         assert_eq!(
             stamp("kotak-nse-nfo"),
             (AssetClass::Equity, InstrumentClass::Option, false)
+        );
+        assert_eq!(
+            stamp("kotak-nse-cds"),
+            (AssetClass::Fx, InstrumentClass::Future, false)
+        );
+        assert_eq!(
+            stamp("kotak-mcx-future"),
+            (AssetClass::Commodity, InstrumentClass::Future, false)
         );
     }
 

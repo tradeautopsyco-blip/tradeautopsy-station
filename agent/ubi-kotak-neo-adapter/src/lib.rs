@@ -30,6 +30,8 @@ const ALLOWED_CASH_SEGMENTS: &[&str] = &["nse_cm", "bse_cm"];
 const ALLOWED_CASH_PRODUCTS: &[&str] = &["CNC", "MIS"];
 /// Named NFO book: `nse_fo` only. Product comes from the row (ingress signs NRML).
 const NFO_SEGMENT: &str = "nse_fo";
+const CDS_SEGMENT: &str = "cde_fo";
+const MCX_SEGMENT: &str = "mcx_fo";
 /// IST is UTC+05:30; the trade book prints local exchange time with no offset.
 const IST_OFFSET_SECONDS: i64 = 5 * 3600 + 30 * 60;
 
@@ -114,14 +116,20 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
         let exchange_segment = string_field(row, "exSeg");
         let product = string_field(row, "prod");
         let nfo = is_nfo_row(exchange_segment.as_deref());
-        if !nfo && !is_supported_cash_row(exchange_segment.as_deref(), product.as_deref()) {
+        let cds = is_cds_row(exchange_segment.as_deref(), product.as_deref());
+        let mcx = is_mcx_row(exchange_segment.as_deref(), product.as_deref());
+        if !nfo
+            && !cds
+            && !mcx
+            && !is_supported_cash_row(exchange_segment.as_deref(), product.as_deref())
+        {
             continue;
         }
 
         let raw_symbol = string_field(row, "trdSym")
             .or_else(|| string_field(row, "sym"))
             .ok_or("trade book row missing trdSym")?;
-        let symbol = if nfo {
+        let symbol = if nfo || cds || mcx {
             raw_symbol
         } else {
             strip_equity_suffix(&raw_symbol)
@@ -157,7 +165,9 @@ fn map_trade_book(body: &str) -> Result<Vec<FillEvent>, String> {
             broker_slug: "kotak_neo".to_string(),
             connection_id: String::new(),
             asset_class: AssetClass::Equity,
-            instrument_class: if nfo {
+            instrument_class: if cds || mcx {
+                InstrumentClass::Future
+            } else if nfo {
                 InstrumentClass::Option
             } else {
                 InstrumentClass::Spot
@@ -183,6 +193,24 @@ fn is_nfo_row(segment: Option<&str>) -> bool {
     segment
         .map(|s| s.eq_ignore_ascii_case(NFO_SEGMENT))
         .unwrap_or(false)
+}
+
+fn is_cds_row(segment: Option<&str>, product: Option<&str>) -> bool {
+    is_fo_book_row(segment, CDS_SEGMENT, product)
+}
+
+fn is_mcx_row(segment: Option<&str>, product: Option<&str>) -> bool {
+    is_fo_book_row(segment, MCX_SEGMENT, product)
+}
+
+fn is_fo_book_row(segment: Option<&str>, want_segment: &str, product: Option<&str>) -> bool {
+    let segment_ok = segment
+        .map(|s| s.eq_ignore_ascii_case(want_segment))
+        .unwrap_or(false);
+    let product_ok = product
+        .map(|p| matches!(p.trim().to_ascii_uppercase().as_str(), "NRML" | "MIS"))
+        .unwrap_or(false);
+    segment_ok && product_ok
 }
 
 fn is_supported_cash_row(segment: Option<&str>, product: Option<&str>) -> bool {

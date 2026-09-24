@@ -739,6 +739,46 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
+        "kotak-nse-cds" => {
+            if !is_kotak_r0_host(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if path_lower.starts_with("/api/v3/") || path_lower.starts_with("/eapi/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_fo_scrip_csv_path(&path_norm)
+                && !is_kotak_cde_fo_scrip_csv_path(&path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_cash_scrip_csv_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if kotak_quotes_segment(&path_norm).is_some_and(|seg| !is_cds_quotes_segment(&seg)) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        "kotak-mcx-future" => {
+            if !is_kotak_r0_host(&host_norm) {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if path_lower.starts_with("/api/v3/") || path_lower.starts_with("/eapi/") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_fo_scrip_csv_path(&path_norm)
+                && !is_kotak_mcx_fo_scrip_csv_path(&path_norm)
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if is_kotak_cash_scrip_csv_path(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if kotak_quotes_segment(&path_norm).is_some_and(|seg| !is_mcx_quotes_segment(&seg)) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
         "amfi-nav" => {
             if host_norm != "www.amfiindia.com" {
                 return Err(HostRefuse::HostNotAllowed);
@@ -941,6 +981,26 @@ pub fn is_kotak_nse_fo_scrip_csv_path(path: &str) -> bool {
     is_kotak_fo_csv_filename_stem(filename, "nse_fo")
 }
 
+/// True only for `/wso2-scripmaster/` filenames `cde_fo.csv` / `cde_fo-v1.csv`.
+pub fn is_kotak_cde_fo_scrip_csv_path(path: &str) -> bool {
+    kotak_fo_scrip_csv_path_stem(path, "cde_fo")
+}
+
+pub fn is_kotak_mcx_fo_scrip_csv_path(path: &str) -> bool {
+    kotak_fo_scrip_csv_path_stem(path, "mcx_fo")
+}
+
+fn kotak_fo_scrip_csv_path_stem(path: &str, stem: &str) -> bool {
+    let lower = path.trim().to_ascii_lowercase();
+    let lower = lower.split('?').next().unwrap_or(&lower);
+    let lower = lower.trim_end_matches('/');
+    if !lower.contains("/wso2-scripmaster/") {
+        return false;
+    }
+    let filename = lower.rsplit('/').next().unwrap_or(lower);
+    is_kotak_fo_csv_filename_stem(filename, stem)
+}
+
 fn is_kotak_fo_csv_filename(filename: &str) -> bool {
     ["nse_fo", "bse_fo", "cde_fo", "mcx_fo"]
         .into_iter()
@@ -998,6 +1058,14 @@ fn is_cash_quotes_segment(segment: &str) -> bool {
 
 fn is_nfo_quotes_segment(segment: &str) -> bool {
     super::kotak_quotes::is_nfo_segment(segment)
+}
+
+fn is_cds_quotes_segment(segment: &str) -> bool {
+    super::kotak_quotes::is_cds_segment(segment)
+}
+
+fn is_mcx_quotes_segment(segment: &str) -> bool {
+    super::kotak_quotes::is_mcx_segment(segment)
 }
 
 fn is_kotak_cash_csv_filename(filename: &str) -> bool {

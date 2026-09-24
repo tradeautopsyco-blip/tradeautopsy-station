@@ -54,6 +54,15 @@ pub fn is_nfo_segment(segment: &str) -> bool {
     segment == "nse_fo"
 }
 
+/// Named CDS book (`kotak-nse-cds`) only.
+pub fn is_cds_segment(segment: &str) -> bool {
+    segment.trim().eq_ignore_ascii_case("cde_fo")
+}
+
+pub fn is_mcx_segment(segment: &str) -> bool {
+    segment.trim().eq_ignore_ascii_case("mcx_fo")
+}
+
 /// `{segment}|{token}` for `nse_fo` only.
 pub fn kotak_nfo_instrument_id(segment: &str, token: &str) -> Option<String> {
     let segment = segment.trim().to_ascii_lowercase();
@@ -70,6 +79,8 @@ pub fn kotak_quote_book_id(instrument_id: &str) -> Option<&'static str> {
     match segment.as_str() {
         "nse_cm" | "bse_cm" => Some(KOTAK_NSE_BSE_CASH_BOOK_ID),
         "nse_fo" => Some(KOTAK_NSE_NFO_BOOK_ID),
+        "cde_fo" => Some(crate::data::KOTAK_NSE_CDS_BOOK_ID),
+        "mcx_fo" => Some(crate::data::KOTAK_MCX_FUTURE_BOOK_ID),
         _ => None,
     }
 }

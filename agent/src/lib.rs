@@ -18,6 +18,7 @@ mod broker_validation;
 mod coinm_realized_pnl;
 mod money_matrix;
 mod fx_cds_realized_pnl;
+mod mcx_realized_pnl;
 mod nfo_realized_pnl;
 mod options_realized_pnl;
 mod data;

@@ -5,8 +5,8 @@ use crate::kotak_nfo_scrip::{KotakNfoContract, KotakNfoScripMaster};
 use std::collections::HashMap;
 
 use super::descriptor::{
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
-    KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 
@@ -34,7 +34,11 @@ fn is_kotak_cds_segment(segment: &str) -> bool {
     segment == "cde_fo"
 }
 
-fn kotak_cds_fill_ok(fill: &BrokerFill) -> bool {
+fn is_kotak_mcx_segment(segment: &str) -> bool {
+    segment == "mcx_fo"
+}
+
+fn kotak_fo_product_ok(fill: &BrokerFill) -> bool {
     let product = fill
         .product
         .as_deref()
@@ -42,6 +46,14 @@ fn kotak_cds_fill_ok(fill: &BrokerFill) -> bool {
         .trim()
         .to_ascii_uppercase();
     matches!(product.as_str(), "NRML" | "MIS")
+}
+
+fn kotak_cds_fill_ok(fill: &BrokerFill) -> bool {
+    kotak_fo_product_ok(fill)
+}
+
+fn kotak_mcx_fill_ok(fill: &BrokerFill) -> bool {
+    kotak_fo_product_ok(fill)
 }
 
 fn is_kotak_cash_segment(segment: &str) -> bool {
@@ -134,10 +146,13 @@ pub fn split_fills_by_book(
             let mut cash = Vec::new();
             let mut nfo = Vec::new();
             let mut cds = Vec::new();
+            let mut mcx = Vec::new();
             for fill in fills {
                 let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
                 if is_kotak_cds_segment(&segment) && kotak_cds_fill_ok(&fill) {
                     cds.push(fill);
+                } else if is_kotak_mcx_segment(&segment) && kotak_mcx_fill_ok(&fill) {
+                    mcx.push(fill);
                 } else if is_kotak_nfo_segment(&segment) && kotak_nfo_fill_ok(&fill, master) {
                     nfo.push(fill);
                 } else if is_kotak_cash_segment(&segment) && kotak_cash_fill_ok(&fill) {
@@ -148,6 +163,7 @@ pub fn split_fills_by_book(
             out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
             out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
             out.insert(KOTAK_NSE_CDS_BOOK_ID.to_string(), cds);
+            out.insert(KOTAK_MCX_FUTURE_BOOK_ID.to_string(), mcx);
             out
         }
         "zerodha_kite" => {

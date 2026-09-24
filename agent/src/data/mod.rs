@@ -173,7 +173,8 @@ pub use descriptor::{
     binance_com_quote_descriptor, fixture_quote_descriptor, kotak_neo_quote_descriptor,
     BINANCE_COM_ADAPTER_ID, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
-    KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
     ZERODHA_KITE_ADAPTER_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
@@ -222,7 +223,8 @@ pub use kotak_private::{
     kotak_cash_limits_jdata_body, kotak_jdata_form_body, kotak_nfo_limits_jdata_body,
 };
 pub use kotak_quotes::{
-    is_cds_segment, is_nfo_segment, kotak_quote_book_id, nfo_oi_session_from_kotak_json,
+    is_cds_segment, is_mcx_segment, is_nfo_segment, kotak_quote_book_id,
+    nfo_oi_session_from_kotak_json,
     nfo_open_interest_from_kotak_json,
     parse_nfo_instrument_id, quote_tick_from_kotak_json, quote_tick_from_kotak_json_for_book,
     quote_ticks_from_kotak_json_for_book, quotes_neosymbol_path,

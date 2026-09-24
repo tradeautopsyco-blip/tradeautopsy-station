@@ -319,7 +319,9 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         "binance-com-options" => Some(&BINANCE_COM_EAPI),
         "binance-com-usdm" => Some(&BINANCE_COM_FAPI),
         "binance-com-coinm" => Some(&BINANCE_COM_DAPI),
-        "kotak-nse-bse-cash" | "kotak-nse-nfo" => Some(&KOTAK_NEO_REQUESTS),
+        "kotak-nse-bse-cash" | "kotak-nse-nfo" | "kotak-nse-cds" | "kotak-mcx-future" => {
+            Some(&KOTAK_NEO_REQUESTS)
+        }
         crate::ubi::ZERODHA_KITE_BOOK_ID | crate::ubi::ZERODHA_KITE_NFO_BOOK_ID => {
             Some(&ZERODHA_KITE_REQUESTS)
         }

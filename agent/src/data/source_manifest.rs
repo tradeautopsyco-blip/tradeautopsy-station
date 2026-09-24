@@ -625,6 +625,44 @@ pub fn kotak_neo_cds_manifest() -> SourceManifest {
     }
 }
 
+pub fn kotak_neo_mcx_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["mcx_fo".into()],
+        asset_classes: vec!["commodity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "kotak_neo.mcx.v1".into(),
+        adapter_id: "kotak_neo".into(),
+        book_id: "kotak-mcx-future".into(),
+        implemented: vec![
+            "quotes".into(),
+            "instruments".into(),
+            "tradebook".into(),
+            "funds".into(),
+        ],
+        bindings: vec![
+            quotes_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            instruments_binding("kotak_neo", coverage.clone(), AuthMode::PrivateRead),
+            account_binding(
+                "kotak_neo",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "kotak_neo",
+                "funds",
+                "funds",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
 pub fn kotak_neo_nfo_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["nse_fo".into()],
@@ -968,6 +1006,7 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         kotak_neo_s1k_manifest(),
         kotak_neo_nfo_manifest(),
         kotak_neo_cds_manifest(),
+        kotak_neo_mcx_manifest(),
         zerodha_kite_cash_manifest(),
         zerodha_kite_nfo_manifest(),
         upstox_cash_manifest(),

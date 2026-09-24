@@ -4,7 +4,10 @@
 //! fill it with its own book_id. Quote never consults the gap vendor.
 //! Traders paste keys, not URLs.
 
-use super::descriptor::{KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
+use super::descriptor::{
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+};
 use super::identity::{CapabilityId, Family, Identity, Physics};
 use super::router::{pick_route, RouteCandidate, RouteDecision, RouteOutcome, SourceRole};
 use super::source_manifest::{ObtainEnvelope, ObtainStatus};
@@ -62,7 +65,10 @@ fn history_identity() -> Identity {
 }
 
 fn is_kotak_book(book_id: &str) -> bool {
-    book_id == KOTAK_NSE_BSE_CASH_BOOK_ID || book_id == KOTAK_NSE_NFO_BOOK_ID
+    book_id == KOTAK_NSE_BSE_CASH_BOOK_ID
+        || book_id == KOTAK_NSE_NFO_BOOK_ID
+        || book_id == KOTAK_NSE_CDS_BOOK_ID
+        || book_id == KOTAK_MCX_FUTURE_BOOK_ID
 }
 
 pub fn should_source_route(book_id: &str, operation: &str) -> bool {

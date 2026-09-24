@@ -450,6 +450,7 @@ pub fn spawn_broker_poll_loop(
                                 crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID,
                                 crate::data::KOTAK_NSE_NFO_BOOK_ID,
                                 crate::data::KOTAK_NSE_CDS_BOOK_ID,
+                                crate::data::KOTAK_MCX_FUTURE_BOOK_ID,
                             ] {
                                 let rows = split.get(book_id).cloned().unwrap_or_default();
                                 book.replace_fills(book_id, rows, path, ok_ms);

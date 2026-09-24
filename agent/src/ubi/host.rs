@@ -1213,6 +1213,20 @@ mod tests {
                 WitInstrumentClass::Option,
                 false,
             ),
+            (
+                "kotak-nse-cds",
+                "kotak_neo",
+                WitAssetClass::Fx,
+                WitInstrumentClass::Future,
+                false,
+            ),
+            (
+                "kotak-mcx-future",
+                "kotak_neo",
+                WitAssetClass::Commodity,
+                WitInstrumentClass::Future,
+                false,
+            ),
         ];
         for (book_id, slug, asset, instrument, inverse) in cases {
             let config = config_for_book(book_id, slug);

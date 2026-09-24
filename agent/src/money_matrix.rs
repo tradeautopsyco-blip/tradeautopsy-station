@@ -4,9 +4,11 @@ use crate::data::book_accepts_symbol;
 use crate::data::is_dated_option_contract;
 use crate::broker::BrokerFill;
 use crate::inr_cash_wac;
+use crate::fx_cds_realized_pnl;
+use crate::mcx_realized_pnl;
 use crate::nfo_realized_pnl;
 
-pub const SHIPPING_BOOK_COUNT: usize = 12;
+pub const SHIPPING_BOOK_COUNT: usize = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoneyOwner {
@@ -56,6 +58,14 @@ pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
         BookMoneyRow {
             book_id: "kotak-nse-nfo",
             owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "kotak-nse-cds",
+            owner: MoneyOwner::Engine(fx_cds_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "kotak-mcx-future",
+            owner: MoneyOwner::Engine(mcx_realized_pnl::OWNER_PATH),
         },
         BookMoneyRow {
             book_id: "zerodha-nse-nfo",

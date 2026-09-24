@@ -10,7 +10,10 @@ use crate::ubi::{
 use serde_json::Value;
 use std::time::Duration;
 
-use super::descriptor::{KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID};
+use super::descriptor::{
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID,
+};
 
 pub const KOTAK_ORDERS_PATH: &str = "/quick/user/orders";
 pub const KOTAK_POSITIONS_PATH: &str = "/quick/user/positions";
@@ -60,6 +63,10 @@ fn kotak_private_book_id(segment: &str) -> Option<&'static str> {
     let seg = segment.trim().to_ascii_lowercase();
     if seg == "nse_fo" {
         Some(KOTAK_NSE_NFO_BOOK_ID)
+    } else if seg == "cde_fo" {
+        Some(KOTAK_NSE_CDS_BOOK_ID)
+    } else if seg == "mcx_fo" {
+        Some(KOTAK_MCX_FUTURE_BOOK_ID)
     } else if matches!(seg.as_str(), "nse_cm" | "bse_cm") {
         Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
     } else {
@@ -1024,6 +1031,9 @@ mod tests {
             kotak_private_book_id("nse_cm"),
             Some(KOTAK_NSE_BSE_CASH_BOOK_ID)
         );
-        assert_eq!(kotak_private_book_id("mcx_fo"), None);
+        assert_eq!(
+            kotak_private_book_id("mcx_fo"),
+            Some(KOTAK_MCX_FUTURE_BOOK_ID)
+        );
     }
 }
