@@ -10,9 +10,9 @@ struct OkxConnectLifecycleTests {
         )
     }
 
-    @Test func plannedOkxCatalogRowMatchesAgent() {
+    @Test func enabledOkxCatalogRowMatchesAgent() {
         let okx = BrokerCatalog.descriptor(for: "okx_com")
-        #expect(okx?.availability == .planned)
+        #expect(okx?.availability == .enabled)
         #expect(okx?.authScheme == .okxPassphraseSession)
         #expect(okx?.complianceProfileId == "okx_com_compliance")
         #expect(okx?.manifestId == "okx_com.s1.v1")
@@ -97,7 +97,7 @@ struct OkxConnectLifecycleTests {
         #expect(outcome == .localValidationFailed(invalidFields: [.passphrase]))
     }
 
-    @Test func dogfoodAllowsConnectWhilePlanned() {
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "okx_com"))
+    @Test func catalogMarksOkxEnabled() {
+        #expect(BrokerCatalog.descriptor(for: "okx_com")?.availability == .enabled)
     }
 }

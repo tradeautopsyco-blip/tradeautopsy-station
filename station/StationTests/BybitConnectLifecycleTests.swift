@@ -4,9 +4,9 @@ import Testing
 
 @MainActor
 struct BybitConnectLifecycleTests {
-    @Test func plannedBybitCatalogRowMatchesAgent() {
+    @Test func enabledBybitCatalogRowMatchesAgent() {
         let bybit = BrokerCatalog.descriptor(for: "bybit")
-        #expect(bybit?.availability == .planned)
+        #expect(bybit?.availability == .enabled)
         #expect(bybit?.authScheme == .hmacApiKeySecret)
         #expect(bybit?.calcProfileId == "crypto_spot_usd")
         #expect(bybit?.complianceProfileId == "bybit_compliance")
@@ -104,7 +104,7 @@ struct BybitConnectLifecycleTests {
         #expect(outcome == .validationPermanentFailure(.invalidCredentials))
     }
 
-    @Test func dogfoodAllowsConnectWhilePlanned() {
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "bybit"))
+    @Test func catalogMarksBybitEnabled() {
+        #expect(BrokerCatalog.descriptor(for: "bybit")?.availability == .enabled)
     }
 }

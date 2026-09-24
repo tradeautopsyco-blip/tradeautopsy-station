@@ -20,7 +20,7 @@ public enum BrokerDogfoodProgram {
         "dhan",
     ]
 
-    public static let p4PlannedSlugs: Set<String> = [
+    public static let p4CryptoSpotSlugs: Set<String> = [
         "bybit",
         "okx_com",
         "kraken",
@@ -29,14 +29,13 @@ public enum BrokerDogfoodProgram {
 
     /// Slugs that may Connect + Start sync while `Planned` (Station UI + offline drills).
     public static let connectWhilePlannedSlugs: Set<String> = tierIIndiaCashSlugs
-        .union(p4PlannedSlugs)
 
     public static func allowsConnectWhilePlanned(slug: String) -> Bool {
         connectWhilePlannedSlugs.contains(slug)
     }
 
     public static func offlineDrills(for slug: String) -> [P4OfflineDrill] {
-        guard p4PlannedSlugs.contains(slug) else { return [] }
+        guard p4CryptoSpotSlugs.contains(slug) else { return [] }
         return P4OfflineDrill.allCases
     }
 }

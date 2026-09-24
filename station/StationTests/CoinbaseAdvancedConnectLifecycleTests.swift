@@ -16,9 +16,9 @@ struct CoinbaseAdvancedConnectLifecycleTests {
         )
     }
 
-    @Test func plannedCoinbaseCatalogRowMatchesAgent() {
+    @Test func enabledCoinbaseCatalogRowMatchesAgent() {
         let coinbase = BrokerCatalog.descriptor(for: "coinbase_advanced")
-        #expect(coinbase?.availability == .planned)
+        #expect(coinbase?.availability == .enabled)
         #expect(coinbase?.authScheme == .coinbaseJwtEs256Session)
         #expect(coinbase?.complianceProfileId == "coinbase_advanced_compliance")
         #expect(coinbase?.manifestId == "tradeautopsy:coinbase-advanced-spot@0.1.0")
@@ -101,7 +101,7 @@ struct CoinbaseAdvancedConnectLifecycleTests {
         #expect(store.hasCredentials(for: .coinbaseAdvancedProd) == false)
     }
 
-    @Test func dogfoodAllowsConnectWhilePlanned() {
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "coinbase_advanced"))
+    @Test func catalogMarksCoinbaseAdvancedEnabled() {
+        #expect(BrokerCatalog.descriptor(for: "coinbase_advanced")?.availability == .enabled)
     }
 }

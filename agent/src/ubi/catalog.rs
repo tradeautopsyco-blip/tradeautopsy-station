@@ -536,7 +536,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::HmacApiKeySecret,
             calc_profile_id: "crypto_spot_usd".into(),
             compliance_profile_id: "bybit_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "bybit.spot.v1".into(),
             book_id: "bybit-com-spot".into(),
@@ -551,7 +551,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::OkxPassphraseSession,
             calc_profile_id: "crypto_spot_usd".into(),
             compliance_profile_id: "okx_com_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "okx_com.s1.v1".into(),
             book_id: "okx-com-spot".into(),
@@ -566,7 +566,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::KrakenSpotNonceSession,
             calc_profile_id: "crypto_spot_usd".into(),
             compliance_profile_id: "kraken_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "kraken.spot.v1".into(),
             book_id: "kraken-com-spot".into(),
@@ -581,7 +581,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::CoinbaseJwtEs256Session,
             calc_profile_id: "crypto_spot_usd".into(),
             compliance_profile_id: "coinbase_advanced_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:coinbase-advanced-spot@0.1.0".into(),
             book_id: "coinbase-advanced-spot".into(),
@@ -697,7 +697,7 @@ mod tests {
         }
     }
 
-    /// ADR 0019: Tier I India + P4 crypto tracers — Planned but connect/sync allowed.
+    /// ADR 0019: Tier I India cash tracers — Planned but connect/sync allowed.
     #[test]
     fn adr_0019_tier_i_planned_tracer_slugs() {
         const TIER_I: &[&str] = &[
@@ -706,10 +706,6 @@ mod tests {
             "fyers",
             "groww",
             "dhan",
-            "bybit",
-            "okx_com",
-            "kraken",
-            "coinbase_advanced",
         ];
         for slug in TIER_I {
             let d = descriptor_for_slug(slug).expect("tier I slug");
@@ -717,6 +713,18 @@ mod tests {
                 d.availability,
                 BrokerAvailability::Planned,
                 "tier I must stay Planned until dogfood: {slug}"
+            );
+        }
+    }
+
+    #[test]
+    fn p4_crypto_spot_slugs_are_enabled_tier_ii() {
+        for slug in ["bybit", "okx_com", "kraken", "coinbase_advanced"] {
+            let d = descriptor_for_slug(slug).expect("p4 slug");
+            assert_eq!(
+                d.availability,
+                BrokerAvailability::Enabled,
+                "p4 slug must be Enabled: {slug}"
             );
         }
     }
@@ -812,7 +820,7 @@ mod tests {
             .iter()
             .filter(|d| d.availability == BrokerAvailability::Enabled)
             .collect();
-        assert_eq!(tier_ii.len(), 6, "binance×4 + kotak×2 only");
+        assert_eq!(tier_ii.len(), 10, "binance×4 + kotak×2 + p4×4");
         for (book, scheme) in [
             ("bybit-com-spot", AuthScheme::HmacApiKeySecret),
             ("okx-com-spot", AuthScheme::OkxPassphraseSession),
@@ -823,7 +831,7 @@ mod tests {
             ),
         ] {
             let row = descriptor_for_book_id(book).expect("p4 crypto book");
-            assert_eq!(row.availability, BrokerAvailability::Planned);
+            assert_eq!(row.availability, BrokerAvailability::Enabled);
             assert_eq!(row.auth_scheme, scheme);
             assert_eq!(row.calc_profile_id, "crypto_spot_usd");
         }

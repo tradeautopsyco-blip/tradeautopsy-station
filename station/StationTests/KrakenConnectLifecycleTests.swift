@@ -10,9 +10,9 @@ struct KrakenConnectLifecycleTests {
         )
     }
 
-    @Test func plannedKrakenCatalogRowMatchesAgent() {
+    @Test func enabledKrakenCatalogRowMatchesAgent() {
         let kraken = BrokerCatalog.descriptor(for: "kraken")
-        #expect(kraken?.availability == .planned)
+        #expect(kraken?.availability == .enabled)
         #expect(kraken?.authScheme == .krakenSpotNonceSession)
         #expect(kraken?.complianceProfileId == "kraken_compliance")
         #expect(kraken?.manifestId == "kraken.spot.v1")
@@ -99,7 +99,7 @@ struct KrakenConnectLifecycleTests {
         #expect(store.hasCredentials(for: .krakenProd) == false)
     }
 
-    @Test func dogfoodAllowsConnectWhilePlanned() {
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "kraken"))
+    @Test func catalogMarksKrakenEnabled() {
+        #expect(BrokerCatalog.descriptor(for: "kraken")?.availability == .enabled)
     }
 }

@@ -164,7 +164,7 @@ public enum BrokerCatalog {
             authScheme: .hmacApiKeySecret,
             calcProfileId: "crypto_spot_usd",
             complianceProfileId: "bybit_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "bybit.spot.v1",
             bookId: "bybit-com-spot"
         ),
@@ -176,7 +176,7 @@ public enum BrokerCatalog {
             authScheme: .okxPassphraseSession,
             calcProfileId: "crypto_spot_usd",
             complianceProfileId: "okx_com_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "okx_com.s1.v1",
             bookId: "okx-com-spot"
         ),
@@ -188,7 +188,7 @@ public enum BrokerCatalog {
             authScheme: .krakenSpotNonceSession,
             calcProfileId: "crypto_spot_usd",
             complianceProfileId: "kraken_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "kraken.spot.v1",
             bookId: "kraken-com-spot"
         ),
@@ -200,7 +200,7 @@ public enum BrokerCatalog {
             authScheme: .coinbaseJwtEs256Session,
             calcProfileId: "crypto_spot_usd",
             complianceProfileId: "coinbase_advanced_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "tradeautopsy:coinbase-advanced-spot@0.1.0",
             bookId: "coinbase-advanced-spot"
         ),

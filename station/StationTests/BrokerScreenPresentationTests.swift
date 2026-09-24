@@ -68,16 +68,19 @@ struct BrokerScreenPresentationTests {
         #expect(cards.first { $0.id == "binance_com" }?.isConnectable == true)
         #expect(cards.first { $0.id == "binance_com" }?.quoteCurrency == "USD")
         #expect(cards.first { $0.id == "kotak_neo" }?.quoteCurrency == "INR")
-        for slug in ["zerodha_kite", "upstox", "fyers", "groww", "dhan"] {
+        for slug in ["zerodha_kite", "upstox", "fyers", "dhan"] {
+            let card = cards.first { $0.id == slug }
+            #expect(card?.plannedLabel == "Connect beta")
+            #expect(card?.isConnectable == true)
+        }
+        let groww = cards.first { $0.id == "groww" }
+        #expect(groww?.plannedLabel == nil)
+        #expect(groww?.isConnectable == true)
+        for slug in ["bybit", "okx_com", "kraken", "coinbase_advanced"] {
             let card = cards.first { $0.id == slug }
             #expect(card?.plannedLabel == nil)
             #expect(card?.isConnectable == true)
-        }
-        for slug in ["bybit", "okx_com", "kraken", "coinbase_advanced"] {
-            let card = cards.first { $0.id == slug }
-            #expect(card?.plannedLabel == "Planned")
-            #expect(card?.isConnectable == true)
-            #expect(BrokerCatalog.descriptor(for: slug)?.availability == .planned)
+            #expect(BrokerCatalog.descriptor(for: slug)?.availability == .enabled)
         }
     }
 
@@ -91,8 +94,8 @@ struct BrokerScreenPresentationTests {
         let cards = BrokerScreenPresentation.build(snapshot: snapshot, catalog: BrokerCatalog.v1)
         let kite = cards.first { $0.id == "zerodha_kite" }
 
-        #expect(kite?.plannedLabel == nil)
-        #expect(kite?.statusLabel == "Not configured")
+        #expect(kite?.plannedLabel == "Connect beta")
+        #expect(kite?.statusLabel == "Planned")
         #expect(kite?.isConnectable == true)
         #expect(kite?.isStartEnabled == false)
     }
