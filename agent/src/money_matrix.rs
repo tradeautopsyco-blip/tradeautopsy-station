@@ -1,4 +1,4 @@
-//! SHIPPING book → realized-PnL owner path (CLAIM-REGISTRY twelve rows).
+//! SHIPPING book → realized-PnL owner path (CLAIM-REGISTRY rows).
 
 use crate::data::book_accepts_symbol;
 use crate::data::is_dated_option_contract;
@@ -8,7 +8,7 @@ use crate::fx_cds_realized_pnl;
 use crate::mcx_realized_pnl;
 use crate::nfo_realized_pnl;
 
-pub const SHIPPING_BOOK_COUNT: usize = 14;
+pub const SHIPPING_BOOK_COUNT: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoneyOwner {
@@ -72,6 +72,14 @@ pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
             owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
         },
         BookMoneyRow {
+            book_id: "upstox-nse-nfo",
+            owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "fyers-nse-nfo",
+            owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
             book_id: "binance-com-options",
             owner: MoneyOwner::ExplicitNone(crate::options_realized_pnl::OWNER_PATH),
         },
@@ -126,13 +134,15 @@ mod tests {
     use chrono::Utc;
 
     #[test]
-    fn all_twelve_shipping_books_covered() {
+    fn all_shipping_books_covered() {
         let matrix = shipping_money_matrix();
         assert_eq!(matrix.len(), SHIPPING_BOOK_COUNT);
         let ids: Vec<_> = matrix.iter().map(|r| r.book_id).collect();
         assert_eq!(ids.len(), ids.iter().collect::<std::collections::BTreeSet<_>>().len());
         assert!(ids.contains(&"kotak-nse-nfo"));
         assert!(ids.contains(&"zerodha-nse-nfo"));
+        assert!(ids.contains(&"upstox-nse-nfo"));
+        assert!(ids.contains(&"fyers-nse-nfo"));
         assert!(ids.contains(&"binance-com-options"));
         assert!(ids.contains(&"binance-com-coinm"));
     }
@@ -194,5 +204,54 @@ mod tests {
             ..Default::default()
         };
         assert!(is_binance_com_spot_fill(&spot));
+
+        let usdm = BrokerFill {
+            fill_id: "u1".into(),
+            trade_id: "t4".into(),
+            symbol: "BTCUSDT".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 1.0,
+            filled_at: Utc::now(),
+            broker: "binance_com".into(),
+            exchange_segment: Some("usdm".into()),
+            ..Default::default()
+        };
+        assert!(!is_binance_com_spot_fill(&usdm));
+
+        let perp = BrokerFill {
+            fill_id: "p1".into(),
+            trade_id: "t5".into(),
+            symbol: "ETHUSDT_PERP".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 1.0,
+            filled_at: Utc::now(),
+            broker: "binance_com".into(),
+            ..Default::default()
+        };
+        assert!(!is_binance_com_spot_fill(&perp));
+    }
+
+    #[test]
+    fn p4_cex_spot_not_in_matrix_until_registry_shipping_rows() {
+        let ids: Vec<_> = shipping_money_matrix()
+            .iter()
+            .map(|r| r.book_id)
+            .collect();
+        for book in [
+            "bybit-com-spot",
+            "okx-com-spot",
+            "kraken-com-spot",
+            "coinbase-advanced-spot",
+        ] {
+            assert!(
+                !ids.contains(&book),
+                "P5: {book} joins matrix only after CLAIM-REGISTRY SHIPPING row"
+            );
+        }
+        assert_eq!(ids.len(), SHIPPING_BOOK_COUNT);
+        assert!(ids.contains(&"kotak-nse-cds"));
+        assert!(ids.contains(&"kotak-mcx-future"));
     }
 }

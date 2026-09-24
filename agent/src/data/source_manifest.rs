@@ -1010,7 +1010,9 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         zerodha_kite_cash_manifest(),
         zerodha_kite_nfo_manifest(),
         upstox_cash_manifest(),
+        upstox_nfo_manifest(),
         fyers_cash_manifest(),
+        fyers_nfo_manifest(),
         groww_cash_manifest(),
         dhan_cash_manifest(),
         bybit_com_spot_manifest(),
@@ -1252,6 +1254,52 @@ pub fn upstox_cash_manifest() -> SourceManifest {
                 Limits::default(),
             ),
         ],
+    }
+}
+
+/// Upstox NSE F&O (B6 SIGNED). Day-book fills via Wasm get-trades-for-day.
+pub fn upstox_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:upstox-nfo@0.1.0".into(),
+        adapter_id: "upstox".into(),
+        book_id: "upstox-nse-nfo".into(),
+        implemented: vec!["tradebook".into()],
+        bindings: vec![account_binding(
+            "upstox",
+            "tradebook",
+            "fills",
+            coverage,
+            Limits::default(),
+        )],
+    }
+}
+
+/// Fyers NSE F&O (B6 SIGNED). Day-book fills via Wasm tradebook.
+pub fn fyers_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:fyers-nfo@0.1.0".into(),
+        adapter_id: "fyers".into(),
+        book_id: "fyers-nse-nfo".into(),
+        implemented: vec!["tradebook".into()],
+        bindings: vec![account_binding(
+            "fyers",
+            "tradebook",
+            "fills",
+            coverage,
+            Limits::default(),
+        )],
     }
 }
 

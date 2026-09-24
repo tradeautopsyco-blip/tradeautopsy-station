@@ -126,10 +126,15 @@ fn split_puts_nfo_on_upstox_nse_nfo_book_only() {
     assert!(cash[0].symbol == "RELIANCE-EQ");
     assert!(!cash.iter().any(|f| f.symbol.contains("NIFTY")));
     assert_eq!(nfo[0].product.as_deref(), Some("NRML"));
+    let split = split_fills_by_book("upstox", broker_fills.clone(), None);
+    assert_eq!(split.len(), 2);
     assert_eq!(
-        split_fills_by_book("upstox", broker_fills.clone(), None).len(),
-        1,
-        "host book buckets for upstox land outside P6 wasm"
+        split.get(UPSTOX_NSE_NFO_BOOK_ID).map(|v| v.len()),
+        Some(2)
+    );
+    assert_eq!(
+        split.get(UPSTOX_NSE_BSE_CASH_BOOK_ID).map(|v| v.len()),
+        Some(1)
     );
 }
 

@@ -70,6 +70,12 @@ pub const KOTAK_MCX_FUTURE_BOOK_ID: &str = "kotak-mcx-future";
 pub const ZERODHA_NSE_BSE_CASH_BOOK_ID: &str = "zerodha-nse-bse-cash";
 /// Named NFO book on slug `zerodha_kite` (locks/zerodha-nse-nfo.md).
 pub const ZERODHA_NSE_NFO_BOOK_ID: &str = "zerodha-nse-nfo";
+pub const UPSTOX_NSE_BSE_CASH_BOOK_ID: &str = "upstox-nse-bse-cash";
+/// Named NFO book on slug `upstox` (locks/upstox-nse-nfo.md).
+pub const UPSTOX_NSE_NFO_BOOK_ID: &str = "upstox-nse-nfo";
+pub const FYERS_NSE_BSE_CASH_BOOK_ID: &str = "fyers-nse-bse-cash";
+/// Named NFO book on slug `fyers` (locks/fyers-nse-nfo.md).
+pub const FYERS_NSE_NFO_BOOK_ID: &str = "fyers-nse-nfo";
 /// Named USDM book. Same `binance_com` slug; Start still ships spot.
 pub const BINANCE_COM_USDM_BOOK_ID: &str = "binance-com-usdm";
 /// Named Coin-M book. Third identity. Same `binance_com` slug.

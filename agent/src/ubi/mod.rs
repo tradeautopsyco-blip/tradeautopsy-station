@@ -30,7 +30,8 @@ pub use allowlist::{
     upstox_path_allowed, upstox_path_refused, zerodha_kite_path_allowed, zerodha_kite_path_refused,
     ALLOWED_BROKER_HOSTS, FYERS_API_HOST, FYERS_BOOK_ID, GROWW_API_HOST, GROWW_API_VERSION_HEADER,
     GROWW_ASSETS_HOST, GROWW_BOOK_ID, KITE_API_HOST, UPSTOX_API_HOST, UPSTOX_ASSETS_HOST,
-    UPSTOX_BOOK_ID, UPSTOX_HFT_HOST, ZERODHA_KITE_BOOK_ID, ZERODHA_KITE_NFO_BOOK_ID,
+    UPSTOX_BOOK_ID, UPSTOX_HFT_HOST, UPSTOX_NFO_BOOK_ID, ZERODHA_KITE_BOOK_ID,
+    ZERODHA_KITE_NFO_BOOK_ID, FYERS_NFO_BOOK_ID,
 };
 pub use catalog::{
     calc_profile, catalog_books, catalog_v1, compliance_profile, descriptor_for_book_id,

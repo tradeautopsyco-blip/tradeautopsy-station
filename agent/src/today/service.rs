@@ -969,6 +969,31 @@ mod tests {
     }
 
     #[test]
+    fn usdm_fill_never_partitioned_to_com_spot_wac() {
+        let usdm = crate::broker::BrokerFill {
+            fill_id: "u-b1".into(),
+            trade_id: "t-usdm".into(),
+            symbol: "BTCUSDT".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: 50000.0,
+            filled_at: Utc.with_ymd_and_hms(2026, 8, 28, 10, 0, 0).unwrap(),
+            broker: "binance_com".into(),
+            exchange_segment: Some("usdm".into()),
+            ..Default::default()
+        };
+        let (com_spot, inr, nfo) = partition_fills(vec![usdm.clone()]);
+        assert!(com_spot.is_empty());
+        assert!(inr.is_empty());
+        assert!(nfo.is_empty());
+        let engine = crate::round_trip_engine::RoundTripEngine::new();
+        assert!(
+            engine.reconstruct(vec![usdm]).round_trips.is_empty(),
+            "USDM must not hit spot WAC"
+        );
+    }
+
+    #[test]
     fn nfo_inr_fill_never_partitioned_to_com_spot_wac() {
         let nfo = crate::broker::BrokerFill {
             fill_id: "nfo-b1".into(),

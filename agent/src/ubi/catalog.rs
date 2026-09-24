@@ -366,7 +366,7 @@ pub fn descriptor_for_slug(slug: &str) -> Option<BrokerDescriptor> {
 /// - `binance-com-usdm` → (cryptocurrency, future, false)
 /// - `binance-com-coinm` → (cryptocurrency, future, true)
 /// - `kotak-nse-bse-cash` → (equity, spot, false)
-/// - `kotak-nse-nfo` / `zerodha-nse-nfo` → (equity, option, false) + documented FUT limitation
+/// - `kotak-nse-nfo` / `zerodha-nse-nfo` / `upstox-nse-nfo` / `fyers-nse-nfo` → (equity, option, false) + documented FUT limitation
 ///   (ADR 0004 §"NFO book stamp": the book is mixed CE/PE/FUT; per-fill precision
 ///   lives in `BrokerFill.instrument_type`, never in this stamp).
 pub fn catalog_books() -> Vec<BrokerDescriptor> {
@@ -537,6 +537,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             book_id: "upstox-nse-bse-cash".into(),
         },
         BrokerDescriptor {
+            slug: "upstox".into(),
+            display_name: "Upstox NFO".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Option,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::UpstoxOAuthBearerSession,
+            calc_profile_id: "equities_inr_nfo".into(),
+            compliance_profile_id: "upstox_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:upstox-nfo@0.1.0".into(),
+            book_id: "upstox-nse-nfo".into(),
+        },
+        BrokerDescriptor {
             slug: "fyers".into(),
             display_name: "Fyers".into(),
             asset_class: AssetClass::Equity,
@@ -550,6 +565,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             origin: AdapterOrigin::FirstParty,
             manifest_id: "tradeautopsy:fyers-cash@0.1.0".into(),
             book_id: "fyers-nse-bse-cash".into(),
+        },
+        BrokerDescriptor {
+            slug: "fyers".into(),
+            display_name: "Fyers NFO".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Option,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::FyersOAuthJsonAppIdHashSession,
+            calc_profile_id: "equities_inr_nfo".into(),
+            compliance_profile_id: "fyers_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:fyers-nfo@0.1.0".into(),
+            book_id: "fyers-nse-nfo".into(),
         },
         BrokerDescriptor {
             slug: "groww".into(),
@@ -850,7 +880,7 @@ mod tests {
     /// Tier I Wave 2/3 tracers stay Planned until signed dogfood (step 6).
     fn book_catalog_covers_shipping_books_adr_0019_tiers() {
         let books = catalog_books();
-        assert_eq!(books.len(), 18);
+        assert_eq!(books.len(), 20);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -864,7 +894,9 @@ mod tests {
             "zerodha-nse-bse-cash",
             "zerodha-nse-nfo",
             "upstox-nse-bse-cash",
+            "upstox-nse-nfo",
             "fyers-nse-bse-cash",
+            "fyers-nse-nfo",
             "groww-nse-bse-cash",
             "dhan-nse-bse-cash",
             "bybit-com-spot",

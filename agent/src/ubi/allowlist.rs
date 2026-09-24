@@ -56,11 +56,13 @@ pub const ZERODHA_KITE_NFO_BOOK_ID: &str = "zerodha-nse-nfo";
 pub const KITE_API_HOST: &str = "api.kite.trade";
 
 pub const UPSTOX_BOOK_ID: &str = "upstox-nse-bse-cash";
+pub const UPSTOX_NFO_BOOK_ID: &str = "upstox-nse-nfo";
 pub const UPSTOX_API_HOST: &str = "api.upstox.com";
 pub const UPSTOX_ASSETS_HOST: &str = "assets.upstox.com";
 pub const UPSTOX_HFT_HOST: &str = "api-hft.upstox.com";
 
 pub const FYERS_BOOK_ID: &str = "fyers-nse-bse-cash";
+pub const FYERS_NFO_BOOK_ID: &str = "fyers-nse-nfo";
 pub const FYERS_API_HOST: &str = "api-t1.fyers.in";
 
 pub const GROWW_BOOK_ID: &str = "groww-nse-bse-cash";

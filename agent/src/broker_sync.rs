@@ -465,6 +465,24 @@ pub fn spawn_broker_poll_loop(
                                 book.replace_fills(book_id, rows, path, ok_ms);
                             }
                         }
+                        "upstox" => {
+                            for book_id in [
+                                crate::data::UPSTOX_NSE_BSE_CASH_BOOK_ID,
+                                crate::data::UPSTOX_NSE_NFO_BOOK_ID,
+                            ] {
+                                let rows = split.get(book_id).cloned().unwrap_or_default();
+                                book.replace_fills(book_id, rows, path, ok_ms);
+                            }
+                        }
+                        "fyers" => {
+                            for book_id in [
+                                crate::data::FYERS_NSE_BSE_CASH_BOOK_ID,
+                                crate::data::FYERS_NSE_NFO_BOOK_ID,
+                            ] {
+                                let rows = split.get(book_id).cloned().unwrap_or_default();
+                                book.replace_fills(book_id, rows, path, ok_ms);
+                            }
+                        }
                         _ => {
                             for (book_id, book_fills) in &split {
                                 book.replace_fills(book_id, book_fills.clone(), path, ok_ms);

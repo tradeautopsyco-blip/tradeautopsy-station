@@ -177,6 +177,8 @@ pub use descriptor::{
     KOTAK_NSE_NFO_BOOK_ID,
     ZERODHA_KITE_ADAPTER_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
+    UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
+    FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID,
 };
 pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,

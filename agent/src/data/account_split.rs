@@ -5,8 +5,9 @@ use crate::kotak_nfo_scrip::{KotakNfoContract, KotakNfoScripMaster};
 use std::collections::HashMap;
 
 use super::descriptor::{
-    BINANCE_COM_SPOT_BOOK_ID, KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_SPOT_BOOK_ID, FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID,
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 
@@ -17,6 +18,10 @@ fn normalize_adapter_name(adapter_name: &str) -> &str {
         "kotak_neo"
     } else if adapter_name.contains("zerodha") {
         "zerodha_kite"
+    } else if adapter_name.contains("upstox") {
+        "upstox"
+    } else if adapter_name.contains("fyers") {
+        "fyers"
     } else {
         adapter_name
     }
@@ -75,6 +80,10 @@ fn zerodha_cash_fill_ok(fill: &BrokerFill) -> bool {
 }
 
 fn zerodha_nfo_fill_ok(fill: &BrokerFill) -> bool {
+    nfo_nrml_mis_product_ok(fill)
+}
+
+fn nfo_nrml_mis_product_ok(fill: &BrokerFill) -> bool {
     let product = fill
         .product
         .as_deref()
@@ -82,6 +91,26 @@ fn zerodha_nfo_fill_ok(fill: &BrokerFill) -> bool {
         .trim()
         .to_ascii_uppercase();
     matches!(product.as_str(), "NRML" | "MIS")
+}
+
+fn upstox_cash_fill_ok(fill: &BrokerFill) -> bool {
+    let product = fill
+        .product
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(product.as_str(), "I" | "D")
+}
+
+fn fyers_cash_fill_ok(fill: &BrokerFill) -> bool {
+    let product = fill
+        .product
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(product.as_str(), "CNC" | "INTRADAY" | "MIS" | "1" | "2")
 }
 
 fn kotak_nfo_fill_ok(fill: &BrokerFill, master: &KotakNfoScripMaster) -> bool {
@@ -180,6 +209,38 @@ pub fn split_fills_by_book(
             let mut out = HashMap::new();
             out.insert(ZERODHA_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
             out.insert(ZERODHA_NSE_NFO_BOOK_ID.to_string(), nfo);
+            out
+        }
+        "upstox" => {
+            let mut cash = Vec::new();
+            let mut nfo = Vec::new();
+            for fill in fills {
+                let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
+                if is_kotak_nfo_segment(&segment) && nfo_nrml_mis_product_ok(&fill) {
+                    nfo.push(fill);
+                } else if is_zerodha_cash_segment(&segment) && upstox_cash_fill_ok(&fill) {
+                    cash.push(fill);
+                }
+            }
+            let mut out = HashMap::new();
+            out.insert(UPSTOX_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
+            out.insert(UPSTOX_NSE_NFO_BOOK_ID.to_string(), nfo);
+            out
+        }
+        "fyers" => {
+            let mut cash = Vec::new();
+            let mut nfo = Vec::new();
+            for fill in fills {
+                let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
+                if is_kotak_nfo_segment(&segment) && nfo_nrml_mis_product_ok(&fill) {
+                    nfo.push(fill);
+                } else if is_zerodha_cash_segment(&segment) && fyers_cash_fill_ok(&fill) {
+                    cash.push(fill);
+                }
+            }
+            let mut out = HashMap::new();
+            out.insert(FYERS_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
+            out.insert(FYERS_NSE_NFO_BOOK_ID.to_string(), nfo);
             out
         }
         _ => {

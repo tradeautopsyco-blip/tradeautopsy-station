@@ -9,8 +9,10 @@ use std::collections::HashMap;
 
 use super::descriptor::{
     BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID, BINANCE_COM_SPOT_BOOK_ID,
-    BINANCE_COM_USDM_BOOK_ID, KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
-    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    BINANCE_COM_USDM_BOOK_ID, FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID,
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
+    KOTAK_NSE_NFO_BOOK_ID, UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
+    ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 
 fn funds_book_allowed(book_id: &str) -> bool {
@@ -197,10 +199,11 @@ impl AccountBook {
         } else if lower.contains("kotak") {
             &[KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID]
         } else if lower.contains("zerodha") {
-            &[
-                crate::data::ZERODHA_NSE_BSE_CASH_BOOK_ID,
-                crate::data::ZERODHA_NSE_NFO_BOOK_ID,
-            ]
+            &[ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID]
+        } else if lower.contains("upstox") {
+            &[UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID]
+        } else if lower.contains("fyers") {
+            &[FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID]
         } else {
             &[]
         }

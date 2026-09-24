@@ -325,8 +325,8 @@ pub fn route_book(book_id: &str) -> Option<&'static MeterPolicy> {
         crate::ubi::ZERODHA_KITE_BOOK_ID | crate::ubi::ZERODHA_KITE_NFO_BOOK_ID => {
             Some(&ZERODHA_KITE_REQUESTS)
         }
-        crate::ubi::UPSTOX_BOOK_ID => Some(&UPSTOX_REQUESTS),
-        crate::ubi::FYERS_BOOK_ID => Some(&FYERS_REQUESTS),
+        crate::ubi::UPSTOX_BOOK_ID | crate::ubi::UPSTOX_NFO_BOOK_ID => Some(&UPSTOX_REQUESTS),
+        crate::ubi::FYERS_BOOK_ID | crate::ubi::FYERS_NFO_BOOK_ID => Some(&FYERS_REQUESTS),
         crate::ubi::GROWW_BOOK_ID => Some(&GROWW_REQUESTS),
         crate::ubi::DHAN_BOOK_ID => Some(&DHAN_REQUESTS),
         crate::ubi::bybit_session::BYBIT_BOOK_ID => Some(&BYBIT_REQUESTS),

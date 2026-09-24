@@ -814,7 +814,7 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
-        crate::ubi::UPSTOX_BOOK_ID => {
+        crate::ubi::UPSTOX_BOOK_ID | crate::ubi::UPSTOX_NFO_BOOK_ID => {
             if crate::ubi::upstox_path_refused(&host_norm, "GET", &path_norm) {
                 return Err(HostRefuse::ExecutionEndpoint);
             }
@@ -823,7 +823,7 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
-        crate::ubi::FYERS_BOOK_ID => {
+        crate::ubi::FYERS_BOOK_ID | crate::ubi::FYERS_NFO_BOOK_ID => {
             if host_norm != crate::ubi::FYERS_API_HOST {
                 return Err(HostRefuse::HostNotAllowed);
             }
