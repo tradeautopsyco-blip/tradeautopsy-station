@@ -8,7 +8,10 @@ use crate::inr_cash_wac::{
     InrCashRoundTrip, InrCashWacEngine, CALC_PROFILE_ID as INR_CASH_CALC_PROFILE,
 };
 use crate::money_matrix::is_binance_com_spot_fill;
-use crate::nfo_realized_pnl::is_nfo_fill;
+use crate::nfo_realized_pnl::{
+    aggregate_known_pnl_inr as aggregate_known_pnl_nfo, is_aggregate_eligible as is_nfo_eligible,
+    is_nfo_fill, NfoRealizedPnlEngine, NfoRoundTrip, BOOK_ID as NFO_BOOK_ID,
+};
 use crate::recent_trades::RecentTradesStore;
 use crate::round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, RoundTrip, RoundTripEngine,
@@ -109,6 +112,7 @@ pub struct TodayService {
     store: TodayStore,
     engine: RoundTripEngine,
     inr_engine: InrCashWacEngine,
+    nfo_engine: NfoRealizedPnlEngine,
     broker_status: Arc<Mutex<BrokerRuntimeState>>,
     broker_sync_control: Arc<BrokerSyncController>,
     broker_limits: BrokerSyncConfig,
@@ -131,6 +135,7 @@ impl TodayService {
             store,
             engine: RoundTripEngine::with_exchange_info(exchange_cache.clone(), true),
             inr_engine: InrCashWacEngine::new(),
+            nfo_engine: NfoRealizedPnlEngine::new(),
             broker_status,
             broker_sync_control,
             broker_limits,
@@ -196,9 +201,73 @@ impl TodayService {
 
         let fills = self.recent_trades.fetch_all_fills()?;
         let open_positions = count_open_positions(&fills);
-        let (usd_fills, inr_fills, _nfo_fills) = partition_fills(fills);
-        let inr_desk = desk.2.as_deref() == Some(INR_CASH_CALC_PROFILE)
-            || desk.1.as_deref() == Some("INR");
+        let (usd_fills, inr_fills, nfo_fills) = partition_fills(fills);
+        let nfo_desk = is_nfo_desk(&desk);
+        let inr_desk = is_inr_cash_desk(&desk);
+
+        if nfo_desk {
+            let nfo_result = self.nfo_engine.reconstruct(nfo_fills);
+            let today = local_today();
+            let today_trips: Vec<NfoRoundTrip> = nfo_result
+                .round_trips
+                .iter()
+                .filter(|rt| local_date(rt.closed_at) == today)
+                .cloned()
+                .collect();
+            let eligible: Vec<_> = today_trips.iter().filter(|rt| is_nfo_eligible(rt)).collect();
+            let pnl = if eligible.is_empty() {
+                None
+            } else {
+                Some(aggregate_known_pnl_nfo(&today_trips))
+            };
+            let trades_count = if today_trips.is_empty() {
+                None
+            } else {
+                Some(eligible.len() as u32)
+            };
+            let wins = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) > 0.0)
+                .count() as u32;
+            let losses = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) < 0.0)
+                .count() as u32;
+            let win_rate = if eligible.is_empty() {
+                None
+            } else {
+                Some(wins as f64 / eligible.len() as f64)
+            };
+            let trades = build_nfo_trade_rows(&today_trips, 50);
+            return Ok(TodayPayload {
+                local_date: today.format("%Y-%m-%d").to_string(),
+                performance_basis_not_tax: true,
+                degraded_reason: None,
+                learning_baseline: true,
+                hero: TodayHeroPayload {
+                    pnl_today_usd: None,
+                    pnl_today_inr: pnl,
+                    trades_today: trades_count,
+                    win_rate,
+                    wins_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(wins)
+                    },
+                    losses_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(losses)
+                    },
+                },
+                top_signals: vec![],
+                trades,
+                open_position_count: open_positions,
+                broker_slug: desk.0,
+                quote_currency: desk.1,
+                calc_profile_id: desk.2,
+            });
+        }
 
         if inr_desk {
             let inr_result = self.inr_engine.reconstruct(inr_fills);
@@ -472,6 +541,37 @@ fn build_trade_rows(
         .collect()
 }
 
+fn build_nfo_trade_rows(today_trips: &[NfoRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
+    let mut sorted: Vec<_> = today_trips.to_vec();
+    sorted.sort_by(|a, b| b.closed_at.cmp(&a.closed_at));
+    sorted
+        .into_iter()
+        .take(limit)
+        .map(|rt| {
+            let mut flags = Vec::new();
+            if rt.unknown_basis {
+                flags.push("unknown_basis".to_string());
+            }
+            TodayTradeRowPayload {
+                closed_at: rt.closed_at.to_rfc3339(),
+                symbol: rt.symbol.clone(),
+                avg_entry: rt.avg_entry_price,
+                avg_exit: rt.avg_exit_price,
+                qty: rt.qty,
+                net_pnl_usd: None,
+                net_pnl_inr: rt.realized_pnl_inr,
+                primary_flag: if rt.unknown_basis {
+                    "unknown_basis".to_string()
+                } else {
+                    "none".to_string()
+                },
+                flag_severity: "info".to_string(),
+                data_quality_flags: flags,
+            }
+        })
+        .collect()
+}
+
 fn build_inr_trade_rows(today_trips: &[InrCashRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
     let mut sorted: Vec<_> = today_trips.to_vec();
     sorted.sort_by(|a, b| b.closed_at.cmp(&a.closed_at));
@@ -501,6 +601,19 @@ fn build_inr_trade_rows(today_trips: &[InrCashRoundTrip], limit: usize) -> Vec<T
             }
         })
         .collect()
+}
+
+const NFO_CALC_PROFILE: &str = "equities_inr_nfo";
+
+fn is_nfo_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    desk.2.as_deref() == Some(NFO_CALC_PROFILE) || desk.0.as_deref() == Some(NFO_BOOK_ID)
+}
+
+fn is_inr_cash_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    if is_nfo_desk(desk) {
+        return false;
+    }
+    desk.2.as_deref() == Some(INR_CASH_CALC_PROFILE) || desk.1.as_deref() == Some("INR")
 }
 
 fn partition_fills(
@@ -883,6 +996,65 @@ mod tests {
             result.round_trips.is_empty(),
             "round_trip_engine must not reconstruct NFO fills"
         );
+    }
+
+    #[test]
+    fn nfo_desk_is_not_inr_cash_desk() {
+        let nfo = (
+            Some(NFO_BOOK_ID.to_string()),
+            Some("INR".to_string()),
+            Some(NFO_CALC_PROFILE.to_string()),
+        );
+        assert!(is_nfo_desk(&nfo));
+        assert!(!is_inr_cash_desk(&nfo));
+        let cash = (
+            Some("kotak_neo".to_string()),
+            Some("INR".to_string()),
+            Some(INR_CASH_CALC_PROFILE.to_string()),
+        );
+        assert!(!is_nfo_desk(&cash));
+        assert!(is_inr_cash_desk(&cash));
+    }
+
+    #[test]
+    fn nfo_desk_path_produces_trips_from_nfo_engine_not_cash_wac() {
+        let day = local_today();
+        let at = local_noon(day) + chrono::Duration::hours(2);
+        let nfo = crate::broker::BrokerFill {
+            fill_id: "nfo-b1".into(),
+            trade_id: "t-nfo".into(),
+            symbol: "NIFTY2692221000PE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 10.0,
+            filled_at: at - chrono::Duration::minutes(30),
+            broker: "kotak_neo".into(),
+            currency: Some("INR".into()),
+            product: Some("NRML".into()),
+            exchange_segment: Some("nse_fo".into()),
+            instrument_type: Some("PE".into()),
+            lot: Some(65),
+            ..Default::default()
+        };
+        let nfo_sell = crate::broker::BrokerFill {
+            fill_id: "nfo-s1".into(),
+            side: "SELL".into(),
+            price: 11.0,
+            filled_at: at,
+            ..nfo.clone()
+        };
+        let (_, inr_bucket, nfo_bucket) = partition_fills(vec![nfo.clone(), nfo_sell.clone()]);
+        assert!(inr_bucket.is_empty());
+        assert_eq!(nfo_bucket.len(), 2);
+        let inr_engine = InrCashWacEngine::new();
+        assert!(
+            inr_engine.reconstruct(inr_bucket).round_trips.is_empty(),
+            "NFO fills must not reconstruct on cash WAC"
+        );
+        let nfo_engine = NfoRealizedPnlEngine::new();
+        let nfo_trips = nfo_engine.reconstruct(nfo_bucket).round_trips;
+        assert_eq!(nfo_trips.len(), 1);
+        assert!((nfo_trips[0].realized_pnl_inr.unwrap() - 130.0).abs() < 1e-6);
     }
 
     #[test]
