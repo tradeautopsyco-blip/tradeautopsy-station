@@ -2386,6 +2386,42 @@ mod tests {
     }
 
     #[test]
+    fn zerodha_kite_nfo_book_fence_splits_instruments_from_cash() {
+        use crate::ubi::{ZERODHA_KITE_BOOK_ID, ZERODHA_KITE_NFO_BOOK_ID, KITE_API_HOST};
+
+        authorize_book_fence(
+            ZERODHA_KITE_NFO_BOOK_ID,
+            KITE_API_HOST,
+            "/instruments/nfo",
+        )
+        .expect("NFO book may fetch NFO instruments");
+        assert_eq!(
+            authorize_book_fence(
+                ZERODHA_KITE_NFO_BOOK_ID,
+                KITE_API_HOST,
+                "/instruments/nse",
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+        authorize_book_fence(
+            ZERODHA_KITE_BOOK_ID,
+            KITE_API_HOST,
+            "/instruments/nse",
+        )
+        .expect("cash book may fetch NSE cash instruments");
+        assert_eq!(
+            authorize_book_fence(
+                ZERODHA_KITE_BOOK_ID,
+                KITE_API_HOST,
+                "/instruments/nfo",
+            )
+            .unwrap_err(),
+            HostRefuse::PathNotAllowlisted
+        );
+    }
+
+    #[test]
     fn options_book_fence_allows_eapi_ticker_and_refuses_spot_cluster() {
         authorize_book_fence("binance-com-options", "eapi.binance.com", "/eapi/v1/ticker")
             .expect("options fence allows eapi ticker");
