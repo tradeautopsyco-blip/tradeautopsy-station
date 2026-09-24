@@ -7,7 +7,7 @@ public enum DhanConnectContract {
     /// Must match the Dhan consent-app Redirect URL and the agent callback route.
     /// Documented here for parity with sibling contracts; Swift never opens it.
     public static let loopbackRedirectURI =
-        "http://127.0.0.1:\(AgentLoopback.port)/api/daemon/broker/dhan/callback"
+        "https://127.0.0.1:\(AgentLoopback.oauthTlsPort)/api/daemon/broker/dhan/callback"
 
     /// Official Dhan consent-login host (B6 row 0/10).
     public static let consentLoginHost = "auth.dhan.co"

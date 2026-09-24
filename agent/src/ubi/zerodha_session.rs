@@ -51,11 +51,7 @@ pub fn kite_authorization_header_value(api_key: &str, access_token: &str) -> Str
 }
 
 pub fn zerodha_callback_base_url() -> String {
-    let port = std::env::var("AGENT_PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(9137);
-    format!("http://127.0.0.1:{port}/api/daemon/broker/zerodha/callback")
+    crate::oauth_loopback::https_oauth_callback_url("/api/daemon/broker/zerodha/callback")
 }
 
 pub fn kite_login_url(api_key: &str) -> String {

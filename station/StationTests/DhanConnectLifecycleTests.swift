@@ -7,7 +7,7 @@ struct DhanConnectLifecycleTests {
     @Test func loopbackRedirectMatchesAgentContract() {
         #expect(
             DhanConnectContract.loopbackRedirectURI
-                == "http://127.0.0.1:9137/api/daemon/broker/dhan/callback"
+                == "https://127.0.0.1:9140/api/daemon/broker/dhan/callback"
         )
     }
 

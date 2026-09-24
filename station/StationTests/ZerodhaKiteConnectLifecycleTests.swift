@@ -7,7 +7,7 @@ struct ZerodhaKiteConnectLifecycleTests {
     @Test func loopbackRedirectMatchesAgentContract() {
         #expect(
             ZerodhaKiteConnectContract.loopbackRedirectURI
-                == "http://127.0.0.1:9137/api/daemon/broker/zerodha/callback"
+                == "https://127.0.0.1:9140/api/daemon/broker/zerodha/callback"
         )
     }
 

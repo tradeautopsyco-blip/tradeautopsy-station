@@ -43,11 +43,7 @@ pub fn upstox_bearer_authorization_header_value(access_token: &str) -> String {
 }
 
 pub fn upstox_callback_base_url() -> String {
-    let port = std::env::var("AGENT_PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(9137);
-    format!("http://127.0.0.1:{port}/api/daemon/broker/upstox/callback")
+    crate::oauth_loopback::https_oauth_callback_url("/api/daemon/broker/upstox/callback")
 }
 
 pub fn upstox_authorize_url(client_id: &str, state: &str) -> String {
@@ -418,7 +414,7 @@ mod tests {
     #[test]
     fn callback_base_url_uses_agent_port_default() {
         std::env::remove_var("AGENT_PORT");
-        assert!(upstox_callback_base_url().contains(":9137/"));
+        assert!(upstox_callback_base_url().starts_with("https://127.0.0.1:9140/"));
     }
 
     #[test]
@@ -458,7 +454,7 @@ mod tests {
             &http,
             "cid",
             "csec",
-            "http://127.0.0.1:9137/api/daemon/broker/upstox/callback",
+            "https://127.0.0.1:9140/api/daemon/broker/upstox/callback",
             "authcode",
             1_700_000_000_000,
         )

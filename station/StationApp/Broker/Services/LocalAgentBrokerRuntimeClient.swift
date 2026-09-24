@@ -673,7 +673,10 @@ private struct BrokerAgentSyncStateResponse: Decodable {
 }
 
 public enum AgentLoopback {
+    /// Daemon wire (HMAC) — plain HTTP.
     public static let port: UInt16 = 9137
+    /// Browser OAuth callbacks — HTTPS (Kite portal requires `https://` URIs).
+    public static let oauthTlsPort: UInt16 = 9140
 }
 
 public struct ZerodhaConnectBeginResult: Equatable, Sendable {

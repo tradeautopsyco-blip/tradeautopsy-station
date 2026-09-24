@@ -7,7 +7,7 @@ struct UpstoxConnectLifecycleTests {
     @Test func loopbackRedirectMatchesAgentContract() {
         #expect(
             UpstoxConnectContract.loopbackRedirectURI
-                == "http://127.0.0.1:9137/api/daemon/broker/upstox/callback"
+                == "https://127.0.0.1:9140/api/daemon/broker/upstox/callback"
         )
     }
 

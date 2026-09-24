@@ -32,7 +32,9 @@ mod kotak_rest_history;
 mod kotak_rest_quotes;
 mod kotak_scrip_master;
 mod live_book;
+mod loopback_oauth_tls;
 mod metrics;
+mod oauth_loopback;
 mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
@@ -1678,6 +1680,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         );
     }
     let router = api::router(state.clone());
+    let oauth_router = api::oauth_callback_router(state.clone());
+    loopback_oauth_tls::spawn(oauth_router, oauth_loopback::oauth_tls_port())?;
 
     metrics.set_uptime_secs(runtime.uptime_secs());
 

@@ -7,7 +7,7 @@ struct FyersConnectLifecycleTests {
     @Test func loopbackRedirectMatchesAgentContract() {
         #expect(
             FyersConnectContract.loopbackRedirectURI
-                == "http://127.0.0.1:9137/api/daemon/broker/fyers/callback"
+                == "https://127.0.0.1:9140/api/daemon/broker/fyers/callback"
         )
     }
 

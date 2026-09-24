@@ -9,9 +9,9 @@
 
 ## Preconditions
 
-- [ ] Kite Connect app redirect registered **exactly**:  
-  `http://127.0.0.1:9137/api/daemon/broker/zerodha/callback`  
-  (developers.kite.trade → your app → Redirect URL)
+- [ ] Kite Connect app redirect registered **exactly** (portal requires `https://`):  
+  `https://127.0.0.1:9140/api/daemon/broker/zerodha/callback`  
+  (developers.kite.trade → your app → Redirect URL; **Postback** left empty)
 - [ ] Agent listening on **`127.0.0.1:9137`** (run Station.app so the embedded agent is healthy, or release agent on that port)
 - [ ] Live Kite account (production; no paper env per B6 row 23)
 - [ ] Kite Connect **paid** app with **api_key** + **api_secret** (daily login token model)

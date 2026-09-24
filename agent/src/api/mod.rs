@@ -381,3 +381,25 @@ pub fn router(state: AppState) -> Router {
         .merge(protected)
         .with_state(state)
 }
+
+/// Browser OAuth redirects only — served on loopback HTTPS (port 9140 by default).
+pub fn oauth_callback_router(state: AppState) -> Router {
+    Router::new()
+        .route(
+            "/api/daemon/broker/zerodha/callback",
+            get(zerodha_session::callback_handler),
+        )
+        .route(
+            "/api/daemon/broker/dhan/callback",
+            get(dhan_session::callback_handler),
+        )
+        .route(
+            "/api/daemon/broker/upstox/callback",
+            get(upstox_session::callback_handler),
+        )
+        .route(
+            "/api/daemon/broker/fyers/callback",
+            get(fyers_session::callback_handler),
+        )
+        .with_state(state)
+}

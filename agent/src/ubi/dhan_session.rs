@@ -60,11 +60,7 @@ fn url_encode_component(value: &str) -> String {
 }
 
 pub fn dhan_callback_base_url() -> String {
-    let port = std::env::var("AGENT_PORT")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(9137);
-    format!("http://127.0.0.1:{port}/api/daemon/broker/dhan/callback")
+    crate::oauth_loopback::https_oauth_callback_url("/api/daemon/broker/dhan/callback")
 }
 
 pub fn dhan_consent_login_url(consent_app_id: &str) -> String {
@@ -888,7 +884,7 @@ mod tests {
         std::env::remove_var("AGENT_PORT");
         assert_eq!(
             dhan_callback_base_url(),
-            "http://127.0.0.1:9137/api/daemon/broker/dhan/callback"
+            "https://127.0.0.1:9140/api/daemon/broker/dhan/callback"
         );
     }
 }
