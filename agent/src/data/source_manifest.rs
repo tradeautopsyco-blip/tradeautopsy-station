@@ -904,11 +904,44 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         kotak_neo_nfo_manifest(),
         zerodha_kite_cash_manifest(),
         upstox_cash_manifest(),
+        fyers_cash_manifest(),
         super::amfi::amfi_nav_manifest(),
     ]
 }
 
 /// Upstox NSE/BSE cash D+I (B6 SIGNED). Day-book fills via Wasm trades-for-day.
+/// Fyers NSE/BSE cash D+I (B6 SIGNED). Day-book fills via Wasm tradebook (P3-W0 stub).
+pub fn fyers_cash_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["NSE".into(), "BSE".into()],
+        asset_classes: vec!["equity".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:fyers-cash@0.1.0".into(),
+        adapter_id: "fyers".into(),
+        book_id: "fyers-nse-bse-cash".into(),
+        implemented: vec!["tradebook".into(), "orderbook".into()],
+        bindings: vec![
+            account_binding(
+                "fyers",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            account_binding(
+                "fyers",
+                "orderbook",
+                "orders",
+                coverage,
+                Limits::default(),
+            ),
+        ],
+    }
+}
+
 pub fn upstox_cash_manifest() -> SourceManifest {
     let coverage = Coverage {
         venues: vec!["NSE".into(), "BSE".into()],

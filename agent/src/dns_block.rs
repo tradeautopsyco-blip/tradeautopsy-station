@@ -122,6 +122,12 @@ const UPSTOX_HOSTS: &[&str] = &[
     "assets.upstox.com",
 ];
 
+const FYERS_HOSTS: &[&str] = &[
+    "api-t1.fyers.in",
+    "api.fyers.in",
+    "api-t2.fyers.in",
+];
+
 /// Broker slug → sinkhole hostnames (pure, testable).
 ///
 /// Unknown slugs return **empty** — never default to Kotak (R8). An empty set
@@ -133,6 +139,7 @@ pub fn hosts_for_broker(broker: &str) -> &'static [&'static str] {
         // UNVERIFIED until B6 row 22 cites them; verified Wave 1 Z7.
         "zerodha" | "kite" | "zerodha_kite" => ZERODHA_HOSTS,
         "upstox" => UPSTOX_HOSTS,
+        "fyers" => FYERS_HOSTS,
         "kotak" | "kotak_neo" => KOTAK_HOSTS,
         "binance" | "binance_com" => BINANCE_COM_HOSTS,
         "binance_us" => BINANCE_US_HOSTS,
@@ -530,7 +537,7 @@ mod tests {
     #[test]
     fn kill_dns_covers_every_ubi_allowlisted_host() {
         for host in crate::ubi::ALLOWED_BROKER_HOSTS {
-            let covered = ["binance_com", "kotak_neo", "zerodha_kite", "upstox"]
+            let covered = ["binance_com", "kotak_neo", "zerodha_kite", "upstox", "fyers"]
                 .iter()
                 .any(|slug| hosts_for_broker(slug).contains(host));
             assert!(covered, "no Kill DNS entry for allowlisted host {host}");

@@ -6,6 +6,7 @@ members = [
     "ubi-kotak-neo-adapter",
     "ubi-zerodha-kite-adapter",
     "ubi-upstox-adapter",
+    "ubi-fyers-adapter",
 ]
 resolver = "2"
 

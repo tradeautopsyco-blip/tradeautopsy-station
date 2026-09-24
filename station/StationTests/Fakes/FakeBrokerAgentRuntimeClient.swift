@@ -30,6 +30,11 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
     var beginUpstoxConnectError: BrokerAgentRuntimeError?
     var simulateUpstoxVaultAfterBegin = false
     private var upstoxBeginCompleted = false
+    private(set) var beginFyersConnectCallCount = 0
+    var beginFyersConnectResult: FyersConnectBeginResult?
+    var beginFyersConnectError: BrokerAgentRuntimeError?
+    var simulateFyersVaultAfterBegin = false
+    private var fyersBeginCompleted = false
     private(set) var clearVaultCredentialsCallCount = 0
     private(set) var vaultCredentialsPresentCallCount = 0
     private(set) var lastStartedIdentity: BrokerConnectionIdentity?
@@ -118,6 +123,29 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
         )
     }
 
+    func beginFyersConnect(
+        for identity: BrokerConnectionIdentity,
+        appId: String,
+        secretId: String
+    ) async throws -> FyersConnectBeginResult {
+        _ = (identity, appId, secretId)
+        beginFyersConnectCallCount += 1
+        fyersBeginCompleted = true
+        if let beginFyersConnectError {
+            throw beginFyersConnectError
+        }
+        if let beginFyersConnectResult {
+            return beginFyersConnectResult
+        }
+        return FyersConnectBeginResult(
+            state: "test-state",
+            loginURL: URL(
+                string: "https://api-t1.fyers.in/api/v3/generate-authcode?response_type=code&client_id=test"
+            )!,
+            redirectURI: FyersConnectContract.loopbackRedirectURI
+        )
+    }
+
     func mintKotakSession(
         for identity: BrokerConnectionIdentity,
         consumerKey: String,
@@ -162,6 +190,9 @@ final class FakeBrokerAgentRuntimeClient: BrokerAgentRuntimeClient {
             return true
         }
         if simulateUpstoxVaultAfterBegin, upstoxBeginCompleted {
+            return true
+        }
+        if simulateFyersVaultAfterBegin, fyersBeginCompleted {
             return true
         }
         return credentialStore?.hasCredentials(for: identity) ?? false

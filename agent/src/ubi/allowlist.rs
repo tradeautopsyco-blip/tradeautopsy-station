@@ -31,6 +31,8 @@ pub const ALLOWED_BROKER_HOSTS: &[&str] = &[
     // upstox — REST + BOD instrument gzips (B6 row 22; api-hft refused).
     "api.upstox.com",
     "assets.upstox.com",
+    // fyers — v3 REST reads (B6 row 22; siblings refused in Kill DNS).
+    "api-t1.fyers.in",
 ];
 
 pub const ZERODHA_KITE_BOOK_ID: &str = "zerodha-nse-bse-cash";
@@ -40,6 +42,9 @@ pub const UPSTOX_BOOK_ID: &str = "upstox-nse-bse-cash";
 pub const UPSTOX_API_HOST: &str = "api.upstox.com";
 pub const UPSTOX_ASSETS_HOST: &str = "assets.upstox.com";
 pub const UPSTOX_HFT_HOST: &str = "api-hft.upstox.com";
+
+pub const FYERS_BOOK_ID: &str = "fyers-nse-bse-cash";
+pub const FYERS_API_HOST: &str = "api-t1.fyers.in";
 
 /// Read-only Kite REST path prefixes allowed for book `zerodha-nse-bse-cash`.
 pub fn zerodha_kite_path_allowed(path_norm: &str) -> bool {
@@ -118,6 +123,27 @@ fn upstox_path_refused_impl(host: &str, method: &str, path_norm: &str) -> bool {
         && (p.starts_with("/v2/order") || p.starts_with("/v3/order"))
 }
 
+/// Read-only Fyers v3 paths for book `fyers-nse-bse-cash` (B6 row 2).
+pub fn fyers_path_allowed(path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    if p.is_empty() {
+        return false;
+    }
+    p == "/api/v3/tradebook" || p == "/api/v3/profile"
+}
+
+/// Refuse Fyers order mutation surfaces.
+pub fn fyers_path_refused(method: &str, path_norm: &str) -> bool {
+    fyers_path_refused_impl(method, path_norm)
+}
+
+fn fyers_path_refused_impl(method: &str, path_norm: &str) -> bool {
+    let p = path_norm.trim().trim_end_matches('/').to_ascii_lowercase();
+    let upper = method.to_ascii_uppercase();
+    matches!(upper.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
+        && (p.starts_with("/api/v3/orders") || p.starts_with("/api/v3/order"))
+}
+
 pub fn host_allowed(host: &str) -> bool {
     let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
     ALLOWED_BROKER_HOSTS
@@ -145,6 +171,7 @@ mod tests {
         assert!(host_allowed("api.kite.trade"));
         assert!(host_allowed("api.upstox.com"));
         assert!(host_allowed("assets.upstox.com"));
+        assert!(host_allowed("api-t1.fyers.in"));
         assert!(!host_allowed("api-hft.upstox.com"));
         assert!(!host_allowed("evil.example.com"));
         assert!(!host_allowed("mlhsm.kotaksecurities.com"));
@@ -196,5 +223,15 @@ mod tests {
             "GET",
             "/v2/order/trades/get-trades-for-day"
         ));
+    }
+
+    #[test]
+    fn fyers_read_paths_allowed_order_posts_refused() {
+        assert!(fyers_path_allowed("/api/v3/tradebook"));
+        assert!(fyers_path_allowed("/api/v3/profile"));
+        assert!(!fyers_path_allowed("/api/v3/orders"));
+        assert!(fyers_path_refused("POST", "/api/v3/orders"));
+        assert!(fyers_path_refused("POST", "/api/v3/order"));
+        assert!(!fyers_path_refused("GET", "/api/v3/tradebook"));
     }
 }

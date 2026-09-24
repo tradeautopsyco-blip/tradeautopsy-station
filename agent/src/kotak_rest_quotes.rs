@@ -602,7 +602,8 @@ pub async fn fetch_quotes_json(
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
         HostCredentialBlob::Hmac { .. }
         | HostCredentialBlob::KiteSession { .. }
-        | HostCredentialBlob::UpstoxSession { .. } => {
+        | HostCredentialBlob::UpstoxSession { .. }
+        | HostCredentialBlob::FyersSession { .. } => {
             return Err(QuoteFetchError {
                 class: QuoteFetchErrorClass::Session,
             });

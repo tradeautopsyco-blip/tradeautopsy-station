@@ -36,6 +36,8 @@ public enum BrokerCredentialValidationFailure: Equatable, Sendable {
     case kiteConnectRejected(String)
     /// Upstox connect/begin or browser login wait (message redacted for UI).
     case upstoxConnectRejected(String)
+    /// Fyers connect/begin or browser login wait (message redacted for UI).
+    case fyersConnectRejected(String)
 }
 
 public enum BrokerCredentialValidationResult: Equatable, Sendable {

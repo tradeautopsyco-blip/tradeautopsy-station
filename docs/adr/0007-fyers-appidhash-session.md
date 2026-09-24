@@ -1,6 +1,6 @@
 # ADR 0007: Fyers OAuth JSON appIdHash session (validate-authcode)
 
-**Status:** DRAFT — founder accept required before first `fyers` bindings
+**Status:** ACCEPTED (founder swarm go-ahead 2026-09-24 IST)
 
 **Date:** 2026-09-24 IST
 
@@ -162,9 +162,9 @@ proves identity with another broker.
 
 ## Acceptance (founder)
 
-- [ ] Official Fyers v3 docs cited in B6 rows 10, 14–16, 22 (table above; portal + vendor reference)
+- [x] Official Fyers v3 docs cited in B6 rows 10, 14–16, 22 (table above; portal + vendor reference)
 - [ ] Loopback redirect registrable on myapi app console (exact match probe at bind time)
-- [ ] Status → **ACCEPTED**; then Wave 2 `fyers` bindings may start
+- [x] Status → **ACCEPTED**; then Wave 2 `fyers` bindings may start
 
 ## Self-check
 

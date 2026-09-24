@@ -394,7 +394,8 @@ pub fn build_runtime_adapter(
         ("binance_com", CredentialBlob::HmacApiKeySecret { .. })
         | ("kotak_neo", CredentialBlob::KotakNeoTotpSession { .. })
         | ("zerodha_kite", CredentialBlob::KiteChecksumSession { .. })
-        | ("upstox", CredentialBlob::UpstoxOAuthBearerSession { .. }) => {
+        | ("upstox", CredentialBlob::UpstoxOAuthBearerSession { .. })
+        | ("fyers", CredentialBlob::FyersOAuthJsonAppIdHashSession { .. }) => {
             build_wasm_runtime_adapter(broker_slug, connection_id, blob)
         }
         (other, _) => anyhow::bail!("unsupported broker slug or credential shape: {other}"),

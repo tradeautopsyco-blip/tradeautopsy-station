@@ -67,6 +67,8 @@ pub const R0_ALLOWED_HOSTS: &[&str] = &[
     // upstox — REST reads + BOD instruments (B6 row 22; HFT refused).
     "api.upstox.com",
     "assets.upstox.com",
+    // fyers — v3 REST reads (B6 row 22).
+    "api-t1.fyers.in",
     // AMFI official NAV file (docs/research/sheets/amfi.md, fetch 2026-09-17 IST).
     // Labs vendor only — not a shipping broker, not Kill DNS.
     "www.amfiindia.com",
@@ -160,7 +162,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
                 || path.ends_with("/quick/user/trades")
                 || normalize_request_path(path) == "/trades"
                 || normalize_request_path(path) == "/eapi/v1/userTrades"
-                || normalize_request_path(path) == "/fapi/v1/income" =>
+                || normalize_request_path(path) == "/fapi/v1/income"
+                || normalize_request_path(path) == "/api/v3/tradebook" =>
         {
             true
         }
@@ -168,7 +171,8 @@ fn path_allowlisted(capability_id: &str, method: &str, path: &str, auth_mode: Au
             if path == "/api/v3/account"
                 || normalize_request_path(path) == "/eapi/v1/marginAccount"
                 || normalize_request_path(path) == "/fapi/v3/balance"
-                || normalize_request_path(path) == "/dapi/v1/balance" =>
+                || normalize_request_path(path) == "/dapi/v1/balance"
+                || normalize_request_path(path) == "/api/v3/profile" =>
         {
             true
         }
@@ -384,6 +388,12 @@ pub fn infer_capability(method: &str, path: &str) -> Result<(&'static str, AuthM
         ("GET", p) if normalize_request_path(p).starts_with("/market-quote/instruments/") => {
             Ok(("instrument_master", AuthMode::Public))
         }
+        ("GET", p) if normalize_request_path(p) == "/api/v3/tradebook" => {
+            Ok(("fills", AuthMode::PrivateRead))
+        }
+        ("GET", p) if normalize_request_path(p) == "/api/v3/profile" => {
+            Ok(("funds", AuthMode::PrivateRead))
+        }
         _ => Err(HostRefuse::PathNotAllowlisted),
     }
 }
@@ -527,6 +537,15 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
                 return Err(HostRefuse::ExecutionEndpoint);
             }
             if !crate::ubi::upstox_path_allowed(&host_norm, &path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::FYERS_BOOK_ID => {
+            if host_norm != crate::ubi::FYERS_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::fyers_path_allowed(&path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
             Ok(())

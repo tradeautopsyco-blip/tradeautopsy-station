@@ -6,6 +6,7 @@
 //! - SIGNED sheets (`binance_com`, `kotak_neo`): Status SIGNED + core rows 0–13.
 //! - SIGNED sheet (`zerodha_kite`, P2): full surface rows 0–25 (TBD on 17/20 OK).
 //! - SIGNED sheet (`upstox`, P3): full surface rows 0–25 (TBD on 17/20 OK).
+//! - SIGNED sheet (`fyers`, P3): full surface rows 0–25 (TBD on 17/20 OK).
 //! - Present-but-TBD is OK (green-with-TBDs); value / refuse / NOT SPECIFIED
 //!   is the ideal; a MISSING row number or a blank answer fails.
 //!
@@ -115,6 +116,18 @@ fn signed_zerodha_kite_covers_surface_rows_0_to_25() {
 #[test]
 fn signed_upstox_covers_surface_rows_0_to_25() {
     let slug = "upstox";
+    let text = read_sheet(slug);
+    let status = status_line(&text, slug);
+    assert!(
+        status.contains("`SIGNED`") && !status.contains("`RESEARCH`"),
+        "{slug}.md must be SIGNED for P3 build: {status}"
+    );
+    check_rows(slug, &text, 0..=25);
+}
+
+#[test]
+fn signed_fyers_covers_surface_rows_0_to_25() {
+    let slug = "fyers";
     let text = read_sheet(slug);
     let status = status_line(&text, slug);
     assert!(

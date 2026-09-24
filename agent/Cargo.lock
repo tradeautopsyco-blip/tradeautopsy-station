@@ -3024,6 +3024,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ubi-fyers-adapter"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wit-bindgen 0.46.0",
+]
+
+[[package]]
 name = "ubi-kotak-neo-adapter"
 version = "0.1.0"
 dependencies = [

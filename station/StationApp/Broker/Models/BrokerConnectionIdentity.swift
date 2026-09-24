@@ -69,6 +69,19 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         self.expiresAt = nil
     }
 
+    /// Fyers OAuth app credentials (Station Keychain). JWT session stays agent vault-only.
+    public init(fyersAppId: String, fyersSecretId: String) {
+        self.authScheme = .fyersOAuthJsonAppIdHashSession
+        self.apiKey = fyersAppId
+        self.apiSecret = fyersSecretId
+        self.consumerKey = nil
+        self.tradeToken = nil
+        self.sid = nil
+        self.baseUrl = nil
+        self.hsServerId = nil
+        self.expiresAt = nil
+    }
+
     public init(
         consumerKey: String,
         tradeToken: String,
@@ -119,7 +132,8 @@ public struct BrokerCredentials: Equatable, Sendable, Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(authScheme, forKey: .authScheme)
         switch authScheme {
-        case .hmacApiKeySecret, .kiteChecksumSession, .upstoxOAuthBearerSession:
+        case .hmacApiKeySecret, .kiteChecksumSession, .upstoxOAuthBearerSession,
+             .fyersOAuthJsonAppIdHashSession:
             try container.encode(apiKey, forKey: .apiKey)
             try container.encode(apiSecret, forKey: .apiSecret)
         case .kotakNeoTotpSession:

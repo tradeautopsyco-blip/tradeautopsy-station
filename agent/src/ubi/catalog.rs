@@ -34,6 +34,7 @@ pub enum AuthScheme {
     KotakNeoTotpSession,
     KiteChecksumSession,
     UpstoxOAuthBearerSession,
+    FyersOAuthJsonAppIdHashSession,
 }
 
 /// Closed asset axis (ADR 0004, Nautilus-aligned). Mirrors the WIT
@@ -250,6 +251,10 @@ pub fn compliance_profile(id: &str) -> Option<ComplianceProfile> {
             id: id.into(),
             block_on_withdraw: false,
         }),
+        "fyers_compliance" => Some(ComplianceProfile {
+            id: id.into(),
+            block_on_withdraw: false,
+        }),
         _ => None,
     }
 }
@@ -441,6 +446,21 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             manifest_id: "tradeautopsy:upstox-cash@0.1.0".into(),
             book_id: "upstox-nse-bse-cash".into(),
         },
+        BrokerDescriptor {
+            slug: "fyers".into(),
+            display_name: "Fyers".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Spot,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::FyersOAuthJsonAppIdHashSession,
+            calc_profile_id: "equities_inr_cash".into(),
+            compliance_profile_id: "fyers_compliance".into(),
+            availability: BrokerAvailability::Planned,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:fyers-cash@0.1.0".into(),
+            book_id: "fyers-nse-bse-cash".into(),
+        },
     ]
 }
 
@@ -608,7 +628,7 @@ mod tests {
     #[test]
     fn book_catalog_covers_shipping_books_plus_planned_zerodha() {
         let books = catalog_books();
-        assert_eq!(books.len(), 8);
+        assert_eq!(books.len(), 9);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -619,6 +639,7 @@ mod tests {
             "kotak-nse-nfo",
             "zerodha-nse-bse-cash",
             "upstox-nse-bse-cash",
+            "fyers-nse-bse-cash",
         ] {
             assert!(ids.contains(&expected), "missing book row {expected}");
         }
@@ -632,6 +653,12 @@ mod tests {
         let upstox = descriptor_for_book_id("upstox-nse-bse-cash").expect("planned upstox");
         assert_eq!(upstox.availability, BrokerAvailability::Planned);
         assert_eq!(upstox.auth_scheme, AuthScheme::UpstoxOAuthBearerSession);
+        let fyers = descriptor_for_book_id("fyers-nse-bse-cash").expect("planned fyers");
+        assert_eq!(fyers.availability, BrokerAvailability::Planned);
+        assert_eq!(
+            fyers.auth_scheme,
+            AuthScheme::FyersOAuthJsonAppIdHashSession
+        );
         // Every book row's profiles resolve; every row is first-party.
         for d in &books {
             assert!(

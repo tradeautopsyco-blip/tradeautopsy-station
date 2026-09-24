@@ -93,7 +93,8 @@ async fn fetch_historical_json(
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
         HostCredentialBlob::Hmac { .. }
         | HostCredentialBlob::KiteSession { .. }
-        | HostCredentialBlob::UpstoxSession { .. } => return None,
+        | HostCredentialBlob::UpstoxSession { .. }
+        | HostCredentialBlob::FyersSession { .. } => return None,
     };
     kotak_base_host(&base_url)?;
     let path = query_path(neosymbol, interval, fromdate, todate);

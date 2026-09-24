@@ -498,7 +498,8 @@ pub async fn refresh_from_session(
         HostCredentialBlob::KotakSession { base_url, .. } => base_url.clone(),
         HostCredentialBlob::Hmac { .. }
         | HostCredentialBlob::KiteSession { .. }
-        | HostCredentialBlob::UpstoxSession { .. } => {
+        | HostCredentialBlob::UpstoxSession { .. }
+        | HostCredentialBlob::FyersSession { .. } => {
             return Err(InstrumentMasterFetchError::new(
                 InstrumentMasterErrorClass::FilePathsHttp,
                 None,

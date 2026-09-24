@@ -11,6 +11,8 @@ public enum BrokerConnectServices {
             return .zerodhaKite(environment)
         case "upstox":
             return .upstox(environment)
+        case "fyers":
+            return .fyers(environment)
         default:
             // Never mint random UUIDs for vault keys — unknown slugs get a nil-safe fixed namespace.
             return BrokerConnectionIdentity(
@@ -32,6 +34,8 @@ public enum BrokerConnectServices {
             return ZerodhaKiteSessionCredentialValidator()
         case "upstox":
             return UpstoxOAuthSessionCredentialValidator()
+        case "fyers":
+            return FyersOAuthSessionCredentialValidator()
         default:
             return UnsupportedBrokerCredentialValidator()
         }
@@ -74,6 +78,23 @@ private struct ZerodhaKiteSessionCredentialValidator: BrokerCredentialValidating
     ) async -> BrokerCredentialValidationResult {
         guard identity.brokerSlug == "zerodha_kite",
               credentials.authScheme == .kiteChecksumSession,
+              !credentials.apiKey.isEmpty,
+              !credentials.apiSecret.isEmpty
+        else {
+            return .permanentFailure(.invalidCredentials)
+        }
+        return .success(permissionPosture: .readOnlyConfirmed)
+    }
+}
+
+/// Fyers JWT session vault is agent-owned after browser callback; Station keeps app id/secret only.
+private struct FyersOAuthSessionCredentialValidator: BrokerCredentialValidating, Sendable {
+    func validate(
+        credentials: BrokerCredentials,
+        identity: BrokerConnectionIdentity
+    ) async -> BrokerCredentialValidationResult {
+        guard identity.brokerSlug == "fyers",
+              credentials.authScheme == .fyersOAuthJsonAppIdHashSession,
               !credentials.apiKey.isEmpty,
               !credentials.apiSecret.isEmpty
         else {

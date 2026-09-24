@@ -1,9 +1,10 @@
 //! India NSE/BSE cash INR WAC — sole realized-PnL owner for books `kotak-nse-bse-cash`
-//! `zerodha-nse-bse-cash`, and `upstox-nse-bse-cash`.
+//! `zerodha-nse-bse-cash`, `upstox-nse-bse-cash`, and `fyers-nse-bse-cash`.
 //!
 //! Locks: `issues/compliance/locks/kotak-nse-bse-cash.md` ·
 //! `issues/compliance/locks/zerodha-nse-bse-cash.md` ·
-//! `issues/compliance/locks/upstox-nse-bse-cash.md`.
+//! `issues/compliance/locks/upstox-nse-bse-cash.md` ·
+//! `issues/compliance/locks/fyers-nse-bse-cash.md`.
 //! Method: WAC. Currency: INR. Products: CNC + MIS only. Lot must be 1.
 //! DualNoBlend: never write USD; never FX-blend fields on the trip struct.
 //!
@@ -152,8 +153,11 @@ fn classify_cash_fill(fill: &BrokerFill) -> Result<(), &'static str> {
     }
     if product != "CNC"
         && product != "MIS"
+        && product != "INTRADAY"
         && product != "I"
         && product != "D"
+        && product != "1"
+        && product != "2"
     {
         return Err("product_unknown");
     }

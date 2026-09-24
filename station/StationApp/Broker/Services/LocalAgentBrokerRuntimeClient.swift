@@ -27,6 +27,12 @@ public protocol BrokerAgentRuntimeClient {
         clientId: String,
         clientSecret: String
     ) async throws -> UpstoxConnectBeginResult
+    /// Mint Fyers connect state + authorize URL (ADR 0007). Browser completes callback on agent.
+    func beginFyersConnect(
+        for identity: BrokerConnectionIdentity,
+        appId: String,
+        secretId: String
+    ) async throws -> FyersConnectBeginResult
     /// Clear host vault entry for identity (Connect rollback / Delete). Identity-only body.
     func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws
     /// Whether the agent can see a vault blob for this identity (Start presence fallback).
@@ -307,6 +313,51 @@ public struct LocalAgentBrokerRuntimeClient: BrokerAgentRuntimeClient {
         throw BrokerAgentRuntimeError.requestFailed
     }
 
+    public func beginFyersConnect(
+        for identity: BrokerConnectionIdentity,
+        appId: String,
+        secretId: String
+    ) async throws -> FyersConnectBeginResult {
+        let path = "/api/daemon/broker/fyers/begin"
+        let payload = FyersConnectBeginPayload(
+            identity: identity,
+            appId: appId,
+            secretId: secretId
+        )
+        let body = try JSONEncoder().encode(payload)
+        var request = signRequest("POST", path, body)
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.url = URL(string: "http://127.0.0.1:\(port)\(path)")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BrokerAgentRuntimeError.requestFailed
+        }
+        if http.statusCode == 200 {
+            guard let decoded = try? JSONDecoder().decode(FyersConnectBeginResponse.self, from: data),
+                  decoded.ok == true,
+                  let loginURLString = decoded.loginUrl,
+                  let loginURL = URL(string: loginURLString),
+                  let state = decoded.state,
+                  let redirectURI = decoded.redirectUri
+            else {
+                throw BrokerAgentRuntimeError.requestFailed
+            }
+            return FyersConnectBeginResult(
+                state: state,
+                loginURL: loginURL,
+                redirectURI: redirectURI
+            )
+        }
+        if let decoded = try? JSONDecoder().decode(FyersConnectBeginErrorBody.self, from: data) {
+            throw BrokerAgentRuntimeError.fyersBeginFailed(
+                errorClass: decoded.errorClass ?? "upstream",
+                message: decoded.message ?? "fyers connect begin failed"
+            )
+        }
+        throw BrokerAgentRuntimeError.requestFailed
+    }
+
     public func clearVaultCredentials(for identity: BrokerConnectionIdentity) async throws {
         let path = "/api/daemon/broker/credentials/clear"
         let payload = BrokerCredentialIdentityPayload(identity: identity)
@@ -369,6 +420,7 @@ public enum BrokerAgentRuntimeError: Error, Equatable {
     case kotakMintFailed(errorClass: String, message: String)
     case zerodhaBeginFailed(errorClass: String, message: String)
     case upstoxBeginFailed(errorClass: String, message: String)
+    case fyersBeginFailed(errorClass: String, message: String)
 }
 
 /// Identity-only Start body (B2). Secrets stay in Keychain; never encoded here.
@@ -448,6 +500,39 @@ private struct UpstoxConnectBeginResponse: Decodable {
 }
 
 private struct UpstoxConnectBeginErrorBody: Decodable {
+    let errorClass: String?
+    let message: String?
+
+    enum CodingKeys: String, CodingKey {
+        case errorClass = "error_class"
+        case message
+    }
+}
+
+struct FyersConnectBeginPayload: Encodable {
+    let brokerSlug: String
+    let brokerConnectionId: String
+    let environment: String
+    let appId: String
+    let secretId: String
+
+    init(identity: BrokerConnectionIdentity, appId: String, secretId: String) {
+        brokerSlug = identity.brokerSlug
+        brokerConnectionId = identity.brokerConnectionID.uuidString
+        environment = identity.environment
+        self.appId = appId
+        self.secretId = secretId
+    }
+}
+
+private struct FyersConnectBeginResponse: Decodable {
+    let ok: Bool?
+    let state: String?
+    let loginUrl: String?
+    let redirectUri: String?
+}
+
+private struct FyersConnectBeginErrorBody: Decodable {
     let errorClass: String?
     let message: String?
 
@@ -539,6 +624,18 @@ public struct ZerodhaConnectBeginResult: Equatable, Sendable {
 }
 
 public struct UpstoxConnectBeginResult: Equatable, Sendable {
+    public let state: String
+    public let loginURL: URL
+    public let redirectURI: String
+
+    public init(state: String, loginURL: URL, redirectURI: String) {
+        self.state = state
+        self.loginURL = loginURL
+        self.redirectURI = redirectURI
+    }
+}
+
+public struct FyersConnectBeginResult: Equatable, Sendable {
     public let state: String
     public let loginURL: URL
     public let redirectURI: String

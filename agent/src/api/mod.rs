@@ -46,6 +46,7 @@ pub use kill_switch::{
 mod glance;
 mod history;
 mod kotak_session;
+mod fyers_session;
 mod upstox_session;
 mod zerodha_session;
 mod manifest;
@@ -236,6 +237,10 @@ pub fn router(state: AppState) -> Router {
             post(upstox_session::connect_begin_handler),
         )
         .route(
+            "/api/daemon/broker/fyers/begin",
+            post(fyers_session::connect_begin_handler),
+        )
+        .route(
             "/api/daemon/broker/credentials/clear",
             post(broker_credentials::clear_handler),
         )
@@ -344,6 +349,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/broker/upstox/callback",
             get(upstox_session::callback_handler),
+        )
+        .route(
+            "/api/daemon/broker/fyers/callback",
+            get(fyers_session::callback_handler),
         )
         .route("/api/station/quote", get(quote::handler))
         .route("/api/station/history", get(history::handler))

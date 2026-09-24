@@ -32,6 +32,10 @@ pub enum HostCredentialBlob {
     UpstoxSession {
         access_token: String,
     },
+    FyersSession {
+        app_id: String,
+        access_token: String,
+    },
 }
 
 impl HostCredentialBlob {
@@ -66,15 +70,20 @@ impl HostCredentialBlob {
                 access_token,
             } => vec![api_key.as_str(), access_token.as_str()],
             Self::UpstoxSession { access_token } => vec![access_token.as_str()],
+            Self::FyersSession {
+                app_id,
+                access_token,
+            } => vec![app_id.as_str(), access_token.as_str()],
         }
     }
 
     pub fn api_key_for_tests(&self) -> Option<&str> {
         match self {
             Self::Hmac { api_key, .. } => Some(api_key),
-            Self::KotakSession { .. } | Self::KiteSession { .. } | Self::UpstoxSession { .. } => {
-                None
-            }
+            Self::KotakSession { .. }
+            | Self::KiteSession { .. }
+            | Self::UpstoxSession { .. }
+            | Self::FyersSession { .. } => None,
         }
     }
 }
@@ -113,6 +122,14 @@ impl From<&CredentialBlob> for HostCredentialBlob {
                     access_token: access_token.clone(),
                 }
             }
+            CredentialBlob::FyersOAuthJsonAppIdHashSession {
+                app_id,
+                access_token,
+                ..
+            } => Self::FyersSession {
+                app_id: app_id.clone(),
+                access_token: access_token.clone(),
+            },
         }
     }
 }
@@ -160,6 +177,9 @@ pub fn effective_host(component_host: &str, credentials: &HostCredentialBlob) ->
         }
         HostCredentialBlob::UpstoxSession { .. } => {
             crate::ubi::upstox_session::UPSTOX_API_HOST.to_string()
+        }
+        HostCredentialBlob::FyersSession { .. } => {
+            crate::ubi::fyers_session::FYERS_API_HOST.to_string()
         }
         HostCredentialBlob::Hmac { .. } => component_host.trim().to_ascii_lowercase(),
     }
@@ -347,6 +367,36 @@ pub fn prepare_request(
                 ),
             ));
             out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            PreparedHttpRequest {
+                method: method.to_ascii_uppercase(),
+                url,
+                headers: out_headers,
+                body: body.map(|b| b.to_string()),
+            }
+        }
+        HostCredentialBlob::FyersSession {
+            app_id,
+            access_token,
+        } => {
+            let canonical = query
+                .iter()
+                .map(|(k, v)| format!("{}={}", encode(k), encode(v)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let url = if canonical.is_empty() {
+                format!("https://{host}{path}")
+            } else {
+                format!("https://{host}{path}?{canonical}")
+            };
+            out_headers.push((
+                "Authorization".to_string(),
+                crate::ubi::fyers_session::fyers_authorization_header_value(app_id, access_token),
+            ));
+            out_headers.push(("Accept".to_string(), "application/json".to_string()));
+            out_headers.push((
+                "User-Agent".to_string(),
+                crate::ubi::fyers_session::FYERS_USER_AGENT.to_string(),
+            ));
             PreparedHttpRequest {
                 method: method.to_ascii_uppercase(),
                 url,

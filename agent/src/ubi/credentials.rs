@@ -55,6 +55,19 @@ pub enum CredentialBlob {
         #[serde(rename = "redirectUri")]
         redirect_uri: String,
     },
+    #[serde(rename = "fyers_oauth_json_session")]
+    FyersOAuthJsonAppIdHashSession {
+        #[serde(rename = "appId")]
+        app_id: String,
+        #[serde(rename = "secretId")]
+        secret_id: String,
+        #[serde(rename = "accessToken")]
+        access_token: String,
+        #[serde(default, rename = "refreshToken")]
+        refresh_token: Option<String>,
+        #[serde(rename = "accessTokenExpiryUnixMs")]
+        access_token_expiry_unix_ms: i64,
+    },
     #[serde(rename = "kotak_neo_totp_session")]
     KotakNeoTotpSession {
         #[serde(rename = "consumerKey")]
@@ -90,6 +103,7 @@ impl CredentialBlob {
             Self::HmacApiKeySecret { api_key, .. } => Some(api_key),
             Self::KiteChecksumSession { api_key, .. } => Some(api_key),
             Self::UpstoxOAuthBearerSession { client_id, .. } => Some(client_id),
+            Self::FyersOAuthJsonAppIdHashSession { app_id, .. } => Some(app_id),
             Self::KotakNeoTotpSession { .. } => None,
         }
     }
