@@ -66,6 +66,8 @@ pub const KOTAK_NSE_BSE_CASH_BOOK_ID: &str = "kotak-nse-bse-cash";
 pub const KOTAK_NSE_NFO_BOOK_ID: &str = "kotak-nse-nfo";
 /// Shipping TickBook slot for `zerodha_kite` (B6 row 21 — founder may rename at Z9).
 pub const ZERODHA_NSE_BSE_CASH_BOOK_ID: &str = "zerodha-nse-bse-cash";
+/// Named NFO book on slug `zerodha_kite` (locks/zerodha-nse-nfo.md).
+pub const ZERODHA_NSE_NFO_BOOK_ID: &str = "zerodha-nse-nfo";
 /// Named USDM book. Same `binance_com` slug; Start still ships spot.
 pub const BINANCE_COM_USDM_BOOK_ID: &str = "binance-com-usdm";
 /// Named Coin-M book. Third identity. Same `binance_com` slug.

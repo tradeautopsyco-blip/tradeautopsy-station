@@ -1,0 +1,2 @@
+instrument_token,exchange_token,tradingsymbol,name,last_price,expiry,strike,tick_size,lot_size,instrument_type,segment,exchange
+12009984,46992,NIFTY2625024000CE,NIFTY,0,2026-02-25,24000,0.05,50,CE,NFO,NFO

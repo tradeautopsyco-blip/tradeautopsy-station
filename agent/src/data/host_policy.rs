@@ -755,6 +755,23 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             if !crate::ubi::zerodha_kite_path_allowed(&path_norm) {
                 return Err(HostRefuse::PathNotAllowlisted);
             }
+            if path_lower.starts_with("/instruments/nfo") {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            Ok(())
+        }
+        crate::ubi::ZERODHA_KITE_NFO_BOOK_ID => {
+            if host_norm != crate::ubi::KITE_API_HOST {
+                return Err(HostRefuse::HostNotAllowed);
+            }
+            if !crate::ubi::zerodha_kite_path_allowed(&path_norm) {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
+            if path_lower.starts_with("/instruments/nse")
+                || path_lower.starts_with("/instruments/bse")
+            {
+                return Err(HostRefuse::PathNotAllowlisted);
+            }
             Ok(())
         }
         crate::ubi::UPSTOX_BOOK_ID => {

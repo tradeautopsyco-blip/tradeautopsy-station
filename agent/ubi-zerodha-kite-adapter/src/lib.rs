@@ -1,8 +1,8 @@
 //! `zerodha_kite` adapter component (ADR 0001 · B6 `zerodha_kite` · R5).
 //!
 //! Day-book fills via host `broker_http_call` → `GET /trades`. Bearer `Authorization`
-//! and `X-Kite-Version` are attached outside Wasm (R6). First book: NSE/BSE cash CNC+MIS
-//! only; NRML/CO/BO on cash and all non-cash exchanges are skipped in the mapper.
+//! and `X-Kite-Version` are attached outside Wasm (R6). Cash book: NSE/BSE + CNC/MIS.
+//! NFO book: `exchange` NFO + NRML/MIS → `exchange_segment` `nse_fo` for host split.
 
 #![allow(clippy::all)]
 
@@ -22,6 +22,10 @@ const HOST: &str = "api.kite.trade";
 const TRADES_PATH: &str = "/trades";
 const ALLOWED_CASH_EXCHANGES: &[&str] = &["NSE", "BSE"];
 const ALLOWED_CASH_PRODUCTS: &[&str] = &["CNC", "MIS"];
+const NFO_EXCHANGE: &str = "NFO";
+/// Host split + NFO PnL owner key off `nse_fo`, not the Kite `NFO` exchange code.
+const NFO_SEGMENT: &str = "nse_fo";
+const ALLOWED_NFO_PRODUCTS: &[&str] = &["NRML", "MIS"];
 /// Trades timestamps are IST with no zone marker (`YYYY-MM-DD HH:MM:SS`).
 const IST_OFFSET_SECONDS: i64 = 5 * 3600 + 30 * 60;
 
@@ -106,10 +110,13 @@ fn map_trades_day_book(body: &str) -> Result<Vec<FillEvent>, String> {
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        if !is_supported_cash_row(
-            string_field(row, "exchange").as_deref(),
-            string_field(row, "product").as_deref(),
-        ) {
+        let exchange = string_field(row, "exchange");
+        let product = string_field(row, "product");
+        let nfo = is_nfo_row(exchange.as_deref());
+        if !nfo && !is_supported_cash_row(exchange.as_deref(), product.as_deref()) {
+            continue;
+        }
+        if nfo && !is_supported_nfo_row(product.as_deref()) {
             continue;
         }
 
@@ -130,15 +137,22 @@ fn map_trades_day_book(body: &str) -> Result<Vec<FillEvent>, String> {
         let fill_id = string_field(row, "trade_id")
             .unwrap_or_else(|| format!("{symbol}-{side}-{filled_at_unix_ms}"));
         let trade_id = string_field(row, "order_id").or_else(|| string_field(row, "exchange_order_id"));
-        let exchange_segment = string_field(row, "exchange");
-        let product = string_field(row, "product");
+        let exchange_segment = if nfo {
+            Some(NFO_SEGMENT.to_string())
+        } else {
+            exchange
+        };
 
         out.push(FillEvent {
             fill_id,
             broker_slug: "zerodha_kite".to_string(),
             connection_id: String::new(),
             asset_class: AssetClass::Equity,
-            instrument_class: InstrumentClass::Spot,
+            instrument_class: if nfo {
+                nfo_instrument_class(&symbol)
+            } else {
+                InstrumentClass::Spot
+            },
             is_inverse: false,
             symbol,
             side: side.to_string(),
@@ -154,6 +168,31 @@ fn map_trades_day_book(body: &str) -> Result<Vec<FillEvent>, String> {
         });
     }
     Ok(out)
+}
+
+fn nfo_instrument_class(symbol: &str) -> InstrumentClass {
+    let upper = symbol.trim().to_ascii_uppercase();
+    if upper.ends_with("FUT") {
+        InstrumentClass::Future
+    } else {
+        InstrumentClass::Option
+    }
+}
+
+fn is_nfo_row(exchange: Option<&str>) -> bool {
+    exchange
+        .map(|e| e.eq_ignore_ascii_case(NFO_EXCHANGE))
+        .unwrap_or(false)
+}
+
+fn is_supported_nfo_row(product: Option<&str>) -> bool {
+    product
+        .map(|p| {
+            ALLOWED_NFO_PRODUCTS
+                .iter()
+                .any(|allowed| p.eq_ignore_ascii_case(allowed))
+        })
+        .unwrap_or(false)
 }
 
 fn is_supported_cash_row(exchange: Option<&str>, product: Option<&str>) -> bool {

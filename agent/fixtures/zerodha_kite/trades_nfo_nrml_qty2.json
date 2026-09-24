@@ -1,0 +1,44 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "trade_id": "300001",
+      "order_id": "400001",
+      "exchange_order_id": "NFO556677",
+      "tradingsymbol": "NIFTY2625024000CE",
+      "exchange": "NFO",
+      "instrument_token": "12009984",
+      "transaction_type": "BUY",
+      "product": "NRML",
+      "average_price": 100.0,
+      "quantity": 2,
+      "fill_timestamp": "2026-07-25 11:30:00",
+      "exchange_timestamp": "2026-07-25 11:30:00"
+    },
+    {
+      "trade_id": "300002",
+      "order_id": "400002",
+      "exchange_order_id": "NFO556678",
+      "tradingsymbol": "NIFTY2625024000CE",
+      "exchange": "NFO",
+      "instrument_token": "12009984",
+      "transaction_type": "SELL",
+      "product": "NRML",
+      "average_price": 110.0,
+      "quantity": 2,
+      "fill_timestamp": "2026-07-25 12:00:00",
+      "exchange_timestamp": "2026-07-25 12:00:00"
+    },
+    {
+      "trade_id": "300003",
+      "order_id": "400003",
+      "tradingsymbol": "RELIANCE",
+      "exchange": "NSE",
+      "transaction_type": "BUY",
+      "product": "CNC",
+      "average_price": 2500.0,
+      "quantity": 1,
+      "fill_timestamp": "2026-07-25 09:00:00"
+    }
+  ]
+}

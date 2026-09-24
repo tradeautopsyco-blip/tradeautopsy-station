@@ -1,4 +1,4 @@
-//! Kotak NSE F&O realized-PnL owner (`kotak-nse-nfo`). Not COM USD WAC.
+//! NSE F&O realized-PnL owner (`kotak-nse-nfo`, `zerodha-nse-nfo`). Not COM USD WAC.
 //!
 //! Lock: `issues/compliance/locks/kotak-nse-nfo.md` (founder P5).
 //! Method: `(exit_price - entry_price) * qty * lot` per FULL-COVERAGE-PROGRAM P5.

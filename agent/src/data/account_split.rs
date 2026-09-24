@@ -6,13 +6,16 @@ use std::collections::HashMap;
 
 use super::descriptor::{
     BINANCE_COM_SPOT_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
 
 fn normalize_adapter_name(adapter_name: &str) -> &str {
     if adapter_name.contains("binance_com") {
         "binance_com"
-    } else if adapter_name.contains("kotak") {
+    } else     if adapter_name.contains("kotak") {
         "kotak_neo"
+    } else if adapter_name.contains("zerodha") {
+        "zerodha_kite"
     } else {
         adapter_name
     }
@@ -28,6 +31,30 @@ fn is_kotak_nfo_segment(segment: &str) -> bool {
 
 fn is_kotak_cash_segment(segment: &str) -> bool {
     matches!(segment, "nse_cm" | "bse_cm")
+}
+
+fn is_zerodha_cash_segment(segment: &str) -> bool {
+    matches!(segment, "nse" | "bse")
+}
+
+fn zerodha_cash_fill_ok(fill: &BrokerFill) -> bool {
+    let product = fill
+        .product
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(product.as_str(), "CNC" | "MIS")
+}
+
+fn zerodha_nfo_fill_ok(fill: &BrokerFill) -> bool {
+    let product = fill
+        .product
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    matches!(product.as_str(), "NRML" | "MIS")
 }
 
 fn kotak_nfo_fill_ok(fill: &BrokerFill, master: &KotakNfoScripMaster) -> bool {
@@ -102,6 +129,22 @@ pub fn split_fills_by_book(
             let mut out = HashMap::new();
             out.insert(KOTAK_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
             out.insert(KOTAK_NSE_NFO_BOOK_ID.to_string(), nfo);
+            out
+        }
+        "zerodha_kite" => {
+            let mut cash = Vec::new();
+            let mut nfo = Vec::new();
+            for fill in fills {
+                let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
+                if is_kotak_nfo_segment(&segment) && zerodha_nfo_fill_ok(&fill) {
+                    nfo.push(fill);
+                } else if is_zerodha_cash_segment(&segment) && zerodha_cash_fill_ok(&fill) {
+                    cash.push(fill);
+                }
+            }
+            let mut out = HashMap::new();
+            out.insert(ZERODHA_NSE_BSE_CASH_BOOK_ID.to_string(), cash);
+            out.insert(ZERODHA_NSE_NFO_BOOK_ID.to_string(), nfo);
             out
         }
         _ => {
@@ -385,6 +428,41 @@ mod tests {
         fills[0].instrument_type = Some("CE".into());
         stamp_nfo_fills(&mut fills, &master);
         assert_eq!(fills[0].instrument_type.as_deref(), Some("PE"));
+    }
+
+    #[test]
+    fn zerodha_kite_splits_cash_and_nfo_by_segment() {
+        let buy_nfo = BrokerFill {
+            fill_id: "z1".into(),
+            trade_id: "z1".into(),
+            symbol: "NIFTY2625024000CE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 100.0,
+            filled_at: chrono::Utc::now(),
+            broker: "zerodha_kite".into(),
+            currency: Some("INR".into()),
+            product: Some("NRML".into()),
+            exchange_segment: Some("nse_fo".into()),
+            ..Default::default()
+        };
+        let cash = BrokerFill {
+            fill_id: "z2".into(),
+            trade_id: "z2".into(),
+            symbol: "ITBEES".into(),
+            side: "BUY".into(),
+            qty: 10.0,
+            price: 25.0,
+            filled_at: chrono::Utc::now(),
+            broker: "zerodha_kite".into(),
+            currency: Some("INR".into()),
+            product: Some("CNC".into()),
+            exchange_segment: Some("NSE".into()),
+            ..Default::default()
+        };
+        let split = split_fills_by_book("zerodha_kite", vec![buy_nfo, cash], None);
+        assert_eq!(split[ZERODHA_NSE_NFO_BOOK_ID].len(), 1);
+        assert_eq!(split[ZERODHA_NSE_BSE_CASH_BOOK_ID].len(), 1);
     }
 
     #[test]

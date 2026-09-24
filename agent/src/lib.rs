@@ -98,6 +98,7 @@ pub use data::{
     Registry, TickBook, Transport, BINANCE_COM_ADAPTER_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID, R0_ALLOWED_HOSTS, ZERODHA_NSE_BSE_CASH_BOOK_ID,
+    ZERODHA_NSE_NFO_BOOK_ID,
 };
 pub use device_login::{
     begin_device_login, complete_device_login, prove_station_session, DeviceLoginPending,
@@ -161,6 +162,8 @@ pub use today::{
     open_inventory_from_fills, OpenInventoryRow, TodayDegradedReason, TodayHeroPayload,
     TodayPayload, TodayService, TodayStore,
 };
+pub use data::split_fills_by_book;
+pub use nfo_realized_pnl::NfoRealizedPnlEngine;
 pub use ubi::{
     calc_profile, catalog_v1, classify_response, compliance_profile, component_candidate_paths,
     component_crate_dir, component_file_name, component_path_for_slug, decode_credential_blob,
