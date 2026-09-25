@@ -612,6 +612,36 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             book_id: "dhan-nse-bse-cash".into(),
         },
         BrokerDescriptor {
+            slug: "dhan".into(),
+            display_name: "Dhan NFO".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Option,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::DhanConsentSession,
+            calc_profile_id: "equities_inr_nfo".into(),
+            compliance_profile_id: "dhan_compliance".into(),
+            availability: BrokerAvailability::Enabled,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:dhan-nfo@0.1.0".into(),
+            book_id: "dhan-nse-nfo".into(),
+        },
+        BrokerDescriptor {
+            slug: "groww".into(),
+            display_name: "Groww NFO".into(),
+            asset_class: AssetClass::Equity,
+            instrument_class: InstrumentClass::Option,
+            is_inverse: false,
+            quote_currency: "INR".into(),
+            auth_scheme: AuthScheme::GrowwChecksumSession,
+            calc_profile_id: "equities_inr_nfo".into(),
+            compliance_profile_id: "groww_compliance".into(),
+            availability: BrokerAvailability::Enabled,
+            origin: AdapterOrigin::FirstParty,
+            manifest_id: "tradeautopsy:groww-nfo@0.1.0".into(),
+            book_id: "groww-nse-nfo".into(),
+        },
+        BrokerDescriptor {
             slug: "bybit".into(),
             display_name: "Bybit".into(),
             asset_class: AssetClass::Cryptocurrency,
@@ -684,9 +714,44 @@ pub fn descriptor_for_book_id(book_id: &str) -> Option<BrokerDescriptor> {
     catalog_books().into_iter().find(|d| d.book_id == book_id)
 }
 
+/// SHIPPING book for the active connection desk (slug + calc profile). Used by M1 share-up.
+pub fn book_id_for_slug_calc_profile(slug: &str, calc_profile_id: &str) -> Option<String> {
+    let slug = slug.trim();
+    let calc_profile_id = calc_profile_id.trim();
+    if slug.is_empty() || calc_profile_id.is_empty() {
+        return None;
+    }
+    catalog_books()
+        .into_iter()
+        .find(|d| d.slug == slug && d.calc_profile_id == calc_profile_id)
+        .map(|d| d.book_id)
+        .or_else(|| {
+            catalog_v1()
+                .into_iter()
+                .find(|d| d.slug == slug && d.calc_profile_id == calc_profile_id)
+                .map(|d| d.book_id)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn book_id_for_slug_calc_profile_resolves_second_books() {
+        assert_eq!(
+            book_id_for_slug_calc_profile("dhan", "equities_inr_nfo").as_deref(),
+            Some("dhan-nse-nfo")
+        );
+        assert_eq!(
+            book_id_for_slug_calc_profile("kotak_neo", "equities_inr_cash").as_deref(),
+            Some("kotak-nse-bse-cash")
+        );
+        assert_eq!(
+            book_id_for_slug_calc_profile("binance_com", "crypto_spot_usd").as_deref(),
+            Some("binance-com-spot")
+        );
+    }
 
     #[test]
     fn catalog_v1_first_pair_only_enabled() {
@@ -893,7 +958,7 @@ mod tests {
     /// Tier I Wave 2/3 tracers stay Planned until signed dogfood (step 6).
     fn book_catalog_covers_shipping_books_adr_0019_tiers() {
         let books = catalog_books();
-        assert_eq!(books.len(), 20);
+        assert_eq!(books.len(), 22);
         let ids: Vec<&str> = books.iter().map(|d| d.book_id.as_str()).collect();
         for expected in [
             "binance-com-spot",
@@ -911,7 +976,9 @@ mod tests {
             "fyers-nse-bse-cash",
             "fyers-nse-nfo",
             "groww-nse-bse-cash",
+            "groww-nse-nfo",
             "dhan-nse-bse-cash",
+            "dhan-nse-nfo",
             "bybit-com-spot",
             "okx-com-spot",
             "kraken-com-spot",
@@ -925,8 +992,8 @@ mod tests {
             .collect();
         assert_eq!(
             tier_ii.len(),
-            18,
-            "binance×4 + kotak×2 + p4×4 + wave2×5 cash + NFO×3 (upstox/fyers/zerodha)"
+            20,
+            "binance×4 + kotak×2 + p4×4 + wave2×5 cash + NFO×5 (incl. dhan/groww P6-W2)"
         );
         for (book, scheme) in [
             ("bybit-com-spot", AuthScheme::HmacApiKeySecret),

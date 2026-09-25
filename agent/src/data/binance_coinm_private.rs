@@ -3,6 +3,7 @@
 use crate::api::AppState;
 use crate::binance_com_coinm_client::BinanceComCoinmClient;
 use crate::broker_data_class::BrokerPositionsSnapshot;
+use crate::coinm_realized_pnl::{coinm_income_call, CoinmRealizedSlot};
 use crate::data::{authorize_book_call, observation_from_rest, BINANCE_COM_COINM_BOOK_ID};
 use crate::ubi::CredentialBlob;
 use chrono::Utc;
@@ -187,4 +188,37 @@ pub async fn ensure_coinm_force_orders(state: &AppState) {
         .lock()
         .expect("force_order_book mutex poisoned")
         .replace(BINANCE_COM_COINM_BOOK_ID, envelope);
+}
+
+/// Fetch venue `REALIZED_PNL` income into `AppState.coinm_realized`.
+pub async fn ensure_coinm_realized_income(state: &AppState) {
+    {
+        let slot = state
+            .coinm_realized
+            .lock()
+            .expect("coinm_realized mutex poisoned");
+        if slot
+            .as_ref()
+            .is_some_and(|s| slot_fresh(s.as_of_ms, COINM_PRIVATE_MAX_AGE_MS))
+        {
+            return;
+        }
+    }
+    let call = coinm_income_call();
+    if authorize_book_call(call.book_id, call.host, call.method, call.path, true).is_err() {
+        return;
+    }
+    let Some(client) = resolve_coinm_client(state) else {
+        return;
+    };
+    let Ok(body) = client.fetch_income().await else {
+        return;
+    };
+    let as_of_ms = Utc::now().timestamp_millis();
+    let slot = CoinmRealizedSlot::from_income_json(&body, as_of_ms);
+    *state
+        .coinm_realized
+        .lock()
+        .expect("coinm_realized mutex poisoned") = Some(slot.clone());
+    crate::m1_income_share::share_coinm_realized_income_today(&state.fact_outbox, &slot);
 }

@@ -10,7 +10,7 @@ use serde::Deserialize;
 use sha2::Sha256;
 
 use crate::broker_data_class::{BrokerBalancesSnapshot, BrokerHolding, BrokerPositionRow};
-use crate::coinm_realized_pnl::parse_position_amt;
+use crate::coinm_realized_pnl::{coinm_income_call, parse_position_amt};
 use crate::data::BINANCE_COM_COINM_BOOK_ID;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -74,6 +74,13 @@ impl BinanceComCoinmClient {
     pub async fn fetch_force_orders(&self) -> Result<serde_json::Value, BinanceComCoinmError> {
         let body = self.signed_get("/dapi/v1/forceOrders", &[]).await?;
         serde_json::from_str(&body).map_err(|e| BinanceComCoinmError::Parse(e.to_string()))
+    }
+
+    /// USER_DATA GET `/dapi/v1/income?incomeType=REALIZED_PNL`.
+    pub async fn fetch_income(&self) -> Result<String, BinanceComCoinmError> {
+        let call = coinm_income_call();
+        self.signed_get(call.path, &[("incomeType", call.query_income_type)])
+            .await
     }
 
     async fn signed_get(

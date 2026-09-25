@@ -63,15 +63,19 @@ pub struct UsdmRealizedSlot {
     pub as_of_ms: i64,
     pub provenance_path: String,
     pub realized_pnl_usd: Option<f64>,
+    /// Raw venue rows — M1 share-up cites today's REALIZED_PNL subset only.
+    pub income_rows: Vec<UsdmIncomeRow>,
 }
 
 impl UsdmRealizedSlot {
     pub fn from_income_json(body: &str, as_of_ms: i64) -> Self {
         let call = usdm_income_call();
+        let income_rows: Vec<UsdmIncomeRow> = serde_json::from_str(body).unwrap_or_default();
         Self {
             as_of_ms,
             provenance_path: call.path.to_string(),
-            realized_pnl_usd: income_realized_from_json(body),
+            realized_pnl_usd: realized_pnl_usd(&income_rows),
+            income_rows,
         }
     }
 
@@ -137,6 +141,28 @@ pub fn realized_pnl_usd(rows: &[UsdmIncomeRow]) -> Option<f64> {
 pub fn income_realized_from_json(body: &str) -> Option<f64> {
     let rows: Vec<UsdmIncomeRow> = serde_json::from_str(body).ok()?;
     realized_pnl_usd(&rows)
+}
+
+/// REALIZED_PNL income rows whose venue `time` falls on the local calendar day.
+pub fn realized_pnl_rows_local_today(rows: &[UsdmIncomeRow]) -> Vec<UsdmIncomeRow> {
+    use chrono::{Local, TimeZone, Utc};
+    let today = Local::now().date_naive();
+    rows.iter()
+        .filter(|row| row.income_type.as_deref() == Some("REALIZED_PNL"))
+        .filter(|row| {
+            row.time
+                .and_then(|ms| Utc.timestamp_millis_opt(ms).single())
+                .map(|dt| dt.with_timezone(&Local).date_naive() == today)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Sum cited REALIZED_PNL for the local day (desk hero — not spot WAC).
+pub fn aggregate_realized_pnl_usd_today(rows: &[UsdmIncomeRow]) -> Option<f64> {
+    let today = realized_pnl_rows_local_today(rows);
+    realized_pnl_usd(&today)
 }
 
 #[cfg(test)]

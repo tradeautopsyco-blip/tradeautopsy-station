@@ -95,6 +95,7 @@ pub use binance_coinm_klines::{
 };
 pub use binance_coinm_private::{
     ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
+    ensure_coinm_realized_income,
 };
 pub use binance_coinm_ticker::{
     await_binance_coinm_ticker, normalize_coinm_instrument, quote_tick_from_coinm_ticker_json,
@@ -179,6 +180,8 @@ pub use descriptor::{
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
     UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
     FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID,
+    DHAN_NSE_BSE_CASH_BOOK_ID, DHAN_NSE_NFO_BOOK_ID,
+    GROWW_NSE_BSE_CASH_BOOK_ID, GROWW_NSE_NFO_BOOK_ID,
 };
 pub use extract::{
     extract_quote, extract_quote_for, extract_quote_for_book, refused_quote_binding, QuoteEnvelope,

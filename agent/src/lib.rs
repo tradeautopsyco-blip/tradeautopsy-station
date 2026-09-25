@@ -45,6 +45,8 @@ mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
 mod round_trip_engine;
+mod m1_envelope;
+mod m1_income_share;
 mod share_cited_pnl;
 mod sse_signing;
 mod station_tokens;
@@ -1584,6 +1586,10 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         }
     }
 
+    let usdm_realized = Arc::new(Mutex::new(None));
+    let coinm_realized = Arc::new(Mutex::new(None));
+    today_service.attach_realized_income_slots(usdm_realized.clone(), coinm_realized.clone());
+
     let state = api::AppState {
         event_bus: event_bus.clone(),
         runtime: runtime.clone(),
@@ -1650,7 +1656,9 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         binance_coinm_base_url: config.binance_coinm_base_url.clone(),
         binance_eapi_base_url: config.binance_eapi_base_url.clone(),
         force_order_book: Arc::new(Mutex::new(crate::data::ForceOrderBook::default())),
-        usdm_realized: Arc::new(Mutex::new(None)),
+        usdm_realized,
+        coinm_realized,
+        fact_outbox: fact_outbox.clone(),
         kotak_private_base_url: config.kotak_private_base_url.clone(),
         amfi_nav_base_url: config.amfi_nav_base_url.clone(),
         amfi_nav_host: config.amfi_nav_host.clone(),

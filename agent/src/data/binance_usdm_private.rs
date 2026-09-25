@@ -195,7 +195,6 @@ pub async fn ensure_usdm_force_orders(state: &AppState) {
 
 /// Fetch venue `REALIZED_PNL` income into `AppState.usdm_realized`.
 /// Not wired to obtain. Force-order is not this sum. Parent may kick later.
-#[allow(dead_code)]
 pub async fn ensure_usdm_realized_income(state: &AppState) {
     {
         let slot = state
@@ -220,11 +219,12 @@ pub async fn ensure_usdm_realized_income(state: &AppState) {
         return;
     };
     let as_of_ms = Utc::now().timestamp_millis();
+    let slot = UsdmRealizedSlot::from_income_json(&body, as_of_ms);
     *state
         .usdm_realized
         .lock()
-        .expect("usdm_realized mutex poisoned") =
-        Some(UsdmRealizedSlot::from_income_json(&body, as_of_ms));
+        .expect("usdm_realized mutex poisoned") = Some(slot.clone());
+    crate::m1_income_share::share_usdm_realized_income_today(&state.fact_outbox, &slot);
 }
 
 #[cfg(test)]

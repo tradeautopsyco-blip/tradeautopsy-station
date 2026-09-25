@@ -10,7 +10,8 @@ use crate::data::{
     ensure_spot_account, ensure_spot_open_orders, ensure_usdm_balance, ensure_usdm_exchange_info,
     ensure_usdm_force_orders, ensure_usdm_klines, ensure_usdm_positions, ensure_coinm_depth,
     ensure_usdm_depth,
-    ensure_usdm_realized_income, extract_chain_from, extract_coinm_history, extract_depth_on_book,
+    ensure_coinm_realized_income, ensure_usdm_realized_income, extract_chain_from,
+    extract_coinm_history, extract_depth_on_book,
     extract_greeks_from_mark, extract_licensed_history, extract_open_interest_from,
     extract_options_history, extract_quote_for_book, extract_usdm_history,
     futures_history_obtain_data, history_obtain_data, is_dated_option_contract, obtain,
@@ -491,7 +492,10 @@ async fn kick_coinm_private(state: &AppState, envelope: &ObtainEnvelope) {
         return;
     }
     match envelope.operation.as_str() {
-        "funds" => ensure_coinm_balance(state).await,
+        "funds" => {
+            ensure_coinm_balance(state).await;
+            ensure_coinm_realized_income(state).await;
+        }
         "positionbook" => ensure_coinm_positions(state).await,
         "forceorder" => ensure_coinm_force_orders(state).await,
         "quotes" => {

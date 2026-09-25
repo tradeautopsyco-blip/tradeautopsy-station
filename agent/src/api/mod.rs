@@ -183,8 +183,11 @@ pub struct AppState {
     pub force_order_book: Arc<Mutex<crate::data::ForceOrderBook>>,
     /// USDM realized from income `REALIZED_PNL`. Not spot WAC. Not force-order.
     /// Written by `ensure_usdm_realized_income`; not an obtain operation this slice.
-    #[allow(dead_code)]
     pub usdm_realized: Arc<Mutex<Option<crate::UsdmRealizedSlot>>>,
+    /// Coin-M income REALIZED_PNL slot — parallel identity to `usdm_realized`.
+    pub coinm_realized: Arc<Mutex<Option<crate::coinm_realized_pnl::CoinmRealizedSlot>>>,
+    /// M1 cited-PnL share-up (A8 Bearer).
+    pub fact_outbox: Arc<crate::fact_outbox::FactOutbox>,
     /// Test seam: wiremock base for Kotak private reads. Prod is always `None`.
     pub kotak_private_base_url: Option<String>,
     /// Test seam: wiremock base for AMFI NAV GET. Prod is always `None` (official host).

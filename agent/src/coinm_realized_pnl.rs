@@ -42,28 +42,6 @@ pub fn coinm_income_call() -> CoinmIncomeCall {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct CoinmRealizedSlot {
-    pub as_of_ms: i64,
-    pub provenance_path: String,
-    pub realized_pnl: Option<f64>,
-}
-
-impl CoinmRealizedSlot {
-    pub fn from_income_json(body: &str, as_of_ms: i64) -> Self {
-        let call = coinm_income_call();
-        Self {
-            as_of_ms,
-            provenance_path: call.path.to_string(),
-            realized_pnl: income_realized_from_json(body),
-        }
-    }
-
-    pub fn published_realized_pnl(&self) -> Option<f64> {
-        self.realized_pnl
-    }
-}
-
 pub fn tick_from_exchange_info_filters(filters: &[Value]) -> Option<String> {
     crate::usdm_realized_pnl::tick_from_exchange_info_filters(filters)
 }
@@ -97,6 +75,52 @@ pub fn realized_pnl_usd(rows: &[CoinmIncomeRow]) -> Option<f64> {
 pub fn income_realized_from_json(body: &str) -> Option<f64> {
     let rows: Vec<CoinmIncomeRow> = serde_json::from_str(body).ok()?;
     realized_pnl_usd(&rows)
+}
+
+/// Parsed venue realized. `None` means no REALIZED_PNL rows — do not claim 0.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoinmRealizedSlot {
+    pub as_of_ms: i64,
+    pub provenance_path: String,
+    pub realized_pnl_usd: Option<f64>,
+    pub income_rows: Vec<CoinmIncomeRow>,
+}
+
+impl CoinmRealizedSlot {
+    pub fn from_income_json(body: &str, as_of_ms: i64) -> Self {
+        let call = coinm_income_call();
+        let income_rows: Vec<CoinmIncomeRow> = serde_json::from_str(body).unwrap_or_default();
+        Self {
+            as_of_ms,
+            provenance_path: call.path.to_string(),
+            realized_pnl_usd: realized_pnl_usd(&income_rows),
+            income_rows,
+        }
+    }
+
+    pub fn published_realized_pnl_usd(&self) -> Option<f64> {
+        self.realized_pnl_usd
+    }
+}
+
+pub fn realized_pnl_rows_local_today(rows: &[CoinmIncomeRow]) -> Vec<CoinmIncomeRow> {
+    use chrono::{Local, TimeZone, Utc};
+    let today = Local::now().date_naive();
+    rows.iter()
+        .filter(|row| row.income_type.as_deref() == Some("REALIZED_PNL"))
+        .filter(|row| {
+            row.time
+                .and_then(|ms| Utc.timestamp_millis_opt(ms).single())
+                .map(|dt| dt.with_timezone(&Local).date_naive() == today)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn aggregate_realized_pnl_usd_today(rows: &[CoinmIncomeRow]) -> Option<f64> {
+    let today = realized_pnl_rows_local_today(rows);
+    realized_pnl_usd(&today)
 }
 
 #[cfg(test)]
@@ -163,6 +187,7 @@ mod tests {
     fn slot_reads_owner_sum() {
         let slot = CoinmRealizedSlot::from_income_json(TWO_REALIZED, 1);
         assert_eq!(slot.provenance_path, "/dapi/v1/income");
-        assert_eq!(slot.published_realized_pnl(), Some(3.25));
+        assert_eq!(slot.published_realized_pnl_usd(), Some(3.25));
+        assert_eq!(slot.income_rows.len(), 2);
     }
 }

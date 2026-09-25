@@ -8,10 +8,20 @@ use crate::inr_cash_wac::{
     InrCashRoundTrip, InrCashWacEngine, CALC_PROFILE_ID as INR_CASH_CALC_PROFILE,
 };
 use crate::money_matrix::is_binance_com_spot_fill;
+use crate::fx_cds_realized_pnl::{
+    aggregate_known_pnl_inr as aggregate_known_pnl_cds, is_aggregate_eligible as is_cds_eligible,
+    is_fx_cds_fill, FxCdsRealizedPnlEngine, FxCdsRoundTrip, BOOK_ID as FX_CDS_BOOK_ID,
+};
+use crate::mcx_realized_pnl::{
+    aggregate_known_pnl_inr as aggregate_known_pnl_mcx, is_aggregate_eligible as is_mcx_eligible,
+    is_mcx_fill, McxRealizedPnlEngine, McxRoundTrip, BOOK_ID as MCX_BOOK_ID,
+};
 use crate::nfo_realized_pnl::{
     aggregate_known_pnl_inr as aggregate_known_pnl_nfo, is_aggregate_eligible as is_nfo_eligible,
     is_nfo_fill, NfoRealizedPnlEngine, NfoRoundTrip, BOOK_ID as NFO_BOOK_ID,
 };
+use crate::coinm_realized_pnl::aggregate_realized_pnl_usd_today as coinm_pnl_today;
+use crate::usdm_realized_pnl::aggregate_realized_pnl_usd_today as usdm_pnl_today;
 use crate::recent_trades::RecentTradesStore;
 use crate::round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, RoundTrip, RoundTripEngine,
@@ -113,11 +123,15 @@ pub struct TodayService {
     engine: RoundTripEngine,
     inr_engine: InrCashWacEngine,
     nfo_engine: NfoRealizedPnlEngine,
+    cds_engine: FxCdsRealizedPnlEngine,
+    mcx_engine: McxRealizedPnlEngine,
+    usdm_realized: Mutex<Option<Arc<Mutex<Option<crate::UsdmRealizedSlot>>>>>,
+    coinm_realized: Mutex<Option<Arc<Mutex<Option<crate::coinm_realized_pnl::CoinmRealizedSlot>>>>>,
     broker_status: Arc<Mutex<BrokerRuntimeState>>,
     broker_sync_control: Arc<BrokerSyncController>,
     broker_limits: BrokerSyncConfig,
     exchange_cache: ExchangeInfoSymbolCache,
-    /// M1: optional A8 share-up outbox for cited INR cash PnL.
+    /// M1: optional A8 share-up outbox for cited PnL (all SHIPPING cite kinds).
     fact_outbox: Mutex<Option<Arc<crate::fact_outbox::FactOutbox>>>,
 }
 
@@ -136,6 +150,10 @@ impl TodayService {
             engine: RoundTripEngine::with_exchange_info(exchange_cache.clone(), true),
             inr_engine: InrCashWacEngine::new(),
             nfo_engine: NfoRealizedPnlEngine::new(),
+            cds_engine: FxCdsRealizedPnlEngine::new(),
+            mcx_engine: McxRealizedPnlEngine::new(),
+            usdm_realized: Mutex::new(None),
+            coinm_realized: Mutex::new(None),
             broker_status,
             broker_sync_control,
             broker_limits,
@@ -151,19 +169,204 @@ impl TodayService {
         }
     }
 
-    fn share_cited_inr_trips(&self, trips: &[InrCashRoundTrip]) {
+    pub fn attach_realized_income_slots(
+        &self,
+        usdm: Arc<Mutex<Option<crate::UsdmRealizedSlot>>>,
+        coinm: Arc<Mutex<Option<crate::coinm_realized_pnl::CoinmRealizedSlot>>>,
+    ) {
+        if let Ok(mut u) = self.usdm_realized.lock() {
+            *u = Some(usdm);
+        }
+        if let Ok(mut c) = self.coinm_realized.lock() {
+            *c = Some(coinm);
+        }
+    }
+
+    fn shipping_book_id_for_desk(
+        desk: &(Option<String>, Option<String>, Option<String>),
+    ) -> Option<String> {
+        if let (Some(slug), Some(calc)) = (desk.0.as_deref(), desk.2.as_deref()) {
+            if let Some(id) = crate::ubi::book_id_for_slug_calc_profile(slug, calc) {
+                return Some(id);
+            }
+            if crate::ubi::descriptor_for_book_id(slug).is_some() {
+                return Some(slug.to_string());
+            }
+        }
+        None
+    }
+
+    fn share_cited_inr_trips(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        trips: &[InrCashRoundTrip],
+    ) {
+        let Some(book_id) = Self::shipping_book_id_for_desk(desk) else {
+            return;
+        };
         let Ok(guard) = self.fact_outbox.lock() else {
             return;
         };
         let Some(outbox) = guard.as_ref() else {
             return;
         };
-        let _ = outbox.enqueue_cited_cash_pnl(trips);
+        let _ = outbox.enqueue_cited_cash_pnl(&book_id, trips);
+    }
+
+    fn share_cited_nfo_trips(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        trips: &[NfoRoundTrip],
+    ) {
+        let Some(book_id) = Self::shipping_book_id_for_desk(desk) else {
+            return;
+        };
+        let Ok(guard) = self.fact_outbox.lock() else {
+            return;
+        };
+        let Some(outbox) = guard.as_ref() else {
+            return;
+        };
+        let _ = outbox.enqueue_cited_nfo_pnl(&book_id, trips);
+    }
+
+    fn share_cited_crypto_spot_trips(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        trips: &[RoundTrip],
+    ) {
+        let Some(book_id) = Self::shipping_book_id_for_desk(desk) else {
+            return;
+        };
+        let Ok(guard) = self.fact_outbox.lock() else {
+            return;
+        };
+        let Some(outbox) = guard.as_ref() else {
+            return;
+        };
+        let _ = outbox.enqueue_cited_crypto_spot_pnl(&book_id, trips);
+    }
+
+    fn share_cited_fx_cds_trips(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        trips: &[FxCdsRoundTrip],
+    ) {
+        let Some(book_id) = Self::shipping_book_id_for_desk(desk) else {
+            return;
+        };
+        let Ok(guard) = self.fact_outbox.lock() else {
+            return;
+        };
+        let Some(outbox) = guard.as_ref() else {
+            return;
+        };
+        let _ = outbox.enqueue_cited_fx_cds_pnl(&book_id, trips);
+    }
+
+    fn share_cited_mcx_trips(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        trips: &[McxRoundTrip],
+    ) {
+        let Some(book_id) = Self::shipping_book_id_for_desk(desk) else {
+            return;
+        };
+        let Ok(guard) = self.fact_outbox.lock() else {
+            return;
+        };
+        let Some(outbox) = guard.as_ref() else {
+            return;
+        };
+        let _ = outbox.enqueue_cited_mcx_pnl(&book_id, trips);
+    }
+
+    fn build_usdm_income_payload(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        open_positions: u32,
+    ) -> TodayPayload {
+        let today = local_today();
+        let pnl = {
+            let arc = self
+                .usdm_realized
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().cloned());
+            arc.and_then(|slot_arc| {
+                slot_arc
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.as_ref().and_then(|slot| usdm_pnl_today(&slot.income_rows)))
+            })
+        };
+        TodayPayload {
+            local_date: today.format("%Y-%m-%d").to_string(),
+            performance_basis_not_tax: true,
+            degraded_reason: None,
+            learning_baseline: true,
+            hero: TodayHeroPayload {
+                pnl_today_usd: pnl,
+                pnl_today_inr: None,
+                trades_today: None,
+                win_rate: None,
+                wins_today: None,
+                losses_today: None,
+            },
+            top_signals: vec![],
+            trades: vec![],
+            open_position_count: open_positions,
+            broker_slug: desk.0.clone(),
+            quote_currency: desk.1.clone(),
+            calc_profile_id: desk.2.clone(),
+        }
+    }
+
+    fn build_coinm_income_payload(
+        &self,
+        desk: &(Option<String>, Option<String>, Option<String>),
+        open_positions: u32,
+    ) -> TodayPayload {
+        let today = local_today();
+        let pnl = {
+            let arc = self
+                .coinm_realized
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().cloned());
+            arc.and_then(|slot_arc| {
+                slot_arc
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.as_ref().and_then(|slot| coinm_pnl_today(&slot.income_rows)))
+            })
+        };
+        TodayPayload {
+            local_date: today.format("%Y-%m-%d").to_string(),
+            performance_basis_not_tax: true,
+            degraded_reason: None,
+            learning_baseline: true,
+            hero: TodayHeroPayload {
+                pnl_today_usd: pnl,
+                pnl_today_inr: None,
+                trades_today: None,
+                win_rate: None,
+                wins_today: None,
+                losses_today: None,
+            },
+            top_signals: vec![],
+            trades: vec![],
+            open_position_count: open_positions,
+            broker_slug: desk.0.clone(),
+            quote_currency: desk.1.clone(),
+            calc_profile_id: desk.2.clone(),
+        }
     }
 
     pub fn refresh_from_fills(&self) -> anyhow::Result<()> {
         let fills = self.recent_trades.fetch_all_fills()?;
-        let (usd_fills, _inr_fills, _nfo_fills) = partition_fills(fills);
+        let parts = partition_fills(fills);
+        let usd_fills = parts.com_spot;
         // Snapshots / signal store remain COM USD book. INR cash uses inr_cash_wac on build_payload.
         let result = self.engine.reconstruct(usd_fills);
         let today = local_today();
@@ -201,11 +404,23 @@ impl TodayService {
 
         let fills = self.recent_trades.fetch_all_fills()?;
         let open_positions = count_open_positions(&fills);
-        let (usd_fills, inr_fills, nfo_fills) = partition_fills(fills);
+        let parts = partition_fills(fills);
         let nfo_desk = is_nfo_desk(&desk);
+        let cds_desk = is_fx_cds_desk(&desk);
+        let mcx_desk = is_mcx_desk(&desk);
+        let usdm_desk = is_usdm_desk(&desk);
+        let coinm_desk = is_coinm_desk(&desk);
         let inr_desk = is_inr_cash_desk(&desk);
 
+        if usdm_desk {
+            return Ok(self.build_usdm_income_payload(&desk, open_positions));
+        }
+        if coinm_desk {
+            return Ok(self.build_coinm_income_payload(&desk, open_positions));
+        }
+
         if nfo_desk {
+            let nfo_fills = parts.nfo;
             let nfo_result = self.nfo_engine.reconstruct(nfo_fills);
             let today = local_today();
             let today_trips: Vec<NfoRoundTrip> = nfo_result
@@ -239,6 +454,137 @@ impl TodayService {
                 Some(wins as f64 / eligible.len() as f64)
             };
             let trades = build_nfo_trade_rows(&today_trips, 50);
+            self.share_cited_nfo_trips(&desk, &today_trips);
+            return Ok(TodayPayload {
+                local_date: today.format("%Y-%m-%d").to_string(),
+                performance_basis_not_tax: true,
+                degraded_reason: None,
+                learning_baseline: true,
+                hero: TodayHeroPayload {
+                    pnl_today_usd: None,
+                    pnl_today_inr: pnl,
+                    trades_today: trades_count,
+                    win_rate,
+                    wins_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(wins)
+                    },
+                    losses_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(losses)
+                    },
+                },
+                top_signals: vec![],
+                trades,
+                open_position_count: open_positions,
+                broker_slug: desk.0,
+                quote_currency: desk.1,
+                calc_profile_id: desk.2,
+            });
+        }
+
+        if cds_desk {
+            let cds_result = self.cds_engine.reconstruct(parts.fx_cds);
+            let today = local_today();
+            let today_trips: Vec<FxCdsRoundTrip> = cds_result
+                .round_trips
+                .iter()
+                .filter(|rt| local_date(rt.closed_at) == today)
+                .cloned()
+                .collect();
+            let eligible: Vec<_> = today_trips.iter().filter(|rt| is_cds_eligible(rt)).collect();
+            let pnl = if eligible.is_empty() {
+                None
+            } else {
+                Some(aggregate_known_pnl_cds(&today_trips))
+            };
+            let trades_count = if today_trips.is_empty() {
+                None
+            } else {
+                Some(eligible.len() as u32)
+            };
+            let wins = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) > 0.0)
+                .count() as u32;
+            let losses = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) < 0.0)
+                .count() as u32;
+            let win_rate = if eligible.is_empty() {
+                None
+            } else {
+                Some(wins as f64 / eligible.len() as f64)
+            };
+            let trades = build_fx_cds_trade_rows(&today_trips, 50);
+            self.share_cited_fx_cds_trips(&desk, &today_trips);
+            return Ok(TodayPayload {
+                local_date: today.format("%Y-%m-%d").to_string(),
+                performance_basis_not_tax: true,
+                degraded_reason: None,
+                learning_baseline: true,
+                hero: TodayHeroPayload {
+                    pnl_today_usd: None,
+                    pnl_today_inr: pnl,
+                    trades_today: trades_count,
+                    win_rate,
+                    wins_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(wins)
+                    },
+                    losses_today: if eligible.is_empty() {
+                        None
+                    } else {
+                        Some(losses)
+                    },
+                },
+                top_signals: vec![],
+                trades,
+                open_position_count: open_positions,
+                broker_slug: desk.0,
+                quote_currency: desk.1,
+                calc_profile_id: desk.2,
+            });
+        }
+
+        if mcx_desk {
+            let mcx_result = self.mcx_engine.reconstruct(parts.mcx);
+            let today = local_today();
+            let today_trips: Vec<McxRoundTrip> = mcx_result
+                .round_trips
+                .iter()
+                .filter(|rt| local_date(rt.closed_at) == today)
+                .cloned()
+                .collect();
+            let eligible: Vec<_> = today_trips.iter().filter(|rt| is_mcx_eligible(rt)).collect();
+            let pnl = if eligible.is_empty() {
+                None
+            } else {
+                Some(aggregate_known_pnl_mcx(&today_trips))
+            };
+            let trades_count = if today_trips.is_empty() {
+                None
+            } else {
+                Some(eligible.len() as u32)
+            };
+            let wins = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) > 0.0)
+                .count() as u32;
+            let losses = eligible
+                .iter()
+                .filter(|rt| rt.realized_pnl_inr.unwrap_or(0.0) < 0.0)
+                .count() as u32;
+            let win_rate = if eligible.is_empty() {
+                None
+            } else {
+                Some(wins as f64 / eligible.len() as f64)
+            };
+            let trades = build_mcx_trade_rows(&today_trips, 50);
+            self.share_cited_mcx_trips(&desk, &today_trips);
             return Ok(TodayPayload {
                 local_date: today.format("%Y-%m-%d").to_string(),
                 performance_basis_not_tax: true,
@@ -270,7 +616,7 @@ impl TodayService {
         }
 
         if inr_desk {
-            let inr_result = self.inr_engine.reconstruct(inr_fills);
+            let inr_result = self.inr_engine.reconstruct(parts.inr_cash);
             let today = local_today();
             let today_trips: Vec<InrCashRoundTrip> = inr_result
                 .round_trips
@@ -303,7 +649,7 @@ impl TodayService {
                 Some(wins as f64 / eligible.len() as f64)
             };
             let trades = build_inr_trade_rows(&today_trips, 50);
-            self.share_cited_inr_trips(&today_trips);
+            self.share_cited_inr_trips(&desk, &today_trips);
             return Ok(TodayPayload {
                 local_date: today.format("%Y-%m-%d").to_string(),
                 performance_basis_not_tax: true,
@@ -334,7 +680,7 @@ impl TodayService {
             });
         }
 
-        let result = self.engine.reconstruct(usd_fills);
+        let result = self.engine.reconstruct(parts.com_spot);
         let today = local_today();
         let today_trips: Vec<RoundTrip> = result
             .round_trips
@@ -374,6 +720,7 @@ impl TodayService {
         };
 
         let trades = build_trade_rows(&today_trips, &result.round_trips, &analysis, 50);
+        self.share_cited_crypto_spot_trips(&desk, &today_trips);
 
         Ok(TodayPayload {
             local_date: today.format("%Y-%m-%d").to_string(),
@@ -541,6 +888,77 @@ fn build_trade_rows(
         .collect()
 }
 
+fn build_fx_cds_trade_rows(today_trips: &[FxCdsRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
+    build_inr_lot_trade_rows(today_trips, limit, |rt| {
+        (
+            &rt.symbol,
+            rt.closed_at,
+            rt.avg_entry_price,
+            rt.avg_exit_price,
+            rt.qty,
+            rt.realized_pnl_inr,
+            rt.unknown_basis,
+        )
+    })
+}
+
+fn build_mcx_trade_rows(today_trips: &[McxRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
+    build_inr_lot_trade_rows(today_trips, limit, |rt| {
+        (
+            &rt.symbol,
+            rt.closed_at,
+            rt.avg_entry_price,
+            rt.avg_exit_price,
+            rt.qty,
+            rt.realized_pnl_inr,
+            rt.unknown_basis,
+        )
+    })
+}
+
+fn build_inr_lot_trade_rows<T, F>(
+    today_trips: &[T],
+    limit: usize,
+    fields: F,
+) -> Vec<TodayTradeRowPayload>
+where
+    F: Fn(&T) -> (&str, chrono::DateTime<Utc>, f64, f64, f64, Option<f64>, bool),
+{
+    let mut indexed: Vec<_> = today_trips.iter().collect();
+    indexed.sort_by(|a, b| {
+        let (_, ca, ..) = fields(a);
+        let (_, cb, ..) = fields(b);
+        cb.cmp(&ca)
+    });
+    indexed
+        .into_iter()
+        .take(limit)
+        .map(|rt| {
+            let (symbol, closed_at, entry, exit, qty, pnl, unknown) = fields(rt);
+            let mut flags = Vec::new();
+            if unknown {
+                flags.push("unknown_basis".to_string());
+            }
+            TodayTradeRowPayload {
+                closed_at: closed_at.to_rfc3339(),
+                symbol: symbol.to_string(),
+                avg_entry: entry,
+                avg_exit: exit,
+                qty,
+                net_pnl_usd: None,
+                net_pnl_inr: pnl,
+                primary_flag: if unknown {
+                    "unknown_basis".to_string()
+                } else {
+                    "none".to_string()
+                },
+                flag_severity: "info".to_string(),
+                data_quality_flags: flags,
+            }
+        })
+        .collect()
+}
+
 fn build_nfo_trade_rows(today_trips: &[NfoRoundTrip], limit: usize) -> Vec<TodayTradeRowPayload> {
     let mut sorted: Vec<_> = today_trips.to_vec();
     sorted.sort_by(|a, b| b.closed_at.cmp(&a.closed_at));
@@ -604,39 +1022,67 @@ fn build_inr_trade_rows(today_trips: &[InrCashRoundTrip], limit: usize) -> Vec<T
 }
 
 const NFO_CALC_PROFILE: &str = "equities_inr_nfo";
+const FX_CDS_CALC_PROFILE: &str = "fx_cds_inr";
+const MCX_CALC_PROFILE: &str = "commodity_inr_mcx";
+const USDM_CALC_PROFILE: &str = "crypto_usdm_usd";
+const COINM_CALC_PROFILE: &str = "crypto_coinm_usd";
 
 fn is_nfo_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
     desk.2.as_deref() == Some(NFO_CALC_PROFILE) || desk.0.as_deref() == Some(NFO_BOOK_ID)
 }
 
+fn is_fx_cds_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    desk.2.as_deref() == Some(FX_CDS_CALC_PROFILE) || desk.0.as_deref() == Some(FX_CDS_BOOK_ID)
+}
+
+fn is_mcx_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    desk.2.as_deref() == Some(MCX_CALC_PROFILE) || desk.0.as_deref() == Some(MCX_BOOK_ID)
+}
+
+fn is_usdm_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    desk.2.as_deref() == Some(USDM_CALC_PROFILE)
+}
+
+fn is_coinm_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
+    desk.2.as_deref() == Some(COINM_CALC_PROFILE)
+}
+
 fn is_inr_cash_desk(desk: &(Option<String>, Option<String>, Option<String>)) -> bool {
-    if is_nfo_desk(desk) {
+    if is_nfo_desk(desk) || is_fx_cds_desk(desk) || is_mcx_desk(desk) {
+        return false;
+    }
+    if is_usdm_desk(desk) || is_coinm_desk(desk) {
         return false;
     }
     desk.2.as_deref() == Some(INR_CASH_CALC_PROFILE) || desk.1.as_deref() == Some("INR")
 }
 
-fn partition_fills(
-    fills: Vec<crate::broker::BrokerFill>,
-) -> (
-    Vec<crate::broker::BrokerFill>,
-    Vec<crate::broker::BrokerFill>,
-    Vec<crate::broker::BrokerFill>,
-) {
-    let mut com_spot = Vec::new();
-    let mut inr = Vec::new();
-    let mut nfo = Vec::new();
+#[derive(Debug, Default)]
+struct PartitionedFills {
+    com_spot: Vec<crate::broker::BrokerFill>,
+    inr_cash: Vec<crate::broker::BrokerFill>,
+    nfo: Vec<crate::broker::BrokerFill>,
+    fx_cds: Vec<crate::broker::BrokerFill>,
+    mcx: Vec<crate::broker::BrokerFill>,
+}
+
+fn partition_fills(fills: Vec<crate::broker::BrokerFill>) -> PartitionedFills {
+    let mut out = PartitionedFills::default();
     for f in fills {
         if is_inr_cash_fill(&f) {
-            inr.push(f);
+            out.inr_cash.push(f);
         } else if is_nfo_fill(&f) {
-            nfo.push(f);
+            out.nfo.push(f);
+        } else if is_fx_cds_fill(&f) {
+            out.fx_cds.push(f);
+        } else if is_mcx_fill(&f) {
+            out.mcx.push(f);
         } else if is_binance_com_spot_fill(&f) {
-            com_spot.push(f);
+            out.com_spot.push(f);
         }
-        // USDM / Coin-M / options / other books: excluded from COM WAC and INR/NFO engines here.
+        // USDM / Coin-M / options: excluded from spot WAC and INR derivative engines here.
     }
-    (com_spot, inr, nfo)
+    out
 }
 
 fn build_snapshot(
@@ -982,10 +1428,10 @@ mod tests {
             exchange_segment: Some("usdm".into()),
             ..Default::default()
         };
-        let (com_spot, inr, nfo) = partition_fills(vec![usdm.clone()]);
-        assert!(com_spot.is_empty());
-        assert!(inr.is_empty());
-        assert!(nfo.is_empty());
+        let parts = partition_fills(vec![usdm.clone()]);
+        assert!(parts.com_spot.is_empty());
+        assert!(parts.inr_cash.is_empty());
+        assert!(parts.nfo.is_empty());
         let engine = crate::round_trip_engine::RoundTripEngine::new();
         assert!(
             engine.reconstruct(vec![usdm]).round_trips.is_empty(),
@@ -1011,15 +1457,37 @@ mod tests {
             lot: Some(65),
             ..Default::default()
         };
-        let (com_spot, inr, nfo_bucket) = partition_fills(vec![nfo.clone()]);
-        assert!(com_spot.is_empty(), "NFO must not hit round_trip_engine bucket");
-        assert!(inr.is_empty());
-        assert_eq!(nfo_bucket.len(), 1);
+        let parts = partition_fills(vec![nfo.clone()]);
+        assert!(parts.com_spot.is_empty(), "NFO must not hit round_trip_engine bucket");
+        assert!(parts.inr_cash.is_empty());
+        assert_eq!(parts.nfo.len(), 1);
         let engine = crate::round_trip_engine::RoundTripEngine::new();
         let result = engine.reconstruct(vec![nfo]);
         assert!(
             result.round_trips.is_empty(),
             "round_trip_engine must not reconstruct NFO fills"
+        );
+    }
+
+    #[test]
+    fn shipping_book_id_from_slug_and_calc_profile() {
+        let dhan_nfo = (
+            Some("dhan".to_string()),
+            Some("INR".to_string()),
+            Some(NFO_CALC_PROFILE.to_string()),
+        );
+        assert_eq!(
+            TodayService::shipping_book_id_for_desk(&dhan_nfo).as_deref(),
+            Some("dhan-nse-nfo")
+        );
+        let com = (
+            Some("binance_com".to_string()),
+            Some("USD".to_string()),
+            Some("crypto_spot_usd".to_string()),
+        );
+        assert_eq!(
+            TodayService::shipping_book_id_for_desk(&com).as_deref(),
+            Some("binance-com-spot")
         );
     }
 
@@ -1068,16 +1536,16 @@ mod tests {
             filled_at: at,
             ..nfo.clone()
         };
-        let (_, inr_bucket, nfo_bucket) = partition_fills(vec![nfo.clone(), nfo_sell.clone()]);
-        assert!(inr_bucket.is_empty());
-        assert_eq!(nfo_bucket.len(), 2);
+        let parts = partition_fills(vec![nfo.clone(), nfo_sell.clone()]);
+        assert!(parts.inr_cash.is_empty());
+        assert_eq!(parts.nfo.len(), 2);
         let inr_engine = InrCashWacEngine::new();
         assert!(
-            inr_engine.reconstruct(inr_bucket).round_trips.is_empty(),
+            inr_engine.reconstruct(parts.inr_cash).round_trips.is_empty(),
             "NFO fills must not reconstruct on cash WAC"
         );
         let nfo_engine = NfoRealizedPnlEngine::new();
-        let nfo_trips = nfo_engine.reconstruct(nfo_bucket).round_trips;
+        let nfo_trips = nfo_engine.reconstruct(parts.nfo).round_trips;
         assert_eq!(nfo_trips.len(), 1);
         assert!((nfo_trips[0].realized_pnl_inr.unwrap() - 130.0).abs() < 1e-6);
     }

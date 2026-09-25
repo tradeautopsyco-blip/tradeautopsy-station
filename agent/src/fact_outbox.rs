@@ -8,15 +8,15 @@ use std::sync::{Arc, Mutex};
 
 pub enum Fact {
     StationOnline,
-    /// M1: Station-cited cash realized PnL for Console consume (A8 Bearer share-up).
-    CitedCashPnl { payload: serde_json::Value },
+    /// M1: Station-cited realized PnL for Console consume (A8 Bearer share-up).
+    CitedPnl { payload: serde_json::Value },
 }
 
 impl Fact {
     fn signal_type(&self) -> &'static str {
         match self {
             Fact::StationOnline => "station_online",
-            Fact::CitedCashPnl { .. } => crate::share_cited_pnl::SIGNAL_TYPE,
+            Fact::CitedPnl { .. } => crate::share_cited_pnl::SIGNAL_TYPE,
         }
     }
 
@@ -26,7 +26,7 @@ impl Fact {
                 "v": 1,
                 "event_id": event_id,
             }))?),
-            Fact::CitedCashPnl { payload } => {
+            Fact::CitedPnl { payload } => {
                 let mut body = payload.clone();
                 if let Some(obj) = body.as_object_mut() {
                     obj.insert("event_id".into(), json!(event_id));
@@ -133,6 +133,17 @@ impl FactOutbox {
         {
             return Ok(EnqueueOutcome::Coalesced);
         }
+        if let Fact::CitedPnl { payload } = &fact {
+            if let Some(existing_id) = pending_cited_pnl_id(&conn, payload)? {
+                conn.execute(
+                    "UPDATE fact_outbox
+                     SET payload_json = ?, created_at_ms = ?, next_attempt_at_ms = ?
+                     WHERE id = ?",
+                    params![payload_json, now, now, existing_id],
+                )?;
+                return Ok(EnqueueOutcome::Coalesced);
+            }
+        }
         conn.execute(
             "INSERT INTO fact_outbox
              (id, signal_type, payload_json, created_at_ms, attempts, next_attempt_at_ms, done_at_ms)
@@ -142,24 +153,116 @@ impl FactOutbox {
         Ok(EnqueueOutcome::Enqueued { id })
     }
 
-    /// M1 share-up: enqueue cited INR cash trips when JWT is present.
+    /// M1 share-up: enqueue any v2 cited-PnL envelope when JWT is present.
+    pub fn enqueue_cited_pnl(&self, payload: serde_json::Value) -> anyhow::Result<EnqueueOutcome> {
+        if !crate::m1_envelope::envelope_has_cited_trips(&payload) {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        self.enqueue(Fact::CitedPnl { payload })
+    }
+
+    /// M1 share-up: cited INR cash WAC (per SHIPPING cash book).
     pub fn enqueue_cited_cash_pnl(
         &self,
+        book_id: &str,
         trips: &[crate::inr_cash_wac::InrCashRoundTrip],
     ) -> anyhow::Result<EnqueueOutcome> {
         if trips.is_empty() {
             return Ok(EnqueueOutcome::Coalesced);
         }
-        let payload = crate::share_cited_pnl::cited_cash_pnl_payload(trips);
-        let trips_arr = payload
-            .get("trips")
-            .and_then(|t| t.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0);
-        if trips_arr == 0 {
+        let payload =
+            crate::share_cited_pnl::cited_cash_pnl_payload_for_book(book_id, trips);
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: cited NFO realized INR (`*-nse-nfo`).
+    pub fn enqueue_cited_nfo_pnl(
+        &self,
+        book_id: &str,
+        trips: &[crate::nfo_realized_pnl::NfoRoundTrip],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if trips.is_empty() {
             return Ok(EnqueueOutcome::Coalesced);
         }
-        self.enqueue(Fact::CitedCashPnl { payload })
+        let payload = crate::m1_envelope::cited_nfo_payload(
+            book_id,
+            crate::nfo_realized_pnl::OWNER_PATH,
+            trips,
+        );
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: cited COM USD spot WAC.
+    pub fn enqueue_cited_crypto_spot_pnl(
+        &self,
+        book_id: &str,
+        trips: &[crate::round_trip_engine::RoundTrip],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if trips.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::m1_envelope::cited_crypto_spot_payload(book_id, trips);
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: Binance USDM REALIZED_PNL income rows.
+    pub fn enqueue_cited_usdm_income(
+        &self,
+        book_id: &str,
+        rows: &[crate::usdm_realized_pnl::UsdmIncomeRow],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if rows.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::m1_envelope::cited_usdm_income_payload(book_id, rows);
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: Kotak CDS realized INR.
+    pub fn enqueue_cited_fx_cds_pnl(
+        &self,
+        book_id: &str,
+        trips: &[crate::fx_cds_realized_pnl::FxCdsRoundTrip],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if trips.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::m1_envelope::cited_fx_cds_payload(
+            book_id,
+            crate::fx_cds_realized_pnl::OWNER_PATH,
+            trips,
+        );
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: Kotak MCX commodity future realized INR.
+    pub fn enqueue_cited_mcx_pnl(
+        &self,
+        book_id: &str,
+        trips: &[crate::mcx_realized_pnl::McxRoundTrip],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if trips.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::m1_envelope::cited_mcx_payload(
+            book_id,
+            crate::mcx_realized_pnl::OWNER_PATH,
+            trips,
+        );
+        self.enqueue_cited_pnl(payload)
+    }
+
+    /// M1 share-up: Binance Coin-M REALIZED_PNL income rows.
+    pub fn enqueue_cited_coinm_income(
+        &self,
+        book_id: &str,
+        rows: &[crate::coinm_realized_pnl::CoinmIncomeRow],
+    ) -> anyhow::Result<EnqueueOutcome> {
+        if rows.is_empty() {
+            return Ok(EnqueueOutcome::Coalesced);
+        }
+        let payload = crate::m1_envelope::cited_coinm_income_payload(book_id, rows);
+        self.enqueue_cited_pnl(payload)
     }
 
     pub async fn drain(&self) -> anyhow::Result<()> {
@@ -344,9 +447,112 @@ fn last_online_send_is_fresh(conn: &Connection, now: i64) -> anyhow::Result<bool
     Ok(last_done.is_some_and(|ts| now.saturating_sub(ts) < COALESCE_MS))
 }
 
+/// One pending cited-PnL row per (book_id, cite_kind) — Today refresh replaces payload instead of flooding the outbox.
+fn pending_cited_pnl_id(
+    conn: &Connection,
+    payload: &serde_json::Value,
+) -> anyhow::Result<Option<String>> {
+    let book_id = payload
+        .get("book_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    if book_id.is_empty() {
+        return Ok(None);
+    }
+    let cite_kind = payload
+        .get("cite_kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("inr_cash_wac");
+    let mut stmt = conn.prepare(
+        "SELECT id FROM fact_outbox
+         WHERE signal_type = 'station_cited_pnl'
+           AND done_at_ms IS NULL
+           AND json_extract(payload_json, '$.book_id') = ?1
+           AND COALESCE(json_extract(payload_json, '$.cite_kind'), 'inr_cash_wac') = ?2
+         ORDER BY created_at_ms DESC
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![book_id, cite_kind])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    Ok(Some(row.get(0)?))
+}
+
 fn retry_delay_ms(attempts: i64) -> i64 {
     let exp = (attempts.saturating_sub(1) as u32).min(16);
     BASE_BACKOFF_MS
         .saturating_mul(1_i64 << exp)
         .min(MAX_BACKOFF_MS)
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::*;
+    use crate::share_cited_pnl::SIGNAL_TYPE;
+    use crate::{MemoryStationTokenStore, StationTokenStore, StationTokens, UpstreamClient, UpstreamConfig};
+
+    #[test]
+    fn cited_pnl_coalesces_pending_same_book_and_kind() {
+        let db = std::env::temp_dir().join(format!("fact-coalesce-{}.db", uuid::Uuid::new_v4()));
+        let upstream = std::sync::Arc::new(
+            UpstreamClient::new(UpstreamConfig {
+                base_url: "http://127.0.0.1:9".into(),
+                daemon_secret: "test".into(),
+            })
+            .expect("upstream"),
+        );
+        let tokens = std::sync::Arc::new(MemoryStationTokenStore::default());
+        tokens
+            .save(&StationTokens {
+                access_token: "jwt".into(),
+                refresh_token: "r".into(),
+                expires_in: 3600,
+                refresh_expires_in: None,
+            })
+            .expect("save jwt");
+        let outbox = FactOutbox::open(&db, upstream)
+            .expect("open")
+            .with_token_store(tokens);
+        let payload_a = serde_json::json!({
+            "v": 2,
+            "cite_kind": "nfo_realized_inr",
+            "book_id": "dhan-nse-nfo",
+            "currency": "INR",
+            "trips": [{"trip_id": "a", "symbol": "X", "closed_at": "2026-01-01T00:00:00Z", "realized_pnl_inr": 1.0, "book_id": "dhan-nse-nfo", "currency": "INR"}]
+        });
+        let payload_b = serde_json::json!({
+            "v": 2,
+            "cite_kind": "nfo_realized_inr",
+            "book_id": "dhan-nse-nfo",
+            "currency": "INR",
+            "trips": [{"trip_id": "b", "symbol": "Y", "closed_at": "2026-01-01T00:00:00Z", "realized_pnl_inr": 2.0, "book_id": "dhan-nse-nfo", "currency": "INR"}]
+        });
+        assert!(matches!(
+            outbox.enqueue_cited_pnl(payload_a).expect("first"),
+            EnqueueOutcome::Enqueued { .. }
+        ));
+        assert!(matches!(
+            outbox.enqueue_cited_pnl(payload_b).expect("second"),
+            EnqueueOutcome::Coalesced
+        ));
+        let conn = rusqlite::Connection::open(&db).expect("conn");
+        let pending: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM fact_outbox WHERE signal_type = ? AND done_at_ms IS NULL",
+                [SIGNAL_TYPE],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(pending, 1);
+        let body: String = conn
+            .query_row(
+                "SELECT payload_json FROM fact_outbox WHERE signal_type = ? LIMIT 1",
+                [SIGNAL_TYPE],
+                |r| r.get(0),
+            )
+            .expect("body");
+        assert!(body.contains("\"trip_id\":\"b\""));
+    }
 }
