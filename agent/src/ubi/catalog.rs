@@ -471,7 +471,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::KotakNeoTotpSession,
             calc_profile_id: "fx_cds_inr".into(),
             compliance_profile_id: "kotak_neo_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "kotak_neo.cds.v1".into(),
             book_id: "kotak-nse-cds".into(),
@@ -486,7 +486,7 @@ pub fn catalog_books() -> Vec<BrokerDescriptor> {
             auth_scheme: AuthScheme::KotakNeoTotpSession,
             calc_profile_id: "commodity_inr_mcx".into(),
             compliance_profile_id: "kotak_neo_compliance".into(),
-            availability: BrokerAvailability::Planned,
+            availability: BrokerAvailability::Enabled,
             origin: AdapterOrigin::FirstParty,
             manifest_id: "kotak_neo.mcx.v1".into(),
             book_id: "kotak-mcx-future".into(),
@@ -992,8 +992,8 @@ mod tests {
             .collect();
         assert_eq!(
             tier_ii.len(),
-            20,
-            "binance×4 + kotak×2 + p4×4 + wave2×5 cash + NFO×5 (incl. dhan/groww P6-W2)"
+            22,
+            "binance×4 + kotak×4 + p4×4 + wave2×5 cash + NFO×5 (incl. dhan/groww P6-W2)"
         );
         for (book, scheme) in [
             ("bybit-com-spot", AuthScheme::HmacApiKeySecret),
@@ -1032,10 +1032,13 @@ mod tests {
         assert_eq!(dhan.availability, BrokerAvailability::Enabled);
         assert_eq!(dhan.slug, "dhan");
         let cds = descriptor_for_book_id("kotak-nse-cds").expect("kotak cds book");
-        assert_eq!(cds.availability, BrokerAvailability::Planned);
+        assert_eq!(cds.availability, BrokerAvailability::Enabled);
         assert_eq!(cds.asset_class, AssetClass::Fx);
         assert_eq!(cds.instrument_class, InstrumentClass::Future);
         assert_eq!(cds.calc_profile_id, "fx_cds_inr");
+        let mcx = descriptor_for_book_id("kotak-mcx-future").expect("kotak mcx book");
+        assert_eq!(mcx.availability, BrokerAvailability::Enabled);
+        assert_eq!(mcx.calc_profile_id, "commodity_inr_mcx");
         assert_eq!(dhan.auth_scheme, AuthScheme::DhanConsentSession);
         // Every book row's profiles resolve; every row is first-party.
         for d in &books {

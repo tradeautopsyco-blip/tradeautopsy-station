@@ -1,6 +1,6 @@
 # Dogfood — `kotak_neo` CDS (`kotak-nse-cds`)
 
-**Status:** DRAFT — **Tier I** path (steps 1–5; step 6 open)  
+**Status:** DRAFT — **Tier I Connect beta Enabled** (2026-09-25); **Tier II** step 6 open  
 **Lock:** `/Users/bishnu/issues/compliance/locks/kotak-nse-cds.md` (**DRAFT** — **SHIPPING flip blocked** until founder dates every official source; no Tier II drills on TBD charges/session)  
 **B6:** `/Users/bishnu/issues/brokers/sheets/kotak_neo.md` (CDS rows / amendments **TBD** — read cash + NFO exit rows; do not infer CD rates from sibling books)  
 **ADR:** `docs/adr/0022-india-cds-segment-session-charges.md` (`DRAFT`)  
@@ -8,8 +8,8 @@
 
 | Tier | Pipeline | This file |
 |------|----------|-----------|
-| **I — Integrator** | Steps **1–5** | **Planned** + Connect on named book; not step 6 |
-| **II — Live** | Step **6** signed | Drills + sign-off → **Enabled** flip |
+| **I — Integrator** | Steps **1–5** | **Enabled** (Connect beta) on `kotak-nse-cds` — flipped 2026-09-25 |
+| **II — Live** | Step **6** signed | Drills + founder sign → desk-live (not `catalog_v1()` until intended) |
 
 > Decision 8: **Enabled** = **Tier II only** (ADR 0019 §C). Venue facts from B6 + **SHIPPING** lock only; STOP → ADR 0022 revisit. **Do not run charge or session drills while lock remains DRAFT.**
 
@@ -25,7 +25,7 @@
 - [ ] Adapter built: first CD book **`cde_fo` only**, CalcProfile **`fx_cds_inr`**; host stamps `(fx, …)` from book row; cash adapter **refuses** `cde_fo`; NFO fence **refuses** `cde_fo`
 - [x] Scrip master: book-scoped **`cde_fo.csv`** fetch (`KOTAK_CDE_FO_LANE`, `kotak_cds_scrip_master`, cache `cde_fo`) — live session still required for Tier II drills
 - [ ] Money owner: **one** realized-PnL module named in lock at SHIPPING (CI green before Tier II)
-- [ ] Catalog lists `kotak_neo` CDS book as **Planned** only (no `Enabled` flip before sign-off)
+- [x] Catalog lists `kotak-nse-cds` as **Enabled** (Connect beta; ADR 0019 Tier I after steps 1–5)
 - [ ] Agent running on `127.0.0.1:9137` (release build)
 - [ ] Live Kotak Neo account with **CD segment entitled** (production; entitlement proof via B6 validation row — **TBD** until sheet amend)
 - [ ] **STOP:** any step treats NSE cash hours, NFO hours, or Zerodha/NFO STT as CD law → **STOP**, amend lock with dated NSE CD pages first
@@ -64,6 +64,9 @@ Notes:
 - [ ] Drill 8 green: CDS strip live with no blend
 - [ ] No STOP fired, or every STOP resolved via ADR 0022 / lock amend (record resolutions here)
 
+**Tier I (integrator):** catalog **Enabled** 2026-09-25 — agent `catalog_books()`; no `catalog_v1()` / live-slugs change.
+
+**Tier II (founder):**  
 **Signed:** —  
 **Date:** —  
-**Enabled flip:** after sign-off, one ticket: catalog `Planned` → `Enabled` (agent + Swift). No flip on a DRAFT lock or unsigned dogfood.
+**Desk-live:** after drills 1–8 green + signature above only.
