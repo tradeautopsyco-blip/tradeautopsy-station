@@ -104,7 +104,7 @@ public enum BrokerCatalog {
             authScheme: .kiteChecksumSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "zerodha_kite_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "tradeautopsy:zerodha-kite-cash@0.1.0",
             bookId: "zerodha-nse-bse-cash"
         ),
@@ -116,7 +116,7 @@ public enum BrokerCatalog {
             authScheme: .upstoxOAuthBearerSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "upstox_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "tradeautopsy:upstox-cash@0.1.0",
             bookId: "upstox-nse-bse-cash"
         ),
@@ -128,7 +128,7 @@ public enum BrokerCatalog {
             authScheme: .fyersOAuthJsonAppIdHashSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "fyers_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "tradeautopsy:fyers-cash@0.1.0",
             bookId: "fyers-nse-bse-cash"
         ),
@@ -152,7 +152,7 @@ public enum BrokerCatalog {
             authScheme: .dhanConsentSession,
             calcProfileId: "equities_inr_cash",
             complianceProfileId: "dhan_compliance",
-            availability: .planned,
+            availability: .enabled,
             manifestId: "tradeautopsy:dhan-cash@0.1.0",
             bookId: "dhan-nse-bse-cash"
         ),

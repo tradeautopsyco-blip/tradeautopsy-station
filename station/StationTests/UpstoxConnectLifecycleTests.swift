@@ -141,8 +141,8 @@ struct UpstoxConnectLifecycleTests {
 
     @Test func plannedUpstoxCatalogRowIsNotEnabled() {
         let upstox = BrokerCatalog.descriptor(for: "upstox")
-        #expect(upstox?.availability == .planned)
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "upstox"))
+        #expect(upstox?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "upstox"))
         #expect(upstox?.authScheme == .upstoxOAuthBearerSession)
         #expect(upstox?.bookId == "upstox-nse-bse-cash")
     }

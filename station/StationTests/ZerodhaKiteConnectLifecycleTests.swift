@@ -139,8 +139,8 @@ struct ZerodhaKiteConnectLifecycleTests {
 
     @Test func zerodhaCatalogRowIsEnabled() {
         let kite = BrokerCatalog.descriptor(for: "zerodha_kite")
-        #expect(kite?.availability == .planned)
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "zerodha_kite"))
+        #expect(kite?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "zerodha_kite"))
         #expect(kite?.authScheme == .kiteChecksumSession)
         #expect(kite?.bookId == "zerodha-nse-bse-cash")
     }

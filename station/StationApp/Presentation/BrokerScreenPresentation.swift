@@ -125,11 +125,14 @@ public enum BrokerScreenPresentation {
             )
         }
 
+        let betaLabel = BrokerDogfoodProgram.showsConnectBetaBadge(slug: descriptor.slug)
+            ? "Connect beta"
+            : nil
         return buildOperationalCard(
             descriptor: descriptor,
             snapshot: snapshot,
             now: now,
-            plannedLabel: nil
+            plannedLabel: betaLabel
         )
     }
 

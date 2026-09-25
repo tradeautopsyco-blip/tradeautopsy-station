@@ -104,7 +104,8 @@ struct BybitConnectLifecycleTests {
         #expect(outcome == .validationPermanentFailure(.invalidCredentials))
     }
 
-    @Test func catalogMarksBybitEnabled() {
+    @Test func catalogMarksBybitEnabledConnectBeta() {
         #expect(BrokerCatalog.descriptor(for: "bybit")?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "bybit"))
     }
 }

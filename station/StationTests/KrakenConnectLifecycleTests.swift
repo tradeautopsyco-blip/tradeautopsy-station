@@ -99,7 +99,8 @@ struct KrakenConnectLifecycleTests {
         #expect(store.hasCredentials(for: .krakenProd) == false)
     }
 
-    @Test func catalogMarksKrakenEnabled() {
+    @Test func catalogMarksKrakenEnabledConnectBeta() {
         #expect(BrokerCatalog.descriptor(for: "kraken")?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "kraken"))
     }
 }

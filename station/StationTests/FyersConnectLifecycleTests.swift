@@ -141,8 +141,8 @@ struct FyersConnectLifecycleTests {
 
     @Test func plannedFyersCatalogRowIsNotEnabled() {
         let fyers = BrokerCatalog.descriptor(for: "fyers")
-        #expect(fyers?.availability == .planned)
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "fyers"))
+        #expect(fyers?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "fyers"))
         #expect(fyers?.authScheme == .fyersOAuthJsonAppIdHashSession)
         #expect(fyers?.bookId == "fyers-nse-bse-cash")
     }

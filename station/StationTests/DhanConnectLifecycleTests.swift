@@ -304,8 +304,8 @@ struct DhanConnectLifecycleTests {
 
     @Test func enabledDhanCatalogRowMatchesContract() {
         let dhan = BrokerCatalog.descriptor(for: "dhan")
-        #expect(dhan?.availability == .planned)
-        #expect(BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: "dhan"))
+        #expect(dhan?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "dhan"))
         #expect(dhan?.displayName == "Dhan")
         #expect(dhan?.assetClass == "equities")
         #expect(dhan?.quoteCurrency == "INR")

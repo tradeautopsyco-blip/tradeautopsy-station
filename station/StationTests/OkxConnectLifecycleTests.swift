@@ -97,7 +97,8 @@ struct OkxConnectLifecycleTests {
         #expect(outcome == .localValidationFailed(invalidFields: [.passphrase]))
     }
 
-    @Test func catalogMarksOkxEnabled() {
+    @Test func catalogMarksOkxEnabledConnectBeta() {
         #expect(BrokerCatalog.descriptor(for: "okx_com")?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "okx_com"))
     }
 }

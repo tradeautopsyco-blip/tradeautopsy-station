@@ -101,7 +101,8 @@ struct CoinbaseAdvancedConnectLifecycleTests {
         #expect(store.hasCredentials(for: .coinbaseAdvancedProd) == false)
     }
 
-    @Test func catalogMarksCoinbaseAdvancedEnabled() {
+    @Test func catalogMarksCoinbaseAdvancedEnabledConnectBeta() {
         #expect(BrokerCatalog.descriptor(for: "coinbase_advanced")?.availability == .enabled)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "coinbase_advanced"))
     }
 }
