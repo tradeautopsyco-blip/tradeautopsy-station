@@ -32,6 +32,7 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
         let base = "http://127.0.0.1:\(port)"
         sessionHost.configure(secret: daemonSecret, port: port, webBase: base)
         floatingNotch.configure(secret: daemonSecret, port: port, webBase: base)
+        let softwareUpdates = SparkleSoftwareUpdateController(startingUpdater: true)
         let coordinator = StationAppCoordinator(
             agentSupervisor: AgentSupervisor(daemonSecret: daemonSecret),
             statusItemController: StatusItemController(),
@@ -41,7 +42,7 @@ final class StationAppDelegate: NSObject, NSApplicationDelegate {
             windowController: windowController,
             launchStore: launchStore,
             phaseProvider: phaseProvider,
-            sessionModel: sessionModel,
+            softwareUpdateController: softwareUpdates,
             inputMonitoringChecker: inputMonitoringChecker,
             daemonSecret: daemonSecret,
             floatingNotch: floatingNotch

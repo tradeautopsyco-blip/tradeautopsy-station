@@ -35,6 +35,7 @@ public struct SettingsView: View {
                 generalGroup
                 riskLimitsGroup
                 notchGroup
+                softwareUpdatesGroup
                 privacyGroup
             }
             .padding(24)
@@ -153,6 +154,50 @@ public struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var softwareUpdatesGroup: some View {
+        settingsGroup(
+            title: "Software updates",
+            footer: "Checks https://updates.tradeautopsy.in for signed builds. Ad-hoc dev installs do not receive updates until you install a notarized release."
+        ) {
+            inset {
+                toggleRow(
+                    title: "Automatically check for updates",
+                    caption: "",
+                    isOn: Binding(
+                        get: { coordinator.automaticallyChecksForUpdates },
+                        set: { coordinator.setAutomaticallyChecksForUpdates($0) }
+                    )
+                )
+                toggleRow(
+                    title: "Automatically download updates",
+                    caption: "",
+                    isOn: Binding(
+                        get: { coordinator.automaticallyDownloadsUpdates },
+                        set: { coordinator.setAutomaticallyDownloadsUpdates($0) }
+                    )
+                )
+                Button(action: { coordinator.checkForSoftwareUpdates() }) {
+                    HStack(spacing: 12) {
+                        Text("Check for Updates")
+                            .font(StationDS.bodyFont(17))
+                            .foregroundStyle(
+                                coordinator.canCheckForSoftwareUpdates
+                                    ? StationDS.Text.primary
+                                    : StationDS.Text.muted
+                            )
+                        Spacer(minLength: 0)
+                    }
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!coordinator.canCheckForSoftwareUpdates)
             }
         }
     }

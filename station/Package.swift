@@ -13,6 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../notch"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.0"),
         .package(url: "https://github.com/apple/swift-testing.git", from: "0.10.0"),
     ],
     targets: [
@@ -20,16 +21,21 @@ let package = Package(
             name: "Station",
             dependencies: [
                 .product(name: "Notch", package: "notch"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "StationApp",
-            exclude: ["StationApp.swift", "Info.plist", "AppIcon.icon"],
+            exclude: [
+                "StationApp.swift",
+                "Info.plist",
+                "AppIcon.icon",
+                "TradeAutopsy Station.entitlements",
+            ],
             resources: [
                 .process("Resources"),
             ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
-                .linkedFramework("IOKit"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("Security"),
                 .linkedFramework("LocalAuthentication"),

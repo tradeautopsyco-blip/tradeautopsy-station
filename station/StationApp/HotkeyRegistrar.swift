@@ -1,7 +1,6 @@
 import AppKit
 import Carbon
 import Foundation
-import IOKit.hid
 import os
 
 public protocol InputMonitoringChecking: Sendable {
@@ -13,16 +12,12 @@ public struct DefaultInputMonitoringChecker: InputMonitoringChecking {
     public init() {}
 
     public func isInputMonitoringGranted() -> Bool {
-        if #available(macOS 10.15, *) {
-            return CGPreflightListenEventAccess()
-        }
-        return true
+        // ⌥Space / ⌥⇧Space use Carbon RegisterEventHotKey — Input Monitoring is not used.
+        true
     }
 
     public func requestInputMonitoringAccess() {
-        if #available(macOS 10.15, *) {
-            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-        }
+        // No-op: requesting IOHID listen access would show a TCC prompt we do not need.
     }
 }
 

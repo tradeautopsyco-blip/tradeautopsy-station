@@ -21,15 +21,21 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.2.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
+    <key>SUEnableDownloaderService</key>
+    <true/>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SUFeedURL</key>
+    <string>https://updates.tradeautopsy.in/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>VcUjJxkUER6Nut2xnSdrA4KpJ8Dg3av4osZqOE/ayKw=</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <false/>
-    <key>NSInputMonitoringUsageDescription</key>
-    <string>TradeAutopsy Station needs Input Monitoring to register global hotkeys (⌥Space) for intervention from any app.</string>
     <key>NSScreenCaptureUsageDescription</key>
     <string>TradeAutopsy Station needs Screen Recording so you can grab a chart region onto Live capture. Images stay on this Mac until you link them to a trade.</string>
     <key>NSMicrophoneUsageDescription</key>

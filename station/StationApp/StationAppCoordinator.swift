@@ -18,6 +18,18 @@ public final class StationAppCoordinator: ObservableObject {
     @Published public private(set) var launchAtLoginEnabled = false
     @Published public private(set) var showLoginItemPrompt = false
 
+    public var automaticallyChecksForUpdates: Bool {
+        softwareUpdateController.automaticallyChecksForUpdates
+    }
+
+    public var automaticallyDownloadsUpdates: Bool {
+        softwareUpdateController.automaticallyDownloadsUpdates
+    }
+
+    public var canCheckForSoftwareUpdates: Bool {
+        softwareUpdateController.canCheckForUpdates
+    }
+
     /// Shell navigation stays enabled even when the agent is unhealthy (TRD §6.3).
     public var isShellNavigable: Bool { true }
 
@@ -44,6 +56,7 @@ public final class StationAppCoordinator: ObservableObject {
     private let windowController: StationWindowControlling
     private let launchStore: StationLaunchStoring
     private let loginItemService: LoginItemServicing
+    private let softwareUpdateController: SoftwareUpdateControlling
     private let phaseProvider: SessionSurfacePhaseProviding
     private let deskRouteStore: DeskRouteStoring
     public let deskRulesStore: DeskRulesStore
@@ -67,6 +80,7 @@ public final class StationAppCoordinator: ObservableObject {
         launchStore: StationLaunchStoring,
         phaseProvider: SessionSurfacePhaseProviding,
         loginItemService: LoginItemServicing = LoginItemService(),
+        softwareUpdateController: SoftwareUpdateControlling = NoOpSoftwareUpdateController(),
         sessionModel: SessionModel? = nil,
         deskRouteStore: DeskRouteStoring = UserDefaultsDeskRouteStore(),
         dateProvider: @escaping () -> Date = Date.init,
@@ -92,6 +106,7 @@ public final class StationAppCoordinator: ObservableObject {
         self.windowController = windowController
         self.launchStore = launchStore
         self.loginItemService = loginItemService
+        self.softwareUpdateController = softwareUpdateController
         self.phaseProvider = phaseProvider
         self.deskRouteStore = deskRouteStore
         self.deskRulesStore = deskRulesStore ?? .shared
@@ -237,6 +252,20 @@ public final class StationAppCoordinator: ObservableObject {
         }
 
         showInputMonitoringRestartReminderIfNeeded()
+    }
+
+    public func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
+        softwareUpdateController.automaticallyChecksForUpdates = enabled
+        objectWillChange.send()
+    }
+
+    public func setAutomaticallyDownloadsUpdates(_ enabled: Bool) {
+        softwareUpdateController.automaticallyDownloadsUpdates = enabled
+        objectWillChange.send()
+    }
+
+    public func checkForSoftwareUpdates() {
+        softwareUpdateController.checkForUpdates(nil)
     }
 
     public func toggleLaunchAtLogin() {

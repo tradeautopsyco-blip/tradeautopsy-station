@@ -1,0 +1,359 @@
+name: Release TradeAutopsy Station
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.0 or 0.2.0-rc.1)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes (Markdown); embedded in Sparkle HTML when set"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: tradeautopsy-station-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PROJECT_NAME: TradeAutopsy-Station
+  APP_NAME: "TradeAutopsy Station"
+  BETA_CHANNEL_NAME: beta
+  GITHUB_REPO: FExEVIL/tradeautopsy-station
+
+jobs:
+  preparation:
+    name: Preparation
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract_version.outputs.version }}
+      is_beta: ${{ steps.extract_version.outputs.is_beta }}
+      build_number: ${{ steps.build_number.outputs.build_number }}
+    steps:
+      - name: Require main workflow ref
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run releases from the main branch workflow (${WORKFLOW_REF})"
+            exit 1
+          fi
+
+      - name: Authorize release (admin)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -euo pipefail
+          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission')
+          if [[ "$PERM" != "admin" ]]; then
+            echo "::error::${ACTOR} is not an admin (permission: ${PERM})"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          ref: main
+
+      - name: Extract requested version
+        id: extract_version
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          OUTPUT=$(python3 .github/scripts/extract_version.py -c "$VERSION_INPUT")
+          VERSION=$(awk -F= '/^version=/{print $2; exit}' <<<"$OUTPUT")
+          IS_BETA=$(awk -F= '/^is_beta=/{print $2; exit}' <<<"$OUTPUT")
+          if [[ -z "$VERSION" || ( "$VERSION_INPUT" != "$VERSION" && "$VERSION_INPUT" != "v$VERSION" ) ]]; then
+            echo "::error::Version must be a complete semantic version, optionally prefixed with v"
+            exit 1
+          fi
+          {
+            echo "version=$VERSION"
+            echo "is_beta=$IS_BETA"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Reject duplicate published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.extract_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if gh release view "$TAG" --repo "${{ env.GITHUB_REPO }}" --json isDraft --jq '.isDraft' 2>/dev/null | grep -qx 'false'; then
+            echo "::error::Release ${TAG} is already published"
+            exit 1
+          fi
+
+      - name: Derive build number
+        id: build_number
+        run: |
+          set -euo pipefail
+          RELEASED="$(grep -Eo 'sparkle:version(="|>)[0-9]+' updater/appcast.xml \
+            | grep -Eo '[0-9]+$' | sort -n | tail -1 || true)"
+          BASE_BUILD="$(python3 - <<'PY'
+        import plistlib
+        from pathlib import Path
+        data = plistlib.loads(Path("station/StationApp/Info.plist").read_bytes())
+        print(int(str(data.get("CFBundleVersion", "0") or "0")))
+        PY
+        )"
+          BASE_BUILD="${BASE_BUILD:-0}"
+          BUILD_NUMBER="$(( RELEASED > BASE_BUILD ? RELEASED + 1 : BASE_BUILD + 1 ))"
+          echo "Next build number: ${BUILD_NUMBER} (appcast max: ${RELEASED:-none}, plist: ${BASE_BUILD})"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build, sign, and publish
+    needs: preparation
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.preparation.outputs.version }}
+      BUILD_NUMBER: ${{ needs.preparation.outputs.build_number }}
+      IS_BETA: ${{ needs.preparation.outputs.is_beta }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          ref: main
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build tradeautopsy-agent (release)
+        working-directory: agent
+        run: cargo build --release --locked --bin tradeautopsy-agent
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Stamp version and build
+        run: |
+          set -euo pipefail
+          PLIST="station/StationApp/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER}" "$PLIST"
+
+      - name: Generate Xcode project
+        working-directory: station
+        run: xcodegen generate
+
+      - name: Build Release (arm64)
+        working-directory: station
+        run: |
+          set -euo pipefail
+          rm -rf build-release
+          xcodebuild \
+            -project "TradeAutopsy Station.xcodeproj" \
+            -scheme "${APP_NAME}" \
+            -configuration Release \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath build-release \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Locate built app
+        id: locate_app
+        run: |
+          set -euo pipefail
+          APP=$(find station/build-release -name "${APP_NAME}.app" -type d | head -1)
+          if [[ -z "$APP" || ! -d "$APP" ]]; then
+            echo "::error::Release build did not produce ${APP_NAME}.app"
+            exit 1
+          fi
+          echo "app_path=$APP" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KC="$RUNNER_TEMP/app-signing.keychain-db"
+          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$APPLE_CERTIFICATE_PASSWORD" "$KC"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security list-keychain -d user -s "$KC"
+
+      - name: Sign agent and app
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          set -euo pipefail
+          APP="${{ steps.locate_app.outputs.app_path }}"
+          AGENT="${APP}/Contents/MacOS/tradeautopsy-agent"
+          ENT="station/StationApp/TradeAutopsy Station.entitlements"
+          test -x "$AGENT" || { echo "::error::Missing tradeautopsy-agent in bundle"; exit 1; }
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "$AGENT"
+          codesign --force --options runtime --timestamp \
+            --entitlements "$ENT" \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Pack DMG
+        run: |
+          set -euo pipefail
+          mkdir -p Release
+          APP="${{ steps.locate_app.outputs.app_path }}"
+          STAGE="$RUNNER_TEMP/dmg-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/${APP_NAME}.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create \
+            -volname "${APP_NAME}" \
+            -srcfolder "$STAGE" \
+            -ov \
+            -format UDZO \
+            "Release/${PROJECT_NAME}.dmg"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "Release/${PROJECT_NAME}.dmg" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+          xcrun stapler staple "Release/${PROJECT_NAME}.dmg"
+
+      - name: Create GitHub release and upload DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}"
+          PRERELEASE=()
+          if [[ "$IS_BETA" == "true" ]]; then
+            PRERELEASE=(--prerelease)
+          fi
+          if gh release view "$TAG" --repo "${{ env.GITHUB_REPO }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "Release/${PROJECT_NAME}.dmg" --repo "${{ env.GITHUB_REPO }}" --clobber
+          else
+            gh release create "$TAG" "Release/${PROJECT_NAME}.dmg" \
+              --repo "${{ env.GITHUB_REPO }}" \
+              --title "${TAG} - TradeAutopsy Station" \
+              --notes "$NOTES" \
+              "${PRERELEASE[@]}"
+          fi
+
+      - name: Fetch Sparkle generate_appcast
+        uses: ./.github/actions/fetch-generate-appcast
+
+      - name: Generate signed appcast fragment
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.PRIVATE_SPARKLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -x "$RUNNER_TEMP/generate_appcast" || {
+            echo "::error::$RUNNER_TEMP/generate_appcast missing"; exit 1;
+          }
+          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}"
+          printf '%s' "$NOTES" > "Release/${PROJECT_NAME}.html"
+          if [[ "$IS_BETA" == "true" ]]; then
+            APPCAST_OUT="appcast-beta.xml"
+            CHANNEL_ARGS=(--channel "$BETA_CHANNEL_NAME")
+          else
+            APPCAST_OUT="appcast-stable.xml"
+            CHANNEL_ARGS=()
+          fi
+          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$RUNNER_TEMP/generate_appcast" \
+            --ed-key-file - \
+            --link "https://github.com/${{ env.GITHUB_REPO }}/releases" \
+            --download-url-prefix "https://github.com/${{ env.GITHUB_REPO }}/releases/download/v${VERSION}/" \
+            --embed-release-notes \
+            "${CHANNEL_ARGS[@]}" \
+            -o "$APPCAST_OUT" \
+            Release/
+
+      - name: Upload appcast artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: appcast-${{ env.IS_BETA }}
+          path: appcast-*.xml
+
+  publish_stable_appcast:
+    name: Commit stable appcast
+    needs: [preparation, build]
+    if: needs.preparation.outputs.is_beta == 'false'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.preparation.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4.1.8
+        with:
+          name: appcast-false
+          path: .
+
+      - name: Commit appcast to main
+        run: |
+          set -euo pipefail
+          cp appcast-stable.xml updater/appcast.xml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updater/appcast.xml
+          if git diff --cached --quiet; then
+            echo "Appcast unchanged."
+            exit 0
+          fi
+          git commit -m "Update appcast for v${VERSION}"
+          git push origin main
+
+  publish_beta_appcast:
+    name: Merge beta appcast channel
+    needs: [preparation, build]
+    if: needs.preparation.outputs.is_beta == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.preparation.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4.1.8
+        with:
+          name: appcast-true
+          path: .
+
+      - name: Merge beta item into appcast
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/merge_appcast_channel.py \
+            updater/appcast.xml \
+            appcast-beta.xml \
+            "$BETA_CHANNEL_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updater/appcast.xml
+          if git diff --cached --quiet; then
+            echo "Beta appcast already present."
+            exit 0
+          fi
+          git commit -m "Update appcast with beta release for v${VERSION}"
+          git push origin main

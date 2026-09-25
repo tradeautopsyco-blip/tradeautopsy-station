@@ -32,9 +32,17 @@ cd agent && cargo run
 cd agent && cargo test
 ```
 
-## Share with a cofounder (unsigned)
+## Updates (signed releases)
 
-Apple Silicon, macOS 14+. **No Developer ID / notarization** — Gatekeeper will warn once.
+Production builds are **Developer ID signed and notarized**. In-app updates use [Sparkle](https://sparkle-project.org/) against `https://updates.tradeautopsy.in/appcast.xml` (see `updater/` and `.github/workflows/release.yml`).
+
+The first signed install (**0.2.0+**) replaces unsigned builds: TCC (mic, speech, screen recording) and Keychain items do **not** carry over from ad-hoc installs.
+
+Kill-switch DNS still requires a **one-time** admin install of `sudoers.d/99-tradeautopsy-dns` — that is separate from Gatekeeper.
+
+## Share with a cofounder (unsigned dev drop)
+
+Apple Silicon, macOS 14+. **No Developer ID / notarization** — Gatekeeper will warn once. Use this only until a signed release is available.
 
 You (this Mac):
 
