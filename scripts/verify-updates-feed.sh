@@ -5,7 +5,9 @@
 set -euo pipefail
 
 HOST="updates.tradeautopsy.in"
-EXPECTED_CNAME="fexevil.github.io"
+# GitHub Pages (static.yml) or Vercel (updater/vercel.json)
+EXPECTED_CNAME_GITHUB_PAGES="fexevil.github.io"
+EXPECTED_CNAME_VERCEL="cname.vercel-dns.com"
 FEED_URL="https://${HOST}/appcast.xml"
 FALLBACK_URL="https://fexevil.github.io/tradeautopsy-station/appcast.xml"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,10 +44,10 @@ cname="$(printf '%s\n' "$raw_cname" | awk 'NR==1{print tolower($0)}' | sed 's/\.
 if [[ -z "$cname" ]]; then
   ns="$(dig +short NS tradeautopsy.in || true)"
   ns="$(printf '%s' "$ns" | tr '\n' ' ')"
-  fail "No CNAME for ${HOST}. In GoDaddy add host updates → ${EXPECTED_CNAME}, and delete any A/AAAA on that host. Typical propagation is 5–60 minutes. Nameservers: ${ns:-unknown} Try: dig +short CNAME ${HOST} @8.8.8.8"
+  fail "No CNAME for ${HOST}. In GoDaddy add host updates → ${EXPECTED_CNAME_GITHUB_PAGES} (GitHub Pages) or ${EXPECTED_CNAME_VERCEL} (Vercel). Delete any A/AAAA on that host. Typical propagation is 5–60 minutes. Nameservers: ${ns:-unknown} Try: dig +short CNAME ${HOST} @8.8.8.8"
 fi
-if [[ "$cname" != "$EXPECTED_CNAME" ]]; then
-  fail "CNAME for ${HOST} is ${cname}; expected ${EXPECTED_CNAME}. Point the updates record at the GitHub Pages user host, not the repository path."
+if [[ "$cname" != "$EXPECTED_CNAME_GITHUB_PAGES" && "$cname" != "$EXPECTED_CNAME_VERCEL" ]]; then
+  fail "CNAME for ${HOST} is ${cname}; expected ${EXPECTED_CNAME_GITHUB_PAGES} (Pages) or ${EXPECTED_CNAME_VERCEL} (Vercel)."
 fi
 echo "OK  CNAME ${HOST} → ${cname}"
 
