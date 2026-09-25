@@ -20,7 +20,8 @@ use crate::data::{
     SourceManifest, TickBook, BINANCE_COM_COINM_BOOK_ID, BINANCE_COM_OPTIONS_BOOK_ID,
     BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, COINM_KLINES_PATH,
     DEFAULT_COINM_HISTORY_INTERVAL, DEFAULT_HISTORY_INTERVAL, DEFAULT_OPTIONS_HISTORY_INTERVAL,
-    DEFAULT_USDM_HISTORY_INTERVAL, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
+    DEFAULT_USDM_HISTORY_INTERVAL, KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
     OPTIONS_KLINES_PATH, USDM_KLINES_PATH,
 };
 use axum::extract::{Query, State};
@@ -590,10 +591,16 @@ async fn kick_kotak_nfo_oi_session(state: &AppState, envelope: &ObtainEnvelope) 
 /// Kotak private account reads — one venue GET fans out to named books via segment.
 async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
     match (envelope.book_id.as_str(), envelope.operation.as_str()) {
-        ("kotak-nse-bse-cash", "orderbook") | ("kotak-nse-nfo", "orderbook") => {
+        ("kotak-nse-bse-cash", "orderbook")
+        | ("kotak-nse-nfo", "orderbook")
+        | ("kotak-nse-cds", "orderbook")
+        | ("kotak-mcx-future", "orderbook") => {
             crate::data::ensure_kotak_orders(state, &envelope.book_id).await;
         }
-        ("kotak-nse-bse-cash", "positionbook") | ("kotak-nse-nfo", "positionbook") => {
+        ("kotak-nse-bse-cash", "positionbook")
+        | ("kotak-nse-nfo", "positionbook")
+        | ("kotak-nse-cds", "positionbook")
+        | ("kotak-mcx-future", "positionbook") => {
             crate::data::ensure_kotak_positions(state, &envelope.book_id).await;
         }
         ("kotak-nse-bse-cash", "holdings") => {
@@ -602,11 +609,18 @@ async fn kick_kotak_private(state: &AppState, envelope: &ObtainEnvelope) {
         ("kotak-nse-bse-cash", "funds") => {
             crate::data::ensure_kotak_funds(state, &envelope.book_id).await;
         }
-        ("kotak-nse-nfo", "funds") => {
+        ("kotak-nse-nfo", "funds")
+        | ("kotak-nse-cds", "funds")
+        | ("kotak-mcx-future", "funds") => {
             crate::data::ensure_kotak_funds(state, &envelope.book_id).await;
         }
         _ => {}
     }
+}
+
+/// Used by `india_book_stack` E2E guards — sync enricher only (Kotak private kicks are separate).
+pub fn desk_enricher_registered(book_id: &str, operation: &str) -> bool {
+    enricher(book_id, operation).is_some()
 }
 
 fn enrich_obtain(
@@ -652,6 +666,14 @@ fn enricher(
         ("kotak-nse-nfo", "optionchain") => Some(enrich_optionchain),
         ("kotak-nse-nfo", "open_interest") => Some(enrich_open_interest),
         ("kotak-nse-nfo", "depth") => Some(enrich_depth),
+        ("kotak-nse-cds", "quotes") => Some(enrich_tickbook_quotes),
+        ("kotak-nse-cds", "tradebook") => Some(enrich_tradebook),
+        ("kotak-nse-cds", "funds") => Some(enrich_binance_funds),
+        ("kotak-nse-cds", "instruments") => Some(enrich_kotak_cds_instruments),
+        ("kotak-mcx-future", "quotes") => Some(enrich_tickbook_quotes),
+        ("kotak-mcx-future", "tradebook") => Some(enrich_tradebook),
+        ("kotak-mcx-future", "funds") => Some(enrich_binance_funds),
+        ("kotak-mcx-future", "instruments") => Some(enrich_kotak_mcx_instruments),
         ("binance-com-options", "quotes") => Some(enrich_tickbook_quotes),
         ("binance-com-options", "optionchain") => Some(enrich_optionchain),
         ("binance-com-options", "open_interest") => Some(enrich_open_interest),
@@ -1172,6 +1194,29 @@ fn enrich_kotak_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> O
 }
 
 fn enrich_kotak_nfo_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
+    enrich_kotak_fo_instruments_for_book(
+        state,
+        envelope,
+        crate::data::KOTAK_NSE_NFO_BOOK_ID,
+        "nse_fo",
+    )
+}
+
+fn enrich_kotak_cds_instruments(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    enrich_kotak_fo_instruments_for_book(state, envelope, KOTAK_NSE_CDS_BOOK_ID, "cde_fo")
+}
+
+fn enrich_kotak_mcx_instruments(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+    enrich_kotak_fo_instruments_for_book(state, envelope, KOTAK_MCX_FUTURE_BOOK_ID, "mcx_fo")
+}
+
+/// FO scrip rows filtered by segment until dedicated `cde_fo` / `mcx_fo` master fetch lands.
+fn enrich_kotak_fo_instruments_for_book(
+    state: &AppState,
+    mut envelope: ObtainEnvelope,
+    book_id: &'static str,
+    segment: &str,
+) -> ObtainEnvelope {
     let master = state
         .kotak_nfo_scrip_master
         .lock()
@@ -1179,13 +1224,16 @@ fn enrich_kotak_nfo_instruments(state: &AppState, mut envelope: ObtainEnvelope) 
     if master.is_empty() {
         return envelope;
     }
-    let rows: Vec<crate::data::ContractRow> =
-        master.iter().map(|row| row.to_contract_row()).collect();
+    let rows: Vec<crate::data::ContractRow> = master
+        .iter()
+        .filter(|row| row.segment.eq_ignore_ascii_case(segment))
+        .map(|row| row.to_contract_row())
+        .collect();
     drop(master);
-    let extracted = crate::data::extract_contracts_from_rows(
-        Some(crate::data::KOTAK_NSE_NFO_BOOK_ID),
-        Some(&rows),
-    );
+    if rows.is_empty() {
+        return envelope;
+    }
+    let extracted = crate::data::extract_contracts_from_rows(Some(book_id), Some(&rows));
     if let Some(data) = extracted.data {
         envelope.status = ObtainStatus::Success;
         envelope.data = Some(data);
@@ -1802,6 +1850,20 @@ mod tests {
         assert!(enricher("kotak-nse-nfo", "instruments").is_some());
         assert!(enricher("kotak-nse-nfo", "tradebook").is_some());
         assert!(enricher("kotak-nse-nfo", "optionchain").is_some());
+        for book in ["kotak-nse-cds", "kotak-mcx-future"] {
+            assert!(enricher(book, "quotes").is_some(), "{book} quotes");
+            assert!(enricher(book, "tradebook").is_some(), "{book} tradebook");
+            assert!(enricher(book, "funds").is_some(), "{book} funds");
+        }
+        use crate::data::{missing_desk_paths, KOTAK_NEO_FOUR_BOOKS};
+        for book_id in KOTAK_NEO_FOUR_BOOKS {
+            let manifest = manifests
+                .iter()
+                .find(|m| m.book_id == *book_id)
+                .expect("manifest");
+            let gaps = missing_desk_paths(book_id, manifest, desk_enricher_registered);
+            assert!(gaps.is_empty(), "{book_id}: {gaps:?}");
+        }
         let spot = manifests
             .iter()
             .find(|m| m.book_id == "binance-com-spot")
