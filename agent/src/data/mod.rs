@@ -162,7 +162,7 @@ pub use binance_usdm_private::{
 pub use binance_usdm_ticker::{
     await_binance_usdm_ticker, normalize_usdm_instrument, quote_tick_from_usdm_ticker_json,
 };
-pub use book_identity::{book_accepts_symbol, query_symbol};
+pub use book_identity::{book_accepts_symbol, is_com_spot_book_id, query_symbol};
 pub use candle_builder::{
     apply_history_series_and_seed, overlay_forming, overlay_json_candles, seed_builders_from_book,
     CandleBuilder, CandleBuilders,

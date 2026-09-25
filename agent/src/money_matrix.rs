@@ -149,7 +149,15 @@ pub fn is_binance_com_spot_fill(fill: &BrokerFill) -> bool {
     if upper.ends_with("_PERP") {
         return false;
     }
-    book_accepts_symbol("binance-com-spot", &fill.symbol)
+    [
+        "binance-com-spot",
+        "bybit-com-spot",
+        "okx-com-spot",
+        "kraken-com-spot",
+        "coinbase-advanced-spot",
+    ]
+    .into_iter()
+    .any(|book_id| book_accepts_symbol(book_id, &fill.symbol))
 }
 
 #[cfg(test)]
@@ -230,6 +238,19 @@ mod tests {
             ..Default::default()
         };
         assert!(is_binance_com_spot_fill(&spot));
+
+        let bybit_spot = BrokerFill {
+            fill_id: "b1".into(),
+            trade_id: "t3b".into(),
+            symbol: "ETHUSDT".into(),
+            side: "BUY".into(),
+            qty: 0.1,
+            price: 1.0,
+            filled_at: Utc::now(),
+            broker: "bybit_com".into(),
+            ..Default::default()
+        };
+        assert!(is_binance_com_spot_fill(&bybit_spot));
 
         let usdm = BrokerFill {
             fill_id: "u1".into(),

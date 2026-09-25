@@ -20,12 +20,24 @@ pub fn query_symbol(query: &str) -> Option<&str> {
         .find_map(|pair| pair.strip_prefix("symbol="))
 }
 
+/// COM spot books (Connect beta + Binance) — same symbol shape gate.
+pub fn is_com_spot_book_id(book_id: &str) -> bool {
+    matches!(
+        book_id,
+        "binance-com-spot"
+            | "bybit-com-spot"
+            | "okx-com-spot"
+            | "kraken-com-spot"
+            | "coinbase-advanced-spot"
+    )
+}
+
 /// Spot rejects dated `…-C`/`…-P` and `segment|token`. Options accepts dated
 /// only. Kotak and every other book return true — the host/path/segment fence
 /// stays the Kotak gate.
 pub fn book_accepts_symbol(book_id: &str, symbol: &str) -> bool {
     match book_id {
-        "binance-com-spot" | crate::ubi::bybit_session::BYBIT_BOOK_ID => {
+        id if is_com_spot_book_id(id) => {
             !is_dated_option_contract(symbol) && !symbol.contains('|')
         }
         "binance-com-options" => is_dated_option_contract(symbol),
