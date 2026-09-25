@@ -103,13 +103,7 @@ jobs:
           set -euo pipefail
           RELEASED="$(grep -Eo 'sparkle:version(="|>)[0-9]+' updater/appcast.xml \
             | grep -Eo '[0-9]+$' | sort -n | tail -1 || true)"
-          BASE_BUILD="$(python3 - <<'PY'
-        import plistlib
-        from pathlib import Path
-        data = plistlib.loads(Path("station/StationApp/Info.plist").read_bytes())
-        print(int(str(data.get("CFBundleVersion", "0") or "0")))
-        PY
-        )"
+          BASE_BUILD="$(python3 -c "import plistlib; from pathlib import Path; d=plistlib.loads(Path('station/StationApp/Info.plist').read_bytes()); print(int(str(d.get('CFBundleVersion','0') or '0')))")"
           BASE_BUILD="${BASE_BUILD:-0}"
           BUILD_NUMBER="$(( RELEASED > BASE_BUILD ? RELEASED + 1 : BASE_BUILD + 1 ))"
           echo "Next build number: ${BUILD_NUMBER} (appcast max: ${RELEASED:-none}, plist: ${BASE_BUILD})"
