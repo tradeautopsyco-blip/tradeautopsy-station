@@ -15,6 +15,28 @@ struct TodayClosedFloorChartLayoutTests {
         #expect(layout.lastPillText == nil)
     }
 
+    @Test func nfoBookEndsSessionAt1540() {
+        let layout = layout(
+            points: [],
+            quoteCurrency: "INR",
+            brokerSlug: "kotak_neo",
+            bookId: "kotak-nse-nfo"
+        )
+        #expect(layout.showsNseSessionTicks == true)
+        #expect(layout.tickLabels.last == "15:40")
+        #expect(layout.tickXs.last == 1)
+    }
+
+    @Test func cashBookStays1530WhenBookIdIsCash() {
+        let layout = layout(
+            points: [],
+            quoteCurrency: "INR",
+            brokerSlug: "kotak_neo",
+            bookId: "kotak-nse-bse-cash"
+        )
+        #expect(layout.tickLabels.last == "15:30")
+    }
+
     @Test func binanceUsdPointDoesNotUseNseSessionTicks() throws {
         let layout = layout(
             points: [
@@ -169,13 +191,15 @@ struct TodayClosedFloorChartLayoutTests {
         points: [TodayClosedChartPoint],
         floor: Double? = nil,
         quoteCurrency: String?,
-        brokerSlug: String?
+        brokerSlug: String?,
+        bookId: String? = nil
     ) -> TodayClosedFloorChartLayout {
         TodayClosedFloorChartLayout.build(
             points: points,
             floor: floor,
             quoteCurrency: quoteCurrency,
             brokerSlug: brokerSlug,
+            bookId: bookId,
             now: Date(),
             calendar: Calendar(identifier: .gregorian)
         )

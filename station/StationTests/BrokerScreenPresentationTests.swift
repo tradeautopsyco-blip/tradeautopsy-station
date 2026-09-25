@@ -79,6 +79,13 @@ struct BrokerScreenPresentationTests {
         }
         #expect(cards.first { $0.id == "kotak_neo" }?.plannedLabel == nil)
         #expect(cards.first { $0.id == "binance_com" }?.plannedLabel == nil)
+        #expect(cards.first { $0.id == "kotak_neo" }?.booksLine == "Cash + NFO desk-live · CDS + MCX Connect beta")
+        #expect(cards.first { $0.id == "dhan" }?.booksLine == "NSE/BSE cash + NSE F&O (Connect beta)")
+        #expect(cards.first { $0.id == "groww" }?.booksLine == "NSE/BSE cash + NSE F&O (Connect beta)")
+        #expect(cards.first { $0.id == "binance_com" }?.booksLine == "Spot, USD-M, Coin-M · options sync without realized hero")
+        #expect(cards.first { $0.id == "zerodha_kite" }?.booksLine == nil)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "kotak_neo") == false)
+        #expect(BrokerDogfoodProgram.showsConnectBetaBadge(slug: "binance_com") == false)
     }
 
     @Test func enabledZerodhaShowsConnectWhenAgentOnline() {

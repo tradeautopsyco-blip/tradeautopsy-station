@@ -17,6 +17,8 @@ public struct BrokerCardPresentation: Equatable, Identifiable, Sendable {
     /// Relative "Last synced" from agent poll success (nil when idle / other slug).
     public let lastSyncedAtText: String?
     public let plannedLabel: String?
+    /// Synced books on this slug (desk-live vs Connect beta). Nil when the cash/spot row is enough.
+    public let booksLine: String?
     public let permissionWarning: BrokerPermissionWarning?
     public let identity: BrokerConnectionIdentity?
 
@@ -36,6 +38,7 @@ public struct BrokerCardPresentation: Equatable, Identifiable, Sendable {
         lastSyncSummary: String?,
         lastSyncedAtText: String? = nil,
         plannedLabel: String?,
+        booksLine: String? = nil,
         permissionWarning: BrokerPermissionWarning? = nil,
         identity: BrokerConnectionIdentity?
     ) {
@@ -54,6 +57,7 @@ public struct BrokerCardPresentation: Equatable, Identifiable, Sendable {
         self.lastSyncSummary = lastSyncSummary
         self.lastSyncedAtText = lastSyncedAtText
         self.plannedLabel = plannedLabel
+        self.booksLine = booksLine
         self.permissionWarning = permissionWarning
         self.identity = identity
     }
@@ -99,6 +103,7 @@ public enum BrokerScreenPresentation {
                 lastSyncSummary: nil,
                 lastSyncedAtText: nil,
                 plannedLabel: "Planned",
+                booksLine: BrokerDogfoodProgram.booksLine(for: descriptor.slug),
                 permissionWarning: nil,
                 identity: nil
             )
@@ -120,6 +125,7 @@ public enum BrokerScreenPresentation {
                 lastSyncSummary: nil,
                 lastSyncedAtText: nil,
                 plannedLabel: "Parked",
+                booksLine: nil,
                 permissionWarning: nil,
                 identity: nil
             )
@@ -170,6 +176,7 @@ public enum BrokerScreenPresentation {
             lastSyncSummary: connection?.lastSyncSummary,
             lastSyncedAtText: formatRelativeSyncedAt(connection?.lastSyncedAtMs, now: now),
             plannedLabel: plannedLabel,
+            booksLine: BrokerDogfoodProgram.booksLine(for: descriptor.slug),
             permissionWarning: connection?.permissionWarning,
             identity: connection?.identity
         )

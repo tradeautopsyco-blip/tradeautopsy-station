@@ -16,6 +16,13 @@ struct BrokerCardView: View {
                         .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
                         .foregroundStyle(StationDS.Text.primary)
 
+                    if let booksLine = card.booksLine {
+                        Text(booksLine)
+                            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                            .foregroundStyle(StationDS.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     HStack(spacing: 6) {
                         Text(card.assetClass.capitalized)
                             .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))

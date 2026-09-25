@@ -261,7 +261,8 @@ public struct TodayView: View {
                 points: viewModel.desk.chartPoints,
                 floor: viewModel.desk.floorLine,
                 quoteCurrency: viewModel.desk.quoteCurrency,
-                brokerSlug: viewModel.desk.brokerSlug
+                brokerSlug: viewModel.desk.brokerSlug,
+                bookId: viewModel.desk.brokerSlug == "kotak_neo" ? "kotak-nse-bse-cash" : nil
             )
             .frame(maxWidth: .infinity)
             .frame(height: mini ? 88 : 156)
@@ -868,6 +869,7 @@ struct TodayClosedFloorChart: View {
     let floor: Double?
     let quoteCurrency: String?
     let brokerSlug: String?
+    var bookId: String? = nil
 
     var body: some View {
         let layout = TodayClosedFloorChartLayout.build(
@@ -875,6 +877,7 @@ struct TodayClosedFloorChart: View {
             floor: floor,
             quoteCurrency: quoteCurrency,
             brokerSlug: brokerSlug,
+            bookId: bookId,
             now: Date(),
             calendar: .current
         )

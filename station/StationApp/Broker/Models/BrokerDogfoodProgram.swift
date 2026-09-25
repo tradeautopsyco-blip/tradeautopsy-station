@@ -43,6 +43,20 @@ public enum BrokerDogfoodProgram {
         connectBetaSlugs.contains(slug)
     }
 
+    /// Extra books on a slug card. Kotak and Binance stay off `connectBetaSlugs`.
+    public static func booksLine(for slug: String) -> String? {
+        switch slug {
+        case "kotak_neo":
+            return "Cash + NFO desk-live · CDS + MCX Connect beta"
+        case "dhan", "groww":
+            return "NSE/BSE cash + NSE F&O (Connect beta)"
+        case "binance_com":
+            return "Spot, USD-M, Coin-M · options sync without realized hero"
+        default:
+            return nil
+        }
+    }
+
     public static func offlineDrills(for slug: String) -> [P4OfflineDrill] {
         guard p4CryptoSpotSlugs.contains(slug) else { return [] }
         return P4OfflineDrill.allCases

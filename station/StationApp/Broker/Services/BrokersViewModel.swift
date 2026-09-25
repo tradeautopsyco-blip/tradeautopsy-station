@@ -163,6 +163,7 @@ public final class BrokersViewModel: ObservableObject {
                 lastSyncSummary: card.lastSyncSummary,
                 lastSyncedAtText: card.lastSyncedAtText,
                 plannedLabel: card.plannedLabel,
+                booksLine: card.booksLine,
                 permissionWarning: card.permissionWarning,
                 identity: card.identity
             )

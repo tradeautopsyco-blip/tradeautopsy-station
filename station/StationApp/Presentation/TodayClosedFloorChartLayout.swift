@@ -2,7 +2,7 @@ import Foundation
 
 /// Closed P&L floor-chart layout. Maps `TodayClosedChartPoint` onto unit space.
 /// Last pill formats the last cumulative only — not a second PnL writer. Open MTM is not an input.
-/// NSE session chrome: 09:15–15:30 IST from kotak-nse-bse-cash lock (fetch 2026-08-22). MIS 15:20 is not a tick.
+/// NSE session chrome: cash 09:15–15:30; `*-nse-nfo` books end at 15:40. MIS 15:20 is not a tick.
 public struct TodayClosedFloorChartLayout: Equatable, Sendable {
     public struct PlotPoint: Equatable, Sendable {
         public let x: Double
@@ -20,15 +20,20 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
     /// Unit Y of PnL = 0. Area fill meets this line, not the chart bottom.
     public let zeroY: Double
 
-    private static let nseLabels = ["09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:30"]
     private static let sessionStartMinutes = 9 * 60 + 15
-    private static let sessionSpanMinutes = 375.0
+    /// 09:15–15:30.
+    private static let cashSpanMinutes = 375.0
+    /// 09:15–15:40.
+    private static let foSpanMinutes = 385.0
+    private static let cashLabels = ["09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:30"]
+    private static let foLabels = ["09:15", "10:15", "11:15", "12:15", "13:15", "14:15", "15:40"]
 
     public static func build(
         points: [TodayClosedChartPoint],
         floor: Double?,
         quoteCurrency: String?,
         brokerSlug: String?,
+        bookId: String? = nil,
         now: Date,
         calendar: Calendar
     ) -> TodayClosedFloorChartLayout {
@@ -36,8 +41,10 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
         _ = calendar
         let showsNse = Self.showsNseSessionTicks(
             quoteCurrency: quoteCurrency,
-            brokerSlug: brokerSlug
+            brokerSlug: brokerSlug,
+            bookId: bookId
         )
+        let foSession = Self.isNfoBook(bookId)
         // Settings floor is a positive loss budget. Closed-PnL axis draws it as −floor
         // (kotak-nse-bse-cash lock). A +12,000 floor must not squash the series to the bottom.
         let closedPnlFloor = floor.map { -$0 }
@@ -47,7 +54,7 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
             plotPoints = points.compactMap { point in
                 guard let date = parseClosedAt(point.closedAt) else { return nil }
                 return PlotPoint(
-                    x: nseSessionX(date),
+                    x: nseSessionX(date, foSession: foSession),
                     y: yScale.y(point.cumulativeClosedPnL),
                     cumulativeClosedPnL: point.cumulativeClosedPnL
                 )
@@ -59,8 +66,8 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
         return TodayClosedFloorChartLayout(
             plotPoints: plotPoints,
             floorY: closedPnlFloor.map { yScale.y($0) },
-            tickLabels: showsNse ? nseLabels : [],
-            tickXs: showsNse ? nseTickXs() : [],
+            tickLabels: showsNse ? (foSession ? foLabels : cashLabels) : [],
+            tickXs: showsNse ? nseTickXs(foSession: foSession) : [],
             lastPillText: last.map { compactWholePill($0, quoteCurrency: quoteCurrency) },
             fillIsLoss: last.map { $0 < 0 },
             showsNseSessionTicks: showsNse,
@@ -68,20 +75,36 @@ public struct TodayClosedFloorChartLayout: Equatable, Sendable {
         )
     }
 
-    private static func showsNseSessionTicks(quoteCurrency: String?, brokerSlug: String?) -> Bool {
-        brokerSlug == "kotak_neo" && quoteCurrency?.uppercased() == "INR"
+    private static func showsNseSessionTicks(
+        quoteCurrency: String?,
+        brokerSlug: String?,
+        bookId: String?
+    ) -> Bool {
+        guard quoteCurrency?.uppercased() == "INR" else { return false }
+        if isNfoBook(bookId) { return true }
+        return brokerSlug == "kotak_neo"
     }
 
-    private static func nseTickXs() -> [Double] {
-        [0, 60, 120, 180, 240, 300, 375].map { Double($0) / sessionSpanMinutes }
+    private static func isNfoBook(_ bookId: String?) -> Bool {
+        bookId?.hasSuffix("-nse-nfo") == true
     }
 
-    private static func nseSessionX(_ date: Date) -> Double {
+    private static func sessionSpan(foSession: Bool) -> Double {
+        foSession ? foSpanMinutes : cashSpanMinutes
+    }
+
+    private static func nseTickXs(foSession: Bool) -> [Double] {
+        let end = foSession ? 385 : 375
+        let span = sessionSpan(foSession: foSession)
+        return [0, 60, 120, 180, 240, 300, end].map { Double($0) / span }
+    }
+
+    private static func nseSessionX(_ date: Date, foSession: Bool) -> Double {
         var ist = Calendar(identifier: .gregorian)
         ist.timeZone = TimeZone(identifier: "Asia/Kolkata")!
         let comps = ist.dateComponents([.hour, .minute], from: date)
         let minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        let t = (Double(minutes - sessionStartMinutes)) / sessionSpanMinutes
+        let t = (Double(minutes - sessionStartMinutes)) / sessionSpan(foSession: foSession)
         return min(1, max(0, t))
     }
 
