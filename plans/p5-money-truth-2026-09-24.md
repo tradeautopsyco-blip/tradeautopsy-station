@@ -77,10 +77,10 @@
 
 ## Phase P5-7: Docs / registry text
 
-**Status:** in progress
+**Status:** done (2026-09-25)
 
-- [x] CLAIM-REGISTRY sixteen-book sentence
-- [ ] `kotak-nse-bse-cash.md` + ASSET-CLASS §9: `inr_cash_wac` shipped wording (integrator doc PR)
+- [x] CLAIM-REGISTRY twenty-two-book sentence (money matrix row count)
+- [x] `kotak-nse-bse-cash.md` + ASSET-CLASS §9: `inr_cash_wac.rs` **SHIPPED** owner (not future)
 
 ---
 
