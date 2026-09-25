@@ -8,7 +8,7 @@ use crate::fx_cds_realized_pnl;
 use crate::mcx_realized_pnl;
 use crate::nfo_realized_pnl;
 
-pub const SHIPPING_BOOK_COUNT: usize = 16;
+pub const SHIPPING_BOOK_COUNT: usize = 22;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoneyOwner {
@@ -56,6 +56,22 @@ pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
             owner: MoneyOwner::Engine("agent/src/round_trip_engine.rs"),
         },
         BookMoneyRow {
+            book_id: "bybit-com-spot",
+            owner: MoneyOwner::Engine("agent/src/round_trip_engine.rs"),
+        },
+        BookMoneyRow {
+            book_id: "okx-com-spot",
+            owner: MoneyOwner::Engine("agent/src/round_trip_engine.rs"),
+        },
+        BookMoneyRow {
+            book_id: "kraken-com-spot",
+            owner: MoneyOwner::Engine("agent/src/round_trip_engine.rs"),
+        },
+        BookMoneyRow {
+            book_id: "coinbase-advanced-spot",
+            owner: MoneyOwner::Engine("agent/src/round_trip_engine.rs"),
+        },
+        BookMoneyRow {
             book_id: "kotak-nse-nfo",
             owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
         },
@@ -77,6 +93,14 @@ pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
         },
         BookMoneyRow {
             book_id: "fyers-nse-nfo",
+            owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "dhan-nse-nfo",
+            owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
+        },
+        BookMoneyRow {
+            book_id: "groww-nse-nfo",
             owner: MoneyOwner::Engine(nfo_realized_pnl::OWNER_PATH),
         },
         BookMoneyRow {
@@ -143,6 +167,8 @@ mod tests {
         assert!(ids.contains(&"zerodha-nse-nfo"));
         assert!(ids.contains(&"upstox-nse-nfo"));
         assert!(ids.contains(&"fyers-nse-nfo"));
+        assert!(ids.contains(&"dhan-nse-nfo"));
+        assert!(ids.contains(&"groww-nse-nfo"));
         assert!(ids.contains(&"binance-com-options"));
         assert!(ids.contains(&"binance-com-coinm"));
     }
@@ -234,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn p4_cex_spot_not_in_matrix_until_registry_shipping_rows() {
+    fn p4_cex_spot_books_use_round_trip_owner_after_registry_shipping() {
         let ids: Vec<_> = shipping_money_matrix()
             .iter()
             .map(|r| r.book_id)
@@ -245,9 +271,11 @@ mod tests {
             "kraken-com-spot",
             "coinbase-advanced-spot",
         ] {
-            assert!(
-                !ids.contains(&book),
-                "P5: {book} joins matrix only after CLAIM-REGISTRY SHIPPING row"
+            assert!(ids.contains(&book), "{book} must be SHIPPING in CLAIM-REGISTRY");
+            let owner = owner_for_book(book).expect("row");
+            assert_eq!(
+                owner,
+                MoneyOwner::Engine("agent/src/round_trip_engine.rs")
             );
         }
         assert_eq!(ids.len(), SHIPPING_BOOK_COUNT);

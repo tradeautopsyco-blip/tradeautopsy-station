@@ -1,0 +1,35 @@
+{
+  "status": "SUCCESS",
+  "payload": {
+    "order_list": [
+      {
+        "groww_order_id": "GWKNFO01",
+        "order_status": "EXECUTED",
+        "trading_symbol": "NIFTY26JUL24000CE",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "FNO",
+        "exchange": "NSE",
+        "quantity": 2,
+        "filled_quantity": 2,
+        "remaining_quantity": 0,
+        "average_fill_price": 100.0,
+        "deliverable_quantity": 0
+      },
+      {
+        "groww_order_id": "GWKNFO02",
+        "order_status": "EXECUTED",
+        "trading_symbol": "NIFTY26JUL24000CE",
+        "transaction_type": "SELL",
+        "product": "CNC",
+        "segment": "FNO",
+        "exchange": "NSE",
+        "quantity": 2,
+        "filled_quantity": 2,
+        "remaining_quantity": 0,
+        "average_fill_price": 110.0,
+        "deliverable_quantity": 0
+      }
+    ]
+  }
+}

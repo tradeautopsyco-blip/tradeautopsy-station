@@ -13,6 +13,8 @@ use super::descriptor::{
     KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID, UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
+    DHAN_NSE_BSE_CASH_BOOK_ID, DHAN_NSE_NFO_BOOK_ID,
+    GROWW_NSE_BSE_CASH_BOOK_ID, GROWW_NSE_NFO_BOOK_ID,
 };
 
 fn funds_book_allowed(book_id: &str) -> bool {
@@ -204,6 +206,10 @@ impl AccountBook {
             &[UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID]
         } else if lower.contains("fyers") {
             &[FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID]
+        } else if lower.contains("dhan") {
+            &[DHAN_NSE_BSE_CASH_BOOK_ID, DHAN_NSE_NFO_BOOK_ID]
+        } else if lower.contains("groww") {
+            &[GROWW_NSE_BSE_CASH_BOOK_ID, GROWW_NSE_NFO_BOOK_ID]
         } else {
             &[]
         }
@@ -407,6 +413,14 @@ mod tests {
         assert_eq!(
             AccountBook::books_for_adapter_name("kotak_neo_wasm"),
             &[KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID]
+        );
+        assert_eq!(
+            AccountBook::books_for_adapter_name("dhan"),
+            &[DHAN_NSE_BSE_CASH_BOOK_ID, DHAN_NSE_NFO_BOOK_ID]
+        );
+        assert_eq!(
+            AccountBook::books_for_adapter_name("groww"),
+            &[GROWW_NSE_BSE_CASH_BOOK_ID, GROWW_NSE_NFO_BOOK_ID]
         );
     }
 }

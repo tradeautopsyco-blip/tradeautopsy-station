@@ -884,7 +884,7 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Err(HostRefuse::HostNotAllowed)
         }
-        crate::ubi::GROWW_BOOK_ID => {
+        crate::ubi::GROWW_BOOK_ID | crate::ubi::GROWW_NFO_BOOK_ID => {
             if host_norm == crate::ubi::GROWW_ASSETS_HOST {
                 if path_norm != "/instruments/instrument.csv" {
                     return Err(HostRefuse::PathNotAllowlisted);
@@ -899,7 +899,7 @@ pub fn authorize_book_fence(book_id: &str, host: &str, path: &str) -> Result<(),
             }
             Ok(())
         }
-        crate::ubi::DHAN_BOOK_ID => {
+        crate::ubi::DHAN_BOOK_ID | crate::ubi::DHAN_NFO_BOOK_ID => {
             if host_norm != crate::ubi::DHAN_API_HOST {
                 return Err(HostRefuse::HostNotAllowed);
             }

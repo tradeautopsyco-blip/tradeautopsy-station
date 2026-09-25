@@ -93,6 +93,23 @@ pub const FORBIDDEN_COMPONENT_HEADERS: &[&str] = &[
     "api-sign",
 ];
 
+fn fixture_for_request<'a>(
+    fixtures: &'a HashMap<String, BrokerHttpFixture>,
+    request: &BrokerHttpRequest,
+) -> Option<&'a BrokerHttpFixture> {
+    if let Some(seg) = request
+        .query
+        .iter()
+        .find(|q| q.name.eq_ignore_ascii_case("segment"))
+    {
+        let keyed = format!("{}?segment={}", request.path, seg.value);
+        if let Some(fixture) = fixtures.get(&keyed) {
+            return Some(fixture);
+        }
+    }
+    fixtures.get(&request.path)
+}
+
 /// Fixture response keyed by path (contract tests — no live HTTP).
 #[derive(Debug, Clone)]
 pub struct BrokerHttpFixture {
@@ -298,7 +315,7 @@ impl tradeautopsy::ubi_data::broker_http::Host for UbiHostState {
 
         let (status, headers, body, error_class) = match &self.mode {
             BrokerHttpMode::Fixtures(fixtures) => {
-                let fixture = fixtures.get(&request.path).ok_or_else(|| {
+                let fixture = fixture_for_request(fixtures, &request).ok_or_else(|| {
                     format!(
                         "no fixture for path {} on host {}",
                         request.path, request.host

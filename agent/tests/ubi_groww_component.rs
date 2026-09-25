@@ -71,6 +71,15 @@ fn fan_out_fixture_state() -> UbiHostState {
             error_class: None,
         },
     );
+    fixtures.insert(
+        format!("{ORDER_LIST_PATH}?segment=FNO"),
+        BrokerHttpFixture {
+            status: 200,
+            body: read_groww_fixture("order_list_cash_empty.json"),
+            headers: vec![],
+            error_class: None,
+        },
+    );
     UbiHostState::new(config(), fixtures)
 }
 
@@ -124,10 +133,11 @@ fn fan_out_maps_filled_orders_and_skips_open_and_rejected() {
     let (fills, state) = run_fetch_fills(&wasm, state, empty_cursor()).expect("fetch_fills");
 
     assert_eq!(fills.len(), 4);
-    assert_eq!(state.calls.len(), 3);
+    assert_eq!(state.calls.len(), 4, "CASH fan-out + empty FNO order list");
     assert_eq!(state.calls[0].path, ORDER_LIST_PATH);
     assert_eq!(state.calls[1].path, "/v1/order/trades/GWKFILLMULTI01");
     assert_eq!(state.calls[2].path, "/v1/order/trades/GWKFILLSINGLE02");
+    assert_eq!(state.calls[3].path, ORDER_LIST_PATH);
 
     let first = &fills[0];
     assert_eq!(first.fill_id, "11000012345678");

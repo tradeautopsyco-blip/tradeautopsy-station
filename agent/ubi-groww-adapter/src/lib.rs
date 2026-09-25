@@ -66,6 +66,8 @@ const ORDER_LIST_PAGE_SIZE: u32 = 25;
 /// B6 row 4: trades page_size max 50 (both pages agree).
 const TRADES_PAGE_SIZE: u32 = 50;
 const SEGMENT_CASH: &str = "CASH";
+const SEGMENT_FNO: &str = "FNO";
+const NFO_HOST_SEGMENT: &str = "nse_fo";
 /// Anti-hang loop guards (see module docs) — not venue claims.
 const MAX_ORDER_PAGES: u32 = 100;
 const MAX_TRADES_PAGES: u32 = 100;
@@ -113,12 +115,27 @@ fn fetch_all_fills(
     cursor: &FillCursor,
 ) -> Result<Vec<FillEvent>, String> {
     let mut fills = Vec::new();
+    fetch_segment_fills(call, SEGMENT_CASH, &mut fills)?;
+    fetch_segment_fills(call, SEGMENT_FNO, &mut fills)?;
+
+    if let Some(since) = cursor.since_unix_ms {
+        fills.retain(|f| f.filled_at_unix_ms >= since);
+    }
+    fills.sort_by_key(|f: &FillEvent| f.filled_at_unix_ms);
+    Ok(fills)
+}
+
+fn fetch_segment_fills(
+    call: &dyn Fn(&BrokerHttpRequest) -> Result<BrokerHttpResponse, String>,
+    segment: &str,
+    fills: &mut Vec<FillEvent>,
+) -> Result<(), String> {
     let mut page = 0u32;
     loop {
         let root = broker_get(
             call,
             ORDER_LIST_PATH,
-            order_list_query(page),
+            order_list_query(page, segment),
             CallCtx::OrderList,
         )?;
         fail_closed_envelope(&root, CallCtx::OrderList)?;
@@ -130,19 +147,14 @@ fn fetch_all_fills(
             let order_id = string_number_field(order, "groww_order_id").ok_or_else(|| {
                 "groww order row qualifies for fan-out but has no groww_order_id".to_string()
             })?;
-            fetch_order_trades(call, &order_id, &mut fills)?;
+            fetch_order_trades(call, &order_id, segment, fills)?;
         }
         page += 1;
         if orders.len() < ORDER_LIST_PAGE_SIZE as usize || page >= MAX_ORDER_PAGES {
             break;
         }
     }
-
-    if let Some(since) = cursor.since_unix_ms {
-        fills.retain(|f| f.filled_at_unix_ms >= since);
-    }
-    fills.sort_by_key(|f: &FillEvent| f.filled_at_unix_ms);
-    Ok(fills)
+    Ok(())
 }
 
 /// Per-order fan-out: every page of `trade_list[]` for one order. A 404/GA004
@@ -150,12 +162,18 @@ fn fetch_all_fills(
 fn fetch_order_trades(
     call: &dyn Fn(&BrokerHttpRequest) -> Result<BrokerHttpResponse, String>,
     order_id: &str,
+    segment: &str,
     fills: &mut Vec<FillEvent>,
 ) -> Result<(), String> {
     let path = format!("{TRADES_PATH_PREFIX}{order_id}");
     let mut page = 0u32;
     loop {
-        let root = broker_get(call, &path, trades_query(page), CallCtx::OrderTrades(order_id))?;
+        let root = broker_get(
+            call,
+            &path,
+            trades_query(page, segment),
+            CallCtx::OrderTrades(order_id),
+        )?;
         fail_closed_envelope(&root, CallCtx::OrderTrades(order_id))?;
         let trades = trade_rows(&root)?;
         for (index, trade) in trades.iter().enumerate() {
@@ -171,17 +189,17 @@ fn fetch_order_trades(
     Ok(())
 }
 
-fn order_list_query(page: u32) -> Vec<HttpQueryParam> {
+fn order_list_query(page: u32, segment: &str) -> Vec<HttpQueryParam> {
     vec![
-        query_param("segment", SEGMENT_CASH),
+        query_param("segment", segment),
         query_param("page", &page.to_string()),
         query_param("page_size", &ORDER_LIST_PAGE_SIZE.to_string()),
     ]
 }
 
-fn trades_query(page: u32) -> Vec<HttpQueryParam> {
+fn trades_query(page: u32, segment: &str) -> Vec<HttpQueryParam> {
     vec![
-        query_param("segment", SEGMENT_CASH),
+        query_param("segment", segment),
         query_param("page", &page.to_string()),
         query_param("page_size", &TRADES_PAGE_SIZE.to_string()),
     ]
@@ -388,6 +406,13 @@ fn map_trade_row(
     order_id: &str,
     index: usize,
 ) -> Result<Option<FillEvent>, String> {
+    if string_field(row, "segment")
+        .map(|s| s.eq_ignore_ascii_case(SEGMENT_FNO))
+        .unwrap_or(false)
+    {
+        return map_fno_trade_row(row, order_id, index);
+    }
+
     // Gate 1 — cash segments only, stamped verbatim. FNO/CURRENCY/COMMODITY and
     // anything unmapped are refused (B6 rows 1/12/21), never defaulted.
     let exchange_segment = match string_field(row, "segment") {
@@ -458,6 +483,73 @@ fn map_trade_row(
         fee_amount: None,
         fee_currency: None,
         exchange_segment: Some(exchange_segment),
+        product: Some(product),
+        trade_id,
+    }))
+}
+
+fn map_fno_trade_row(
+    row: &serde_json::Value,
+    order_id: &str,
+    index: usize,
+) -> Result<Option<FillEvent>, String> {
+    let product = match string_field(row, "product")
+        .map(|p| p.to_ascii_uppercase())
+        .as_deref()
+    {
+        Some("CNC") => "NRML".to_string(),
+        Some("MIS") => "MIS".to_string(),
+        _ => return Ok(None),
+    };
+
+    let symbol = string_field(row, "trading_symbol")
+        .ok_or_else(|| "groww fno trade row missing trading_symbol".to_string())?;
+    let side = match string_field(row, "transaction_type")
+        .map(|s| s.to_ascii_uppercase())
+        .as_deref()
+    {
+        Some("BUY") => "BUY",
+        Some("SELL") => "SELL",
+        other => {
+            return Err(format!(
+                "groww fno trade row has unknown transaction_type {:?}",
+                other.unwrap_or("")
+            ))
+        }
+    };
+    let qty = parse_f64(row.get("quantity"))
+        .map_err(|_| "groww fno trade row missing quantity".to_string())?;
+    let price = parse_f64(row.get("price"))
+        .map_err(|_| "groww fno trade row missing price".to_string())?;
+    let filled_at_unix_ms = parse_trade_time(row)?;
+
+    let fill_id = string_number_field(row, "exchange_trade_id")
+        .or_else(|| string_number_field(row, "groww_trade_id"))
+        .unwrap_or_else(|| format!("{order_id}#{index}"));
+    let trade_id = string_number_field(row, "exchange_order_id").or_else(|| Some(order_id.to_string()));
+
+    let instrument_class = if symbol.trim().to_ascii_uppercase().ends_with("FUT") {
+        InstrumentClass::Future
+    } else {
+        InstrumentClass::Option
+    };
+
+    Ok(Some(FillEvent {
+        fill_id,
+        broker_slug: "groww".to_string(),
+        connection_id: String::new(),
+        asset_class: AssetClass::Equity,
+        instrument_class,
+        is_inverse: false,
+        symbol,
+        side: side.to_string(),
+        qty,
+        price,
+        currency: "INR".to_string(),
+        filled_at_unix_ms,
+        fee_amount: None,
+        fee_currency: None,
+        exchange_segment: Some(NFO_HOST_SEGMENT.to_string()),
         product: Some(product),
         trade_id,
     }))
@@ -713,6 +805,16 @@ mod tests {
                 "component must send no auth headers"
             );
             self.calls.borrow_mut().push(request.path.clone());
+            if request.path == ORDER_LIST_PATH
+                && request
+                    .query
+                    .iter()
+                    .any(|q| q.name == "segment" && q.value.eq_ignore_ascii_case(SEGMENT_FNO))
+            {
+                return Ok(ok(
+                    r#"{"status":"SUCCESS","payload":{"order_list":[]}}"#,
+                ));
+            }
             self.routes.get(&request.path).cloned().ok_or_else(|| {
                 format!("no stub for path {} (honest gap in test wiring)", request.path)
             })
@@ -746,14 +848,12 @@ mod tests {
         // Multi order: 3 trades (20/50/30); single order: 1 trade. Open +
         // rejected orders are never fanned out.
         assert_eq!(fills.len(), 4);
-        assert_eq!(
-            *stub.calls.borrow(),
-            vec![
-                "/v1/order/list".to_string(),
-                "/v1/order/trades/GWKFILLMULTI01".to_string(),
-                "/v1/order/trades/GWKFILLSINGLE02".to_string(),
-            ]
-        );
+        let calls = stub.calls.borrow();
+        assert_eq!(calls.len(), 4, "CASH list + 2 trade fan-outs + empty FNO list");
+        assert_eq!(calls[0], "/v1/order/list");
+        assert!(calls[1].starts_with("/v1/order/trades/"));
+        assert!(calls[2].starts_with("/v1/order/trades/"));
+        assert_eq!(calls[3], "/v1/order/list");
 
         let first = &fills[0];
         assert_eq!(first.fill_id, "11000012345678");
@@ -798,6 +898,14 @@ mod tests {
         let seen_pages = RefCell::new(vec![]);
         let empty = r#"{"status":"SUCCESS","payload":{"order_list":[]}}"#.to_string();
         let call = |request: &BrokerHttpRequest| {
+            if request.path == ORDER_LIST_PATH
+                && request
+                    .query
+                    .iter()
+                    .any(|q| q.name == "segment" && q.value.eq_ignore_ascii_case(SEGMENT_FNO))
+            {
+                return Ok(ok(&empty));
+            }
             let page = request
                 .query
                 .iter()
@@ -813,7 +921,11 @@ mod tests {
         };
         let fills = fetch_all_fills(&call, &cursor_none()).expect("paged fetch");
         assert!(fills.is_empty());
-        assert_eq!(*seen_pages.borrow(), vec!["0".to_string(), "1".to_string()]);
+        assert_eq!(
+            *seen_pages.borrow(),
+            vec!["0".to_string(), "1".to_string()],
+            "CASH pagination only; FNO list returns empty without recording page"
+        );
     }
 
     #[test]
@@ -922,9 +1034,15 @@ mod tests {
             calls: RefCell::new(vec![]),
         };
         let fills = fetch_all_fills(&|r| stub.call(r), &cursor_none()).expect("refusals skip");
-        assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].symbol, "TCS");
-        assert_eq!(fills[0].exchange_segment.as_deref(), Some("CASH"));
+        assert_eq!(fills.len(), 2);
+        let cash = fills.iter().find(|f| f.symbol == "TCS").expect("cash leg");
+        assert_eq!(cash.exchange_segment.as_deref(), Some("CASH"));
+        let fno = fills
+            .iter()
+            .find(|f| f.symbol == "NIFTY26OCT25000CE")
+            .expect("fno leg maps on FNO poll");
+        assert_eq!(fno.exchange_segment.as_deref(), Some("nse_fo"));
+        assert_eq!(fno.product.as_deref(), Some("MIS"));
     }
 
     #[test]

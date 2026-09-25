@@ -1014,7 +1014,9 @@ pub fn first_party_s0_manifests() -> Vec<SourceManifest> {
         fyers_cash_manifest(),
         fyers_nfo_manifest(),
         groww_cash_manifest(),
+        groww_nfo_manifest(),
         dhan_cash_manifest(),
+        dhan_nfo_manifest(),
         bybit_com_spot_manifest(),
         okx_com_spot_manifest(),
         kraken_com_spot_manifest(),
@@ -1279,6 +1281,58 @@ pub fn upstox_nfo_manifest() -> SourceManifest {
                 Limits::default(),
             ),
             instruments_binding("upstox", coverage, AuthMode::Public),
+        ],
+    }
+}
+
+/// Groww NSE F&O (B6 SIGNED). Day fills via order-list fan-out (segment FNO).
+pub fn groww_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:groww-nfo@0.1.0".into(),
+        adapter_id: "groww".into(),
+        book_id: "groww-nse-nfo".into(),
+        implemented: vec!["tradebook".into(), "instruments".into()],
+        bindings: vec![
+            account_binding(
+                "groww",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            instruments_binding("groww", coverage, AuthMode::Public),
+        ],
+    }
+}
+
+/// Dhan NSE F&O (B6 SIGNED). Day fills via `GET /v2/trades` (NSE_FNO rows).
+pub fn dhan_nfo_manifest() -> SourceManifest {
+    let coverage = Coverage {
+        venues: vec!["nse_fo".into()],
+        asset_classes: vec!["nfo".into()],
+        history_range: Some("session".into()),
+        intervals: vec![],
+    };
+    SourceManifest {
+        manifest_id: "tradeautopsy:dhan-nfo@0.1.0".into(),
+        adapter_id: "dhan".into(),
+        book_id: "dhan-nse-nfo".into(),
+        implemented: vec!["tradebook".into(), "instruments".into()],
+        bindings: vec![
+            account_binding(
+                "dhan",
+                "tradebook",
+                "fills",
+                coverage.clone(),
+                Limits::default(),
+            ),
+            instruments_binding("dhan", coverage, AuthMode::Public),
         ],
     }
 }
@@ -1893,6 +1947,10 @@ mod tests {
         let zerodha_nfo = manifest_for_book_id("zerodha-nse-nfo").expect("zerodha nfo");
         assert_eq!(zerodha_nfo.manifest_id, "tradeautopsy:zerodha-kite-nfo@0.1.0");
         assert!(zerodha_nfo.implemented.contains(&"instruments".to_string()));
+        let dhan_nfo = manifest_for_book_id("dhan-nse-nfo").expect("dhan nfo");
+        assert_eq!(dhan_nfo.manifest_id, "tradeautopsy:dhan-nfo@0.1.0");
+        let groww_nfo = manifest_for_book_id("groww-nse-nfo").expect("groww nfo");
+        assert_eq!(groww_nfo.manifest_id, "tradeautopsy:groww-nfo@0.1.0");
         assert_eq!(
             manifest_for_slug("binance_com").unwrap().manifest_id,
             "binance_com.s1.v1"

@@ -1,0 +1,22 @@
+{
+  "status": "SUCCESS",
+  "payload": {
+    "trade_list": [
+      {
+        "groww_trade_id": "GT-NFO-BUY",
+        "exchange_trade_id": "920001",
+        "exchange_order_id": "20000012345601",
+        "trading_symbol": "NIFTY26JUL24000CE",
+        "transaction_type": "BUY",
+        "product": "CNC",
+        "segment": "FNO",
+        "exchange": "NSE",
+        "quantity": 2,
+        "price": 100.0,
+        "trade_date_time": "2026-07-25T11:30:00+05:30",
+        "created_at": "2026-07-25T11:30:00+05:30",
+        "settlement_number": "20260725"
+      }
+    ]
+  }
+}

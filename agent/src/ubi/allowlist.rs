@@ -128,6 +128,7 @@ pub fn is_fyers_nfo_sym_path(host: &str, path_norm: &str) -> bool {
 }
 
 pub const GROWW_BOOK_ID: &str = "groww-nse-bse-cash";
+pub const GROWW_NFO_BOOK_ID: &str = "groww-nse-nfo";
 pub const GROWW_API_HOST: &str = "api.groww.in";
 pub const GROWW_ASSETS_HOST: &str = "growwapi-assets.groww.in";
 /// Mandatory on every Groww REST call (B6 row 2 / D4).

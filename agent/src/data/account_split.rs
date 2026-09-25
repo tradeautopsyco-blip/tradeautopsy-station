@@ -10,6 +10,7 @@ use super::descriptor::{
     KOTAK_NSE_NFO_BOOK_ID, UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
 };
+use crate::ubi::{DHAN_BOOK_ID, DHAN_NFO_BOOK_ID, GROWW_BOOK_ID, GROWW_NFO_BOOK_ID};
 
 fn normalize_adapter_name(adapter_name: &str) -> &str {
     if adapter_name.contains("binance_com") {
@@ -22,6 +23,10 @@ fn normalize_adapter_name(adapter_name: &str) -> &str {
         "upstox"
     } else if adapter_name.contains("fyers") {
         "fyers"
+    } else if adapter_name.contains("dhan") {
+        "dhan"
+    } else if adapter_name.contains("groww") {
+        "groww"
     } else {
         adapter_name
     }
@@ -77,6 +82,18 @@ fn zerodha_cash_fill_ok(fill: &BrokerFill) -> bool {
         .trim()
         .to_ascii_uppercase();
     matches!(product.as_str(), "CNC" | "MIS")
+}
+
+fn is_dhan_cash_segment(segment: &str) -> bool {
+    matches!(segment, "nse_eq" | "bse_eq")
+}
+
+fn dhan_cash_fill_ok(fill: &BrokerFill) -> bool {
+    zerodha_cash_fill_ok(fill)
+}
+
+fn groww_cash_fill_ok(fill: &BrokerFill) -> bool {
+    zerodha_cash_fill_ok(fill)
 }
 
 fn zerodha_nfo_fill_ok(fill: &BrokerFill) -> bool {
@@ -243,6 +260,38 @@ pub fn split_fills_by_book(
             out.insert(FYERS_NSE_NFO_BOOK_ID.to_string(), nfo);
             out
         }
+        "dhan" => {
+            let mut cash = Vec::new();
+            let mut nfo = Vec::new();
+            for fill in fills {
+                let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
+                if is_kotak_nfo_segment(&segment) && nfo_nrml_mis_product_ok(&fill) {
+                    nfo.push(fill);
+                } else if is_dhan_cash_segment(&segment) && dhan_cash_fill_ok(&fill) {
+                    cash.push(fill);
+                }
+            }
+            let mut out = HashMap::new();
+            out.insert(DHAN_BOOK_ID.to_string(), cash);
+            out.insert(DHAN_NFO_BOOK_ID.to_string(), nfo);
+            out
+        }
+        "groww" => {
+            let mut cash = Vec::new();
+            let mut nfo = Vec::new();
+            for fill in fills {
+                let segment = norm_seg(fill.exchange_segment.as_deref().unwrap_or(""));
+                if is_kotak_nfo_segment(&segment) && nfo_nrml_mis_product_ok(&fill) {
+                    nfo.push(fill);
+                } else if segment == "cash" && groww_cash_fill_ok(&fill) {
+                    cash.push(fill);
+                }
+            }
+            let mut out = HashMap::new();
+            out.insert(GROWW_BOOK_ID.to_string(), cash);
+            out.insert(GROWW_NFO_BOOK_ID.to_string(), nfo);
+            out
+        }
         _ => {
             let mut out = HashMap::new();
             out.insert(slug.to_string(), fills);
@@ -266,6 +315,8 @@ pub fn merge_poll_book_id(adapter_name: &str) -> &str {
     match normalize_adapter_name(adapter_name) {
         "binance_com" => BINANCE_COM_SPOT_BOOK_ID,
         "kotak_neo" => KOTAK_NSE_BSE_CASH_BOOK_ID,
+        "dhan" => DHAN_BOOK_ID,
+        "groww" => GROWW_BOOK_ID,
         other => other,
     }
 }
@@ -275,6 +326,8 @@ pub fn fills_provenance_path(adapter_name: &str) -> &str {
         "binance_com" => "/api/v3/myTrades",
         "kotak_neo" => "/quick/user/trades",
         "zerodha_kite" => "/trades",
+        "dhan" => "/v2/trades",
+        "groww" => "/v1/order/list",
         _ => "",
     }
 }
@@ -543,6 +596,76 @@ mod tests {
     }
 
     #[test]
+    fn dhan_splits_cash_and_nfo_by_segment() {
+        let nfo = BrokerFill {
+            fill_id: "d1".into(),
+            trade_id: "d1".into(),
+            symbol: "NIFTY26JUL24000CE".into(),
+            side: "BUY".into(),
+            qty: 2.0,
+            price: 100.0,
+            filled_at: chrono::Utc::now(),
+            broker: "dhan".into(),
+            currency: Some("INR".into()),
+            product: Some("NRML".into()),
+            exchange_segment: Some("nse_fo".into()),
+            ..Default::default()
+        };
+        let cash = BrokerFill {
+            fill_id: "d2".into(),
+            trade_id: "d2".into(),
+            symbol: "ITBEES".into(),
+            side: "BUY".into(),
+            qty: 10.0,
+            price: 25.0,
+            filled_at: chrono::Utc::now(),
+            broker: "dhan".into(),
+            currency: Some("INR".into()),
+            product: Some("CNC".into()),
+            exchange_segment: Some("NSE_EQ".into()),
+            ..Default::default()
+        };
+        let split = split_fills_by_book("dhan", vec![nfo, cash], None);
+        assert_eq!(split[DHAN_NFO_BOOK_ID].len(), 1);
+        assert_eq!(split[DHAN_BOOK_ID].len(), 1);
+    }
+
+    #[test]
+    fn groww_splits_cash_and_nfo_by_segment() {
+        let nfo = BrokerFill {
+            fill_id: "g1".into(),
+            trade_id: "g1".into(),
+            symbol: "NIFTY26OCT25000CE".into(),
+            side: "SELL".into(),
+            qty: 1.0,
+            price: 50.0,
+            filled_at: chrono::Utc::now(),
+            broker: "groww".into(),
+            currency: Some("INR".into()),
+            product: Some("MIS".into()),
+            exchange_segment: Some("nse_fo".into()),
+            ..Default::default()
+        };
+        let cash = BrokerFill {
+            fill_id: "g2".into(),
+            trade_id: "g2".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 5.0,
+            price: 1400.0,
+            filled_at: chrono::Utc::now(),
+            broker: "groww".into(),
+            currency: Some("INR".into()),
+            product: Some("CNC".into()),
+            exchange_segment: Some("CASH".into()),
+            ..Default::default()
+        };
+        let split = split_fills_by_book("groww", vec![nfo, cash], None);
+        assert_eq!(split[GROWW_NFO_BOOK_ID].len(), 1);
+        assert_eq!(split[GROWW_BOOK_ID].len(), 1);
+    }
+
+    #[test]
     fn zerodha_kite_splits_cash_and_nfo_by_segment() {
         let buy_nfo = BrokerFill {
             fill_id: "z1".into(),
@@ -598,6 +721,8 @@ mod tests {
     fn merge_poll_book_id_returns_shipping_books() {
         assert_eq!(merge_poll_book_id("binance_com"), BINANCE_COM_SPOT_BOOK_ID);
         assert_eq!(merge_poll_book_id("kotak_neo"), KOTAK_NSE_BSE_CASH_BOOK_ID);
+        assert_eq!(merge_poll_book_id("dhan"), DHAN_BOOK_ID);
+        assert_eq!(merge_poll_book_id("groww"), GROWW_BOOK_ID);
     }
 
     #[test]
@@ -616,5 +741,7 @@ mod tests {
     fn fills_provenance_path_maps_venue_paths() {
         assert_eq!(fills_provenance_path("binance_com"), "/api/v3/myTrades");
         assert_eq!(fills_provenance_path("kotak_neo"), "/quick/user/trades");
+        assert_eq!(fills_provenance_path("dhan"), "/v2/trades");
+        assert_eq!(fills_provenance_path("groww"), "/v1/order/list");
     }
 }

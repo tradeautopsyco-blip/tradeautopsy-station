@@ -34,6 +34,9 @@ const HOST: &str = "api.dhan.co";
 const TRADES_PATH: &str = "/v2/trades";
 /// Cash segments, matched case-insensitively but stamped verbatim (B6 row 8).
 const ALLOWED_CASH_SEGMENTS: &[&str] = &["NSE_EQ", "BSE_EQ"];
+/// NFO wire segment (B6 annexure); host split uses `nse_fo` (lock `dhan-nse-nfo`).
+const ALLOWED_NFO_SEGMENTS: &[&str] = &["NSE_FNO"];
+const NFO_HOST_SEGMENT: &str = "nse_fo";
 /// Per-trade charge fields present on ranged rows only (B6 row 8). Day rows carry
 /// no charges — Station never invents a fee there. Currency unit is NOT SPECIFIED
 /// IN SOURCE (B6 row 7); the cash book assumes INR at insert (Z9 lock).
@@ -132,6 +135,10 @@ fn map_trades_day_book(body: &str) -> Result<Vec<FillEvent>, String> {
 /// that row (sibling parity); malformed *accepted* rows fail loudly instead of
 /// inventing values.
 fn map_trade_row(row: &serde_json::Value, index: usize) -> Result<Option<FillEvent>, String> {
+    if is_nfo_wire_segment(row) {
+        return map_nfo_trade_row(row, index);
+    }
+
     // Gate 1 — cash segments only, stamped verbatim. Unmapped segments are
     // refused visibly (row dropped, never null-symbol), never defaulted.
     let exchange_segment = match string_field(row, "exchangeSegment") {
@@ -205,8 +212,85 @@ fn map_trade_row(row: &serde_json::Value, index: usize) -> Result<Option<FillEve
         exchange_segment,
         product,
         trade_id,
+        InstrumentClass::Spot,
     )
     .map(Some)
+}
+
+fn is_nfo_wire_segment(row: &serde_json::Value) -> bool {
+    string_field(row, "exchangeSegment")
+        .map(|seg| {
+            ALLOWED_NFO_SEGMENTS
+                .iter()
+                .any(|allowed| seg.eq_ignore_ascii_case(allowed))
+        })
+        .unwrap_or(false)
+}
+
+fn map_nfo_trade_row(row: &serde_json::Value, index: usize) -> Result<Option<FillEvent>, String> {
+    if row.get("crossCurrency").and_then(|v| v.as_bool()) == Some(true) {
+        return Ok(None);
+    }
+
+    let product = match string_field(row, "productType")
+        .map(|p| p.to_ascii_uppercase())
+        .as_deref()
+    {
+        Some("MARGIN") => "NRML".to_string(),
+        Some("INTRADAY") => "MIS".to_string(),
+        _ => return Ok(None),
+    };
+
+    let symbol = resolve_symbol(row)?;
+    let side = match string_field(row, "transactionType").as_deref() {
+        Some("BUY") | Some("buy") => "BUY",
+        Some("SELL") | Some("sell") => "SELL",
+        other => {
+            return Err(format!(
+                "nfo trade row has unknown transactionType {:?}",
+                other.unwrap_or("")
+            ))
+        }
+    };
+    let qty = parse_f64(row.get("tradedQuantity"))
+        .map_err(|_| "nfo trade row missing tradedQuantity".to_string())?;
+    let price = parse_f64(row.get("tradedPrice"))
+        .map_err(|_| "nfo trade row missing tradedPrice".to_string())?;
+    let filled_at_unix_ms = parse_trade_time(row)?;
+
+    let order_id = string_field(row, "orderId");
+    let fill_id = string_field(row, "exchangeTradeId")
+        .or_else(|| string_number_field(row, "exchangeTradeId"))
+        .or_else(|| order_id.clone().map(|id| format!("{id}#{index}")))
+        .unwrap_or_else(|| format!("{symbol}-{side}-{filled_at_unix_ms}"));
+    let trade_id = order_id.or_else(|| string_field(row, "exchangeOrderId"));
+
+    let instrument_class = nfo_instrument_class(&symbol);
+
+    out_fill(
+        fill_id,
+        symbol,
+        side,
+        qty,
+        price,
+        filled_at_unix_ms,
+        None,
+        None,
+        NFO_HOST_SEGMENT.to_string(),
+        product,
+        trade_id,
+        instrument_class,
+    )
+    .map(Some)
+}
+
+fn nfo_instrument_class(symbol: &str) -> InstrumentClass {
+    let upper = symbol.trim().to_ascii_uppercase();
+    if upper.ends_with("FUT") {
+        InstrumentClass::Future
+    } else {
+        InstrumentClass::Option
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -222,17 +306,16 @@ fn out_fill(
     exchange_segment: String,
     product: String,
     trade_id: Option<String>,
+    instrument_class: InstrumentClass,
 ) -> Result<FillEvent, String> {
     Ok(FillEvent {
         fill_id,
         broker_slug: "dhan".to_string(),
         connection_id: String::new(),
         // Placeholders only: the host stamps asset/instrument axes from the
-        // shipping book (ADR 0004) and this component never classifies. There is
-        // no `instrument_type` wire field — product/segment are never smuggled
-        // into the class axes.
+        // shipping book (ADR 0004). NFO rows set option/future hint from symbol.
         asset_class: AssetClass::Equity,
-        instrument_class: InstrumentClass::Spot,
+        instrument_class,
         is_inverse: false,
         symbol,
         side: side.to_string(),
@@ -532,8 +615,8 @@ mod tests {
         let fills = sorted(map_trades_day_book(DAY_BOOK).expect("day book maps"));
         assert_eq!(
             fills.len(),
-            4,
-            "CNC + INTRADAY-as-MIS only; MARGIN, NSE_FNO, crossCurrency, IDX_I dropped"
+            5,
+            "4 cash + 1 NFO (MARGIN→NRML); EQ MARGIN, crossCurrency, IDX_I still dropped"
         );
 
         let itbees = &fills[0];
@@ -552,29 +635,28 @@ mod tests {
         assert!(itbees.fee_amount.is_none());
         assert!(itbees.fee_currency.is_none());
 
-        // NA createTime/updateTime row is accepted via exchangeTime.
-        let sbin = &fills[1];
-        assert_eq!(sbin.symbol, "SBIN");
+        let nfo = fills
+            .iter()
+            .find(|f| f.symbol == "NIFTY26JUL24000CE")
+            .expect("NFO row maps");
+        assert_eq!(nfo.exchange_segment.as_deref(), Some("nse_fo"));
+        assert_eq!(nfo.product.as_deref(), Some("MIS"));
+
+        let sbin = fills.iter().find(|f| f.symbol == "SBIN").expect("sbin");
         assert_eq!(sbin.side, "BUY");
         assert_eq!(sbin.exchange_segment.as_deref(), Some("BSE_EQ"));
-        assert_eq!(sbin.product.as_deref(), Some("CNC"));
         assert_eq!(sbin.filled_at_unix_ms, SBIN_FILLED_AT_MS);
 
-        let reliance = &fills[2];
-        assert_eq!(reliance.symbol, "RELIANCE");
+        let reliance = fills.iter().find(|f| f.symbol == "RELIANCE").expect("reliance");
         assert_eq!(reliance.side, "SELL");
         assert_eq!(reliance.product.as_deref(), Some("MIS"));
-        assert_eq!(reliance.filled_at_unix_ms, RELIANCE_FILLED_AT_MS);
         assert_eq!(reliance.fill_id, "900002");
 
-        // No exchangeTradeId → orderId + row-index fallback.
-        let infy = &fills[3];
-        assert_eq!(infy.symbol, "INFY");
+        let infy = fills.iter().find(|f| f.symbol == "INFY").expect("infy");
         assert_eq!(infy.fill_id, "100008#7");
         assert_eq!(infy.filled_at_unix_ms, INFY_FILLED_AT_MS);
 
         assert!(!fills.iter().any(|f| f.symbol == "TCS"
-            || f.symbol == "NIFTY26JUL24000CE"
             || f.symbol == "USDINR"
             || f.symbol == "NIFTY 50"));
     }

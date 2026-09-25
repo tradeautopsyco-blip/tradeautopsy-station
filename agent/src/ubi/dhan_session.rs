@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub const DHAN_AUTH_HOST: &str = "auth.dhan.co";
 pub const DHAN_API_HOST: &str = "api.dhan.co";
 pub const DHAN_BOOK_ID: &str = "dhan-nse-bse-cash";
+pub const DHAN_NFO_BOOK_ID: &str = "dhan-nse-nfo";
 pub const DHAN_GENERATE_CONSENT_PATH: &str = "/app/generate-consent";
 pub const DHAN_CONSUME_CONSENT_PATH: &str = "/app/consumeApp-consent";
 pub const DHAN_CONSENT_LOGIN_PATH: &str = "/login/consentApp-login";

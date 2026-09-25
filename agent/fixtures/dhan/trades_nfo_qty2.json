@@ -1,0 +1,50 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "orderId": "200001",
+      "exchangeOrderId": "20000012345601",
+      "exchangeTradeId": "910001",
+      "tradingSymbol": "NIFTY26JUL24000CE",
+      "securityId": "999101",
+      "transactionType": "BUY",
+      "productType": "MARGIN",
+      "exchangeSegment": "NSE_FNO",
+      "tradedQuantity": 2,
+      "tradedPrice": 100.0,
+      "exchangeTime": "2026-07-25 11:30:00",
+      "createTime": "NA",
+      "updateTime": "NA"
+    },
+    {
+      "orderId": "200002",
+      "exchangeOrderId": "20000012345602",
+      "exchangeTradeId": "910002",
+      "tradingSymbol": "NIFTY26JUL24000CE",
+      "securityId": "999101",
+      "transactionType": "SELL",
+      "productType": "MARGIN",
+      "exchangeSegment": "NSE_FNO",
+      "tradedQuantity": 2,
+      "tradedPrice": 110.0,
+      "exchangeTime": "2026-07-25 12:00:00",
+      "createTime": "NA",
+      "updateTime": "NA"
+    },
+    {
+      "orderId": "100001",
+      "exchangeOrderId": "10000012345678",
+      "exchangeTradeId": "900001",
+      "tradingSymbol": "ITBEES",
+      "securityId": "25034",
+      "transactionType": "BUY",
+      "productType": "CNC",
+      "exchangeSegment": "NSE_EQ",
+      "tradedQuantity": 10,
+      "tradedPrice": 25.5,
+      "exchangeTime": "2026-07-25 10:15:30",
+      "createTime": "NA",
+      "updateTime": "NA"
+    }
+  ]
+}

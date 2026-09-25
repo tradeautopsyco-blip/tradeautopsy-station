@@ -111,8 +111,8 @@ fn trades_day_book_maps_to_fill_events() {
 
     assert_eq!(
         fills.len(),
-        4,
-        "cash CNC/MIS only; MARGIN, NSE_FNO, crossCurrency, IDX_I dropped"
+        5,
+        "4 cash CNC/MIS + 1 NFO INTRADAY→MIS; EQ MARGIN, crossCurrency, IDX_I still dropped"
     );
     let itbees = &fills[0];
     assert_eq!(itbees.fill_id, "900001");
@@ -130,25 +130,30 @@ fn trades_day_book_maps_to_fill_events() {
     assert_eq!(itbees.filled_at_unix_ms, ITBEES_FILLED_AT_MS);
     assert!(itbees.fee_amount.is_none());
 
-    let sbin = &fills[1];
+    let nfo = &fills[1];
+    assert_eq!(nfo.symbol, "NIFTY26JUL24000CE");
+    assert_eq!(nfo.exchange_segment.as_deref(), Some("nse_fo"));
+    assert_eq!(nfo.product.as_deref(), Some("MIS"));
+    assert_eq!(nfo.fill_id, "900004");
+
+    let sbin = &fills[2];
     assert_eq!(sbin.symbol, "SBIN");
     assert_eq!(sbin.exchange_segment.as_deref(), Some("BSE_EQ"));
     assert_eq!(sbin.filled_at_unix_ms, SBIN_FILLED_AT_MS);
 
-    let reliance = &fills[2];
+    let reliance = &fills[3];
     assert_eq!(reliance.symbol, "RELIANCE");
     assert_eq!(reliance.side, "SELL");
     assert_eq!(reliance.product.as_deref(), Some("MIS"));
     assert_eq!(reliance.filled_at_unix_ms, RELIANCE_FILLED_AT_MS);
     assert_eq!(reliance.fill_id, "900002");
 
-    let infy = &fills[3];
+    let infy = &fills[4];
     assert_eq!(infy.symbol, "INFY");
     assert_eq!(infy.fill_id, "100008#7");
     assert_eq!(infy.filled_at_unix_ms, INFY_FILLED_AT_MS);
 
     assert!(!fills.iter().any(|f| f.symbol == "TCS"
-        || f.symbol == "NIFTY26JUL24000CE"
         || f.symbol == "USDINR"
         || f.symbol == "NIFTY 50"));
     assert_component_never_saw_secrets(&state, &wasm);
