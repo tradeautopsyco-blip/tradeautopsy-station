@@ -49,3 +49,5 @@ skills-lock.json
 
 # Unsigned cofounder DMG output
 dist/
+Release/
+appcast-stable.xml

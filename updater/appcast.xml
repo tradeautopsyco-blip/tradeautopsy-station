@@ -1,22 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" standalone="yes"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>TradeAutopsy Station</title>
-        <link>https://github.com/FExEVIL/tradeautopsy-station/releases</link>
-        <description>Sparkle update feed for TradeAutopsy Station</description>
-        <language>en</language>
         <item>
             <title>0.2.0</title>
-            <pubDate>Thu, 25 Sep 2026 12:00:00 +0000</pubDate>
+            <pubDate>Fri, 25 Sep 2026 23:42:40 +0530</pubDate>
             <link>https://github.com/FExEVIL/tradeautopsy-station/releases</link>
-            <sparkle:version>2</sparkle:version>
+            <sparkle:version>3</sparkle:version>
             <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[
-<p>Placeholder appcast item for TradeAutopsy Station v0.2.0 (build 2).</p>
-<p>The enclosure <code>sparkle:edSignature</code> is a deliberate invalid placeholder until the first release workflow run signs the DMG with <code>PRIVATE_SPARKLE_KEY</code> and commits a real signature.</p>
-]]></description>
-            <enclosure url="https://github.com/FExEVIL/tradeautopsy-station/releases/download/v0.2.0/TradeAutopsy-Station.dmg" length="0" type="application/octet-stream" sparkle:edSignature="INVALID_PLACEHOLDER_EDSIGNATURE_WILL_BE_REPLACED_ON_FIRST_SIGNED_RELEASE=" />
+            <description><![CDATA[TradeAutopsy Station 0.2.0 (build 3). Unsigned — right-click Open after download.]]></description>
+            <enclosure url="https://github.com/FExEVIL/tradeautopsy-station/releases/download/v0.2.0/TradeAutopsy-Station.dmg" length="22336114" type="application/octet-stream" sparkle:edSignature="wNJ7C3vjuVQMnmkWptOCY7i01Je7I8wdKLyR0+tQyj+PjlCA95tDEd2GIrkXJhb9mvrOZk0aN4yp2I890+fMBg=="/>
         </item>
     </channel>
 </rss>
