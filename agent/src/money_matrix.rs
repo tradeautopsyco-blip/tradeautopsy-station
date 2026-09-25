@@ -24,7 +24,7 @@ pub struct BookMoneyRow {
     pub owner: MoneyOwner,
 }
 
-/// All twelve SHIPPING books from `issues/compliance/CLAIM-REGISTRY.md`.
+/// All twenty-two SHIPPING books from `issues/compliance/CLAIM-REGISTRY.md`.
 pub fn shipping_money_matrix() -> [BookMoneyRow; SHIPPING_BOOK_COUNT] {
     [
         BookMoneyRow {
@@ -160,10 +160,48 @@ pub fn is_binance_com_spot_fill(fill: &BrokerFill) -> bool {
     .any(|book_id| book_accepts_symbol(book_id, &fill.symbol))
 }
 
+/// Book ids for every SHIPPING row in `issues/compliance/CLAIM-REGISTRY.md` (2026-09-25).
+pub const CLAIM_REGISTRY_SHIPPING_BOOK_IDS: [&str; SHIPPING_BOOK_COUNT] = [
+    "binance-com-coinm",
+    "binance-com-options",
+    "binance-com-spot",
+    "binance-com-usdm",
+    "bybit-com-spot",
+    "coinbase-advanced-spot",
+    "dhan-nse-bse-cash",
+    "dhan-nse-nfo",
+    "fyers-nse-bse-cash",
+    "fyers-nse-nfo",
+    "groww-nse-bse-cash",
+    "groww-nse-nfo",
+    "kotak-mcx-future",
+    "kotak-nse-bse-cash",
+    "kotak-nse-cds",
+    "kotak-nse-nfo",
+    "kraken-com-spot",
+    "okx-com-spot",
+    "upstox-nse-bse-cash",
+    "upstox-nse-nfo",
+    "zerodha-nse-bse-cash",
+    "zerodha-nse-nfo",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
+
+    #[test]
+    fn matrix_book_ids_match_claim_registry() {
+        let mut ids: Vec<_> = shipping_money_matrix()
+            .iter()
+            .map(|r| r.book_id)
+            .collect();
+        ids.sort_unstable();
+        let mut expected: Vec<_> = CLAIM_REGISTRY_SHIPPING_BOOK_IDS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(ids, expected);
+    }
 
     #[test]
     fn all_shipping_books_covered() {
