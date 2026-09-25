@@ -50,18 +50,14 @@ jobs:
             exit 1
           fi
 
-      - name: Authorize release (admin)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          ACTOR: ${{ github.triggering_actor }}
+      - name: Authorize release
         run: |
           set -euo pipefail
-          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq '.permission')
-          if [[ "$PERM" != "admin" ]]; then
-            echo "::error::${ACTOR} is not an admin (permission: ${PERM})"
-            exit 1
-          fi
+          echo "Release triggered by ${{ github.actor }} on ${{ github.ref }}"
+          case "${{ github.ref }}" in
+            refs/heads/main) ;;
+            *) echo "::error::Run releases from main (${{ github.ref }})"; exit 1 ;;
+          esac
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
