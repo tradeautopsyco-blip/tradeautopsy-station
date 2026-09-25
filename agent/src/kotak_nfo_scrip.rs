@@ -11,9 +11,10 @@
 //! Do not write cash master. Do not call `cash_csv_urls`.
 
 use crate::data::{
-    authorize_book_call, is_kotak_nse_fo_scrip_csv_path, json_object_keys, kotak_csv_cache_path,
-    parse_nfo_instrument_id, truncate_body, write_raw_cache, InstrumentMasterErrorClass,
-    InstrumentMasterFetchError, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_NFO_BOOK_ID,
+    authorize_book_call, is_kotak_cde_fo_scrip_csv_path, is_kotak_mcx_fo_scrip_csv_path,
+    is_kotak_nse_fo_scrip_csv_path, json_object_keys, kotak_csv_cache_path, parse_nfo_instrument_id,
+    truncate_body, write_raw_cache, InstrumentMasterErrorClass, InstrumentMasterFetchError,
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NEO_ADAPTER_ID, KOTAK_NSE_CDS_BOOK_ID, KOTAK_NSE_NFO_BOOK_ID,
 };
 use crate::ubi::{
     attach_kotak_file_paths_session, kotak_base_host, prepare_kotak_file_paths_get,
@@ -35,6 +36,32 @@ pub const FILE_PATHS_PATH: &str = "/script-details/1.0/masterscrip/file-paths";
 pub const LOCK_HEADER: &str = "pSymbol,pGroup,pExchSeg,pInstType,pSymbolName,pTrdSymbol,pOptionType,pScripRefKey,pISIN,pAssetCode,pSubGroup,pCombinedSymbol,pDesc,pAmcCode,pContractId,dTickSize ,lLotSize,lExpiryDate ,lMultiplier ,lPrecision,dStrikePrice;,pExchange,pInstName,pExpiryDate,pIssueDate,pMaturityDate,pListingDate,pNoDelStartDate,pNoDelEndDate,pBookClsStartDate,pBookClsEndDate,pRecordDate,pCreditRating,pReAdminDate,pExpulsionDate,pLocalUpdateTime,pDeliveryUnits,pPriceUnits,pLastTradingDate,pTenderPeridEndDate,pTenderPeridStartDate,pSellVarMargin,pBuyVarMargin,pInstrumentInfo,pRemarksText,pSegment,pNav,pNavDate,pMfAmt,pSipSecurity,pFaceValue,pTrdUnits,pExerciseStartDate,pExerciseEndDate,pElmMargin,pVarMargin,pTotProposedLimitValue,pScripBasePrice,pSettlementType,pCurrectionTime,iPermittedToTrade,iBoardLotQty ,iMaxOrderSize ,iLotSize,dOpenInterest ,dHighPriceRange ,dLowPriceRange ,dPriceNum   ,dGenDen,dGenNum,dPriceQuatation ,dIssuerate ,dPriceDen,dWarningQty ,dIssueCapital ,dExposureMargin ,dMinRedemptionQty ,lFreezeQty,CASEligible";
 
 const NFO_SEGMENT: &str = "nse_fo";
+
+/// One Kotak FO scrip CSV lane (book-scoped fence + cache stem).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KotakFoScripLane {
+    pub book_id: &'static str,
+    pub segment: &'static str,
+    pub cache_stem: &'static str,
+}
+
+pub const KOTAK_NSE_FO_LANE: KotakFoScripLane = KotakFoScripLane {
+    book_id: KOTAK_NSE_NFO_BOOK_ID,
+    segment: NFO_SEGMENT,
+    cache_stem: "nse_fo",
+};
+
+pub const KOTAK_CDE_FO_LANE: KotakFoScripLane = KotakFoScripLane {
+    book_id: KOTAK_NSE_CDS_BOOK_ID,
+    segment: "cde_fo",
+    cache_stem: "cde_fo",
+};
+
+pub const KOTAK_MCX_FO_LANE: KotakFoScripLane = KotakFoScripLane {
+    book_id: KOTAK_MCX_FUTURE_BOOK_ID,
+    segment: "mcx_fo",
+    cache_stem: "mcx_fo",
+};
 
 /// Option `pInstType` values on the FO master. Mirrors the option half of the cash
 /// parser's `REFUSED_FO_INST_TYPES` (`kotak_scrip_master.rs`), which is the only
@@ -85,7 +112,7 @@ impl KotakNfoContract {
     }
 
     pub fn instrument_id(&self) -> String {
-        format!("nse_fo|{}", self.instrument_token)
+        format!("{}|{}", self.segment, self.instrument_token)
     }
 
     pub fn to_contract_row(&self) -> crate::data::ContractRow {
@@ -134,15 +161,17 @@ impl KotakNfoScripMaster {
         self.by_token.is_empty()
     }
 
-    /// `nse_fo|{token}` only. Cash / other FO segments → false.
+    /// `{segment}|{token}` for rows in this master. Wrong segment → false.
     pub fn contains_id(&self, id: &str) -> bool {
-        let Some(canonical) = parse_nfo_instrument_id(id) else {
+        let Some((seg, token_str)) = id.split_once('|') else {
             return false;
         };
-        canonical
-            .split_once('|')
-            .and_then(|(_, token)| token.parse::<i64>().ok())
-            .is_some_and(|token| self.by_token.contains_key(&token))
+        let Ok(token) = token_str.parse::<i64>() else {
+            return false;
+        };
+        self.by_token
+            .get(&token)
+            .is_some_and(|row| row.segment.eq_ignore_ascii_case(seg))
     }
 
     pub fn get(&self, token: i64) -> Option<&KotakNfoContract> {
@@ -260,6 +289,10 @@ impl KotakNfoScripMaster {
     }
 
     pub fn from_csv_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        Self::from_csv_bytes_for_segment(bytes, NFO_SEGMENT)
+    }
+
+    pub fn from_csv_bytes_for_segment(bytes: &[u8], want_segment: &str) -> anyhow::Result<Self> {
         let mut reader = csv::ReaderBuilder::new()
             .flexible(true)
             .from_reader(Cursor::new(bytes));
@@ -298,7 +331,7 @@ impl KotakNfoScripMaster {
                 .and_then(|i| record.get(i))
                 .map(str::trim)
                 .unwrap_or("");
-            if !segment.eq_ignore_ascii_case(NFO_SEGMENT) {
+            if !segment.eq_ignore_ascii_case(want_segment) {
                 continue;
             }
             let Some(lot) = lot_from_cells(
@@ -315,7 +348,7 @@ impl KotakNfoScripMaster {
                 token,
                 KotakNfoContract {
                     instrument_token: token,
-                    segment: NFO_SEGMENT.to_string(),
+                    segment: want_segment.to_string(),
                     trading_symbol: cell_raw(trd_i.and_then(|i| record.get(i))),
                     name: cell_raw(name_i.and_then(|i| record.get(i))),
                     instrument_type: cell_raw(inst_i.and_then(|i| record.get(i))),
@@ -329,6 +362,15 @@ impl KotakNfoScripMaster {
         }
         Ok(master)
     }
+}
+
+/// Merge FO masters for Kotak private split (orders/positions lot lookup).
+pub fn merge_kotak_fo_masters(parts: &[KotakNfoScripMaster]) -> KotakNfoScripMaster {
+    let mut out = KotakNfoScripMaster::empty();
+    for part in parts {
+        out.merge(part.clone());
+    }
+    out
 }
 
 fn cell_raw(value: Option<&str>) -> String {
@@ -376,24 +418,46 @@ pub fn install_master_if_nonempty(
 
 /// Keep `nse_fo.csv` / `nse_fo-v1.csv` under `/wso2-scripmaster/`. Drop other FO and cash.
 pub fn fo_csv_urls(file_paths_json: &str) -> anyhow::Result<Vec<String>> {
+    fo_csv_urls_for_lane(file_paths_json, KOTAK_NSE_FO_LANE)
+}
+
+pub fn fo_csv_urls_for_lane(
+    file_paths_json: &str,
+    lane: KotakFoScripLane,
+) -> anyhow::Result<Vec<String>> {
     let value: Value = serde_json::from_str(file_paths_json)?;
     Ok(files_paths_from_value(&value)
         .into_iter()
-        .filter(|url| is_extractable_nfo_csv_url(url))
+        .filter(|url| is_extractable_fo_csv_url(url, lane))
         .collect())
 }
 
-fn is_extractable_nfo_csv_url(url: &str) -> bool {
+fn is_extractable_fo_csv_url(url: &str, lane: KotakFoScripLane) -> bool {
     let Some((host, path)) = split_http_url(url) else {
         return false;
     };
-    is_kotak_nse_fo_scrip_csv_path(&path)
-        && authorize_book_call(KOTAK_NSE_NFO_BOOK_ID, &host, "GET", &path, false).is_ok()
+    if !fo_csv_path_matches_lane(&path, lane) {
+        return false;
+    }
+    authorize_book_call(lane.book_id, &host, "GET", &path, false).is_ok()
+}
+
+fn fo_csv_path_matches_lane(path: &str, lane: KotakFoScripLane) -> bool {
+    match lane.cache_stem {
+        "nse_fo" => is_kotak_nse_fo_scrip_csv_path(path),
+        "cde_fo" => is_kotak_cde_fo_scrip_csv_path(path),
+        "mcx_fo" => is_kotak_mcx_fo_scrip_csv_path(path),
+        _ => false,
+    }
 }
 
 pub fn authorize_nfo_csv_get(url: &str) -> Result<(), String> {
+    authorize_fo_csv_get(url, KOTAK_NSE_NFO_BOOK_ID)
+}
+
+pub fn authorize_fo_csv_get(url: &str, book_id: &str) -> Result<(), String> {
     let (host, path) = split_http_url(url).ok_or_else(|| "path_not_allowlisted".to_string())?;
-    authorize_book_call(KOTAK_NSE_NFO_BOOK_ID, &host, "GET", &path, false)
+    authorize_book_call(book_id, &host, "GET", &path, false)
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
@@ -406,17 +470,32 @@ const REFRESH_BACKOFFS: [Duration; 3] = [
 
 /// Load `nse_fo.csv` cache. Empty must not wipe. Does not touch the cash master or cash status.
 pub fn try_load_nfo_cache(cache_dir: &Path, master: &Mutex<KotakNfoScripMaster>) {
-    let path = kotak_csv_cache_path(cache_dir, "nse_fo");
+    try_load_lane_cache(cache_dir, KOTAK_NSE_FO_LANE, master);
+}
+
+pub fn try_load_lane_cache(
+    cache_dir: &Path,
+    lane: KotakFoScripLane,
+    master: &Mutex<KotakNfoScripMaster>,
+) {
+    let path = kotak_csv_cache_path(cache_dir, lane.cache_stem);
     let Ok(bytes) = std::fs::read(&path) else {
         return;
     };
-    match KotakNfoScripMaster::from_csv_bytes(&bytes) {
+    match KotakNfoScripMaster::from_csv_bytes_for_segment(&bytes, lane.segment) {
         Ok(loaded) => {
             if install_master_if_nonempty(master, loaded) {
-                tracing::info!("s1 desk: kotak nfo master loaded from disk cache");
+                tracing::info!(
+                    book = lane.book_id,
+                    "s1 desk: kotak fo master loaded from disk cache"
+                );
             }
         }
-        Err(err) => tracing::warn!(error = %err, "s1 desk: kotak nfo cache CSV skipped"),
+        Err(err) => tracing::warn!(
+            book = lane.book_id,
+            error = %err,
+            "s1 desk: kotak fo cache CSV skipped"
+        ),
     }
 }
 
@@ -432,25 +511,65 @@ pub fn spawn_refresh(
     >,
     locator: crate::kotak_rest_quotes::SessionLocator,
 ) {
+    spawn_lane_refresh(
+        KOTAK_NSE_FO_LANE,
+        master,
+        vault,
+        environment,
+        connection_id,
+        cancel,
+        cache_dir,
+        connections,
+        locator,
+    );
+}
+
+pub fn spawn_lane_refresh(
+    lane: KotakFoScripLane,
+    master: Arc<Mutex<KotakNfoScripMaster>>,
+    vault: Arc<dyn BrokerCredentialVault>,
+    environment: String,
+    connection_id: String,
+    cancel: Arc<AtomicBool>,
+    cache_dir: PathBuf,
+    connections: Arc<
+        Mutex<std::collections::HashMap<String, crate::data::BrokerConnectionRuntime>>,
+    >,
+    locator: crate::kotak_rest_quotes::SessionLocator,
+) {
     tokio::spawn(async move {
         let mut attempt = 0u8;
         loop {
-            if !nfo_refresh_still_active(&cancel, &connections, &locator) {
+            if !lane_refresh_still_active(lane, &cancel, &connections, &locator) {
                 return;
             }
-            match refresh_from_session(vault.as_ref(), &environment, &connection_id, &cache_dir)
-                .await
+            match refresh_lane_from_session(
+                vault.as_ref(),
+                &environment,
+                &connection_id,
+                &cache_dir,
+                lane,
+            )
+            .await
             {
                 Ok(loaded) => {
                     let n = loaded.len();
                     if install_master_if_nonempty(&master, loaded) {
-                        tracing::info!(symbols = n, "s1 desk: kotak nfo scrip master loaded");
+                        tracing::info!(
+                            book = lane.book_id,
+                            symbols = n,
+                            "s1 desk: kotak fo scrip master loaded"
+                        );
                         return;
                     }
-                    tracing::warn!("s1 desk: kotak nfo master empty after fetch");
+                    tracing::warn!(book = lane.book_id, "s1 desk: kotak fo master empty after fetch");
                 }
                 Err(err) => {
-                    tracing::warn!(error = %err, "s1 desk: kotak nfo scrip master refresh failed");
+                    tracing::warn!(
+                        book = lane.book_id,
+                        error = %err,
+                        "s1 desk: kotak fo scrip master refresh failed"
+                    );
                 }
             }
             if attempt >= 3 {
@@ -463,7 +582,8 @@ pub fn spawn_refresh(
     });
 }
 
-fn nfo_refresh_still_active(
+fn lane_refresh_still_active(
+    lane: KotakFoScripLane,
     cancel: &AtomicBool,
     connections: &Mutex<std::collections::HashMap<String, crate::data::BrokerConnectionRuntime>>,
     locator: &crate::kotak_rest_quotes::SessionLocator,
@@ -472,10 +592,11 @@ fn nfo_refresh_still_active(
         return false;
     }
     let has_locator = locator.lock().ok().is_some_and(|g| g.is_some());
-    let has_conn = connections
-        .lock()
-        .ok()
-        .is_some_and(|m| m.contains_key(KOTAK_NSE_NFO_BOOK_ID));
+    let has_conn = connections.lock().ok().is_some_and(|m| {
+        m.contains_key(lane.book_id)
+            || m.contains_key(KOTAK_NSE_NFO_BOOK_ID)
+            || m.contains_key(crate::data::KOTAK_NSE_BSE_CASH_BOOK_ID)
+    });
     has_locator && has_conn
 }
 
@@ -484,6 +605,16 @@ pub async fn refresh_from_session(
     environment: &str,
     connection_id: &str,
     cache_dir: &Path,
+) -> Result<KotakNfoScripMaster, InstrumentMasterFetchError> {
+    refresh_lane_from_session(vault, environment, connection_id, cache_dir, KOTAK_NSE_FO_LANE).await
+}
+
+pub async fn refresh_lane_from_session(
+    vault: &dyn BrokerCredentialVault,
+    environment: &str,
+    connection_id: &str,
+    cache_dir: &Path,
+    lane: KotakFoScripLane,
 ) -> Result<KotakNfoScripMaster, InstrumentMasterFetchError> {
     let blob = vault
         .load(environment, KOTAK_NEO_ADAPTER_ID, connection_id)
@@ -513,17 +644,18 @@ pub async fn refresh_from_session(
     let host = kotak_base_host(&base_url).ok_or_else(|| {
         InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
     })?;
-    authorize_book_call(KOTAK_NSE_NFO_BOOK_ID, &host, "GET", FILE_PATHS_PATH, true).map_err(
-        |_| InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None),
-    )?;
+    authorize_book_call(lane.book_id, &host, "GET", FILE_PATHS_PATH, true).map_err(|_| {
+        InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
+    })?;
     let sdk = prepare_kotak_file_paths_get(FILE_PATHS_PATH, &creds).map_err(|_| {
         InstrumentMasterFetchError::new(InstrumentMasterErrorClass::FilePathsHttp, None)
     })?;
-    let (body, catalog_status) = fetch_file_paths_body(sdk, &creds).await?;
-    let urls = fo_csv_urls(&body).map_err(|_| {
+    let (body, catalog_status) = fetch_file_paths_body(lane.book_id, sdk, &creds).await?;
+    let urls = fo_csv_urls_for_lane(&body, lane).map_err(|_| {
         tracing::warn!(
+            book = lane.book_id,
             keys = ?json_object_keys(&body),
-            "s1 desk: kotak nfo file-paths JSON unusable"
+            "s1 desk: kotak file-paths JSON unusable"
         );
         InstrumentMasterFetchError::new(
             InstrumentMasterErrorClass::FilePathsJson,
@@ -531,8 +663,9 @@ pub async fn refresh_from_session(
         )
     })?;
     tracing::info!(
-        nfo_urls = urls.len(),
-        "s1 desk: kotak file-paths nse_fo CSV URLs"
+        book = lane.book_id,
+        fo_urls = urls.len(),
+        "s1 desk: kotak file-paths fo CSV URLs"
     );
     if urls.is_empty() {
         return Err(InstrumentMasterFetchError::new(
@@ -546,20 +679,27 @@ pub async fn refresh_from_session(
     let mut saw_parse = false;
     let mut last_csv_status: Option<u16> = None;
     for url in urls {
-        match authorize_nfo_csv_get(&url) {
-            Ok(()) => match fetch_nfo_csv(&url).await {
+        match authorize_fo_csv_get(&url, lane.book_id) {
+            Ok(()) => match fetch_fo_csv(lane.book_id, &url).await {
                 Ok(resp) => {
                     last_csv_status = Some(resp.status);
                     if !resp.is_success() {
                         saw_http = true;
-                        tracing::warn!(status = resp.status, "s1 desk: kotak nfo CSV HTTP error");
+                        tracing::warn!(
+                            book = lane.book_id,
+                            status = resp.status,
+                            "s1 desk: kotak fo CSV HTTP error"
+                        );
                         continue;
                     }
                     let bytes = resp.body.into_bytes();
-                    match KotakNfoScripMaster::from_csv_bytes(&bytes) {
+                    match KotakNfoScripMaster::from_csv_bytes_for_segment(&bytes, lane.segment) {
                         Ok(part) => {
                             if !part.is_empty() {
-                                write_raw_cache(&kotak_csv_cache_path(cache_dir, "nse_fo"), &bytes);
+                                write_raw_cache(
+                                    &kotak_csv_cache_path(cache_dir, lane.cache_stem),
+                                    &bytes,
+                                );
                                 master.merge(part);
                             } else {
                                 saw_parse = true;
@@ -567,18 +707,30 @@ pub async fn refresh_from_session(
                         }
                         Err(err) => {
                             saw_parse = true;
-                            tracing::warn!(error = %err, "s1 desk: kotak nfo CSV parse failed");
+                            tracing::warn!(
+                                book = lane.book_id,
+                                error = %err,
+                                "s1 desk: kotak fo CSV parse failed"
+                            );
                         }
                     }
                 }
                 Err(err) => {
                     saw_http = true;
-                    tracing::warn!(error = %err, "s1 desk: kotak nfo CSV GET failed");
+                    tracing::warn!(
+                        book = lane.book_id,
+                        error = %err,
+                        "s1 desk: kotak fo CSV GET failed"
+                    );
                 }
             },
             Err(err) => {
                 saw_allowlist = true;
-                tracing::warn!(error = %err, "kotak nfo CSV GET fail-closed (host/path not allowlisted)");
+                tracing::warn!(
+                    book = lane.book_id,
+                    error = %err,
+                    "kotak fo CSV GET fail-closed (host/path not allowlisted)"
+                );
             }
         }
     }
@@ -601,11 +753,12 @@ pub async fn refresh_from_session(
 /// NFO book shares Kotak's one meter with cash, because the lock does not say
 /// they have separate budgets.
 async fn send_prepared(
+    book_id: &str,
     prepared: &PreparedHttpRequest,
 ) -> Result<(reqwest::StatusCode, String), InstrumentMasterFetchError> {
     let resp = crate::egress::shared()
         .send_prepared(
-            KOTAK_NSE_NFO_BOOK_ID,
+            book_id,
             crate::egress::Lane::PrivateRead,
             prepared,
             Duration::from_secs(15),
@@ -620,7 +773,8 @@ async fn send_prepared(
 }
 
 /// Public F&O scrip CSV on `lapi`. Large, slow, never coalesced.
-async fn fetch_nfo_csv(
+async fn fetch_fo_csv(
+    book_id: &str,
     url: &str,
 ) -> Result<crate::egress::EgressResponse, InstrumentMasterFetchError> {
     let Some((host, path, query)) = crate::egress::split_url(url) else {
@@ -630,7 +784,7 @@ async fn fetch_nfo_csv(
         ));
     };
     let call = crate::egress::EgressCall::get(
-        KOTAK_NSE_NFO_BOOK_ID,
+        book_id,
         &host,
         &path,
         crate::egress::Lane::MarketData,
@@ -643,11 +797,18 @@ async fn fetch_nfo_csv(
         .map_err(|_| InstrumentMasterFetchError::new(InstrumentMasterErrorClass::CsvHttp, None))
 }
 
+async fn fetch_nfo_csv(
+    url: &str,
+) -> Result<crate::egress::EgressResponse, InstrumentMasterFetchError> {
+    fetch_fo_csv(KOTAK_NSE_NFO_BOOK_ID, url).await
+}
+
 async fn fetch_file_paths_body(
+    book_id: &str,
     sdk: PreparedHttpRequest,
     creds: &HostCredentialBlob,
 ) -> Result<(String, u16), InstrumentMasterFetchError> {
-    let (status, body) = send_prepared(&sdk).await?;
+    let (status, body) = send_prepared(book_id, &sdk).await?;
     if status.is_success() && !body.contains("Complete the 2fa process") {
         return Ok((body, status.as_u16()));
     }
@@ -658,7 +819,7 @@ async fn fetch_file_paths_body(
                 Some(status.as_u16()),
             )
         })?;
-        let (status2, body2) = send_prepared(&session).await?;
+        let (status2, body2) = send_prepared(book_id, &session).await?;
         if status2.is_success() {
             return Ok((body2, status2.as_u16()));
         }
@@ -976,6 +1137,30 @@ mod tests {
         for url in &urls {
             authorize_nfo_csv_get(url).expect("nse_fo CSV GET allowlisted on kotak-nse-nfo");
         }
+    }
+
+    #[test]
+    fn fo_csv_urls_for_cde_and_mcx_lanes() {
+        let cde = fo_csv_urls_for_lane(FIXTURE_PATHS, KOTAK_CDE_FO_LANE).unwrap();
+        assert_eq!(cde.len(), 1);
+        assert!(cde[0].ends_with("/cde_fo.csv"));
+        authorize_fo_csv_get(&cde[0], KOTAK_NSE_CDS_BOOK_ID).expect("cde_fo allowlisted");
+
+        let mcx = fo_csv_urls_for_lane(FIXTURE_PATHS, KOTAK_MCX_FO_LANE).unwrap();
+        assert_eq!(mcx.len(), 1);
+        assert!(mcx[0].ends_with("/mcx_fo.csv"));
+        authorize_fo_csv_get(&mcx[0], KOTAK_MCX_FUTURE_BOOK_ID).expect("mcx_fo allowlisted");
+    }
+
+    #[test]
+    fn from_csv_bytes_for_cde_fo_segment() {
+        let header = FIXTURE_CSV.lines().next().expect("header");
+        let row = "88001,XX,cde_fo,FUTCUR,USDINR,USDINR26OCTFUT,XX,,,,,,,,,0.0025,1,1474554600,-1,2,0,NSE,FUTCUR,1474554600,0,0,0,0,0,0,0,0,0,,0,0,0,,,,,,,,,,FO,,,,,,,0,0,,,,0,Cash,,1,1,1801.00,1,0,0,0,1,1,1,0,0,1,0,1e+12,1,0,1801,false";
+        let csv = format!("{header}\n{row}\n");
+        let master = KotakNfoScripMaster::from_csv_bytes_for_segment(csv.as_bytes(), "cde_fo").unwrap();
+        assert_eq!(master.len(), 1);
+        assert!(master.contains_id("cde_fo|88001"));
+        assert!(!master.contains_id("nse_fo|88001"));
     }
 
     #[test]

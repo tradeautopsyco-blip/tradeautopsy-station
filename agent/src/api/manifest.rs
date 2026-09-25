@@ -1215,18 +1215,21 @@ fn enrich_kotak_fo_instruments_for_book(
     state: &AppState,
     mut envelope: ObtainEnvelope,
     book_id: &'static str,
-    segment: &str,
+    _segment: &str,
 ) -> ObtainEnvelope {
-    let master = state
-        .kotak_nfo_scrip_master
+    let master_arc = match book_id {
+        KOTAK_NSE_CDS_BOOK_ID => &state.kotak_cds_scrip_master,
+        KOTAK_MCX_FUTURE_BOOK_ID => &state.kotak_mcx_scrip_master,
+        _ => &state.kotak_nfo_scrip_master,
+    };
+    let master = master_arc
         .lock()
-        .expect("kotak nfo scrip master mutex poisoned");
+        .expect("kotak fo scrip master mutex poisoned");
     if master.is_empty() {
         return envelope;
     }
     let rows: Vec<crate::data::ContractRow> = master
         .iter()
-        .filter(|row| row.segment.eq_ignore_ascii_case(segment))
         .map(|row| row.to_contract_row())
         .collect();
     drop(master);

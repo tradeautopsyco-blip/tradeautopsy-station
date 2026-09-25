@@ -1349,6 +1349,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let kotak_nfo_scrip_master = Arc::new(std::sync::Mutex::new(
         crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
     ));
+    let kotak_cds_scrip_master = Arc::new(std::sync::Mutex::new(
+        crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+    ));
+    let kotak_mcx_scrip_master = Arc::new(std::sync::Mutex::new(
+        crate::kotak_nfo_scrip::KotakNfoScripMaster::empty(),
+    ));
     let broker_sync_control = Arc::new(BrokerSyncController::new(
         broker_status.clone(),
         recent_trades.clone(),
@@ -1628,6 +1634,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         instrument_master,
         kotak_scrip_master,
         kotak_nfo_scrip_master,
+        kotak_cds_scrip_master,
+        kotak_mcx_scrip_master,
         options_option_symbols,
         usdm_exchange_info,
         coinm_exchange_info,

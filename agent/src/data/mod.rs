@@ -209,7 +209,8 @@ pub use honesty::{HonestyStatus, InputHonesty};
 pub use host_policy::{
     authorize_book_call, authorize_book_fence, authorize_host_call, authorize_inferred_call,
     infer_capability, is_kotak_cash_scrip_csv_path, is_kotak_fo_scrip_csv_path,
-    is_kotak_nse_fo_scrip_csv_path, is_mutation, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
+    is_kotak_cde_fo_scrip_csv_path, is_kotak_mcx_fo_scrip_csv_path, is_kotak_nse_fo_scrip_csv_path,
+    is_mutation, AuthMode, HostRefuse, R0_ALLOWED_HOSTS,
 };
 pub use identity::Physics;
 pub use inherit::{capital_may_light, inherit};

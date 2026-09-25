@@ -136,20 +136,27 @@ pub fn spawn_instrument_master_refresh(
     }
 }
 
-/// Named NFO book catalog. Cash `spawn_instrument_master_refresh` must not call this.
-pub fn spawn_nfo_master_refresh(state: &AppState, environment: &str, connection_id: &str) {
+fn spawn_kotak_fo_lane_refresh(
+    state: &AppState,
+    environment: &str,
+    connection_id: &str,
+    lane: crate::kotak_nfo_scrip::KotakFoScripLane,
+    master: std::sync::Arc<std::sync::Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+) {
     if !state.source_manifests.iter().any(|manifest| {
-        manifest.book_id == crate::data::KOTAK_NSE_NFO_BOOK_ID
+        manifest.book_id == lane.book_id
             && manifest.implemented.iter().any(|op| op == "instruments")
     }) {
         return;
     }
-    crate::kotak_nfo_scrip::try_load_nfo_cache(
+    crate::kotak_nfo_scrip::try_load_lane_cache(
         &state.instrument_master_cache_dir,
-        &state.kotak_nfo_scrip_master,
+        lane,
+        &master,
     );
-    crate::kotak_nfo_scrip::spawn_refresh(
-        state.kotak_nfo_scrip_master.clone(),
+    crate::kotak_nfo_scrip::spawn_lane_refresh(
+        lane,
+        master,
         state.broker_sync_control.credential_vault(),
         environment.to_string(),
         connection_id.to_string(),
@@ -157,6 +164,40 @@ pub fn spawn_nfo_master_refresh(state: &AppState, environment: &str, connection_
         state.instrument_master_cache_dir.clone(),
         state.broker_connections.clone(),
         state.kotak_session_locator.clone(),
+    );
+}
+
+/// Named NFO book catalog. Cash `spawn_instrument_master_refresh` must not call this.
+pub fn spawn_nfo_master_refresh(state: &AppState, environment: &str, connection_id: &str) {
+    spawn_kotak_fo_lane_refresh(
+        state,
+        environment,
+        connection_id,
+        crate::kotak_nfo_scrip::KOTAK_NSE_FO_LANE,
+        state.kotak_nfo_scrip_master.clone(),
+    );
+}
+
+/// NFO + CDS + MCX scrip masters (Binance-shaped four-book Kotak stack).
+pub fn spawn_kotak_multi_fo_master_refresh(
+    state: &AppState,
+    environment: &str,
+    connection_id: &str,
+) {
+    spawn_nfo_master_refresh(state, environment, connection_id);
+    spawn_kotak_fo_lane_refresh(
+        state,
+        environment,
+        connection_id,
+        crate::kotak_nfo_scrip::KOTAK_CDE_FO_LANE,
+        state.kotak_cds_scrip_master.clone(),
+    );
+    spawn_kotak_fo_lane_refresh(
+        state,
+        environment,
+        connection_id,
+        crate::kotak_nfo_scrip::KOTAK_MCX_FO_LANE,
+        state.kotak_mcx_scrip_master.clone(),
     );
 }
 

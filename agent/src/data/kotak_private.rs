@@ -414,12 +414,23 @@ pub fn parse_kotak_limits_json(body: &str) -> Result<BrokerBalancesSnapshot, Str
     })
 }
 
-fn nfo_master(state: &AppState) -> KotakNfoScripMaster {
-    state
+fn kotak_fo_masters_snapshot(state: &AppState) -> KotakNfoScripMaster {
+    let nfo = state
         .kotak_nfo_scrip_master
         .lock()
         .expect("kotak nfo scrip master mutex poisoned")
-        .clone()
+        .clone();
+    let cds = state
+        .kotak_cds_scrip_master
+        .lock()
+        .expect("kotak cds scrip master mutex poisoned")
+        .clone();
+    let mcx = state
+        .kotak_mcx_scrip_master
+        .lock()
+        .expect("kotak mcx scrip master mutex poisoned")
+        .clone();
+    crate::kotak_nfo_scrip::merge_kotak_fo_masters(&[nfo, cds, mcx])
 }
 
 async fn fetch_and_plant_orders(
@@ -439,7 +450,7 @@ async fn fetch_and_plant_orders(
     )
     .await?;
     let orders = parse_kotak_orders_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
-    let master = nfo_master(state);
+    let master = kotak_fo_masters_snapshot(state);
     let split = split_kotak_orders_by_book(orders, &master);
     plant_orders_split(state, split, KOTAK_ORDERS_PATH);
     Ok(())
@@ -463,7 +474,7 @@ async fn fetch_and_plant_positions(
     .await?;
     let positions =
         parse_kotak_positions_json(&body).map_err(|_| KotakPrivateFetchError::Http(0))?;
-    let master = nfo_master(state);
+    let master = kotak_fo_masters_snapshot(state);
     let split = split_kotak_positions_by_book(positions, &master);
     plant_positions_split(state, split, KOTAK_POSITIONS_PATH);
     Ok(())

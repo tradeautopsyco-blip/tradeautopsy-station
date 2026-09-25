@@ -121,6 +121,8 @@ pub struct AppState {
     pub kotak_scrip_master: Arc<Mutex<KotakScripMaster>>,
     /// Named NFO scrip master. Separate from cash; do not blend FO rows.
     pub kotak_nfo_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+    pub kotak_cds_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
+    pub kotak_mcx_scrip_master: Arc<Mutex<crate::kotak_nfo_scrip::KotakNfoScripMaster>>,
     /// `optionSymbols` from eapi exchangeInfo. Separate from spot `instrument_master`.
     pub options_option_symbols: Arc<Mutex<Vec<crate::data::OptionsSymbolRow>>>,
     /// USDM `GET /fapi/v1/exchangeInfo` filters. Third identity — never spot `instrument_master`.

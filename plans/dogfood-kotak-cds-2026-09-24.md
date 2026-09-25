@@ -23,7 +23,7 @@
 - [ ] B6 amended for CD capability rows (segment map `cde_fo` → CD book; refuse list aligned with lock — not copied from cash/NFO rate tables)
 - [ ] Bindings landed: reuse **`kotak_neo`** Keychain session family (same Wasm slug as cash/NFO); **explicit `book_id` Start** on `kotak-nse-cds` — poll default stays cash until Start targets CDS (ADR 0022 §2)
 - [ ] Adapter built: first CD book **`cde_fo` only**, CalcProfile **`fx_cds_inr`**; host stamps `(fx, …)` from book row; cash adapter **refuses** `cde_fo`; NFO fence **refuses** `cde_fo`
-- [ ] Scrip master: book-scoped **`cde_fo.csv`** fetch (unsigned GET pattern per NFO lock); parser header **exact match** to lock — blocked until lock SHIPPING
+- [x] Scrip master: book-scoped **`cde_fo.csv`** fetch (`KOTAK_CDE_FO_LANE`, `kotak_cds_scrip_master`, cache `cde_fo`) — live session still required for Tier II drills
 - [ ] Money owner: **one** realized-PnL module named in lock at SHIPPING (CI green before Tier II)
 - [ ] Catalog lists `kotak_neo` CDS book as **Planned** only (no `Enabled` flip before sign-off)
 - [ ] Agent running on `127.0.0.1:9137` (release build)

@@ -8,12 +8,12 @@
 
 - Playbook + `agent/src/data/india_book_stack.rs` CI guards (manifest + money matrix + desk core ops declared).
 - Kotak `kotak-nse-cds` / `kotak-mcx-future` desk enrichers + private kick parity with NFO.
+- **S1.5-2:** `cde_fo` / `mcx_fo` scrip lanes (`spawn_kotak_multi_fo_master_refresh`, per-book masters + cache).
 
 ## Next (accuracy)
 
-1. **S1.5-2** — Dedicated `cde_fo.csv` / `mcx_fo.csv` master refresh (today instruments filter empty until fetch lands).
-2. **S1.5-3** — Dogfood CDS then MCX; flip **Planned → Enabled** per book.
-3. **Wave 2** — After Kotak signed, one CDS/MCX book per broker only when B6 cites segment.
+1. **S1.5-3** — Dogfood CDS then MCX; flip **Planned → Enabled** per book after signed step 6.
+2. **Wave 2** — After Kotak signed, one CDS/MCX book per broker only when B6 cites segment.
 
 ## Verify
 

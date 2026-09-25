@@ -111,7 +111,7 @@ pub async fn start_handler(
         &body.broker_connection_id,
     );
     if slug == "kotak_neo" {
-        crate::api::desk::spawn_nfo_master_refresh(
+        crate::api::desk::spawn_kotak_multi_fo_master_refresh(
             &state,
             &body.environment,
             &body.broker_connection_id,
@@ -151,7 +151,11 @@ pub async fn retry_handler(State(state): State<AppState>) -> Json<Value> {
             &connection_id,
         );
         if slug == "kotak_neo" {
-            crate::api::desk::spawn_nfo_master_refresh(&state, &environment, &connection_id);
+            crate::api::desk::spawn_kotak_multi_fo_master_refresh(
+                &state,
+                &environment,
+                &connection_id,
+            );
         }
     }
     Json(json!({ "ok": true }))
