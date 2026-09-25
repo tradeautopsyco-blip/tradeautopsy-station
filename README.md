@@ -34,9 +34,11 @@ cd agent && cargo test
 
 ## Updates (signed releases)
 
-Production builds are **Developer ID signed and notarized**. In-app updates use [Sparkle](https://sparkle-project.org/) against `https://updates.tradeautopsy.in/appcast.xml` (see `updater/` and `.github/workflows/release.yml`).
+Releases use [Sparkle](https://sparkle-project.org/) against `https://updates.tradeautopsy.in/appcast.xml` (see `updater/` and `.github/workflows/release.yml`).
 
-The first signed install (**0.2.0+**) replaces unsigned builds: TCC (mic, speech, screen recording) and Keychain items do **not** carry over from ad-hoc installs.
+**Default today:** GitHub Actions ships **ad-hoc unsigned** DMGs (`notarize: false`). Downloaders get Gatekeeper once per build — **right-click → Open → Open**. Sparkle still verifies the feed with EdDSA and can install updates; each update is also unsigned until you run the workflow with **notarize: true** and Apple secrets.
+
+**Later:** Developer ID + notarization (`notarize: true` + secrets from `./scripts/set-apple-release-secrets.sh`) removes Gatekeeper friction. The first **notarized** install resets TCC and Keychain vs ad-hoc builds.
 
 Kill-switch DNS still requires a **one-time** admin install of `sudoers.d/99-tradeautopsy-dns` — that is separate from Gatekeeper.
 

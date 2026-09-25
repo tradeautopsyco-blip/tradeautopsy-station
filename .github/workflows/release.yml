@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: ""
+      notarize:
+        description: "Developer ID sign + notarize DMG (requires Apple secrets). Default is ad-hoc unsigned."
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: tradeautopsy-station-release
@@ -111,7 +116,7 @@ jobs:
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build, sign, and publish
+    name: Build and publish
     needs: preparation
     runs-on: macos-15
     env:
@@ -119,6 +124,7 @@ jobs:
       BUILD_NUMBER: ${{ needs.preparation.outputs.build_number }}
       IS_BETA: ${{ needs.preparation.outputs.is_beta }}
       RELEASE_NOTES: ${{ inputs.release_notes }}
+      NOTARIZE: ${{ inputs.notarize }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
@@ -173,11 +179,16 @@ jobs:
           echo "app_path=$APP" >> "$GITHUB_OUTPUT"
 
       - name: Import signing certificate
+        if: env.NOTARIZE == 'true'
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
+          if [[ -z "${APPLE_CERTIFICATE_BASE64:-}" || -z "${APPLE_CERTIFICATE_PASSWORD:-}" ]]; then
+            echo "::error::notarize=true requires APPLE_CERTIFICATE_BASE64 and APPLE_CERTIFICATE_PASSWORD secrets"
+            exit 1
+          fi
           CERT_PATH="$RUNNER_TEMP/build_certificate.p12"
           KC="$RUNNER_TEMP/app-signing.keychain-db"
           echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
@@ -187,7 +198,8 @@ jobs:
           security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
           security list-keychain -d user -s "$KC"
 
-      - name: Sign agent and app
+      - name: Sign agent and app (Developer ID)
+        if: env.NOTARIZE == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           TEAM_ID: ${{ secrets.TEAM_ID }}
@@ -205,6 +217,11 @@ jobs:
             --sign "$APPLE_SIGNING_IDENTITY" \
             "$APP"
           codesign --verify --deep --strict "$APP"
+
+      - name: Ad-hoc build notice
+        if: env.NOTARIZE != 'true'
+        run: |
+          echo "::notice::Ad-hoc unsigned DMG — recipients must right-click Open once (Gatekeeper). Sparkle EdDSA still signs the appcast enclosure."
 
       - name: Pack DMG
         run: |
@@ -224,6 +241,7 @@ jobs:
             "Release/${PROJECT_NAME}.dmg"
 
       - name: Notarize DMG
+        if: env.NOTARIZE == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
@@ -243,7 +261,11 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
-          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}"
+          UNSIGNED_NOTE=""
+          if [[ "${NOTARIZE}" != "true" ]]; then
+            UNSIGNED_NOTE=$'\n\n**Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.'
+          fi
+          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}${UNSIGNED_NOTE}"
           PRERELEASE=()
           if [[ "$IS_BETA" == "true" ]]; then
             PRERELEASE=(--prerelease)
@@ -269,7 +291,11 @@ jobs:
           test -x "$RUNNER_TEMP/generate_appcast" || {
             echo "::error::$RUNNER_TEMP/generate_appcast missing"; exit 1;
           }
-          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}"
+          UNSIGNED_NOTE=""
+          if [[ "${NOTARIZE}" != "true" ]]; then
+            UNSIGNED_NOTE=$'\n\n**Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.'
+          fi
+          NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}${UNSIGNED_NOTE}"
           printf '%s' "$NOTES" > "Release/${PROJECT_NAME}.html"
           if [[ "$IS_BETA" == "true" ]]; then
             APPCAST_OUT="appcast-beta.xml"
