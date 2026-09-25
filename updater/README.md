@@ -11,21 +11,42 @@ After Pages is enabled for this repository, clients should use:
 | Custom domain (recommended) | `https://updates.tradeautopsy.in/appcast.xml` |
 | GitHub Pages default | `https://fexevil.github.io/tradeautopsy-station/appcast.xml` |
 
-Set `SUFeedURL` in the app’s `Info.plist` to the HTTPS URL you ship (custom domain once DNS is live).
+`SUFeedURL` in `station/StationApp/Info.plist` stays `https://updates.tradeautopsy.in/appcast.xml`. The github.io URL is a manual fallback until that host answers. Do not retarget the plist to github.io.
 
 The `CNAME` file pins the custom hostname to `updates.tradeautopsy.in`.
 
 ## DNS (CNAME)
 
-At your DNS provider for `tradeautopsy.in`, add:
+At GoDaddy for `tradeautopsy.in`, add a **subdomain** record only (do not edit apex `@`):
 
 ```
 updates.tradeautopsy.in  CNAME  fexevil.github.io.
 ```
 
-(Use `fexevil.github.io` as the GitHub Pages target for a **project** site on `FExEVIL/tradeautopsy-station`.)
+`fexevil.github.io` is the GitHub Pages user host. It is not `fexevil.github.io/tradeautopsy-station`. Click-path, GitHub Pages settings, and HTTPS: [docs/runbooks/updates-domain-godaddy.md](../docs/runbooks/updates-domain-godaddy.md).
 
-In the repo **Settings → Pages**, set source to **GitHub Actions** (the `static.yml` workflow uploads `updater/`).
+In the repo **Settings → Pages**, set source to **GitHub Actions** (the `static.yml` workflow uploads `updater/`) and custom domain `updates.tradeautopsy.in`.
+
+## Verification
+
+DNS usually shows up in 5–60 minutes after the CNAME is saved. Enforce HTTPS on GitHub can take longer (up to 24 hours before the checkbox is offered).
+
+```bash
+./scripts/verify-updates-feed.sh
+```
+
+The script checks, in order:
+
+1. `dig +short CNAME updates.tradeautopsy.in` → `fexevil.github.io`
+2. `curl -sI https://updates.tradeautopsy.in/appcast.xml` → HTTP 200 and a `Content-Type` containing `xml` or `html`
+3. The first five lines of the body are a Sparkle RSS channel
+4. SHA-256 of the live body matches `updater/appcast.xml` (so Pages is serving this commit’s feed)
+
+Any failed check exits non-zero. The github.io URL is a manual fallback only, not the plist URL. It returns GitHub’s “Site not found” page until **Deploy static content to Pages** has succeeded on `origin/main`:
+
+```bash
+curl -sI https://fexevil.github.io/tradeautopsy-station/appcast.xml
+```
 
 ## Sparkle signing keys
 
