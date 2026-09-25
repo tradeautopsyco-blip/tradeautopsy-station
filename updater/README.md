@@ -11,32 +11,29 @@ Deploy: `cd updater && vercel deploy --prod --yes` — see [docs/runbooks/update
 
 ## Feed URL
 
-After Pages is enabled for this repository, clients should use:
-
 | Hosting | URL |
 |---------|-----|
-| Custom domain (recommended) | `https://updates.tradeautopsy.in/appcast.xml` |
-| GitHub Pages default | `https://fexevil.github.io/tradeautopsy-station/appcast.xml` |
+| Custom domain (target, already `SUFeedURL`) | `https://updates.tradeautopsy.in/appcast.xml` |
+| Vercel production (live now) | `https://updater-omega.vercel.app/appcast.xml` |
 
-`SUFeedURL` in `station/StationApp/Info.plist` stays `https://updates.tradeautopsy.in/appcast.xml`. The github.io URL is a manual fallback until that host answers. Do not retarget the plist to github.io.
-
-The `CNAME` file pins the custom hostname to `updates.tradeautopsy.in`.
+`SUFeedURL` in `station/StationApp/Info.plist` stays on the custom domain. Do not retarget shipped apps to `updater-omega.vercel.app`. That host is the manual fallback until GoDaddy verification finishes.
 
 ## DNS (CNAME)
 
-At GoDaddy for `tradeautopsy.in`, add a **subdomain** record only (do not edit apex `@`):
+At GoDaddy for `tradeautopsy.in`, subdomain only (do not edit apex `@`):
 
 ```
-updates.tradeautopsy.in  CNAME  fexevil.github.io.
+updates.tradeautopsy.in  CNAME  f636bc2918b40e49.vercel-dns-017.com.
+_vercel.tradeautopsy.in  TXT    vc-domain-verify=updates.tradeautopsy.in,be49cb4a727fc3804b2f
 ```
 
-`fexevil.github.io` is the GitHub Pages user host. It is not `fexevil.github.io/tradeautopsy-station`. Click-path, GitHub Pages settings, and HTTPS: [docs/runbooks/updates-domain-godaddy.md](../docs/runbooks/updates-domain-godaddy.md).
+Keep the existing `_vercel` TXT records for `tradeautopsy.in` and `www`. Exact click-path: [docs/runbooks/updates-domain-vercel.md](../docs/runbooks/updates-domain-vercel.md).
 
-In the repo **Settings → Pages**, set source to **GitHub Actions** (the `static.yml` workflow uploads `updater/`) and custom domain `updates.tradeautopsy.in`.
+Do not also CNAME `updates` to `fexevil.github.io`. GitHub Pages is an optional backup at the github.io URL only, without this custom domain.
 
 ## Verification
 
-DNS usually shows up in 5–60 minutes after the CNAME is saved. Enforce HTTPS on GitHub can take longer (up to 24 hours before the checkbox is offered).
+DNS usually shows up in 5–60 minutes after the CNAME and TXT are saved.
 
 ```bash
 ./scripts/verify-updates-feed.sh
@@ -44,15 +41,15 @@ DNS usually shows up in 5–60 minutes after the CNAME is saved. Enforce HTTPS o
 
 The script checks, in order:
 
-1. `dig +short CNAME updates.tradeautopsy.in` → `fexevil.github.io`
+1. `dig +short CNAME updates.tradeautopsy.in` → a Vercel DNS host (`f636bc2918b40e49.vercel-dns-017.com` or `cname.vercel-dns.com`)
 2. `curl -sI https://updates.tradeautopsy.in/appcast.xml` → HTTP 200 and a `Content-Type` containing `xml` or `html`
 3. The first five lines of the body are a Sparkle RSS channel
-4. SHA-256 of the live body matches `updater/appcast.xml` (so Pages is serving this commit’s feed)
+4. SHA-256 of the live body matches `updater/appcast.xml`
 
-Any failed check exits non-zero. The github.io URL is a manual fallback only, not the plist URL. It returns GitHub’s “Site not found” page until **Deploy static content to Pages** has succeeded on `origin/main`:
+Any failed check exits non-zero. Until the custom domain answers, the production alias already serves this file:
 
 ```bash
-curl -sI https://fexevil.github.io/tradeautopsy-station/appcast.xml
+curl -sI https://updater-omega.vercel.app/appcast.xml
 ```
 
 ## Sparkle signing keys

@@ -1,5 +1,7 @@
 # Runbook: `updates.tradeautopsy.in` (GoDaddy DNS + GitHub Pages)
 
+Backup only. The live feed is the Vercel project **updater**. DNS for `updates` must point at Vercel, not at `fexevil.github.io`, while that project serves the feed. See [updates-domain-vercel.md](./updates-domain-vercel.md). Do not put both targets on the same host.
+
 Make the Sparkle feed live at `https://updates.tradeautopsy.in/appcast.xml`.
 
 That URL is already `SUFeedURL` in `station/StationApp/Info.plist`. Do not change it. The github.io address below is only a manual fallback until this hostname answers.

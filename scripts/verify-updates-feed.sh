@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Confirm updates.tradeautopsy.in CNAMEs to GitHub Pages and serves the Sparkle appcast.
-# DNS often takes 5–60 minutes after the GoDaddy record is saved.
+# Confirm updates.tradeautopsy.in CNAMEs to the Vercel updater project and serves the Sparkle appcast.
+# DNS often takes 5–60 minutes after the GoDaddy CNAME and _vercel TXT are saved.
 # Exit 0 only when every check passes. Does not change SUFeedURL.
 set -euo pipefail
 
 HOST="updates.tradeautopsy.in"
-# GitHub Pages (static.yml) or Vercel (updater/vercel.json)
-EXPECTED_CNAME_GITHUB_PAGES="fexevil.github.io"
-EXPECTED_CNAME_VERCEL="cname.vercel-dns.com"
+# Rank-1 target from the updater project, plus the generic Vercel CNAME.
+EXPECTED_CNAME_SPECIFIC="f636bc2918b40e49.vercel-dns-017.com"
+EXPECTED_CNAME_GENERIC="cname.vercel-dns.com"
 FEED_URL="https://${HOST}/appcast.xml"
-FALLBACK_URL="https://fexevil.github.io/tradeautopsy-station/appcast.xml"
+FALLBACK_URL="https://updater-omega.vercel.app/appcast.xml"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_APPCAST="${ROOT}/updater/appcast.xml"
 
 fail() {
   echo "FAIL: $*" >&2
   echo "Fallback until DNS works (do not put this in SUFeedURL): ${FALLBACK_URL}" >&2
-  echo "Runbook: docs/runbooks/updates-domain-godaddy.md" >&2
+  echo "Runbook: docs/runbooks/updates-domain-vercel.md" >&2
   exit 1
 }
 
@@ -44,11 +44,14 @@ cname="$(printf '%s\n' "$raw_cname" | awk 'NR==1{print tolower($0)}' | sed 's/\.
 if [[ -z "$cname" ]]; then
   ns="$(dig +short NS tradeautopsy.in || true)"
   ns="$(printf '%s' "$ns" | tr '\n' ' ')"
-  fail "No CNAME for ${HOST}. In GoDaddy add host updates → ${EXPECTED_CNAME_GITHUB_PAGES} (GitHub Pages) or ${EXPECTED_CNAME_VERCEL} (Vercel). Delete any A/AAAA on that host. Typical propagation is 5–60 minutes. Nameservers: ${ns:-unknown} Try: dig +short CNAME ${HOST} @8.8.8.8"
+  fail "No CNAME for ${HOST}. In GoDaddy add host updates → ${EXPECTED_CNAME_SPECIFIC} and TXT _vercel = vc-domain-verify=updates.tradeautopsy.in,be49cb4a727fc3804b2f. Do not remove the existing _vercel TXT rows. Typical propagation is 5–60 minutes. Nameservers: ${ns:-unknown} Try: dig +short CNAME ${HOST} @8.8.8.8"
 fi
-if [[ "$cname" != "$EXPECTED_CNAME_GITHUB_PAGES" && "$cname" != "$EXPECTED_CNAME_VERCEL" ]]; then
-  fail "CNAME for ${HOST} is ${cname}; expected ${EXPECTED_CNAME_GITHUB_PAGES} (Pages) or ${EXPECTED_CNAME_VERCEL} (Vercel)."
-fi
+case "$cname" in
+  "$EXPECTED_CNAME_SPECIFIC"|"$EXPECTED_CNAME_GENERIC"|*.vercel-dns.com|*.vercel-dns-*.com) ;;
+  *)
+    fail "CNAME for ${HOST} is ${cname}; expected ${EXPECTED_CNAME_SPECIFIC} (or ${EXPECTED_CNAME_GENERIC}). One target only — do not use fexevil.github.io while Vercel serves this feed."
+    ;;
+esac
 echo "OK  CNAME ${HOST} → ${cname}"
 
 header_file="$(mktemp)"
@@ -59,12 +62,12 @@ cleanup() {
 trap cleanup EXIT
 
 if ! curl -sS -I -L --max-redirs 5 --max-time 30 "$FEED_URL" >"$header_file"; then
-  fail "Header request failed for ${FEED_URL}. If this is a certificate error, wait until GitHub Pages offers Enforce HTTPS (up to 24 hours after DNS is correct)."
+  fail "Header request failed for ${FEED_URL}. If this is a certificate error, wait until Vercel shows the domain as verified (TXT on _vercel.tradeautopsy.in must be visible first)."
 fi
 
 status="$(tr -d '\r' <"$header_file" | awk '/^HTTP/{code=$2} END{print code}')"
 if [[ "$status" != "200" ]]; then
-  fail "Expected HTTP 200 from ${FEED_URL}, got ${status:-none}. 404 after a correct CNAME means the Pages custom domain is not saved, or Deploy static content to Pages has not succeeded on main."
+  fail "Expected HTTP 200 from ${FEED_URL}, got ${status:-none}. After a correct CNAME, 404 means updates.tradeautopsy.in is not verified on the Vercel updater project."
 fi
 
 ctype="$(tr -d '\r' <"$header_file" | grep -i '^content-type:' | tail -n 1 || true)"
@@ -104,7 +107,7 @@ if [[ "$local_hash" != "$remote_hash" ]]; then
   else
     prefix_note="First 200 bytes differ."
   fi
-  fail "Live feed does not match updater/appcast.xml. ${prefix_note} local sha256 ${local_hash}; remote sha256 ${remote_hash}. Redeploy Pages from main (workflow: Deploy static content to Pages)."
+  fail "Live feed does not match updater/appcast.xml. ${prefix_note} local sha256 ${local_hash}; remote sha256 ${remote_hash}. Redeploy with: cd updater && vercel deploy --prod --yes"
 fi
 echo "OK  sha256 matches updater/appcast.xml (${local_hash})"
 echo "All checks passed."
