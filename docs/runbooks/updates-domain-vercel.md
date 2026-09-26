@@ -54,7 +54,15 @@ When `updater/appcast.xml` changes on `main`:
 
 Or rely on `.github/workflows/deploy-updater-vercel.yml` after you set GitHub secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID` (`team_zWC8h9CNcTlGbpbWYB0hQNTo`), and `VERCEL_PROJECT_ID` (`prj_7bsoGXrasUUufotLOpLQugBwpsKa`).
 
-Optional: Vercel dashboard → **updater** → Settings → Git → connect `FExEVIL/tradeautopsy-station` with **Root Directory** `updater` (install the Vercel GitHub app on that repo if `vercel git connect` fails).
+### Vercel “Deployment Blocked” (commit email)
+
+If production shows **Blocked** with `TRADINGSBYSUNNY@GMAIL.COM could not be matched to a GitHub account`:
+
+1. **Unblock production now:** `./scripts/deploy-updates-feed.sh` (no git metadata; not blocked).
+2. **Stop repeat blocks:** Vercel → **updater** → **Settings → Git** → **Disconnect** the repo (use the GitHub Action or the script above instead of Vercel Git auto-deploy).
+3. **Or fix Git identity (if you want Vercel Git deploys):** On GitHub as **FExEVIL** → **Settings → Emails** → add **and verify** `TRADINGSBYSUNNY@GMAIL.COM` (must match `git log -1 --format=%ae`). Alternatively set repo commits to GitHub’s noreply address: `139541834+FExEVIL@users.noreply.github.com`.
+
+Optional Git connect: only after email verification — **Root Directory** must be `updater`, not repo root.
 
 `updater/CNAME` is not in this tree. That file would make GitHub Pages claim `updates.tradeautopsy.in` on the next Pages deploy. Pages can still serve `https://fexevil.github.io/tradeautopsy-station/appcast.xml` after a successful `static.yml` run. Do not set that same custom domain on Pages.
 

@@ -14,16 +14,17 @@ fi
 isolated_deploy() {
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
   cp "${UPDATER}/appcast.xml" "${UPDATER}/vercel.json" "${UPDATER}/.vercelignore" "$tmp/"
   if [[ -f "${UPDATER}/.vercel/project.json" ]]; then
     mkdir -p "$tmp/.vercel"
     cp "${UPDATER}/.vercel/project.json" "$tmp/.vercel/"
   else
+    rm -rf "$tmp"
     echo "Missing ${UPDATER}/.vercel/project.json — run: cd updater && vercel link" >&2
     exit 1
   fi
   (cd "$tmp" && vercel deploy --prod --yes)
+  rm -rf "$tmp"
 }
 
 echo "Deploying Sparkle feed to Vercel production…"
