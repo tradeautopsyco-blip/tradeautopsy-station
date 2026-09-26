@@ -2,12 +2,6 @@
 name: Deploy Sparkle feed (Vercel)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "updater/appcast.xml"
-      - "updater/vercel.json"
   workflow_dispatch:
 
 concurrency:

@@ -19,15 +19,17 @@ Account that **owns the repo** bills Actions usage. For **`tradeautopsyco-blip/t
 
 Private repos: included minutes are limited; **macOS** runners consume **10×** Linux minutes. This repo uses one consolidated **macOS** job to reduce waste after billing works.
 
-## Pipelines (after billing works)
+## Pipelines (manual-first — auto push/PR triggers disabled to save minutes)
 
 | Workflow | Trigger | Runner | Purpose |
 |----------|---------|--------|---------|
-| **CI** | Push/PR to `main` (ignores `updater/`‑only commits) | macOS-15 ×1 | Rust + Swift tests + Station.app build |
-| **Deploy Sparkle feed (Vercel)** | Push to `updater/appcast.xml` or manual | Ubuntu | Production appcast on `updates.tradeautopsy.in` |
-| **Release TradeAutopsy Station** | Manual (`workflow_dispatch`) | macOS + Ubuntu | DMG, GitHub Release, signed appcast |
-| **Deploy static content to Pages** | Manual only | Ubuntu | Optional backup; **not** used for `updates.tradeautopsy.in` |
-| **Agent Dispatch** | Schedule / labels | Ubuntu | Cursor agents; needs `CURSOR_API_KEY` |
+| **CI** | Manual only | macOS-15 ×1 | Rust + Swift tests + Station.app build |
+| **Deploy Sparkle feed (Vercel)** | Manual only | Ubuntu | Production appcast — or `./scripts/deploy-updates-feed.sh` locally |
+| **Release TradeAutopsy Station** | Manual | macOS + Ubuntu | DMG, GitHub Release, signed appcast |
+| **Deploy static content to Pages** | Manual only | Ubuntu | Optional backup |
+| **Agent Dispatch** | Manual only | Ubuntu | Cursor agents; needs `CURSOR_API_KEY` |
+
+**tradeautopsy (web):** **Tests**, **Deploy**, and **Elite-Tier Validation** (removed) no longer run on push; use manual **Deploy** / `./scripts/deploy-vercel-production.sh`.
 
 ## Secrets (`tradeautopsyco-blip/tradeautopsy-station`)
 

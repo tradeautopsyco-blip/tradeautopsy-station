@@ -8,8 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		843663B76BDCAB6619BB3EB6 /* Notch in Frameworks */ = {isa = PBXBuildFile; productRef = AFC60E701A4B6530969C3463 /* Notch */; };
+		B08F5134B03D7C1EFFE9DCDB /* Station in Frameworks */ = {isa = PBXBuildFile; productRef = 98424BC17ADC2F719A3E09C1 /* Station */; };
 		BB8F410CCE2DDA704C491339 /* StationApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D125B05DB7B3FC956851D8 /* StationApp.swift */; };
-		E0D51A50A15E61020F99B357 /* Station in Frameworks */ = {isa = PBXBuildFile; productRef = 98424BC17ADC2F719A3E09C1 /* Station */; };
+		E0D51A50A15E61020F99B357 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3D11CEB3F5FE7A11545EA86E /* Sparkle */; };
 		E4D07B0B131CBB25A040DA51 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0D72293B98EDED4462B650F8 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
@@ -27,7 +28,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				843663B76BDCAB6619BB3EB6 /* Notch in Frameworks */,
-				E0D51A50A15E61020F99B357 /* Station in Frameworks */,
+				E0D51A50A15E61020F99B357 /* Sparkle in Frameworks */,
+				B08F5134B03D7C1EFFE9DCDB /* Station in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -88,6 +90,7 @@
 			name = "TradeAutopsy Station";
 			packageProductDependencies = (
 				AFC60E701A4B6530969C3463 /* Notch */,
+				3D11CEB3F5FE7A11545EA86E /* Sparkle */,
 				98424BC17ADC2F719A3E09C1 /* Station */,
 			);
 			productName = "TradeAutopsy Station";
@@ -119,6 +122,7 @@
 			mainGroup = B892996D503726C3F71B7B67;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				274DF0E1DD65C87ECE92E16F /* XCRemoteSwiftPackageReference "Sparkle" */,
 				B91F1E543B12986CFEFDDE7E /* XCLocalSwiftPackageReference "../notch" */,
 				DE9034F55AD4A35646747B2F /* XCLocalSwiftPackageReference "." */,
 			);
@@ -161,7 +165,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\"${SRCROOT}/Scripts/build-and-copy-agent.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS\"\n";
+			shellScript = "set -e\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\nchmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -241,6 +245,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = "StationApp/TradeAutopsy Station.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = StationApp/Info.plist;
@@ -259,6 +264,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = "StationApp/TradeAutopsy Station.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = StationApp/Info.plist;
@@ -372,7 +378,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		274DF0E1DD65C87ECE92E16F /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		3D11CEB3F5FE7A11545EA86E /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 274DF0E1DD65C87ECE92E16F /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		98424BC17ADC2F719A3E09C1 /* Station */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Station;

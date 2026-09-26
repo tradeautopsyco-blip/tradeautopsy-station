@@ -1,14 +1,8 @@
 name: CI
 
+# Automatic CI disabled (macOS minutes are 10×). Run manually before releases.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "updater/**"
-      - "docs/**"
-      - "**/*.md"
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 # One macOS job (macOS minutes cost 10× Linux on GitHub). Previously six parallel macOS jobs.
 jobs:
