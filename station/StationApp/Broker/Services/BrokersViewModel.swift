@@ -51,6 +51,8 @@ public final class BrokersViewModel: ObservableObject {
     private let loginProfileStore: KotakLoginProfileStoring
     private var connectController: BrokerConnectController?
     private var didReconcileVaultAccounts = false
+    /// Set after Touch ID unlock for this Connect sheet; allows Flow B without a second LA prompt.
+    private var kotakLoginUnlockedForSheet = false
 
     public var connectBrokerDisplayName: String {
         guard let slug = connectBrokerSlug else { return "Broker" }
@@ -174,6 +176,7 @@ public final class BrokersViewModel: ObservableObject {
     /// Required when there is no saved Kotak login profile, or HMAC has no credentials yet.
     /// Must NOT open when Connect can Start from an existing session vault / remint path.
     public func presentConnectSheet(for slug: String, prefillConsumerKeyFromVault: Bool = true) {
+        kotakLoginUnlockedForSheet = false
         connectSheetMode = .full
         connectBrokerSlug = slug
         connectApiKey = ""
@@ -370,18 +373,29 @@ public final class BrokersViewModel: ObservableObject {
                     mpin: profile.mpin
                 )
                 connectSecretFieldsEpoch += 1
+                kotakLoginUnlockedForSheet = true
                 isConnectSheetPresented = true
             } catch KotakLoginProfileStoreError.userCancelled {
                 connectMessage = nil
+                kotakLoginUnlockedForSheet = false
             } catch {
                 presentConnectSheet(for: slug, prefillConsumerKeyFromVault: false)
                 connectMessage = "Could not unlock saved Kotak login. Use the full Connect form."
+                kotakLoginUnlockedForSheet = false
             }
             return
         }
 
         // HMAC: remint/edit reopens key/secret form.
         presentConnectSheet(for: slug)
+    }
+
+    /// Flow B: after Touch ID on this sheet, switch from TOTP-only remint to editable login fields.
+    public func beginChangeKotakLoginDetails() {
+        guard connectSheetMode == .kotakTotpOnly, kotakLoginUnlockedForSheet else { return }
+        connectSheetMode = .full
+        connectMessage = nil
+        connectSecretFieldsEpoch += 1
     }
 
     /// Edit / remint — delegates to `presentKotakTotpRemint` (Kotak TOTP-only or HMAC full form).
@@ -547,10 +561,16 @@ public final class BrokersViewModel: ObservableObject {
             connectSecretFieldsEpoch += 1
             connectSheetMode = .full
             clearOneTimeKotakSecrets()
+            kotakLoginUnlockedForSheet = false
             isConnectSheetPresented = false
         }
 
         await load()
+    }
+
+    /// Call when the Connect sheet closes without a successful connect (Cancel).
+    public func noteConnectSheetDismissed() {
+        kotakLoginUnlockedForSheet = false
     }
 
     private func clearOneTimeKotakSecrets() {
