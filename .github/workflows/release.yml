@@ -257,18 +257,19 @@ jobs:
             UNSIGNED_NOTE=$'\n\n**Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.'
           fi
           NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}${UNSIGNED_NOTE}"
-          PRERELEASE=()
-          if [[ "$IS_BETA" == "true" ]]; then
-            PRERELEASE=(--prerelease)
-          fi
           if gh release view "$TAG" --repo "${{ env.GITHUB_REPO }}" >/dev/null 2>&1; then
             gh release upload "$TAG" "Release/${PROJECT_NAME}.dmg" --repo "${{ env.GITHUB_REPO }}" --clobber
-          else
+          elif [[ "$IS_BETA" == "true" ]]; then
             gh release create "$TAG" "Release/${PROJECT_NAME}.dmg" \
               --repo "${{ env.GITHUB_REPO }}" \
               --title "${TAG} - TradeAutopsy Station" \
               --notes "$NOTES" \
-              "${PRERELEASE[@]}"
+              --prerelease
+          else
+            gh release create "$TAG" "Release/${PROJECT_NAME}.dmg" \
+              --repo "${{ env.GITHUB_REPO }}" \
+              --title "${TAG} - TradeAutopsy Station" \
+              --notes "$NOTES"
           fi
 
       - name: Fetch Sparkle generate_appcast
