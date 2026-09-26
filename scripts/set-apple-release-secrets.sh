@@ -12,7 +12,7 @@
 #   ./scripts/set-apple-release-secrets.sh
 set -euo pipefail
 
-REPO="${GITHUB_REPO:-FExEVIL/tradeautopsy-station}"
+REPO="${GITHUB_REPO:-tradeautopsyco-blip/tradeautopsy-station}"
 
 require() {
   local name="$1" val="${!1:-}"
