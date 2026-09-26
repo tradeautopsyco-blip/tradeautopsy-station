@@ -29,7 +29,7 @@ env:
   PROJECT_NAME: TradeAutopsy-Station
   APP_NAME: "TradeAutopsy Station"
   BETA_CHANNEL_NAME: beta
-  GITHUB_REPO: tradeautopsyco-blip/tradeautopsy-station
+  GITHUB_REPO: ${{ github.repository }}
 
 jobs:
   preparation:

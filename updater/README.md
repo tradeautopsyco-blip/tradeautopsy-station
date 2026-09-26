@@ -80,6 +80,6 @@ Sparkle uses an **Ed25519** key pair:
 
 ## Release artifacts
 
-DMGs are published to [GitHub Releases](https://github.com/FExEVIL/tradeautopsy-station/releases) as `TradeAutopsy-Station.dmg`. The appcast enclosure URL must match:
+DMGs are published to [GitHub Releases](https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases) as `TradeAutopsy-Station.dmg`. The appcast enclosure URL must match:
 
-`https://github.com/FExEVIL/tradeautopsy-station/releases/download/v{VERSION}/TradeAutopsy-Station.dmg`
+`https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v{VERSION}/TradeAutopsy-Station.dmg`
