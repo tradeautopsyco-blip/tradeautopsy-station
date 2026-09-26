@@ -5,7 +5,7 @@ This directory is served as the Sparkle feed on **Vercel** (primary):
 - Production: `https://updater-omega.vercel.app/appcast.xml`
 - Custom domain (after GoDaddy CNAME): `https://updates.tradeautopsy.in/appcast.xml`
 
-Deploy: `cd updater && vercel deploy --prod --yes` after each appcast commit — see [docs/runbooks/updates-domain-vercel.md](../docs/runbooks/updates-domain-vercel.md).
+Deploy: `./scripts/deploy-updates-feed.sh` from repo root (or automatic via **Deploy Sparkle feed (Vercel)** on push to `updater/appcast.xml`). See [docs/runbooks/updates-domain-vercel.md](../docs/runbooks/updates-domain-vercel.md).
 
 Release workflow defaults to **unsigned** DMGs; only `PRIVATE_SPARKLE_KEY` is required for signed appcast entries. Apple secrets are optional until you enable **notarize** on the workflow dispatch form.
 

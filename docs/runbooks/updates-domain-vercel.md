@@ -7,7 +7,7 @@ Hosts the Sparkle feed from `updater/` (static `appcast.xml`). Matches `SUFeedUR
 | Production URL (until custom domain) | `https://updater-omega.vercel.app/appcast.xml` |
 | Custom domain (target) | `https://updates.tradeautopsy.in/appcast.xml` |
 | Vercel project | [tradeautospy/updater](https://vercel.com/tradeautospy/updater) |
-| Deploy | `cd updater && vercel deploy --prod` or Git connect after `vercel git connect` |
+| Deploy | `./scripts/deploy-updates-feed.sh` or push `updater/appcast.xml` (GitHub Action **Deploy Sparkle feed (Vercel)**) |
 
 ## Vercel domain
 
@@ -46,11 +46,15 @@ dig +short TXT _vercel.tradeautopsy.in @8.8.8.8
 
 ## Redeploy after appcast changes
 
-When `updater/appcast.xml` changes on `main`, run:
+When `updater/appcast.xml` changes on `main`:
 
 ```bash
-cd updater && vercel deploy --prod --yes
+./scripts/deploy-updates-feed.sh
 ```
+
+Or rely on `.github/workflows/deploy-updater-vercel.yml` after you set GitHub secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID` (`team_zWC8h9CNcTlGbpbWYB0hQNTo`), and `VERCEL_PROJECT_ID` (`prj_7bsoGXrasUUufotLOpLQugBwpsKa`).
+
+Optional: Vercel dashboard → **updater** → Settings → Git → connect `FExEVIL/tradeautopsy-station` with **Root Directory** `updater` (install the Vercel GitHub app on that repo if `vercel git connect` fails).
 
 `updater/CNAME` is not in this tree. That file would make GitHub Pages claim `updates.tradeautopsy.in` on the next Pages deploy. Pages can still serve `https://fexevil.github.io/tradeautopsy-station/appcast.xml` after a successful `static.yml` run. Do not set that same custom domain on Pages.
 
