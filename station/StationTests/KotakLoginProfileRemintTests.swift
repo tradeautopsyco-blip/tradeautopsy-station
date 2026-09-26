@@ -80,6 +80,45 @@ struct KotakLoginProfileRemintTests {
         #expect(profiles.unlockCallCount == 1)
     }
 
+    @Test func changeLoginDetailsAfterUnlockOpensFullFormWithoutSecondUnlock() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.KotakChangeLogin.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
+            syncControl: sync,
+            loginProfileStore: profiles
+        )
+        viewModel.presentEditSheet(for: "kotak_neo")
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+
+        viewModel.beginChangeKotakLoginDetails()
+
+        #expect(viewModel.connectSheetMode == .full)
+        #expect(viewModel.connectConsumerKey == "ck")
+        #expect(viewModel.connectMobileNumber == "+919999999999")
+        #expect(viewModel.connectUcc == "UCC1")
+        #expect(viewModel.connectMpin == "9999")
+        #expect(profiles.unlockCallCount == 1)
+    }
+
     @Test func editWithoutProfileOpensEmptyFullFormWithoutConsumerKeyPrefill() async throws {
         let broker = FakeBrokerControlClient()
         broker.scenario = .notConfigured

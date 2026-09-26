@@ -164,6 +164,92 @@ struct BrokersViewModelTests {
         #expect(store.readCallCount == 0)
     }
 
+    @Test func beginChangeKotakLoginDetailsNoOpWhenNotTotpOnlyMode() async {
+        let (viewModel, _, _, _) = makeViewModel()
+        viewModel.presentConnectSheet(for: "kotak_neo")
+        #expect(viewModel.connectSheetMode == .full)
+
+        viewModel.beginChangeKotakLoginDetails()
+
+        #expect(viewModel.connectSheetMode == .full)
+    }
+
+    @Test func beginChangeKotakLoginDetailsNoOpWhenUnlockCleared() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.BrokersVM.ChangeLoginFailClosed.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
+            syncControl: sync,
+            loginProfileStore: profiles
+        )
+        viewModel.presentEditSheet(for: "kotak_neo")
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+
+        viewModel.noteConnectSheetDismissed()
+        viewModel.beginChangeKotakLoginDetails()
+
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+        #expect(profiles.unlockCallCount == 1)
+    }
+
+    @Test func noteConnectSheetDismissedClearsUnlockSoChangeLoginNeedsFreshTouchID() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.BrokersVM.DismissUnlock.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: UserDefaultsBrokerMetadataStore(defaults: defaults),
+            syncControl: sync,
+            loginProfileStore: profiles
+        )
+        viewModel.presentEditSheet(for: "kotak_neo")
+        viewModel.beginChangeKotakLoginDetails()
+        #expect(viewModel.connectSheetMode == .full)
+
+        viewModel.noteConnectSheetDismissed()
+        viewModel.isConnectSheetPresented = false
+
+        viewModel.presentEditSheet(for: "kotak_neo")
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+        viewModel.beginChangeKotakLoginDetails()
+        #expect(viewModel.connectSheetMode == .full)
+        #expect(profiles.unlockCallCount == 2)
+    }
+
     private func makeViewModelWithStore(
         _ store: FakeBrokerCredentialStore
     ) -> (BrokersViewModel, FakeBrokerControlClient, FakeBrokerCredentialStore, FakeBrokerSyncControl) {

@@ -8,6 +8,8 @@ mod allowlist;
 mod catalog;
 mod components;
 mod credential_vault;
+#[cfg(target_os = "macos")]
+mod macos_keychain_acl;
 mod credentials;
 mod desk;
 mod host;

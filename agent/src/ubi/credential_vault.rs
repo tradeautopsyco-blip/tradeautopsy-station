@@ -92,8 +92,14 @@ fn read_keyring_blob(service: &str, account: &str) -> Result<Option<CredentialBl
 }
 
 fn write_keyring_blob(service: &str, account: &str, blob: &CredentialBlob) -> Result<()> {
-    let entry = keyring::Entry::new(service, account).context("broker credential keyring entry")?;
     let json = serde_json::to_string(blob).context("serialize credential blob")?;
+    #[cfg(target_os = "macos")]
+    if crate::ubi::macos_keychain_acl::service_uses_trusted_acl(service) {
+        return crate::ubi::macos_keychain_acl::write_generic_password_with_trusted_acl(
+            service, account, &json,
+        );
+    }
+    let entry = keyring::Entry::new(service, account).context("broker credential keyring entry")?;
     entry
         .set_password(&json)
         .context("keyring set broker credentials")?;
@@ -272,6 +278,24 @@ mod tests {
             keychain_service_for("binance_com"),
             BROKER_CREDENTIAL_KEYCHAIN_SERVICE
         );
+    }
+
+    #[test]
+    fn kotak_and_hmac_services_use_macos_trusted_acl_on_write() {
+        #[cfg(target_os = "macos")]
+        {
+            use crate::ubi::macos_keychain_acl;
+            assert!(macos_keychain_acl::service_uses_trusted_acl(
+                KOTAK_SESSION_KEYCHAIN_SERVICE
+            ));
+            assert!(macos_keychain_acl::service_uses_trusted_acl(
+                BROKER_CREDENTIAL_KEYCHAIN_SERVICE
+            ));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (KOTAK_SESSION_KEYCHAIN_SERVICE, BROKER_CREDENTIAL_KEYCHAIN_SERVICE);
+        }
     }
 
     #[test]

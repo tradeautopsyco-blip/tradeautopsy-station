@@ -22,8 +22,11 @@ struct BrokerConnectSheetView: View {
             }
         }
         .onChange(of: viewModel.isConnectSheetPresented) { _, presented in
-            if !presented, viewModel.oauthWebLoginRequest != nil, !viewModel.oauthWebLoginFinishing {
-                viewModel.completeOAuthWebLogin(success: false)
+            if !presented {
+                viewModel.noteConnectSheetDismissed()
+                if viewModel.oauthWebLoginRequest != nil, !viewModel.oauthWebLoginFinishing {
+                    viewModel.completeOAuthWebLogin(success: false)
+                }
             }
         }
     }
@@ -42,6 +45,11 @@ struct BrokerConnectSheetView: View {
             if viewModel.connectAuthScheme == .kotakNeoTotpSession {
                 if viewModel.connectSheetMode == .kotakTotpOnly {
                     kotakTotpOnlyFields
+                    Button("Change Kotak login details…") {
+                        viewModel.beginChangeKotakLoginDetails()
+                    }
+                    .buttonStyle(.link)
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
                 } else {
                     kotakFullFields
                 }
