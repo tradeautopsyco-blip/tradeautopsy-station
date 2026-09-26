@@ -23,7 +23,7 @@
     <key>CFBundleShortVersionString</key>
     <string>0.2.1</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>SUEnableDownloaderService</key>
     <true/>
     <key>SUEnableInstallerLauncherService</key>

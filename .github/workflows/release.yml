@@ -219,6 +219,9 @@ jobs:
           set -euo pipefail
           mkdir -p Release
           APP="${{ steps.locate_app.outputs.app_path }}"
+          if [[ "${NOTARIZE}" != "true" ]]; then
+            codesign --force --deep -s - "$APP"
+          fi
           STAGE="$RUNNER_TEMP/dmg-stage"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
@@ -289,21 +292,26 @@ jobs:
           fi
           NOTES="${RELEASE_NOTES:-TradeAutopsy Station ${VERSION} (build ${BUILD_NUMBER})}${UNSIGNED_NOTE}"
           printf '%s' "$NOTES" > "Release/${PROJECT_NAME}.html"
+          APPCAST_BASE=(
+            --ed-key-file -
+            --link "https://github.com/${{ env.GITHUB_REPO }}/releases"
+            --download-url-prefix "https://github.com/${{ env.GITHUB_REPO }}/releases/download/v${VERSION}/"
+            --embed-release-notes
+          )
           if [[ "$IS_BETA" == "true" ]]; then
             APPCAST_OUT="appcast-beta.xml"
-            CHANNEL_ARGS=(--channel "$BETA_CHANNEL_NAME")
+            printf '%s' "$SPARKLE_PRIVATE_KEY" | "$RUNNER_TEMP/generate_appcast" \
+              "${APPCAST_BASE[@]}" \
+              --channel "$BETA_CHANNEL_NAME" \
+              -o "$APPCAST_OUT" \
+              Release/
           else
             APPCAST_OUT="appcast-stable.xml"
-            CHANNEL_ARGS=()
+            printf '%s' "$SPARKLE_PRIVATE_KEY" | "$RUNNER_TEMP/generate_appcast" \
+              "${APPCAST_BASE[@]}" \
+              -o "$APPCAST_OUT" \
+              Release/
           fi
-          printf '%s' "$SPARKLE_PRIVATE_KEY" | "$RUNNER_TEMP/generate_appcast" \
-            --ed-key-file - \
-            --link "https://github.com/${{ env.GITHUB_REPO }}/releases" \
-            --download-url-prefix "https://github.com/${{ env.GITHUB_REPO }}/releases/download/v${VERSION}/" \
-            --embed-release-notes \
-            "${CHANNEL_ARGS[@]}" \
-            -o "$APPCAST_OUT" \
-            Release/
 
       - name: Upload appcast artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
