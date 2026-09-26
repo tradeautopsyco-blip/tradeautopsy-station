@@ -1,10 +1,8 @@
 # Deploy updater/ (appcast + CNAME) to GitHub Pages
 name: Deploy static content to Pages
 
+# Feed is on Vercel (updates.tradeautopsy.in). Pages is optional backup — manual only.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:

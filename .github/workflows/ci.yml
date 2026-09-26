@@ -3,17 +3,24 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "updater/**"
+      - "docs/**"
+      - "**/*.md"
   pull_request:
     branches: [main]
 
+# One macOS job (macOS minutes cost 10× Linux on GitHub). Previously six parallel macOS jobs.
 jobs:
-  agent-tests:
-    name: Rust agent tests
-    runs-on: macos-14
+  macos-ci:
+    name: macOS build and test
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -22,65 +29,26 @@ jobs:
             ~/.cargo/git
             agent/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
-      - name: Compile agent lib unused-clean
+
+      - name: Rust agent — build and test
         working-directory: agent
-        run: cargo build --lib
         env:
           RUSTFLAGS: "-D unused"
           TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
-      - name: Run agent tests
-        working-directory: agent
-        run: cargo test --all-features
-        env:
-          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
+        run: |
+          cargo build --lib
+          cargo test --all-features
 
-  notch-build:
-    name: Swift Notch build check
-    runs-on: macos-15 # Swift 6.0 toolchain
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Notch (SwiftPM)
+      - name: Notch — build and test
         working-directory: notch
         run: |
-          swift build 2>&1 || echo "No Package.swift yet — add SwiftPM manifest to notch/"
+          swift build
+          swift test
 
-  notch-tests:
-    name: Notch tests
-    runs-on: macos-15 # Swift 6.0 toolchain
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Notch tests
-        working-directory: notch
-        run: swift test
-
-  station-build:
-    name: Station build
-    runs-on: macos-15 # Swift 6.0 toolchain
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build Station (SwiftPM)
-        run: swift build --package-path station/
-
-  station-tests:
-    name: Station tests
-    runs-on: macos-15 # Swift 6.0 toolchain
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Station tests
-        run: swift test --package-path station/
-
-  build-app:
-    name: Build Station.app
-    runs-on: macos-15 # macos-15 required for TradeAutopsy Station builds
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build agent binary
-        working-directory: agent
-        run: cargo build --release
+      - name: Station — SwiftPM build and test
+        run: |
+          swift build --package-path station/
+          swift test --package-path station/
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -107,25 +75,22 @@ jobs:
         id: locate
         run: |
           APP=$(find station/build -name "TradeAutopsy Station.app" -type d | head -1)
-          echo "app_path=$APP" >> $GITHUB_OUTPUT
+          test -n "$APP"
+          echo "app_path=$APP" >> "$GITHUB_OUTPUT"
 
-      - name: Zip .app for upload
+      - name: Zip .app and pack DMG
         run: |
-          cd "$(dirname "${{ steps.locate.outputs.app_path }}")"
+          APP="${{ steps.locate.outputs.app_path }}"
+          cd "$(dirname "$APP")"
           zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
-          echo "zip_path=$(pwd)/TradeAutopsyStation.zip" >> $GITHUB_ENV
-
-      - name: Pack unsigned DMG
-        run: |
           chmod +x scripts/pack-station-dmg.sh
-          ./scripts/pack-station-dmg.sh --from-app "${{ steps.locate.outputs.app_path }}"
-          echo "dmg_path=$(ls -1 dist/TradeAutopsy-Station-*.dmg | head -1)" >> $GITHUB_ENV
+          ./scripts/pack-station-dmg.sh --from-app "$APP"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: TradeAutopsy-Station-app
           path: |
-            ${{ env.zip_path }}
-            ${{ env.dmg_path }}
+            station/build/**/TradeAutopsyStation.zip
+            dist/TradeAutopsy-Station-*.dmg
           retention-days: 7
