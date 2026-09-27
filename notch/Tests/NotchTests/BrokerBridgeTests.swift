@@ -10,6 +10,22 @@ struct BrokerBridgeTests {
         #expect(NotchViewModel.brokerDisplayName(forSlug: "") == "No broker")
     }
 
+    @Test func switchingExecutionDeskSnapsUnsupportedDeclareClass() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.declareAssetClass = .usdm
+        #expect(vm.planDeclareAssetClassTabs == [.spot, .options, .usdm, .coinm])
+        vm.activeExecutionBrokerSlug = "kotak_neo"
+        #expect(vm.declareAssetClass == .equity)
+        #expect(vm.planDeclareAssetClassTabs == [.equity, .options])
+        vm.declareAssetClass = .options
+        vm.activeExecutionBrokerSlug = "binance_com"
+        #expect(vm.declareAssetClass == .options)
+        vm.declareAssetClass = .equity
+        vm.activeExecutionBrokerSlug = "binance_com"
+        #expect(vm.declareAssetClass == .spot)
+    }
+
     @Test func brokerPillChromeMapping() {
         let live = NotchViewModel.brokerPillChrome(brokerSyncClass: "synced", slug: "kotak_neo")
         #expect(live.dotName == "teal")
