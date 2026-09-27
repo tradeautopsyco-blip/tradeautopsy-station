@@ -21,6 +21,8 @@ struct BrokerBridgeTests {
         vm.declareAssetClass = .options
         vm.activeExecutionBrokerSlug = "binance_com"
         #expect(vm.declareAssetClass == .options)
+        // Desk must actually change for didSet reconcile (re-assigning binance is a no-op).
+        vm.activeExecutionBrokerSlug = "kotak_neo"
         vm.declareAssetClass = .equity
         vm.activeExecutionBrokerSlug = "binance_com"
         #expect(vm.declareAssetClass == .spot)
