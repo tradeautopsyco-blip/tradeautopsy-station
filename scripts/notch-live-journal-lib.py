@@ -287,6 +287,172 @@ def build_declare_payload(symbol: str, book_id: str, stance: str) -> dict[str, A
     }
 
 
+def build_debrief_payload(
+    declaration_id: str,
+    stance: str,
+    *,
+    live_note: str = "Harness closed-trip debrief.",
+) -> dict[str, Any]:
+    """Same shape as `notch/BarPostTradeDebriefPayload.buildJSONObject` + `BarPostTradeView` submit."""
+    return {
+        "v": 1,
+        "declaration_id": declaration_id,
+        "moment_a_note": "Harness moment A — outcome note.",
+        "adherence": {
+            "stop_as_declared": True,
+            "size_as_declared": True,
+            "invalidation_respected": True,
+            "exit_per_plan": True,
+            "no_impulsive_add": True,
+        },
+        "moment_c_context": "cooling",
+        "moment_c_note": "Phase B harness debrief — journal sink proof.",
+        "completed_at_ms": int(time.time() * 1000),
+        "live_note": live_note,
+        "emotion_out": 3,
+        "stance": stance if stance in ("planned", "reactive") else "planned",
+    }
+
+
+def build_swing_check_in_payload(declaration_id: str, plan_state: str = "GREEN") -> dict[str, Any]:
+    """Matches `BarPlanStateView.swingCheckInJSONObject`."""
+    return {
+        "v": 1,
+        "thesis_intact": True,
+        "at_ms": int(time.time() * 1000),
+        "note": "Harness Working lane proof.",
+        "plan_state": plan_state,
+        "declaration_id": declaration_id,
+    }
+
+
+def capture_accept_payload() -> dict[str, Any]:
+    return {
+        "draftText": "Harness capture accept probe — safe to delete.",
+        "explicitPending": True,
+        "idempotencyKey": f"harness-{new_ulid()}",
+    }
+
+
+def json_top_keys(obj: Any) -> str:
+    return ",".join(sorted(obj.keys())[:24]) if isinstance(obj, dict) else ""
+
+
+def declarations_items(body: Any) -> list[dict[str, Any]]:
+    if not isinstance(body, dict):
+        return []
+    for key in ("items", "declarations"):
+        val = body.get(key)
+        if isinstance(val, list):
+            return [x for x in val if isinstance(x, dict)]
+    days = body.get("days")
+    if isinstance(days, list):
+        out: list[dict[str, Any]] = []
+        for day in days:
+            if not isinstance(day, dict):
+                continue
+            for it in day.get("declarations") or day.get("items") or []:
+                if isinstance(it, dict):
+                    out.append(it)
+        return out
+    return []
+
+
+def declaration_id_of(item: dict[str, Any]) -> Optional[str]:
+    for key in ("declarationId", "declaration_id", "id"):
+        val = item.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def post_debrief_saved(item: dict[str, Any]) -> bool:
+    if item.get("postDebriefComplete") is True or item.get("post_saved") is True:
+        return True
+    post = item.get("post")
+    if isinstance(post, str) and post.strip():
+        return True
+    if isinstance(post, dict) and any(v for v in post.values() if v not in (None, "", {})):
+        return True
+    for key in ("moment_c_note", "momentCNote", "debrief"):
+        val = item.get(key)
+        if isinstance(val, str) and val.strip():
+            return True
+        if isinstance(val, dict) and val:
+            return True
+    return False
+
+
+def closed_trip_ready(item: dict[str, Any]) -> bool:
+    """Console journal row with closed trip and empty post (PATCH debrief allowed)."""
+    if post_debrief_saved(item):
+        return False
+    status = str(item.get("status") or item.get("declarationStatus") or "").lower()
+    if status in ("cancelled", "expired", "pending"):
+        return False
+    if item.get("tripClosed") is True or item.get("trip_closed") is True:
+        return True
+    if item.get("closedAt") or item.get("closed_at_ms") or item.get("closedAtMs"):
+        return True
+    trip = item.get("trip") or item.get("escrowTrip") or item.get("escrow")
+    if isinstance(trip, dict):
+        trip_status = str(trip.get("status") or "").lower()
+        if trip_status in ("closed", "complete", "filled"):
+            return True
+        if trip.get("closedAt") or trip.get("closed_at_ms"):
+            return True
+    if status in ("matched", "closed", "filled", "complete"):
+        post = item.get("post")
+        if post is None or post == "" or (isinstance(post, dict) and not post):
+            return True
+    return False
+
+
+def debrief_journal_proven(item: dict[str, Any], needle: str) -> bool:
+    return post_debrief_saved(item) and needle in json.dumps(item)
+
+
+def fetch_declarations(wire_fn: Callable[..., HttpResult], scope: str = "recent") -> HttpResult:
+    return wire_fn("GET", f"/api/daemon/bar/declarations?scope={scope}&limit=50")
+
+
+def find_declaration_item(wire_fn: Callable[..., HttpResult], decl_id: str) -> Optional[dict[str, Any]]:
+    for scope in ("recent", "week", "pending"):
+        res = fetch_declarations(wire_fn, scope)
+        for item in declarations_items(res.json()):
+            if declaration_id_of(item) == decl_id:
+                return item
+    return None
+
+
+def wait_for_closed_trip(
+    wire_fn: Callable[..., HttpResult],
+    decl_id: str,
+    wait_sec: int,
+    log: Callable[[str], None],
+) -> Optional[dict[str, Any]]:
+    deadline = time.time() + max(0, wait_sec)
+    while True:
+        item = find_declaration_item(wire_fn, decl_id)
+        if item and closed_trip_ready(item):
+            return item
+        if wait_sec <= 0:
+            return None
+        if time.time() >= deadline:
+            log(f"Debrief: no closed trip for {decl_id} after {wait_sec}s wait")
+            return None
+        time.sleep(min(2.0, max(0.5, wait_sec / 5)))
+        log(f"Debrief: waiting for closed trip ({int(deadline - time.time())}s left)…")
+
+
+def parse_debrief_error(body: Any) -> tuple[str, str]:
+    if not isinstance(body, dict):
+        return ("", str(body)[:120])
+    err = str(body.get("error_class") or body.get("error") or "")
+    msg = str(body.get("message") or body.get("error") or "")
+    return (err, msg)
+
+
 @dataclass
 class HarnessReport:
     host: str
@@ -294,10 +460,13 @@ class HarnessReport:
     dry_run: bool
     book: str
     symbol: str
+    stance: str = "planned"
     gates: dict[str, str] = field(default_factory=dict)
     gate_details: dict[str, str] = field(default_factory=dict)
     tools: list[dict[str, str]] = field(default_factory=list)
     journal: dict[str, str] = field(default_factory=dict)
+    working: dict[str, str] = field(default_factory=dict)
+    debrief: dict[str, str] = field(default_factory=dict)
     outbox: dict[str, str] = field(default_factory=dict)
     capabilities: dict[str, Any] = field(default_factory=dict)
     holes: int = 0
@@ -328,10 +497,13 @@ class HarnessReport:
             "dry_run": self.dry_run,
             "book": self.book,
             "symbol": self.symbol,
+            "stance": self.stance,
             "gates": self.gates,
             "gate_details": self.gate_details,
             "tools": self.tools,
             "journal": self.journal,
+            "working": self.working,
+            "debrief": self.debrief,
             "outbox": self.outbox,
             "capabilities": self.capabilities,
             "holes": self.holes,
@@ -343,7 +515,7 @@ class HarnessReport:
         lines = [
             f"# Notch live journal scoreboard — {day}",
             "",
-            f"Host `{self.host}:{self.port}` · book `{self.book}` · symbol `{self.symbol}`"
+            f"Host `{self.host}:{self.port}` · book `{self.book}` · symbol `{self.symbol}` · stance `{self.stance}`"
             + (" · **dry-run**" if self.dry_run else ""),
             "",
             f"**Plan cockpit holes** (quote/history/depth dark): **{self.holes}**",
@@ -387,13 +559,25 @@ class HarnessReport:
             lines.extend(["", "## LIE (hard fail)", ""])
             for lie in self.lies:
                 lines.append(f"- {lie}")
-        lines.extend(["", "## Journal declare", ""])
+        lines.extend(["", "## Journal · Plan declare", ""])
         if self.journal:
             for k, v in self.journal.items():
                 lines.append(f"- **{k}**: {v}")
         else:
             lines.append("- (skipped)")
-        lines.extend(["", "## Outbox", ""])
+        lines.extend(["", "## Working (armed / live-state sink)", ""])
+        if self.working:
+            for k, v in self.working.items():
+                lines.append(f"- **{k}**: {v}")
+        else:
+            lines.append("- (skipped)")
+        lines.extend(["", "## Debrief (post-trade PATCH)", ""])
+        if self.debrief:
+            for k, v in self.debrief.items():
+                lines.append(f"- **{k}**: {v}")
+        else:
+            lines.append("- (skipped)")
+        lines.extend(["", "## Toolbar capture / outbox", ""])
         if self.outbox:
             for k, v in self.outbox.items():
                 lines.append(f"- **{k}**: {v}")
@@ -414,9 +598,20 @@ def run_harness(
     stance: str,
     dry_run: bool,
     skip_capture: bool,
+    prove_capture: bool,
+    wait_closed_sec: int,
+    require_debrief: bool,
+    keep_declaration: bool,
     log: Callable[[str], None],
 ) -> HarnessReport:
-    report = HarnessReport(host=host, port=port, dry_run=dry_run, book=book, symbol=symbol)
+    report = HarnessReport(
+        host=host,
+        port=port,
+        dry_run=dry_run,
+        book=book,
+        symbol=symbol,
+        stance=stance,
+    )
 
     if not port_open(host, port):
         report.gates["A_health"] = "FAIL"
@@ -560,60 +755,195 @@ def run_harness(
         if row.get("tool") in HOLE_TILE_TOOLS and row.get("score") == "HONEST-DARK"
     )
 
-    # Outbox (read-only; --skip-capture skips — never posts accept)
-    if skip_capture:
-        report.outbox["status"] = "skipped (--skip-capture)"
-    else:
-        ob = wire("GET", "/api/daemon/journal/toolbar-capture/outbox/status")
-        ob_j = ob.json()
-        if ob.status == 200 and isinstance(ob_j, dict):
-            counts = (ob_j.get("data") or {}).get("counts") or ob_j.get("counts") or {}
-            report.outbox["status"] = "ok"
-            report.outbox["counts"] = json.dumps(counts)
-        else:
-            report.outbox["status"] = f"HTTP {ob.status}"
+    decl_id: Optional[str] = None
+    declare_payload: Optional[dict[str, Any]] = None
 
-    # Journal declare + cleanup
+    # Journal declare → Working → Debrief → optional cancel
     if dry_run:
         report.journal["declare"] = "skipped (dry-run)"
+        report.working["verdict"] = "skipped (dry-run)"
+        report.debrief["verdict"] = "skipped (dry-run)"
     elif not gate_b_ok:
         report.journal["declare"] = "skipped (Gate B AUTH — sign in via Station device login)"
+        report.working["verdict"] = "skipped (Gate B)"
+        report.debrief["verdict"] = "skipped (Gate B)"
     else:
-        payload = build_declare_payload(symbol, book, stance)
-        body_bytes = json.dumps(payload).encode("utf-8")
+        declare_payload = build_declare_payload(symbol, book, stance)
+        body_bytes = json.dumps(declare_payload).encode("utf-8")
         decl = wire("POST", "/api/daemon/bar/declare", body_bytes)
         dj = decl.json() if isinstance(decl.json(), dict) else {}
         decl_id = dj.get("declarationId") or dj.get("declaration_id")
+        report.journal["declare_http"] = str(decl.status)
         if decl.status in (200, 201) and decl_id:
             try:
                 uuid.UUID(str(decl_id))
-                report.journal["declare"] = f"ok id={decl_id}"
+                report.journal["declare"] = f"PASS id={decl_id}"
+                report.journal["declare_response_keys"] = json_top_keys(dj)
             except ValueError:
-                report.journal["declare"] = f"fail invalid declaration id: {decl_id}"
+                report.journal["declare"] = f"FAIL invalid declaration id: {decl_id}"
                 report.errors.append("declare id not a UUID")
                 decl_id = None
-        if decl_id and decl.status in (200, 201):
+        else:
+            err = dj.get("error_class") or dj.get("message") or decl.body_text[:200]
+            report.journal["declare"] = f"FAIL HTTP {decl.status}: {err}"
+            decl_id = None
+
+        if decl_id:
+            list_res = fetch_declarations(wire, "recent")
+            report.journal["declarations_list_http"] = str(list_res.status)
+            lj_list = list_res.json() if isinstance(list_res.json(), dict) else {}
+            report.journal["declarations_list_keys"] = json_top_keys(lj_list)
+            in_list = any(
+                declaration_id_of(it) == decl_id for it in declarations_items(lj_list)
+            )
+            report.journal["declaration_in_list"] = "yes" if in_list else "no"
+
             live = wire("GET", "/api/daemon/bar/live-state")
-            lj = live.json() if isinstance(live.json(), dict) else {}
-            pending = ((lj.get("notch") or {}).get("pending_declaration")) if lj else None
-            if pending:
-                report.journal["live_state_pending"] = "yes"
-                ps = pending.get("plan_snapshot") if isinstance(pending, dict) else None
+            lj = live.json() if isinstance(lj.json(), dict) else {}
+            report.working["live_state_http"] = str(live.status)
+            notch = lj.get("notch") if isinstance(lj, dict) else {}
+            if isinstance(notch, dict):
+                report.working["plan_state"] = str(notch.get("plan_state", ""))
+                report.working["sync_state"] = str(notch.get("sync_state", ""))
+            report.working["barFeaturesActive"] = str(lj.get("barFeaturesActive", ""))
+            pending = (notch or {}).get("pending_declaration") if isinstance(notch, dict) else None
+            if isinstance(pending, dict):
+                report.working["pending"] = "yes"
+                report.working["pending_id"] = str(pending.get("id", ""))
+                ps = pending.get("plan_snapshot")
                 if isinstance(ps, dict):
                     report.journal["plan_snapshot_stance"] = str(ps.get("stance", ""))
+                    report.journal["plan_snapshot_setup"] = str(ps.get("setup_label", ""))
                     report.journal["plan_snapshot_calm"] = str(ps.get("calm_scale", ""))
-                    if ps.get("stance") != payload["declaration_payload"]["s1"]["stance"]:
-                        report.errors.append("plan_snapshot stance mismatch")
+                    report.journal["plan_snapshot_confidence"] = str(ps.get("confidence_scale", ""))
+                    emo = ps.get("emotion_in")
+                    if isinstance(emo, dict):
+                        report.journal["emotion_in_calm"] = str(emo.get("calm", ""))
+                        report.journal["emotion_in_confidence"] = str(emo.get("confidence", ""))
+                        report.journal["emotion_in_frustration"] = str(emo.get("frustration", ""))
+                        report.journal["emotion_in_excitement"] = str(emo.get("excitement", ""))
+                    report.journal["moods_landed"] = (
+                        "yes" if ps.get("calm_scale") is not None else "no"
+                    )
+                if ps and isinstance(ps, dict) and ps.get("stance") != declare_payload["declaration_payload"]["s1"]["stance"]:
+                    report.errors.append("plan_snapshot stance mismatch")
             else:
-                report.journal["live_state_pending"] = "no (local book may differ until hydrate)"
-            cancel_body = json.dumps(
-                {"declaration_id": decl_id, "cancel_reason_chip": "scratch"}
-            ).encode("utf-8")
-            cancel = wire("POST", "/api/daemon/bar/cancel-declaration", cancel_body)
-            report.journal["cancel"] = f"HTTP {cancel.status}"
-        elif "declare" not in report.journal:
-            err = dj.get("error_class") or dj.get("message") or decl.body_text[:200]
-            report.journal["declare"] = f"fail HTTP {decl.status}: {err}"
+                report.working["pending"] = "no"
+
+            plan_state = str((notch or {}).get("plan_state") or "GREEN")
+            swing_body = json.dumps(build_swing_check_in_payload(decl_id, plan_state)).encode("utf-8")
+            swing = wire("POST", "/api/daemon/bar/swing-check-in", swing_body)
+            sj = swing.json() if isinstance(swing.json(), dict) else {}
+            report.working["swing_check_in_http"] = str(swing.status)
+            report.working["swing_check_in_ok"] = str(sj.get("ok", ""))
+            if swing.status >= 400:
+                report.working["swing_check_in_error"] = str(
+                    sj.get("message") or sj.get("error_class") or swing.body_text[:120]
+                )
+            if pending and isinstance(pending, dict):
+                report.working["verdict"] = (
+                    "PASS (armed pending_declaration with plan_snapshot/emotion_in)"
+                )
+            else:
+                report.working["verdict"] = "HONEST-DARK (no pending_declaration on live-state)"
+
+            closed_item = wait_for_closed_trip(wire, decl_id, wait_closed_sec, log)
+            debrief_needle = "Phase B harness debrief"
+            if closed_item is None:
+                report.debrief["verdict"] = (
+                    "HONEST-BLOCK (no closed trip — trade flat/round-trip on Console first; "
+                    "use --wait-closed-sec after a real fill)"
+                )
+                report.debrief["http"] = "skipped"
+            else:
+                debrief_body = json.dumps(
+                    build_debrief_payload(decl_id, stance)
+                ).encode("utf-8")
+                deb = wire("PATCH", "/api/daemon/bar/post-trade-debrief", debrief_body)
+                dbj = deb.json() if isinstance(deb.json(), dict) else {}
+                report.debrief["http"] = str(deb.status)
+                report.debrief["keys"] = json_top_keys(dbj)
+                err_cls, err_msg = parse_debrief_error(dbj)
+                report.debrief["error_class"] = err_cls
+                report.debrief["message"] = err_msg
+                report.debrief["ok"] = str(dbj.get("ok", ""))
+                if deb.status in (200, 201, 204) and dbj.get("ok") is not False:
+                    read_back = find_declaration_item(wire, decl_id) or closed_item
+                    if debrief_journal_proven(read_back, debrief_needle):
+                        report.debrief["verdict"] = "PASS (journal read-back shows post/debrief fields)"
+                        report.debrief["read_back"] = "yes"
+                    else:
+                        report.debrief["verdict"] = (
+                            "HONEST-DARK (PATCH ok but journal read-back inconclusive — "
+                            "check Console declarations scope)"
+                        )
+                        report.debrief["read_back"] = "inconclusive"
+                elif deb.status == 400 and "invalid_body" in err_msg.lower():
+                    report.debrief["verdict"] = (
+                        "HONEST-BLOCK HTTP 400 invalid_body (route reached; "
+                        "closed trip or body gate on Console)"
+                    )
+                else:
+                    report.debrief["verdict"] = f"FAIL HTTP {deb.status}: {err_msg or err_cls}"
+
+            if require_debrief and not report.debrief.get("verdict", "").startswith("PASS"):
+                report.errors.append("require-debrief: debrief did not PASS")
+
+            if not keep_declaration and decl_id:
+                cancel_body = json.dumps(
+                    {"declaration_id": decl_id, "cancel_reason_chip": "scratch"}
+                ).encode("utf-8")
+                cancel = wire("POST", "/api/daemon/bar/cancel-declaration", cancel_body)
+                cj = cancel.json() if isinstance(cancel.json(), dict) else {}
+                report.journal["cancel"] = f"HTTP {cancel.status}"
+                report.journal["cancel_error"] = str(
+                    cj.get("message") or cj.get("error_class") or ""
+                )
+                live_after = wire("GET", "/api/daemon/bar/live-state")
+                la = live_after.json() if isinstance(live_after.json(), dict) else {}
+                pending_after = ((la.get("notch") or {}).get("pending_declaration")) if la else None
+                report.journal["pending_after_cancel"] = (
+                    "cleared" if not pending_after else "still_set"
+                )
+            elif keep_declaration:
+                report.journal["cancel"] = "skipped (--keep-declaration)"
+
+    # Outbox status (+ optional accept proof from Mac E2E)
+    if skip_capture and not prove_capture:
+        report.outbox["status"] = "skipped (--skip-capture)"
+    else:
+        ob0 = wire("GET", "/api/daemon/journal/toolbar-capture/outbox/status")
+        ob0_j = ob0.json() if isinstance(ob0.json(), dict) else {}
+        if ob0.status == 200:
+            counts0 = (ob0_j.get("data") or {}).get("counts") or ob0_j.get("counts") or {}
+            report.outbox["baseline_status"] = "ok"
+            report.outbox["baseline_counts"] = json.dumps(counts0)
+        else:
+            report.outbox["baseline_status"] = f"HTTP {ob0.status}"
+
+        if prove_capture and gate_b_ok and not dry_run:
+            acc_body = json.dumps(capture_accept_payload()).encode("utf-8")
+            acc = wire("POST", "/api/daemon/journal/toolbar-capture/accept", acc_body)
+            aj = acc.json() if isinstance(acc.json(), dict) else {}
+            report.outbox["accept_http"] = str(acc.status)
+            report.outbox["accept_keys"] = json_top_keys(aj)
+            report.outbox["accept_success"] = str(aj.get("success", ""))
+            if acc.status >= 400:
+                report.outbox["accept_error"] = str(
+                    aj.get("message") or aj.get("error_class") or acc.body_text[:120]
+                )
+            report.outbox["accept_verdict"] = (
+                "PASS (enqueued/acked)" if acc.status in (200, 202) else f"HTTP {acc.status}"
+            )
+
+        ob1 = wire("GET", "/api/daemon/journal/toolbar-capture/outbox/status")
+        ob1_j = ob1.json() if isinstance(ob1.json(), dict) else {}
+        if ob1.status == 200:
+            counts1 = (ob1_j.get("data") or {}).get("counts") or ob1_j.get("counts") or {}
+            report.outbox["after_counts"] = json.dumps(counts1)
+            report.outbox["status_verdict"] = "ok"
+        else:
+            report.outbox["status_verdict"] = f"HTTP {ob1.status}"
 
     md, js = report.write_artifacts(root)
     log(f"scoreboard: {md}")
@@ -645,7 +975,28 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--skip-capture",
         action="store_true",
-        help="Skip toolbar capture outbox status",
+        help="Skip toolbar capture outbox status (and accept proof)",
+    )
+    parser.add_argument(
+        "--prove-capture",
+        action="store_true",
+        help="POST toolbar-capture accept after baseline outbox (Mac E2E lane)",
+    )
+    parser.add_argument(
+        "--wait-closed-sec",
+        type=int,
+        default=0,
+        help="Poll Console declarations for closed trip before Debrief (0 = single check, no wait)",
+    )
+    parser.add_argument(
+        "--require-debrief",
+        action="store_true",
+        help="Exit 4 unless Debrief PASS with journal read-back",
+    )
+    parser.add_argument(
+        "--keep-declaration",
+        action="store_true",
+        help="Do not cancel declaration after run (use when waiting for real fill)",
     )
     parser.add_argument(
         "--root",
@@ -666,12 +1017,20 @@ def main(argv: list[str]) -> int:
         stance=args.stance,
         dry_run=args.dry_run,
         skip_capture=args.skip_capture,
+        prove_capture=args.prove_capture,
+        wait_closed_sec=args.wait_closed_sec,
+        require_debrief=args.require_debrief,
+        keep_declaration=args.keep_declaration,
         log=log,
     )
     if report.gates.get("A_health") == "FAIL":
         return 2
     if report.lies:
         return 3
+    if args.require_debrief and any(
+        e.startswith("require-debrief") for e in report.errors
+    ):
+        return 4
     return 0
 
 
