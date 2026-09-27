@@ -1,26 +1,38 @@
-# FILL_MATCHED loopback inject — sketch only
+# FILL_MATCHED loopback inject — implemented seam
 
-**Status:** Not implemented. Console lives in `FExEVIL/tradeautopsy`; this Station repo documents the seam only.
+**Status:** Implemented in Station (agent forward + harness). Console contract: [FExEVIL/tradeautopsy#378](https://github.com/FExEVIL/tradeautopsy/pull/378).
 
 ## Problem
 
-Harness **journal sink** Debrief works on `pending` declarations (Console upserts `notes.post`). A separate **fidelity** lane wants `status=matched` after fill without a real Binance order. Today `FILL_MATCHED` exists in Console lifecycle but no production caller flips `status` on broker ingest.
+Harness **journal sink** Debrief works on `pending` declarations (Console upserts `notes.post`). A separate **fidelity** lane wants `status=matched` after fill without a real Binance order.
 
-## Proposed shape (future)
+## Contract (Console — do not reimplement here)
 
-| Piece | Idea |
+| Piece | Value |
 | --- | --- |
-| Env gate | `BAR_TEST_INJECT_FILL_MATCHED=1` (Console) + loopback-only bind |
-| Auth | Same as other daemon routes: Station Caller Bearer from agent; optional `x-daemon-secret` on internal inject only from `127.0.0.1` |
-| Route | `POST /api/internal/bar/v1/test/fill-matched` (Console) **or** agent `POST /api/daemon/bar/test/fill-matched` forward |
-| Body | `{ "declaration_id": "<uuid>", "symbol", "side", "quantity", "price" }` — no broker HTTP |
-| Effect | Apply `FILL_MATCHED` transition + optional synthetic exit row; **never** default in prod |
-| Harness | `--wait-closed-sec` + inject flag calls inject before Debrief fidelity poll |
+| Env gate | `BAR_TEST_INJECT_FILL_MATCHED=1` on Console (404 if unset — **prod must leave unset**) |
+| Auth | Station Caller Bearer (same as other bar daemon forwards) |
+| Console route | `POST /api/internal/bar/v1/test/fill-matched` |
+| Body | `{ "declaration_id", "symbol", "side", "quantity", "price" }` — no broker HTTP |
+| Response | `test_only`, `status: "matched"`, `trade_id`, `matched_at_ms`, `fidelity` |
 
-## Out of scope here
+## Station (this repo)
 
-- No Console PR in this task
-- No agent route until Console contract is frozen
-- Harness continues to prove sink without inject (`scripts/notch-live-journal-lib.py`)
+| Piece | Value |
+| --- | --- |
+| Agent route | `POST /api/daemon/bar/test/fill-matched` → forwards to Console internal route |
+| Wire | Documented in `station-wire/v1.json` (`test_fill_matched` hops) |
+| Harness | `scripts/notch-live-journal.sh` / `notch-live-journal-lib.py` — `--inject-matched` after declare; fails clearly on 404 or non-2xx |
+| Poll | Use with `--wait-closed-sec` so scoreboard **Match fidelity** shows matched (not `not_ready`) |
 
-See [`plans/CLOSED-TRIP-DEBRIEF-FINDINGS-2026-09-27.md`](CLOSED-TRIP-DEBRIEF-FINDINGS-2026-09-27.md).
+### Example
+
+```bash
+./scripts/notch-live-journal.sh \
+  --book binance-com-spot --symbol BTCUSDT \
+  --inject-matched --wait-closed-sec 30 --keep-declaration
+```
+
+Requires Console with `BAR_TEST_INJECT_FILL_MATCHED=1`, Station Debug agent (9137), Gate B signed-in session.
+
+See [`plans/NOTCH-LIVE-JOURNAL-HARNESS.md`](NOTCH-LIVE-JOURNAL-HARNESS.md) and [`plans/CLOSED-TRIP-DEBRIEF-FINDINGS-2026-09-27.md`](CLOSED-TRIP-DEBRIEF-FINDINGS-2026-09-27.md).

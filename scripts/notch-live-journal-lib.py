@@ -338,6 +338,62 @@ def build_debrief_payload(
     }
 
 
+def probe_fill_price(symbol: str) -> float:
+    """Synthetic matched price for harness inject (no broker order)."""
+    sym = symbol.upper()
+    if sym.startswith("BTC"):
+        return 50_000.0
+    if sym.startswith("ETH"):
+        return 3_000.0
+    return 100.0
+
+
+def build_fill_matched_inject_body(
+    declaration_id: str, declare_payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Console `POST /api/internal/bar/v1/test/fill-matched` body (FExEVIL/tradeautopsy #378)."""
+    return {
+        "declaration_id": declaration_id,
+        "symbol": declare_payload["symbol"],
+        "side": declare_payload["side"],
+        "quantity": declare_payload["quantity"],
+        "price": probe_fill_price(str(declare_payload["symbol"])),
+    }
+
+
+def inject_fill_matched(
+    wire_fn: Callable[..., HttpResult],
+    declaration_id: str,
+    declare_payload: dict[str, Any],
+    log: Callable[[str], None],
+) -> tuple[bool, str, Optional[dict[str, Any]]]:
+    """POST agent forward; never logs secrets."""
+    body = build_fill_matched_inject_body(declaration_id, declare_payload)
+    payload = json.dumps(body).encode("utf-8")
+    res = wire_fn("POST", "/api/daemon/bar/test/fill-matched", payload)
+    parsed = res.json() if isinstance(res.json(), dict) else {}
+    if res.status == 404:
+        msg = (
+            "Console BAR_TEST_INJECT_FILL_MATCHED unset (404) — enable on Console preview/local "
+            "for --inject-matched"
+        )
+        log(f"Inject fill-matched: FAIL {msg}")
+        return (False, msg, parsed if parsed else None)
+    if res.status < 200 or res.status >= 300:
+        err = ""
+        if isinstance(parsed, dict):
+            err = str(parsed.get("message") or parsed.get("error_class") or "")
+        excerpt = err or res.body_text[:160]
+        msg = f"HTTP {res.status}: {excerpt}"
+        log(f"Inject fill-matched: FAIL {msg}")
+        return (False, msg, parsed if parsed else None)
+    status = str(parsed.get("status", "")) if isinstance(parsed, dict) else ""
+    trade_id = str(parsed.get("trade_id") or parsed.get("tradeId") or "")
+    fidelity = parsed.get("fidelity") if isinstance(parsed, dict) else None
+    log(f"Inject fill-matched: PASS status={status} trade_id={trade_id or '(none)'}")
+    return (True, f"PASS status={status}", parsed if isinstance(parsed, dict) else None)
+
+
 def build_swing_check_in_payload(declaration_id: str, plan_state: str = "GREEN") -> dict[str, Any]:
     """Matches `BarPlanStateView.swingCheckInJSONObject`."""
     return {
@@ -632,7 +688,9 @@ class HarnessReport:
             for k, v in self.fidelity.items():
                 lines.append(f"- **{k}**: {v}")
         else:
-            lines.append("- (not run — use `--wait-closed-sec` to poll matched/closed status)")
+            lines.append(
+                "- (not run — use `--inject-matched` and/or `--wait-closed-sec` for matched fidelity)"
+            )
         lines.extend(["", "## Toolbar capture / outbox", ""])
         if self.outbox:
             for k, v in self.outbox.items():
@@ -656,6 +714,7 @@ def run_harness(
     skip_capture: bool,
     prove_capture: bool,
     wait_closed_sec: int,
+    inject_matched: bool,
     require_debrief: bool,
     keep_declaration: bool,
     log: Callable[[str], None],
@@ -909,6 +968,30 @@ def run_harness(
                 report.fidelity["status_before_debrief"] = str(
                     pre_item.get("status") or pre_item.get("declarationStatus") or "?"
                 )
+            if inject_matched:
+                if declare_payload is None:
+                    report.fidelity["inject_matched"] = "FAIL (missing declare payload)"
+                    report.errors.append("inject-matched: no declare payload")
+                else:
+                    ok, summary, inj = inject_fill_matched(
+                        wire, decl_id, declare_payload, log
+                    )
+                    report.fidelity["inject_matched"] = summary
+                    if inj:
+                        report.fidelity["inject_status"] = str(inj.get("status", ""))
+                        if inj.get("trade_id") or inj.get("tradeId"):
+                            report.fidelity["inject_trade_id"] = str(
+                                inj.get("trade_id") or inj.get("tradeId")
+                            )
+                        if inj.get("matched_at_ms") is not None:
+                            report.fidelity["inject_matched_at_ms"] = str(
+                                inj.get("matched_at_ms")
+                            )
+                        fid = inj.get("fidelity")
+                        if fid is not None:
+                            report.fidelity["inject_fidelity"] = json.dumps(fid)
+                    if not ok:
+                        report.errors.append("inject-matched failed")
             if wait_closed_sec > 0:
                 closed_item = wait_for_closed_trip(wire, decl_id, wait_closed_sec, log)
                 if closed_item:
@@ -1063,6 +1146,11 @@ def main(argv: list[str]) -> int:
         help="Optional fidelity: poll for matched/closed status before PATCH (does not gate journal sink)",
     )
     parser.add_argument(
+        "--inject-matched",
+        action="store_true",
+        help="After declare, POST /api/daemon/bar/test/fill-matched (Console BAR_TEST_INJECT_FILL_MATCHED=1)",
+    )
+    parser.add_argument(
         "--require-debrief",
         action="store_true",
         help="Exit 4 unless Debrief PASS with journal read-back",
@@ -1093,6 +1181,7 @@ def main(argv: list[str]) -> int:
         skip_capture=args.skip_capture,
         prove_capture=args.prove_capture,
         wait_closed_sec=args.wait_closed_sec,
+        inject_matched=args.inject_matched,
         require_debrief=args.require_debrief,
         keep_declaration=args.keep_declaration,
         log=log,
@@ -1105,6 +1194,8 @@ def main(argv: list[str]) -> int:
         e.startswith("require-debrief") for e in report.errors
     ):
         return 4
+    if args.inject_matched and any(e.startswith("inject-matched") for e in report.errors):
+        return 5
     return 0
 
 

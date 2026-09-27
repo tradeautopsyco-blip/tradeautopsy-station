@@ -30,6 +30,14 @@ Optional **match/fill fidelity** (separate from sink PASS — does not gate PATC
 ./scripts/notch-live-journal.sh --wait-closed-sec 120 --keep-declaration
 ```
 
+**Synthetic matched fill** (no broker order; Console test env only):
+
+```bash
+./scripts/notch-live-journal.sh --inject-matched --wait-closed-sec 30 --keep-declaration
+```
+
+Exit **5** if `--inject-matched` fails (404 = Console `BAR_TEST_INJECT_FILL_MATCHED` off).
+
 Outbox accept proof (Mac E2E):
 
 ```bash
@@ -62,7 +70,7 @@ Harness always PATCHes after Working with body from `build_debrief_payload()` (m
 
 `closed_trip_ready()` / `--wait-closed-sec` poll for `matched`+empty post — useful when `FILL_MATCHED` is wired or after real fills. Reported under scoreboard **Match fidelity**; does **not** skip Debrief PATCH.
 
-Future loopback inject sketch: [`plans/FILL-MATCHED-INJECT-SKETCH.md`](FILL-MATCHED-INJECT-SKETCH.md).
+Loopback inject (implemented): [`plans/FILL-MATCHED-INJECT-SKETCH.md`](FILL-MATCHED-INJECT-SKETCH.md) · agent `POST /api/daemon/bar/test/fill-matched`.
 
 ## Tradeflow lanes
 
