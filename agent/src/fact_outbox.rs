@@ -37,6 +37,28 @@ impl Fact {
     }
 }
 
+// #region agent log
+fn agent_debug_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
+    use std::io::Write;
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/Users/bishnu/.cursor/debug-cab917.log")
+    else {
+        return;
+    };
+    let line = serde_json::json!({
+        "sessionId": "cab917",
+        "timestamp": chrono::Utc::now().timestamp_millis(),
+        "location": "agent/src/fact_outbox.rs",
+        "message": message,
+        "hypothesisId": hypothesis_id,
+        "data": data,
+    });
+    let _ = writeln!(file, "{line}");
+}
+// #endregion
+
 pub enum EnqueueOutcome {
     Enqueued { id: String },
     Coalesced,
@@ -122,16 +144,34 @@ impl FactOutbox {
 
     pub fn enqueue(&self, fact: Fact) -> anyhow::Result<EnqueueOutcome> {
         if !self.has_station_jwt() {
+            // #region agent log
+            if matches!(fact, Fact::StationOnline) {
+                agent_debug_log(
+                    "B",
+                    "enqueue skipped, no station jwt",
+                    serde_json::json!({"outcome": "SkippedNoJwt"}),
+                );
+            }
+            // #endregion
             return Ok(EnqueueOutcome::SkippedNoJwt);
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = self.now_ms();
         let payload_json = fact.payload_json(&id)?;
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(fact, Fact::StationOnline)
-            && (last_online_send_is_fresh(&conn, now)? || online_send_pending(&conn)?)
-        {
-            return Ok(EnqueueOutcome::Coalesced);
+        if matches!(fact, Fact::StationOnline) {
+            let fresh = last_online_send_is_fresh(&conn, now)?;
+            let pending = online_send_pending(&conn)?;
+            if fresh || pending {
+                // #region agent log
+                agent_debug_log(
+                    "A",
+                    "enqueue coalesced station_online",
+                    serde_json::json!({"outcome": "Coalesced", "fresh": fresh, "pending": pending}),
+                );
+                // #endregion
+                return Ok(EnqueueOutcome::Coalesced);
+            }
         }
         if let Fact::CitedPnl { payload } = &fact {
             if let Some(existing_id) = pending_cited_pnl_id(&conn, payload)? {
@@ -273,6 +313,13 @@ impl FactOutbox {
         if let Err(StationRefreshError::Revoked) =
             self.upstream.ensure_fresh_station_access(None).await
         {
+            // #region agent log
+            agent_debug_log(
+                "C",
+                "drain aborted, station token revoked",
+                serde_json::json!({"due": due.len()}),
+            );
+            // #endregion
             return Ok(());
         }
         let mut refreshed_after_401 = false;
@@ -371,6 +418,15 @@ impl FactOutbox {
             .send()
             .await?;
         let status = resp.status().as_u16();
+        // #region agent log
+        if signal_type == "station_online" {
+            agent_debug_log(
+                "C",
+                "station_online POST finished",
+                serde_json::json!({"httpStatus": status}),
+            );
+        }
+        // #endregion
         let retry_after_ms = resp
             .headers()
             .get(reqwest::header::RETRY_AFTER)

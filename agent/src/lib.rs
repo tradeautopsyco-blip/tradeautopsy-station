@@ -1748,11 +1748,56 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
                 worker.enqueue(crate::fact_outbox::Fact::StationOnline)
             })
             .await;
-            if matches!(
-                enqueued,
-                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Enqueued { .. }))
-            ) {
-                let _ = outbox.drain().await;
+            let outcome = match &enqueued {
+                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Enqueued { .. })) => "Enqueued",
+                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Coalesced)) => "Coalesced",
+                Ok(Ok(crate::fact_outbox::EnqueueOutcome::SkippedNoJwt)) => "SkippedNoJwt",
+                Ok(Err(_)) => "EnqueueErr",
+                Err(_) => "JoinErr",
+            };
+            let will_drain = outcome == "Enqueued";
+            // #region agent log
+            {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/Users/bishnu/.cursor/debug-cab917.log")
+                {
+                    let line = serde_json::json!({
+                        "sessionId": "cab917",
+                        "timestamp": chrono::Utc::now().timestamp_millis(),
+                        "location": "agent/src/lib.rs:publish_online",
+                        "message": "station_online tick",
+                        "hypothesisId": "A",
+                        "data": {"outcome": outcome, "willDrain": will_drain}
+                    });
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+            // #endregion
+            if will_drain {
+                let drained = outbox.drain().await;
+                // #region agent log
+                {
+                    use std::io::Write;
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open("/Users/bishnu/.cursor/debug-cab917.log")
+                    {
+                        let line = serde_json::json!({
+                            "sessionId": "cab917",
+                            "timestamp": chrono::Utc::now().timestamp_millis(),
+                            "location": "agent/src/lib.rs:publish_online",
+                            "message": "drain finished",
+                            "hypothesisId": "C",
+                            "data": {"ok": drained.is_ok()}
+                        });
+                        let _ = writeln!(f, "{line}");
+                    }
+                }
+                // #endregion
             }
         }
         publish_online(&fact_worker).await;
