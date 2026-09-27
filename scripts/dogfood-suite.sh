@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tiny-check scoreboard for public dogfood seams.
 # Add a row when you add a public-seam behavior. Do not test internals.
+#
+# Live loopback journal harness (wire-v1 + Station session) is NOT run here — no JWT/Keychain in CI.
+# Optional founder path: LIVE=1 ./scripts/notch-live-journal.sh (see plans/NOTCH-LIVE-JOURNAL-HARNESS.md).
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
