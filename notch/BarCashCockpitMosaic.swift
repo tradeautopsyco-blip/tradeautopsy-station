@@ -53,7 +53,7 @@ struct BarCashCockpitMosaic: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.bottom, 4)
             }
-            .frame(maxWidth: .infinity, minHeight: 88, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
