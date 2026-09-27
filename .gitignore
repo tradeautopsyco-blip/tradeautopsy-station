@@ -26,6 +26,10 @@ TradeAutopsy Station.app/
 .AppleDouble
 .LSOverride
 
+# Live harness scoreboards (regenerated per run)
+plans/NOTCH-LIVE-SCOREBOARD-*.md
+plans/NOTCH-LIVE-SCOREBOARD-*.json
+
 # Secrets — never commit
 .env
 .env.local
