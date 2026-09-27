@@ -17,9 +17,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
+
+# Plan cockpit tiles counted for hole badge (see STRONG-TESTING §3.4).
+HOLE_TILE_TOOLS = ("quote", "history", "depth")
 
 WIRE_PROTO_VERSION = "1"
 LOOPBACK_USER_ID = "00000000-0000-4000-8000-000000000002"
@@ -110,6 +114,22 @@ def pid_on_port(port: int) -> Optional[int]:
         if m:
             return int(m.group(1))
     return None
+
+
+def agent_cmdline(pid: int) -> str:
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read()
+        return raw.replace(b"\0", b" ").decode("utf-8", errors="replace")
+    except OSError:
+        try:
+            out = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "command="],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            return out.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return ""
 
 
 def secret_from_pid(pid: int) -> Optional[str]:
@@ -214,10 +234,15 @@ def score_envelope(body: Any, http_status: int) -> str:
     if isinstance(status, str):
         st = status.lower()
         data = body.get("data")
+        # STRONG-TESTING §5 LIE — lit status without payload is a hard fail.
+        if st in ("fresh", "stale", "success") and data is None:
+            return "LIE"
         if st in ("fresh", "stale", "success") and data is not None:
             return "WORKING"
-        if st in ("unavailable", "unknown", "empty", "declared"):
+        if st in ("unavailable", "unknown", "empty", "declared", "research_segment"):
             return "HONEST-DARK"
+    if body.get("research") is True and body.get("canonical") is False:
+        return "HONEST-DARK"
     if body.get("success") is True and body.get("data") is not None:
         return "WORKING"
     symbols = body.get("symbols")
@@ -234,7 +259,8 @@ def score_envelope(body: Any, http_status: int) -> str:
     return "ERROR"
 
 
-def build_declare_payload(symbol: str, book_id: str) -> dict[str, Any]:
+def build_declare_payload(symbol: str, book_id: str, stance: str) -> dict[str, Any]:
+    stance_norm = stance if stance in ("planned", "reactive") else "planned"
     return {
         "symbol": symbol,
         "side": "BUY",
@@ -249,10 +275,11 @@ def build_declare_payload(symbol: str, book_id: str) -> dict[str, Any]:
             "s1": {
                 "setup_type": "harness_probe",
                 "intent": "Phase B live journal harness — auto cleanup.",
-                "stance": "planned",
+                "stance": stance_norm,
                 "invalidation": "Harness cancel after probe.",
+                # BarDeclarationFlowView: calm→mood_stress, confidence→mood_impulse
                 "mood_stress": 2.0,
-                "mood_impulse": 3.0,
+                "mood_impulse": 4.0,
                 "mood_frustration": 1.0,
                 "mood_excitement": 2.0,
             },
@@ -272,7 +299,10 @@ class HarnessReport:
     tools: list[dict[str, str]] = field(default_factory=list)
     journal: dict[str, str] = field(default_factory=dict)
     outbox: dict[str, str] = field(default_factory=dict)
+    capabilities: dict[str, Any] = field(default_factory=dict)
+    holes: int = 0
     errors: list[str] = field(default_factory=list)
+    lies: list[str] = field(default_factory=list)
 
     def gate_pass(self, name: str) -> bool:
         return self.gates.get(name) == "PASS"
@@ -303,7 +333,10 @@ class HarnessReport:
             "tools": self.tools,
             "journal": self.journal,
             "outbox": self.outbox,
+            "capabilities": self.capabilities,
+            "holes": self.holes,
             "errors": self.errors,
+            "lies": self.lies,
         }
 
     def to_markdown(self, day: str) -> str:
@@ -312,6 +345,8 @@ class HarnessReport:
             "",
             f"Host `{self.host}:{self.port}` · book `{self.book}` · symbol `{self.symbol}`"
             + (" · **dry-run**" if self.dry_run else ""),
+            "",
+            f"**Plan cockpit holes** (quote/history/depth dark): **{self.holes}**",
             "",
             "## Gates",
             "",
@@ -323,11 +358,35 @@ class HarnessReport:
             lines.append(
                 f"| {label} | {self.gates.get(g, 'SKIP')} | {self.gate_details.get(g, '')} |"
             )
-        lines.extend(["", "## Tools honesty matrix", "", "| Tool | Score | HTTP | Note |", "| --- | --- | --- | --- |"])
+        lines.extend(
+            [
+                "",
+                "## Sync capabilities (Settings broker mirror)",
+                "",
+            ]
+        )
+        if self.capabilities:
+            for k, v in sorted(self.capabilities.items()):
+                lines.append(f"- `{k}`: {v}")
+        else:
+            lines.append("- (none)")
+        lines.extend(
+            [
+                "",
+                "## Tools honesty matrix",
+                "",
+                "| Tool | Route | Score | HTTP | Note |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
         for row in self.tools:
             lines.append(
-                f"| `{row.get('tool', '')}` | **{row.get('score', '')}** | {row.get('http', '')} | {row.get('note', '')} |"
+                f"| `{row.get('tool', '')}` | `{row.get('route', '')}` | **{row.get('score', '')}** | {row.get('http', '')} | {row.get('note', '')} |"
             )
+        if self.lies:
+            lines.extend(["", "## LIE (hard fail)", ""])
+            for lie in self.lies:
+                lines.append(f"- {lie}")
         lines.extend(["", "## Journal declare", ""])
         if self.journal:
             for k, v in self.journal.items():
@@ -352,6 +411,7 @@ def run_harness(
     port: int,
     book: str,
     symbol: str,
+    stance: str,
     dry_run: bool,
     skip_capture: bool,
     log: Callable[[str], None],
@@ -367,11 +427,18 @@ def run_harness(
         log(f"summary:    {js}")
         return report
 
+    pid = pid_on_port(port)
+    if pid is not None:
+        cmd = agent_cmdline(pid)
+        if cmd and "tradeautopsy-agent" not in cmd and "target/debug/tradeautopsy-agent" not in cmd:
+            log(f"Gate A: warn — listener pid {pid} may not be tradeautopsy-agent")
+
     secret = resolve_daemon_secret(port)
     if not secret:
         report.gates["A_health"] = "FAIL"
-        report.gate_details["A_health"] = "Agent port open but AGENT_DAEMON_SECRET not found (env or process)"
+        report.gate_details["A_health"] = "Agent port open but AGENT_DAEMON_SECRET not found (env or ps eww)"
         report.errors.append("Cannot sign wire v1 without daemon secret")
+        log("Gate A: FAIL (no AGENT_DAEMON_SECRET)")
         md, js = report.write_artifacts(root)
         log(f"scoreboard: {md}")
         log(f"summary:    {js}")
@@ -389,10 +456,12 @@ def run_harness(
         report.gates["A_health"] = "PASS"
         hj = health.json()
         report.gate_details["A_health"] = f"ok daemon={hj.get('daemon', '?')} status={hj.get('status', '?')}"
+        log("Gate A: PASS")
     else:
         report.gates["A_health"] = "FAIL"
         report.gate_details["A_health"] = f"HTTP {health.status}"
         report.errors.append("Gate A failed")
+        log("Gate A: FAIL")
         md, js = report.write_artifacts(root)
         log(f"scoreboard: {md}")
         log(f"summary:    {js}")
@@ -407,19 +476,28 @@ def run_harness(
         report.gates["B_station_session"] = "PASS"
         report.gate_details["B_station_session"] = f"profile={sj.get('profile_id', '?')}"
         gate_b_ok = True
+        log("Gate B: PASS")
     else:
         report.gates["B_station_session"] = "AUTH"
         detail = sj.get("error_class") or ("signed_out" if not signed_in else f"HTTP {sess.status}")
         report.gate_details["B_station_session"] = str(detail)
         gate_b_ok = False
+        log(f"Gate B: AUTH ({detail})")
 
-    # Gate C
+    # Gate C — report posture; stale sync still allows HONEST-DARK tools (STRONG-TESTING §5).
     sync = wire("GET", "/api/daemon/broker/sync-state")
     sync_j = sync.json() if isinstance(sync.json(), dict) else {}
     sync_state = str(sync_j.get("syncState", "?"))
     report.gates["C_sync_state"] = "PASS" if sync.status == 200 else "FAIL"
     slug = sync_j.get("brokerSlug") or "none"
-    report.gate_details["C_sync_state"] = f"syncState={sync_state} brokerSlug={slug}"
+    caps = sync_j.get("capabilities")
+    if isinstance(caps, dict):
+        report.capabilities = caps
+    stale_note = ""
+    if sync_state not in ("fresh", "FRESH", "connected", "CONNECTED"):
+        stale_note = " · tools may be HONEST-DARK"
+    report.gate_details["C_sync_state"] = f"syncState={sync_state} brokerSlug={slug}{stale_note}"
+    log(f"Gate C: {report.gates['C_sync_state']} ({sync_state})")
 
     # Tools matrix (open loopback extracts + wired instruments)
     q = urllib.parse.urlencode({"instrument": symbol, "book": book})
@@ -452,17 +530,39 @@ def run_harness(
                 note = f"status={body.get('status')}"
             elif isinstance(body, dict) and body.get("error_class"):
                 note = str(body.get("error_class"))
+            route = path.split("?", 1)[0]
             report.tools.append(
-                {"tool": tool, "score": score, "http": str(res.status), "note": note}
+                {
+                    "tool": tool,
+                    "route": route,
+                    "score": score,
+                    "http": str(res.status),
+                    "note": note,
+                }
             )
+            if score == "LIE":
+                report.lies.append(f"{tool} {route}: {note or 'lit status without data'}")
+                report.errors.append(f"LIE: {tool}")
         except Exception as exc:  # noqa: BLE001 — harness must continue
             report.tools.append(
-                {"tool": tool, "score": "ERROR", "http": "-", "note": str(exc)[:120]}
+                {
+                    "tool": tool,
+                    "route": path.split("?", 1)[0],
+                    "score": "ERROR",
+                    "http": "-",
+                    "note": str(exc)[:120],
+                }
             )
 
-    # Outbox
-    if skip_capture or dry_run:
-        report.outbox["status"] = "skipped (--skip-capture or dry-run)"
+    report.holes = sum(
+        1
+        for row in report.tools
+        if row.get("tool") in HOLE_TILE_TOOLS and row.get("score") == "HONEST-DARK"
+    )
+
+    # Outbox (read-only; --skip-capture skips — never posts accept)
+    if skip_capture:
+        report.outbox["status"] = "skipped (--skip-capture)"
     else:
         ob = wire("GET", "/api/daemon/journal/toolbar-capture/outbox/status")
         ob_j = ob.json()
@@ -479,18 +579,31 @@ def run_harness(
     elif not gate_b_ok:
         report.journal["declare"] = "skipped (Gate B AUTH — sign in via Station device login)"
     else:
-        payload = build_declare_payload(symbol, book)
+        payload = build_declare_payload(symbol, book, stance)
         body_bytes = json.dumps(payload).encode("utf-8")
         decl = wire("POST", "/api/daemon/bar/declare", body_bytes)
         dj = decl.json() if isinstance(decl.json(), dict) else {}
         decl_id = dj.get("declarationId") or dj.get("declaration_id")
         if decl.status in (200, 201) and decl_id:
-            report.journal["declare"] = f"ok id={decl_id}"
+            try:
+                uuid.UUID(str(decl_id))
+                report.journal["declare"] = f"ok id={decl_id}"
+            except ValueError:
+                report.journal["declare"] = f"fail invalid declaration id: {decl_id}"
+                report.errors.append("declare id not a UUID")
+                decl_id = None
+        if decl_id and decl.status in (200, 201):
             live = wire("GET", "/api/daemon/bar/live-state")
             lj = live.json() if isinstance(live.json(), dict) else {}
             pending = ((lj.get("notch") or {}).get("pending_declaration")) if lj else None
             if pending:
                 report.journal["live_state_pending"] = "yes"
+                ps = pending.get("plan_snapshot") if isinstance(pending, dict) else None
+                if isinstance(ps, dict):
+                    report.journal["plan_snapshot_stance"] = str(ps.get("stance", ""))
+                    report.journal["plan_snapshot_calm"] = str(ps.get("calm_scale", ""))
+                    if ps.get("stance") != payload["declaration_payload"]["s1"]["stance"]:
+                        report.errors.append("plan_snapshot stance mismatch")
             else:
                 report.journal["live_state_pending"] = "no (local book may differ until hydrate)"
             cancel_body = json.dumps(
@@ -498,7 +611,7 @@ def run_harness(
             ).encode("utf-8")
             cancel = wire("POST", "/api/daemon/bar/cancel-declaration", cancel_body)
             report.journal["cancel"] = f"HTTP {cancel.status}"
-        else:
+        elif "declare" not in report.journal:
             err = dj.get("error_class") or dj.get("message") or decl.body_text[:200]
             report.journal["declare"] = f"fail HTTP {decl.status}: {err}"
 
@@ -521,6 +634,12 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument("--book", default="binance-com-spot", help="TickBook / desk book id")
     parser.add_argument("--symbol", default="BTCUSDT", help="Instrument for probes and declare")
+    parser.add_argument(
+        "--stance",
+        default="planned",
+        choices=("planned", "reactive"),
+        help="Plan declare stance (matches Notch Planned/Reactive)",
+    )
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument(
@@ -544,14 +663,15 @@ def main(argv: list[str]) -> int:
         port=args.port,
         book=args.book,
         symbol=args.symbol,
+        stance=args.stance,
         dry_run=args.dry_run,
         skip_capture=args.skip_capture,
         log=log,
     )
     if report.gates.get("A_health") == "FAIL":
         return 2
-    if report.errors and report.gates.get("A_health") != "PASS":
-        return 2
+    if report.lies:
+        return 3
     return 0
 
 
