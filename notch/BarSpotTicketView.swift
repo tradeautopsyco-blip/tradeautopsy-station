@@ -11,7 +11,7 @@ struct BarSpotTicketView: View {
     private var spec: BarDeskTicketSpec { BarDeskTicketSpec.forBook(ticket.bookId) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 pretradeSidePill(title: "Buy", selected: sideBuy) { sideBuy = true }
                 pretradeSidePill(title: "Sell", selected: !sideBuy) { sideBuy = false }
@@ -28,11 +28,17 @@ struct BarSpotTicketView: View {
                 }
             }
             if ticket.sizeMode == .quote {
-                BarInputField(placeholder: "quoteOrderQty · USDT", text: $quoteOrderQtyText)
+                BarInputField(placeholder: "quoteOrderQty · USDT", text: $quoteOrderQtyText, marginBottom: 4)
             } else {
-                BarInputField(placeholder: "Quantity · base", text: $quantityText)
+                BarInputField(placeholder: "Quantity · base", text: $quantityText, marginBottom: 4)
             }
-            if ticket.showsTif {
+            if ticket.type != .market {
+                Text("Limit price · use Entry on the Plan rail")
+                    .font(BarDS.monoFont(10, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if showsTifRow {
                 tifRow
             }
             if let availableLine, !availableLine.isEmpty {
@@ -40,11 +46,12 @@ struct BarSpotTicketView: View {
                     .font(BarDS.bodyFont(10, weight: .medium))
                     .foregroundColor(BarDS.Text.hint)
             }
-            Text("path \(ticket.path) · Confirm is LiveBook intent, not a venue POST")
-                .font(BarDS.monoFont(10, weight: .regular))
-                .foregroundColor(BarDS.Text.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// LIMIT and LIMIT_MAKER both expose TIF on the spot stack.
+    private var showsTifRow: Bool {
+        ticket.type == .limit || ticket.type == .limitMaker || ticket.showsTif
     }
 
     private var typeTabs: some View {

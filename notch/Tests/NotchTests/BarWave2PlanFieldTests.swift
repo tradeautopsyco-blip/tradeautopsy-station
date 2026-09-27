@@ -117,6 +117,23 @@ struct BarWave2PlanFieldTests {
         #expect(BarIntradayDeclareValidator.submitReadiness(input).ready == false)
     }
 
+    @Test func venueTicketQuantityUsesTicketTileNotPlanRail() {
+        var input = wave2ReadyInput(setup: "breakout", invKind: "behaviour", invLine: "Fails if …", invPrice: "")
+        input.quantityText = ""
+        input.usesVenueTicket = true
+        input.quoteOrderQtyText = ""
+        input.deskSizeModeRaw = BarTicketSizeMode.base.rawValue
+        #expect(BarIntradayDeclareValidator.submitReadiness(input).ready == false)
+
+        input.quantityText = "0.002"
+        #expect(BarIntradayDeclareValidator.submitReadiness(input).ready)
+
+        input.quantityText = ""
+        input.deskSizeModeRaw = BarTicketSizeMode.quote.rawValue
+        input.quoteOrderQtyText = "100"
+        #expect(BarIntradayDeclareValidator.submitReadiness(input).ready)
+    }
+
     @Test func usdmConfirmDoesNotRequireAutoPlaceStopWhenWave2Filled() {
         let input = wave2ReadyInput(
             setup: "breakout",

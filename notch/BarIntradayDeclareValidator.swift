@@ -41,6 +41,10 @@ struct BarIntradayDeclarationSubmitInput: Equatable, Sendable {
     var requiresCashProduct: Bool = false
     var cashProduct: String = ""
     var gate: BarPlanGateStripState = BarPlanGateStripState()
+    /// When true, quantity is entered on the Ticket-C mosaic (not Plan rail).
+    var usesVenueTicket: Bool = false
+    var quoteOrderQtyText: String = ""
+    var deskSizeModeRaw: String = BarTicketSizeMode.base.rawValue
 }
 
 /// Pure validation helpers for the intraday Bar declaration flow (#116). Observable UI wires selections into these functions.
@@ -96,7 +100,7 @@ enum BarIntradayDeclareValidator {
             return (false, "Circuit active — finish or clear the Harness intervention before declaring.")
         }
         if !input.isOptions, !input.isUsdm, !input.protectiveSlConsent {
-            return (false, "Turn on auto-place stop loss in Step 4.")
+            return (false, "Ack protective SL on fill in Gate (spot / equity).")
         }
         let calmOpt: Int? = (1 ... 5).contains(input.calm) ? input.calm : nil
         let confOpt: Int? = (1 ... 5).contains(input.confidence) ? input.confidence : nil
@@ -143,7 +147,10 @@ enum BarIntradayDeclareValidator {
                 return (false, "Enter max planned loss.")
             }
         } else if !lotsSatisfyQuantity(input) {
-            guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
+            guard venueQuantitySatisfied(input) else {
+                if input.usesVenueTicket {
+                    return (false, "Enter quantity on the Ticket tile (base or quoteOrderQty).")
+                }
                 return (false, "Enter quantity in Step 2.")
             }
         }
@@ -184,6 +191,26 @@ enum BarIntradayDeclareValidator {
             return (false, "Enter scalper session id.")
         }
         return (true, nil)
+    }
+
+    static func venueQuantitySatisfied(_ input: BarIntradayDeclarationSubmitInput) -> Bool {
+        if input.isOptions { return lotsSatisfyQuantity(input) }
+        if input.usesVenueTicket {
+            if input.deskSizeModeRaw == BarTicketSizeMode.quote.rawValue {
+                guard let q = Double(input.quoteOrderQtyText.trimmingCharacters(in: .whitespacesAndNewlines)), q > 0 else {
+                    return false
+                }
+                return true
+            }
+            guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
+                return false
+            }
+            return true
+        }
+        guard let qty = Double(input.quantityText.trimmingCharacters(in: .whitespacesAndNewlines)), qty > 0 else {
+            return false
+        }
+        return true
     }
 
     /// Options lots populate quantity until lot size exists. Spot/equity ignore lots.

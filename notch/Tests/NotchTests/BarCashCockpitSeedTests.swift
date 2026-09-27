@@ -27,11 +27,11 @@ struct BarCashCockpitSeedTests {
         #expect(BarCashCockpitSeed.tiles(for: .usdm) == BarCashCockpitSeed.tiles(for: .equity))
     }
 
-    @Test func cashGlanceStripIsLastHistoryDepth() {
-        #expect(BarCashCockpitSeed.stripKinds(for: .equity) == [.last, .history, .depth])
-        #expect(BarCashCockpitSeed.stripKinds(for: .spot) == [.last, .history, .depth])
-        #expect(BarCashCockpitSeed.stripKinds(for: .usdm) == [.last, .history, .depth])
-        #expect(BarCashCockpitSeed.stripKinds(for: .coinm) == [.last, .history, .depth])
+    @Test func cashGlanceStripIsLastAndHistoryOnly() {
+        #expect(BarCashCockpitSeed.stripKinds(for: .equity) == [.last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .spot) == [.last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .usdm) == [.last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .coinm) == [.last, .history])
     }
 
     @Test func leftoverOptionsOnStandardFormStillUsesCashCockpitTiles() {
@@ -39,7 +39,7 @@ struct BarCashCockpitSeedTests {
             for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
         ) == .standardForm)
         #expect(BarCashCockpitSeed.tiles(for: .options) == BarCashCockpitSeed.tiles(for: .spot))
-        #expect(BarCashCockpitSeed.stripKinds(for: .options) == [.last, .history, .depth])
+        #expect(BarCashCockpitSeed.stripKinds(for: .options) == [.last, .history])
     }
 
     @Test func cashHeroAndFocusMatchPrototype() {
@@ -75,8 +75,8 @@ struct BarCashCockpitSeedTests {
         #expect(usdm.w == 2)
         #expect(usdm.h == 2)
         #expect(BarCashCockpitSeed.ticketOverlaySize(for: .coinm).h == 2)
-        #expect(BarCashCockpitSeed.ticketOverlaySize(for: .spot).h == 1)
-        #expect(BarCashCockpitSeed.ticketOverlaySize(for: .equity).h == 1)
+        #expect(BarCashCockpitSeed.ticketOverlaySize(for: .spot).h == 2)
+        #expect(BarCashCockpitSeed.ticketOverlaySize(for: .equity).h == 2)
         #expect(
             BarCockpitTicketOverlay.firstHole(
                 BarCashCockpitSeed.occupancies(for: .usdm),

@@ -151,6 +151,9 @@ struct BarDeclarationFlowView: View {
                 requiresCashProduct: viewModel.requiresCashProduct,
                 cashProduct: viewModel.declCashProduct,
                 gate: viewModel.declGateStripState,
+                usesVenueTicket: showsVenueTicket,
+                quoteOrderQtyText: viewModel.quoteOrderQtyText,
+                deskSizeModeRaw: viewModel.deskTicket.sizeMode.rawValue,
             ),
         )
     }
@@ -164,6 +167,7 @@ struct BarDeclarationFlowView: View {
                     }
                 }
             }
+            brokerChipRow
             HStack(spacing: 5) {
                 BarTab(label: "Intraday", active: viewModel.activeArchetype == .intraday) {
                     selectArchetype(.intraday)
@@ -177,6 +181,30 @@ struct BarDeclarationFlowView: View {
             }
         }
         .padding(.bottom, 4)
+    }
+
+    @ViewBuilder
+    private var brokerChipRow: some View {
+        if let slug = viewModel.activeExecutionBrokerSlug?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !slug.isEmpty
+        {
+            HStack(spacing: 6) {
+                Text("BROKER")
+                    .font(BarDS.monoFont(9, weight: .regular))
+                    .foregroundColor(BarDS.Text.muted)
+                    .kerning(0.6)
+                Text(NotchViewModel.brokerDisplayName(forSlug: slug))
+                    .font(BarDS.bodyFont(11, weight: .medium))
+                    .foregroundColor(BarDS.Text.primary)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 10)
+                    .background(BarDS.Fill.elevated)
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule().stroke(BarDS.Border.chipUnselected, lineWidth: BarDS.borderThin),
+                    )
+            }
+        }
     }
 
     private func submit() async {

@@ -44,16 +44,16 @@ struct BarCashCockpitMosaic: View {
                 physicsNote: viewModel.deskDepthPhysicsNote,
             )
         case .ticket:
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: true) {
                 BarDeskTicketTile(
                     viewModel: viewModel,
                     sideBuy: $sideBuy,
                     quantityText: $quantityText,
                 )
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.bottom, 4)
             }
-            .scrollIndicators(.automatic)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 88, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
@@ -154,6 +154,8 @@ struct BarCashCockpitMosaic: View {
                 }
             }
             content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .layoutPriority(1)
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
