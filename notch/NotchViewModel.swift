@@ -342,6 +342,7 @@ public final class NotchViewModel: ObservableObject {
         didSet {
             guard oldValue != activeExecutionBrokerSlug else { return }
             invalidateDeskMarketExtracts(reason: "broker-slug")
+            reconcileDeclareAssetClassForConnectedDesk()
         }
     }
 
@@ -1667,6 +1668,22 @@ public final class NotchViewModel: ObservableObject {
         let raw = (activeExecutionBrokerSlug ?? barProtectiveBrokerSlug)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return raw.isEmpty ? nil : raw
+    }
+
+    /// Asset-class pills on Plan — filtered by connected desk, not global `CaseIterable`.
+    var planDeclareAssetClassTabs: [BarDeclareAssetClass] {
+        BarDeclareAssetClass.supported(forDeskSlug: resolvedDeskSlug)
+    }
+
+    /// Snap declare tab when the execution desk changes (Binance default Spot, Kotak default Equity).
+    func reconcileDeclareAssetClassForConnectedDesk() {
+        let next = BarDeclareAssetClass.reconciled(
+            current: declareAssetClass,
+            forDeskSlug: resolvedDeskSlug
+        )
+        if next != declareAssetClass {
+            declareAssetClass = next
+        }
     }
 
     /// Named market book implied by instrument shape — independent of execution desk.
