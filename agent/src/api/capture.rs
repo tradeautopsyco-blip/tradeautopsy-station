@@ -1,4 +1,6 @@
-use crate::{api::AppState, queued_response_json, ProcessNowResult, UpstreamClient};
+use crate::{
+    api::AppState, queued_response_json, ProcessNowResult, StationRefreshError, UpstreamClient,
+};
 use axum::body::Body;
 use axum::extract::Path;
 use axum::extract::State;
@@ -160,15 +162,41 @@ pub(crate) async fn forward_daemon_json_with_optional_429_retry(
     let request_id_owned = bar_request_id
         .map(|s| s.to_string())
         .unwrap_or_else(|| ulid::Ulid::new().to_string());
+    let mut refreshed_after_401 = false;
     loop {
+        match upstream.ensure_fresh_station_access(None).await {
+            Err(StationRefreshError::Revoked) => {
+                return Err("Station session expired — sign in again in Settings".to_string());
+            }
+            Ok(()) | Err(StationRefreshError::Transient(_)) => {}
+        }
+
+        let auth_header = upstream
+            .brain_authorization_header()
+            .map_err(|e| e.to_string())?;
         let req = upstream
             .http
             .request(method.clone(), &url)
-            .header("x-request-id", request_id_owned.as_str());
+            .header("x-request-id", request_id_owned.as_str())
+            .header(reqwest::header::AUTHORIZATION, auth_header.as_str());
         let req = if let Some(b) = body { req.json(b) } else { req };
-        let req = upstream.authorize_brain(req).map_err(|e| e.to_string())?;
         let resp = req.send().await.map_err(|e| e.to_string())?;
         let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED && !refreshed_after_401 {
+            let text = resp.text().await.unwrap_or_default();
+            refreshed_after_401 = true;
+            let rejected = auth_header
+                .strip_prefix("Bearer ")
+                .unwrap_or(auth_header.as_str());
+            match upstream
+                .ensure_fresh_station_access(Some(rejected))
+                .await
+            {
+                Ok(()) => continue,
+                Err(StationRefreshError::Revoked) => return Ok((status, text)),
+                Err(StationRefreshError::Transient(_)) => return Ok((status, text)),
+            }
+        }
         if retry_on_429
             && status == reqwest::StatusCode::TOO_MANY_REQUESTS
             && attempt + 1 < MAX_ATTEMPTS

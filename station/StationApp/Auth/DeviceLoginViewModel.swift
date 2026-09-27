@@ -59,6 +59,8 @@ public final class DeviceLoginViewModel: ObservableObject {
             if let url = URL(string: browserTarget) {
                 openURL(url)
             }
+            // Poll WorkOS until the browser flow completes — no extra "I've confirmed" click.
+            Task { await completeLogin() }
         } catch {
             phase = .error
             userCode = nil

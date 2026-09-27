@@ -39,15 +39,20 @@ public struct DeviceLoginView: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("deviceLoginUserCode")
                 }
-                Text("Confirm this code in the browser, then continue.")
+                Text("Finish sign-in in the browser — Station will connect automatically when WorkOS approves the code.")
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                     .foregroundStyle(StationDS.Text.secondary)
                 HStack(spacing: 8) {
-                    Button("I've confirmed") {
+                    if viewModel.phase == .completing {
+                        ProgressView("Waiting for browser…")
+                            .tint(StationDS.Accent.teal)
+                    }
+                    Button("Retry connection") {
                         Task { await viewModel.completeLogin() }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(StationDS.Accent.teal)
+                    .disabled(viewModel.phase == .completing)
                     Button("Open browser again") {
                         if let raw = viewModel.verificationURIComplete,
                            let url = URL(string: raw) {
