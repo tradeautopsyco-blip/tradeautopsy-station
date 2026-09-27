@@ -281,6 +281,8 @@ pub struct StationRefreshGate {
     lock: tokio::sync::Mutex<()>,
     blocked_until_ms: AtomicI64,
     consecutive_failures: AtomicU64,
+    /// Always false in production; integration tests may flip via `UpstreamClient::test_force_station_refresh_revoked`.
+    force_revoked: std::sync::atomic::AtomicBool,
 }
 
 const STATION_REFRESH_SKEW_SECS: u64 = 90;
@@ -288,6 +290,22 @@ const STATION_REFRESH_BACKOFF_BASE_MS: i64 = 30_000;
 const STATION_REFRESH_BACKOFF_CAP_MS: i64 = 10 * 60_000;
 
 impl UpstreamClient {
+    /// Test seam: simulate Console refresh backoff without mutating Keychain.
+    #[doc(hidden)]
+    pub fn test_set_refresh_blocked_until_ms(&self, until_ms: i64) {
+        self.refresh
+            .blocked_until_ms
+            .store(until_ms, Ordering::SeqCst);
+    }
+
+    /// Test seam: force `ensure_fresh_station_access` to fail as Revoked.
+    #[doc(hidden)]
+    pub fn test_force_station_refresh_revoked(&self, force: bool) {
+        self.refresh
+            .force_revoked
+            .store(force, Ordering::SeqCst);
+    }
+
     pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
         // TLS verification must always be on for a real (https) Console.
         // Loopback Console uses mkcert; reqwest rustls-webpki does not trust that CA.
@@ -340,10 +358,13 @@ impl UpstreamClient {
         &self,
         rejected_access: Option<&str>,
     ) -> Result<(), StationRefreshError> {
+        let gate = &self.refresh;
+        if gate.force_revoked.load(Ordering::SeqCst) {
+            return Err(StationRefreshError::Revoked);
+        }
         if self.config.is_loopback_http_bootstrap() {
             return Ok(());
         }
-        let gate = &self.refresh;
         let now_ms = Utc::now().timestamp_millis();
         if now_ms < gate.blocked_until_ms.load(Ordering::SeqCst) {
             return Err(StationRefreshError::Transient(anyhow::anyhow!(
@@ -875,6 +896,36 @@ mod upstream_config_bridge_harden_tests {
         );
         assert!(c.require_https_base().is_err());
         std::env::remove_var("STATION_ACCESS_TOKEN");
+    }
+}
+
+#[cfg(test)]
+mod station_refresh_gate_tests {
+    use super::{StationRefreshError, UpstreamClient, UpstreamConfig};
+    use chrono::Utc;
+    use serial_test::serial;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    #[serial]
+    async fn ensure_fresh_returns_transient_while_refresh_gate_blocked() {
+        std::env::remove_var("STATION_ACCESS_TOKEN");
+        let upstream = UpstreamClient::new(UpstreamConfig {
+            base_url: "https://127.0.0.1:3000".into(),
+            daemon_secret: "unit-test-secret".into(),
+        })
+        .expect("upstream");
+        upstream.test_set_refresh_blocked_until_ms(
+            Utc::now().timestamp_millis().saturating_add(60_000),
+        );
+        let err = upstream
+            .ensure_fresh_station_access(None)
+            .await
+            .expect_err("blocked gate must not attempt refresh");
+        assert!(
+            matches!(err, StationRefreshError::Transient(_)),
+            "Console refresh network failures must backoff as Transient"
+        );
     }
 }
 
@@ -1561,9 +1612,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             .is_some_and(|t| !t.trim().is_empty());
     let mut fact_outbox =
         crate::fact_outbox::FactOutbox::open(&config.fact_outbox_db_path, upstream.clone())?;
-    if station_tokens_in_store || (injected_station_tokens && station_token_store_explicit) {
-        fact_outbox = fact_outbox.with_token_store(station_token_store.clone());
-    }
+    fact_outbox = fact_outbox.with_token_store(station_token_store.clone());
     if let Some(clock) = config.fact_clock_ms.clone() {
         fact_outbox = fact_outbox.with_clock(clock);
     }
@@ -1744,61 +1793,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     tokio::spawn(async move {
         async fn publish_online(outbox: &Arc<crate::fact_outbox::FactOutbox>) {
             let worker = outbox.clone();
-            let enqueued = tokio::task::spawn_blocking(move || {
+            let _ = tokio::task::spawn_blocking(move || {
                 worker.enqueue(crate::fact_outbox::Fact::StationOnline)
             })
             .await;
-            let outcome = match &enqueued {
-                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Enqueued { .. })) => "Enqueued",
-                Ok(Ok(crate::fact_outbox::EnqueueOutcome::Coalesced)) => "Coalesced",
-                Ok(Ok(crate::fact_outbox::EnqueueOutcome::SkippedNoJwt)) => "SkippedNoJwt",
-                Ok(Err(_)) => "EnqueueErr",
-                Err(_) => "JoinErr",
-            };
-            let will_drain = outcome == "Enqueued";
-            // #region agent log
-            {
-                use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open("/Users/bishnu/.cursor/debug-cab917.log")
-                {
-                    let line = serde_json::json!({
-                        "sessionId": "cab917",
-                        "timestamp": chrono::Utc::now().timestamp_millis(),
-                        "location": "agent/src/lib.rs:publish_online",
-                        "message": "station_online tick",
-                        "hypothesisId": "A",
-                        "data": {"outcome": outcome, "willDrain": will_drain}
-                    });
-                    let _ = writeln!(f, "{line}");
-                }
-            }
-            // #endregion
-            if will_drain {
-                let drained = outbox.drain().await;
-                // #region agent log
-                {
-                    use std::io::Write;
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open("/Users/bishnu/.cursor/debug-cab917.log")
-                    {
-                        let line = serde_json::json!({
-                            "sessionId": "cab917",
-                            "timestamp": chrono::Utc::now().timestamp_millis(),
-                            "location": "agent/src/lib.rs:publish_online",
-                            "message": "drain finished",
-                            "hypothesisId": "C",
-                            "data": {"ok": drained.is_ok()}
-                        });
-                        let _ = writeln!(f, "{line}");
-                    }
-                }
-                // #endregion
-            }
+            // Always drain: coalesced heartbeats must still flush a pending row.
+            let _ = outbox.drain().await;
         }
         publish_online(&fact_worker).await;
         let mut interval =

@@ -6,6 +6,7 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use serial_test::serial;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tradeautopsy_agent::{
@@ -335,6 +336,131 @@ async fn unauthorized_defers_row_and_does_not_hammer_console() {
         after_first,
         "deferred row must not be re-sent on every drain"
     );
+}
+
+#[derive(Clone, Default)]
+struct FlakyConsole {
+    posts: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
+    calls: Arc<AtomicU64>,
+}
+
+async fn events_fail_once_then_ok(
+    State(state): State<FlakyConsole>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> StatusCode {
+    let n = state.calls.fetch_add(1, Ordering::SeqCst);
+    state.posts.lock().expect("posts").push((headers, body));
+    if n == 0 {
+        StatusCode::INTERNAL_SERVER_ERROR
+    } else {
+        StatusCode::OK
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn coalesced_heartbeat_tick_still_drains_pending_row() {
+    std::env::set_var("STATION_ACCESS_TOKEN", "station.fact-plane.jwt");
+
+    let fake = FlakyConsole::default();
+    let port = spawn_fake_console(
+        Router::new()
+            .route("/api/daemon/events", post(events_fail_once_then_ok))
+            .with_state(fake.clone()),
+    )
+    .await;
+    let upstream = loopback_upstream(port);
+    upstream.test_set_refresh_blocked_until_ms(
+        chrono::Utc::now().timestamp_millis().saturating_add(60_000),
+    );
+    let db = std::env::temp_dir().join(format!(
+        "fact-outbox-coalesce-drain-{}.db",
+        uuid::Uuid::new_v4()
+    ));
+    let outbox = Arc::new(FactOutbox::open(&db, upstream).expect("open"));
+
+    let EnqueueOutcome::Enqueued { id } = outbox.enqueue(Fact::StationOnline).expect("enqueue")
+    else {
+        panic!("expected enqueue");
+    };
+    outbox.drain().await.expect("first drain");
+    assert!(
+        outbox.row(&id).expect("row").expect("row").done_at_ms.is_none(),
+        "500 leaves the heartbeat pending"
+    );
+    assert_eq!(fake.posts.lock().expect("posts").len(), 1);
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(
+        matches!(
+            outbox.enqueue(Fact::StationOnline).expect("coalesce"),
+            EnqueueOutcome::Coalesced
+        ),
+        "publish_online must coalesce when a row is already pending"
+    );
+
+    outbox.flush_station_presence().await.expect("coalesced tick drain");
+    assert!(
+        outbox
+            .row(&id)
+            .expect("row")
+            .expect("row")
+            .done_at_ms
+            .is_some(),
+        "coalesced ticks must still drain the pending heartbeat (no restart required)"
+    );
+    assert_eq!(
+        fake.posts.lock().expect("posts").len(),
+        2,
+        "pending row must retry and succeed once Console accepts"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn drain_aborts_without_post_when_station_session_revoked() {
+    std::env::set_var("STATION_ACCESS_TOKEN", "station.fact-plane.jwt");
+
+    let fake = FakeConsole::default();
+    let port = spawn_fake_console(
+        Router::new()
+            .route("/api/daemon/events", post(events_200))
+            .with_state(fake.clone()),
+    )
+    .await;
+    let upstream = loopback_upstream(port);
+    // Simulate Console refresh-token revocation without clearing the test JWT.
+    upstream.test_force_station_refresh_revoked(true);
+    let db = std::env::temp_dir().join(format!(
+        "fact-outbox-revoked-drain-{}.db",
+        uuid::Uuid::new_v4()
+    ));
+    let outbox = FactOutbox::open(&db, upstream).expect("open");
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp_millis();
+    let conn = rusqlite::Connection::open(&db).expect("open db");
+    conn.execute(
+        "INSERT INTO fact_outbox
+         (id, signal_type, payload_json, created_at_ms, attempts, next_attempt_at_ms, done_at_ms)
+         VALUES (?1, 'station_online', ?2, ?3, 0, ?3, NULL)",
+        rusqlite::params![
+            id,
+            serde_json::json!({"v": 1, "event_id": id}).to_string(),
+            now
+        ],
+    )
+    .expect("seed pending heartbeat");
+    drop(conn);
+    outbox.drain().await.expect("drain");
+    assert_eq!(
+        fake.posts.lock().expect("posts").len(),
+        0,
+        "revoked session must not POST while a heartbeat row is pending"
+    );
+    let row = outbox.row(&id).expect("row").expect("row");
+    assert!(row.done_at_ms.is_none());
 }
 
 #[tokio::test]

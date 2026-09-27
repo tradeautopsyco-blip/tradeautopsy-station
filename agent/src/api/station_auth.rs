@@ -5,7 +5,7 @@
 use crate::api::AppState;
 use crate::device_login::{
     begin_device_login, complete_device_login, prove_station_session,
-    station_device_browser_url, DeviceLoginPublic, StationSessionIdentity,
+    station_device_browser_url, DeviceLoginPublic, StationRefreshError, StationSessionIdentity,
 };
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -104,7 +104,13 @@ pub async fn station_auth_complete_handler(State(state): State<AppState>) -> Res
         )
         .await
         {
-            Ok(identity) => (StatusCode::OK, Json(identity_to_json(&identity))).into_response(),
+            Ok(identity) => {
+                let outbox = state.fact_outbox.clone();
+                tokio::spawn(async move {
+                    let _ = outbox.flush_station_presence().await;
+                });
+                (StatusCode::OK, Json(identity_to_json(&identity))).into_response()
+            }
             Err(err) => (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
@@ -137,6 +143,19 @@ pub async fn station_auth_complete_handler(State(state): State<AppState>) -> Res
 }
 
 pub async fn station_auth_session_handler(State(state): State<AppState>) -> Response {
+    if state.station_token_store.load().ok().flatten().is_none() {
+        return (StatusCode::OK, Json(json!({ "signed_in": false }))).into_response();
+    }
+
+    if !state.upstream.config.is_loopback_http_bootstrap() {
+        match state.upstream.ensure_fresh_station_access(None).await {
+            Err(StationRefreshError::Revoked) => {
+                return (StatusCode::OK, Json(json!({ "signed_in": false }))).into_response();
+            }
+            Ok(()) | Err(StationRefreshError::Transient(_)) => {}
+        }
+    }
+
     let tokens = match state.station_token_store.load() {
         Ok(Some(t)) => t,
         Ok(None) => {

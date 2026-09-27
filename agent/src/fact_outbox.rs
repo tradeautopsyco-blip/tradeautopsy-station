@@ -37,28 +37,6 @@ impl Fact {
     }
 }
 
-// #region agent log
-fn agent_debug_log(hypothesis_id: &str, message: &str, data: serde_json::Value) {
-    use std::io::Write;
-    let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/Users/bishnu/.cursor/debug-cab917.log")
-    else {
-        return;
-    };
-    let line = serde_json::json!({
-        "sessionId": "cab917",
-        "timestamp": chrono::Utc::now().timestamp_millis(),
-        "location": "agent/src/fact_outbox.rs",
-        "message": message,
-        "hypothesisId": hypothesis_id,
-        "data": data,
-    });
-    let _ = writeln!(file, "{line}");
-}
-// #endregion
-
 pub enum EnqueueOutcome {
     Enqueued { id: String },
     Coalesced,
@@ -144,34 +122,16 @@ impl FactOutbox {
 
     pub fn enqueue(&self, fact: Fact) -> anyhow::Result<EnqueueOutcome> {
         if !self.has_station_jwt() {
-            // #region agent log
-            if matches!(fact, Fact::StationOnline) {
-                agent_debug_log(
-                    "B",
-                    "enqueue skipped, no station jwt",
-                    serde_json::json!({"outcome": "SkippedNoJwt"}),
-                );
-            }
-            // #endregion
             return Ok(EnqueueOutcome::SkippedNoJwt);
         }
         let id = uuid::Uuid::new_v4().to_string();
         let now = self.now_ms();
         let payload_json = fact.payload_json(&id)?;
         let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-        if matches!(fact, Fact::StationOnline) {
-            let fresh = last_online_send_is_fresh(&conn, now)?;
-            let pending = online_send_pending(&conn)?;
-            if fresh || pending {
-                // #region agent log
-                agent_debug_log(
-                    "A",
-                    "enqueue coalesced station_online",
-                    serde_json::json!({"outcome": "Coalesced", "fresh": fresh, "pending": pending}),
-                );
-                // #endregion
-                return Ok(EnqueueOutcome::Coalesced);
-            }
+        if matches!(fact, Fact::StationOnline)
+            && (last_online_send_is_fresh(&conn, now)? || online_send_pending(&conn)?)
+        {
+            return Ok(EnqueueOutcome::Coalesced);
         }
         if let Fact::CitedPnl { payload } = &fact {
             if let Some(existing_id) = pending_cited_pnl_id(&conn, payload)? {
@@ -305,22 +265,22 @@ impl FactOutbox {
         self.enqueue_cited_pnl(payload)
     }
 
+    /// Enqueue a heartbeat (if allowed) and flush any due outbox rows — e.g. right after sign-in.
+    pub async fn flush_station_presence(self: &Arc<Self>) -> anyhow::Result<()> {
+        let worker = Arc::clone(self);
+        let _ = tokio::task::spawn_blocking(move || worker.enqueue(Fact::StationOnline)).await;
+        self.drain().await
+    }
+
     pub async fn drain(&self) -> anyhow::Result<()> {
         let due = self.due_ids()?;
         if due.is_empty() {
             return Ok(());
         }
-        if let Err(StationRefreshError::Revoked) =
-            self.upstream.ensure_fresh_station_access(None).await
-        {
-            // #region agent log
-            agent_debug_log(
-                "C",
-                "drain aborted, station token revoked",
-                serde_json::json!({"due": due.len()}),
-            );
-            // #endregion
-            return Ok(());
+        match self.upstream.ensure_fresh_station_access(None).await {
+            Err(StationRefreshError::Revoked) => return Ok(()),
+            // Transient refresh backoff must not wedge the outbox — POST with the current JWT.
+            Ok(()) | Err(StationRefreshError::Transient(_)) => {}
         }
         let mut refreshed_after_401 = false;
         for id in due {
@@ -418,15 +378,6 @@ impl FactOutbox {
             .send()
             .await?;
         let status = resp.status().as_u16();
-        // #region agent log
-        if signal_type == "station_online" {
-            agent_debug_log(
-                "C",
-                "station_online POST finished",
-                serde_json::json!({"httpStatus": status}),
-            );
-        }
-        // #endregion
         let retry_after_ms = resp
             .headers()
             .get(reqwest::header::RETRY_AFTER)
