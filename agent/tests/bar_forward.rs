@@ -491,3 +491,88 @@ async fn bar_declarations_week_forwards_station_bearer() {
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn bar_test_fill_matched_proxies_post_to_internal_upstream() {
+    const AGENT_PORT: u16 = 39_610;
+    let captured = Arc::new(Mutex::new(None::<(HeaderMap, Value)>));
+    let captured_clone = Arc::clone(&captured);
+    let upstream = Router::new().route(
+        "/api/internal/bar/v1/test/fill-matched",
+        post(
+            move |headers: HeaderMap, axum::Json(b): axum::Json<Value>| async move {
+                *captured_clone.lock().expect("lock") = Some((headers, b));
+                (
+                    StatusCode::OK,
+                    Json(json!({
+                        "test_only": true,
+                        "status": "matched",
+                        "trade_id": "t-harness",
+                        "matched_at_ms": 1700000000000i64,
+                        "fidelity": { "ok": true }
+                    })),
+                )
+            },
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/test/fill-matched";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let payload = json!({
+        "declaration_id": "00000000-0000-4000-8000-000000000099",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "quantity": 0.001,
+        "price": 50000.0
+    });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 200);
+    let out: Value = resp.json().await.expect("json");
+    assert_eq!(out["test_only"], true);
+    assert_eq!(out["status"], "matched");
+
+    let (headers, body) = captured.lock().expect("lock").take().expect("upstream hit");
+    let auth = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        auth.starts_with("Bearer "),
+        "Station Bearer must be forwarded on test fill-matched"
+    );
+    assert_eq!(
+        body.get("declaration_id").and_then(|v| v.as_str()),
+        Some("00000000-0000-4000-8000-000000000099")
+    );
+
+    handle.abort();
+}
