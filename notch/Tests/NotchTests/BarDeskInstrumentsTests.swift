@@ -3,6 +3,52 @@ import Testing
 @testable import Notch
 
 struct BarDeskInstrumentsTests {
+    @Test func supportedDeclareAssetClassesFilterByDeskSlug() {
+        #expect(
+            BarDeclareAssetClass.supported(forDeskSlug: "binance_com")
+                == [.spot, .options, .usdm, .coinm]
+        )
+        #expect(
+            BarDeclareAssetClass.supported(forDeskSlug: "binance")
+                == [.spot, .options, .usdm, .coinm]
+        )
+        #expect(
+            BarDeclareAssetClass.supported(forDeskSlug: "kotak_neo")
+                == [.equity, .options]
+        )
+        #expect(
+            BarDeclareAssetClass.supported(forDeskSlug: "kotak")
+                == [.equity, .options]
+        )
+        #expect(BarDeclareAssetClass.supported(forDeskSlug: "zerodha_kite").isEmpty)
+        #expect(BarDeclareAssetClass.supported(forDeskSlug: nil).isEmpty)
+        #expect(!BarDeclareAssetClass.supported(forDeskSlug: "binance_com").contains(.equity))
+        #expect(!BarDeclareAssetClass.supported(forDeskSlug: "kotak_neo").contains(.spot))
+        #expect(!BarDeclareAssetClass.supported(forDeskSlug: "kotak_neo").contains(.usdm))
+        #expect(!BarDeclareAssetClass.supported(forDeskSlug: "kotak_neo").contains(.coinm))
+    }
+
+    @Test func reconciledDeclareAssetClassSnapsToDeskDefault() {
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .equity, forDeskSlug: "binance_com") == .spot
+        )
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .usdm, forDeskSlug: "binance_com") == .usdm
+        )
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .spot, forDeskSlug: "kotak_neo") == .equity
+        )
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .options, forDeskSlug: "kotak_neo") == .options
+        )
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .coinm, forDeskSlug: "kotak_neo") == .equity
+        )
+        #expect(
+            BarDeclareAssetClass.reconciled(current: .spot, forDeskSlug: nil) == .spot
+        )
+    }
+
     @Test func spotAndEquityDoNotShowChain() {
         #expect(BarDeskTemplate.glanceKinds(for: .spot) == [.last, .history, .depth])
         #expect(BarDeskTemplate.glanceKinds(for: .equity) == [.last, .history, .depth])

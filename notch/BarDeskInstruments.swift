@@ -24,6 +24,27 @@ enum BarDeclareAssetClass: String, CaseIterable, Identifiable {
     var isNamedComFutures: Bool {
         self == .usdm || self == .coinm
     }
+
+    /// Launch-cut declare tabs for the connected execution desk. Notch routing stays source of
+    /// truth (see `BrokerBookClassDecisionTests` decision B) — no BrokerCatalog per-book table.
+    static func supported(forDeskSlug slug: String?) -> [BarDeclareAssetClass] {
+        if DeskCatalogAllowlist.isBinanceDesk(slug) {
+            return [.spot, .options, .usdm, .coinm]
+        }
+        if BarDeskTemplate.isKotakNeoDesk(slug: slug) {
+            return [.equity, .options]
+        }
+        return []
+    }
+
+    /// When the desk changes, keep the current tab if still valid; else snap to the desk default
+    /// (Binance → Spot, Kotak → Equity). Unknown desk leaves the current class unchanged.
+    static func reconciled(current: BarDeclareAssetClass, forDeskSlug slug: String?) -> BarDeclareAssetClass {
+        let supported = supported(forDeskSlug: slug)
+        guard !supported.isEmpty else { return current }
+        if supported.contains(current) { return current }
+        return supported[0]
+    }
 }
 
 /// One Station extract hole on the declare form.

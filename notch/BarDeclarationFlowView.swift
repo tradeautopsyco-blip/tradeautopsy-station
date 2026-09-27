@@ -161,13 +161,12 @@ struct BarDeclarationFlowView: View {
     private var archetypeTabRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
-                ForEach(BarDeclareAssetClass.allCases) { asset in
+                ForEach(viewModel.planDeclareAssetClassTabs) { asset in
                     BarTab(label: asset.label, active: viewModel.declareAssetClass == asset) {
                         viewModel.declareAssetClass = asset
                     }
                 }
             }
-            brokerChipRow
             HStack(spacing: 5) {
                 BarTab(label: "Intraday", active: viewModel.activeArchetype == .intraday) {
                     selectArchetype(.intraday)
@@ -181,30 +180,6 @@ struct BarDeclarationFlowView: View {
             }
         }
         .padding(.bottom, 4)
-    }
-
-    @ViewBuilder
-    private var brokerChipRow: some View {
-        if let slug = viewModel.activeExecutionBrokerSlug?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !slug.isEmpty
-        {
-            HStack(spacing: 6) {
-                Text("BROKER")
-                    .font(BarDS.monoFont(9, weight: .regular))
-                    .foregroundColor(BarDS.Text.muted)
-                    .kerning(0.6)
-                Text(NotchViewModel.brokerDisplayName(forSlug: slug))
-                    .font(BarDS.bodyFont(11, weight: .medium))
-                    .foregroundColor(BarDS.Text.primary)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 10)
-                    .background(BarDS.Fill.elevated)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule().stroke(BarDS.Border.chipUnselected, lineWidth: BarDS.borderThin),
-                    )
-            }
-        }
     }
 
     private func submit() async {
