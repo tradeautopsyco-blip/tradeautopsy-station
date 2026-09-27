@@ -287,11 +287,14 @@ def build_declare_payload(symbol: str, book_id: str, stance: str) -> dict[str, A
     }
 
 
+DEBRIEF_SINK_NEEDLE = "Phase B harness debrief"
+
+
 def build_debrief_payload(
     declaration_id: str,
     stance: str,
     *,
-    live_note: str = "Harness closed-trip debrief.",
+    live_note: str = "Harness journal sink debrief.",
 ) -> dict[str, Any]:
     """Same shape as `notch/BarPostTradeDebriefPayload.buildJSONObject` + `BarPostTradeView` submit."""
     return {
@@ -306,7 +309,7 @@ def build_debrief_payload(
             "no_impulsive_add": True,
         },
         "moment_c_context": "cooling",
-        "moment_c_note": "Phase B harness debrief — journal sink proof.",
+        "moment_c_note": f"{DEBRIEF_SINK_NEEDLE} — journal sink proof.",
         "completed_at_ms": int(time.time() * 1000),
         "live_note": live_note,
         "emotion_out": 3,
@@ -383,8 +386,25 @@ def post_debrief_saved(item: dict[str, Any]) -> bool:
     return False
 
 
+def notes_post_text(item: dict[str, Any]) -> str:
+    """Console list shape: `notes.post` (serialized declaration notes)."""
+    notes = item.get("notes")
+    if isinstance(notes, dict):
+        post = notes.get("post")
+        if isinstance(post, str):
+            return post
+        if isinstance(post, dict):
+            return json.dumps(post, sort_keys=True)
+    post = item.get("post")
+    if isinstance(post, str):
+        return post
+    if isinstance(post, dict):
+        return json.dumps(post, sort_keys=True)
+    return ""
+
+
 def closed_trip_ready(item: dict[str, Any]) -> bool:
-    """Console journal row with closed trip and empty post (PATCH debrief allowed)."""
+    """Optional fidelity: matched/closed row before post saved (not required for debrief PATCH)."""
     if post_debrief_saved(item):
         return False
     status = str(item.get("status") or item.get("declarationStatus") or "").lower()
@@ -408,7 +428,14 @@ def closed_trip_ready(item: dict[str, Any]) -> bool:
     return False
 
 
-def debrief_journal_proven(item: dict[str, Any], needle: str) -> bool:
+def debrief_journal_proven(item: Optional[dict[str, Any]], needle: str) -> bool:
+    if not item:
+        return False
+    post_blob = notes_post_text(item)
+    if needle in post_blob:
+        return True
+    if needle in json.dumps(item):
+        return True
     return post_debrief_saved(item) and needle in json.dumps(item)
 
 
@@ -467,6 +494,7 @@ class HarnessReport:
     journal: dict[str, str] = field(default_factory=dict)
     working: dict[str, str] = field(default_factory=dict)
     debrief: dict[str, str] = field(default_factory=dict)
+    fidelity: dict[str, str] = field(default_factory=dict)
     outbox: dict[str, str] = field(default_factory=dict)
     capabilities: dict[str, Any] = field(default_factory=dict)
     holes: int = 0
@@ -504,6 +532,7 @@ class HarnessReport:
             "journal": self.journal,
             "working": self.working,
             "debrief": self.debrief,
+            "fidelity": self.fidelity,
             "outbox": self.outbox,
             "capabilities": self.capabilities,
             "holes": self.holes,
@@ -571,12 +600,18 @@ class HarnessReport:
                 lines.append(f"- **{k}**: {v}")
         else:
             lines.append("- (skipped)")
-        lines.extend(["", "## Debrief (post-trade PATCH)", ""])
+        lines.extend(["", "## Debrief (post-trade PATCH · journal sink)", ""])
         if self.debrief:
             for k, v in self.debrief.items():
                 lines.append(f"- **{k}**: {v}")
         else:
             lines.append("- (skipped)")
+        lines.extend(["", "## Match fidelity (optional · not journal sink gate)", ""])
+        if self.fidelity:
+            for k, v in self.fidelity.items():
+                lines.append(f"- **{k}**: {v}")
+        else:
+            lines.append("- (not run — use `--wait-closed-sec` to poll matched/closed status)")
         lines.extend(["", "## Toolbar capture / outbox", ""])
         if self.outbox:
             for k, v in self.outbox.items():
@@ -847,44 +882,61 @@ def run_harness(
             else:
                 report.working["verdict"] = "HONEST-DARK (no pending_declaration on live-state)"
 
-            closed_item = wait_for_closed_trip(wire, decl_id, wait_closed_sec, log)
-            debrief_needle = "Phase B harness debrief"
-            if closed_item is None:
-                report.debrief["verdict"] = (
-                    "HONEST-BLOCK (no closed trip — trade flat/round-trip on Console first; "
-                    "use --wait-closed-sec after a real fill)"
+            pre_item = find_declaration_item(wire, decl_id)
+            if pre_item is not None:
+                report.fidelity["status_before_debrief"] = str(
+                    pre_item.get("status") or pre_item.get("declarationStatus") or "?"
                 )
-                report.debrief["http"] = "skipped"
-            else:
-                debrief_body = json.dumps(
-                    build_debrief_payload(decl_id, stance)
-                ).encode("utf-8")
-                deb = wire("PATCH", "/api/daemon/bar/post-trade-debrief", debrief_body)
-                dbj = deb.json() if isinstance(deb.json(), dict) else {}
-                report.debrief["http"] = str(deb.status)
-                report.debrief["keys"] = json_top_keys(dbj)
-                err_cls, err_msg = parse_debrief_error(dbj)
-                report.debrief["error_class"] = err_cls
-                report.debrief["message"] = err_msg
-                report.debrief["ok"] = str(dbj.get("ok", ""))
-                if deb.status in (200, 201, 204) and dbj.get("ok") is not False:
-                    read_back = find_declaration_item(wire, decl_id) or closed_item
-                    if debrief_journal_proven(read_back, debrief_needle):
-                        report.debrief["verdict"] = "PASS (journal read-back shows post/debrief fields)"
-                        report.debrief["read_back"] = "yes"
-                    else:
-                        report.debrief["verdict"] = (
-                            "HONEST-DARK (PATCH ok but journal read-back inconclusive — "
-                            "check Console declarations scope)"
-                        )
-                        report.debrief["read_back"] = "inconclusive"
-                elif deb.status == 400 and "invalid_body" in err_msg.lower():
-                    report.debrief["verdict"] = (
-                        "HONEST-BLOCK HTTP 400 invalid_body (route reached; "
-                        "closed trip or body gate on Console)"
-                    )
+            if wait_closed_sec > 0:
+                closed_item = wait_for_closed_trip(wire, decl_id, wait_closed_sec, log)
+                if closed_item:
+                    report.fidelity["closed_trip_wait"] = f"PASS ({wait_closed_sec}s window)"
+                    report.fidelity["status_after_wait"] = str(closed_item.get("status", "?"))
                 else:
-                    report.debrief["verdict"] = f"FAIL HTTP {deb.status}: {err_msg or err_cls}"
+                    report.fidelity["closed_trip_wait"] = (
+                        f"not_ready (no matched/closed row within {wait_closed_sec}s)"
+                    )
+            elif pre_item and closed_trip_ready(pre_item):
+                report.fidelity["closed_trip_snapshot"] = "ready (matched/closed — optional lane)"
+            else:
+                report.fidelity["closed_trip_snapshot"] = (
+                    "not_ready (typical while pending — does not block journal sink PATCH)"
+                )
+
+            debrief_body = json.dumps(build_debrief_payload(decl_id, stance)).encode("utf-8")
+            deb = wire("PATCH", "/api/daemon/bar/post-trade-debrief", debrief_body)
+            dbj = deb.json() if isinstance(deb.json(), dict) else {}
+            report.debrief["http"] = str(deb.status)
+            report.debrief["keys"] = json_top_keys(dbj)
+            err_cls, err_msg = parse_debrief_error(dbj)
+            report.debrief["error_class"] = err_cls
+            report.debrief["message"] = err_msg
+            report.debrief["ok"] = str(dbj.get("ok", ""))
+            if deb.status in (200, 201, 204) and dbj.get("ok") is not False:
+                read_back = find_declaration_item(wire, decl_id)
+                post_excerpt = notes_post_text(read_back)[:240] if read_back else ""
+                report.debrief["notes_post_excerpt"] = post_excerpt or "(empty)"
+                if debrief_journal_proven(read_back, DEBRIEF_SINK_NEEDLE):
+                    report.debrief["verdict"] = (
+                        "PASS (PATCH ok + notes.post read-back contains moment_c_note needle)"
+                    )
+                    report.debrief["read_back"] = "yes"
+                else:
+                    report.debrief["verdict"] = (
+                        "FAIL (PATCH ok but notes.post read-back missing needle — "
+                        "check GET declarations scope/week)"
+                    )
+                    report.debrief["read_back"] = "no"
+                    report.errors.append("debrief journal read-back failed")
+            elif deb.status == 400 and "invalid_body" in err_msg.lower():
+                report.debrief["verdict"] = (
+                    "FAIL HTTP 400 invalid_body (Zod/JSON — payload must match "
+                    "BarPostTradeDebriefPayload, not a closed-trip gate)"
+                )
+                report.errors.append("debrief invalid_body")
+            else:
+                report.debrief["verdict"] = f"FAIL HTTP {deb.status}: {err_msg or err_cls}"
+                report.errors.append(f"debrief HTTP {deb.status}")
 
             if require_debrief and not report.debrief.get("verdict", "").startswith("PASS"):
                 report.errors.append("require-debrief: debrief did not PASS")
@@ -986,7 +1038,7 @@ def main(argv: list[str]) -> int:
         "--wait-closed-sec",
         type=int,
         default=0,
-        help="Poll Console declarations for closed trip before Debrief (0 = single check, no wait)",
+        help="Optional fidelity: poll for matched/closed status before PATCH (does not gate journal sink)",
     )
     parser.add_argument(
         "--require-debrief",
