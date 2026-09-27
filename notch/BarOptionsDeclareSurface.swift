@@ -182,7 +182,8 @@ enum BarCashCockpitSeed {
         case .usdm, .coinm:
             return (BarCockpitTicketOverlay.ticketW, 2)
         default:
-            return (BarCockpitTicketOverlay.ticketW, BarCockpitTicketOverlay.ticketH)
+            // Spot / equity need two mosaic rows so qty + TIF are not clipped (Hero places beside Depth).
+            return (BarCockpitTicketOverlay.ticketW, 2)
         }
     }
 
@@ -205,7 +206,8 @@ enum BarCashCockpitSeed {
     static func stripKinds(for asset: BarDeclareAssetClass) -> [StripKind] {
         switch asset {
         case .usdm, .coinm, .spot, .equity, .options:
-            return [.last, .history, .depth]
+            // Depth summary removed from top strip — detailed Depth tile stays on the mosaic.
+            return [.last, .history]
         }
     }
 }

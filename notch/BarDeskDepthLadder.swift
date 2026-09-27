@@ -26,8 +26,8 @@ struct BarDeskDepthLadder: View {
                 hole(honesty)
             } else if status.lowercased() == "success", !bids.isEmpty || !asks.isEmpty {
                 HStack(alignment: .top, spacing: 12) {
-                    column(title: "bids", rows: bids)
-                    column(title: "asks", rows: asks)
+                    column(title: "bids", rows: bids, side: .bid)
+                    column(title: "asks", rows: asks, side: .ask)
                 }
                 note
             } else {
@@ -58,19 +58,27 @@ struct BarDeskDepthLadder: View {
         }
     }
 
-    private func column(title: String, rows: [DeskDepthLevel]) -> some View {
+    private enum DepthSide {
+        case bid, ask
+
+        var header: Color { self == .bid ? BarDS.Accent.green : BarDS.Accent.red }
+        var price: Color { header }
+        var quantity: Color { header.opacity(0.72) }
+    }
+
+    private func column(title: String, rows: [DeskDepthLevel], side: DepthSide) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(BarDS.monoFont(9.5, weight: .regular))
-                .foregroundColor(BarDS.Text.muted)
+                .foregroundColor(side.header)
             ForEach(rows.prefix(20)) { row in
                 HStack(spacing: 6) {
                     Text(row.price)
                         .font(BarDS.monoFont(11, weight: .medium))
-                        .foregroundColor(BarDS.Text.primary)
+                        .foregroundColor(side.price)
                     Text(row.quantity)
                         .font(BarDS.monoFont(11, weight: .regular))
-                        .foregroundColor(BarDS.Text.secondary)
+                        .foregroundColor(side.quantity)
                     if let orders = row.orders {
                         Text(orders)
                             .font(BarDS.monoFont(10, weight: .regular))

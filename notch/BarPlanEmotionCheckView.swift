@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// Immediate tap feedback for 1–5 emotion picks (no sluggish default button animation).
+private struct BarEmotionPickButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.linear(duration: 0.07), value: configuration.isPressed)
+    }
+}
+
 /// Four 1–5 sliders + planned/reactive. Shared across cash / NFO / options Plan rails.
 struct BarPlanEmotionCheckView: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -130,7 +140,8 @@ struct BarPlanEmotionCheckView: View {
                                 ),
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(BarEmotionPickButtonStyle())
+                    .contentShape(Rectangle())
                 }
             }
         }
@@ -174,6 +185,9 @@ struct BarPlanGateStripView: View {
             gateRow("Hedge decided / none", binding: $viewModel.declGateHedge)
             autoRow("Emotion", on: emotionFilled)
             autoRow("Exit written", on: exitFilled)
+            if viewModel.declareAssetClass == .spot || viewModel.declareAssetClass == .equity {
+                gateRow("Protective SL on fill", binding: $viewModel.declProtectiveSLConsent)
+            }
             gateRow("I will debrief this", binding: $viewModel.declGateReview)
         }
     }
