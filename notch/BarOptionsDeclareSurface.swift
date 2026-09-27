@@ -128,9 +128,11 @@ enum BarCashCockpitSeed {
         switch board {
         case .cockpit:
             if depth {
+                // Depth + Ticket-C share one band (2×2 each) so vertical weight matches and Plan
+                // keeps five mosaic rows instead of six (taller row cells → more ladder rows).
                 return [
                     Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
-                    Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
+                    Tile(kind: .depth, x: 0, y: 3, w: 2, h: 2),
                 ]
             }
             return [Tile(kind: .session, x: 0, y: 0, w: 4, h: 3)]

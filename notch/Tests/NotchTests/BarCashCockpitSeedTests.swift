@@ -9,7 +9,7 @@ struct BarCashCockpitSeedTests {
         #expect(BarCashCockpitSeed.planDock == .rail)
         #expect(BarCashCockpitSeed.tiles(for: .equity) == [
             BarCashCockpitSeed.Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
-            BarCashCockpitSeed.Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
+            BarCashCockpitSeed.Tile(kind: .depth, x: 0, y: 3, w: 2, h: 2),
         ])
         #expect(BarCashCockpitSeed.tiles(for: .spot) == BarCashCockpitSeed.tiles(for: .equity))
         #expect(BarCashCockpitSeed.showsDepth(for: .equity))
@@ -19,7 +19,7 @@ struct BarCashCockpitSeedTests {
     @Test func lastOnlyCockpitHasSessionAndDepth() {
         #expect(BarCashCockpitSeed.tiles(for: .usdm) == [
             BarCashCockpitSeed.Tile(kind: .session, x: 0, y: 0, w: 4, h: 3),
-            BarCashCockpitSeed.Tile(kind: .depth, x: 0, y: 3, w: 4, h: 2),
+            BarCashCockpitSeed.Tile(kind: .depth, x: 0, y: 3, w: 2, h: 2),
         ])
         #expect(BarCashCockpitSeed.tiles(for: .coinm) == BarCashCockpitSeed.tiles(for: .usdm))
         #expect(BarCashCockpitSeed.showsDepth(for: .usdm))
@@ -82,7 +82,7 @@ struct BarCashCockpitSeedTests {
                 BarCashCockpitSeed.occupancies(for: .usdm),
                 w: usdm.w,
                 h: usdm.h
-            ) == BarCockpitTicketOverlay.Occupancy(x: 0, y: 5, w: 2, h: 2)
+            ) == BarCockpitTicketOverlay.Occupancy(x: 2, y: 3, w: 2, h: 2)
         )
     }
 

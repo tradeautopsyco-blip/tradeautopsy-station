@@ -13,21 +13,39 @@ struct BarCockpitTicketOverlayTests {
         #expect(!BarNfoCockpitSeed.tiles.map(\.kind).contains(.ticket))
     }
 
-    @Test func cashEquityOccupiedPlacesTicketBelowDepth() {
+    @Test func cashEquityOccupiedPlacesTicketBesideDepth() {
+        let size = BarCashCockpitSeed.ticketOverlaySize(for: .equity)
         #expect(
-            BarCockpitTicketOverlay.firstHole(BarCashCockpitSeed.occupancies(for: .equity), w: 2, h: 1)
-                == BarCockpitTicketOverlay.Occupancy(x: 0, y: 5, w: 2, h: 1)
+            BarCockpitTicketOverlay.firstHole(
+                BarCashCockpitSeed.occupancies(for: .equity),
+                w: size.w,
+                h: size.h,
+            )
+                == BarCockpitTicketOverlay.Occupancy(x: 2, y: 3, w: 2, h: 2)
         )
     }
 
-    @Test func usdmAndCoinmPlaceTicketBelowDepthLikeCash() {
+    @Test func usdmAndCoinmPlaceTicketBesideDepthLikeCash() {
+        let size = BarCashCockpitSeed.ticketOverlaySize(for: .usdm)
         #expect(
-            BarCockpitTicketOverlay.firstHole(BarCashCockpitSeed.occupancies(for: .usdm), w: 2, h: 1)
-                == BarCockpitTicketOverlay.Occupancy(x: 0, y: 5, w: 2, h: 1)
+            BarCockpitTicketOverlay.firstHole(
+                BarCashCockpitSeed.occupancies(for: .usdm),
+                w: size.w,
+                h: size.h,
+            )
+                == BarCockpitTicketOverlay.Occupancy(x: 2, y: 3, w: 2, h: 2)
         )
         #expect(
-            BarCockpitTicketOverlay.firstHole(BarCashCockpitSeed.occupancies(for: .coinm), w: 2, h: 1)
-                == BarCockpitTicketOverlay.firstHole(BarCashCockpitSeed.occupancies(for: .equity), w: 2, h: 1)
+            BarCockpitTicketOverlay.firstHole(
+                BarCashCockpitSeed.occupancies(for: .coinm),
+                w: size.w,
+                h: size.h,
+            )
+                == BarCockpitTicketOverlay.firstHole(
+                    BarCashCockpitSeed.occupancies(for: .equity),
+                    w: size.w,
+                    h: size.h,
+                )
         )
     }
 
@@ -55,6 +73,22 @@ struct BarCockpitMosaicMetricsTests {
             spacing: 8
         )
         #expect(abs(row - 60) < 0.001)
+    }
+
+    @Test func cashCockpitWithTicketUsesFiveMosaicRows() {
+        let rows = max(
+            1,
+            BarCashCockpitSeed.tiles(for: .spot).map { $0.y + $0.h }.max() ?? 1,
+        )
+        let withTicket = BarCockpitTicketOverlay.firstHole(
+            BarCashCockpitSeed.occupancies(for: .spot),
+            w: 2,
+            h: 2,
+        )
+        let totalRows = max(rows, withTicket.y + withTicket.h)
+        #expect(totalRows == 5)
+        let row = BarCockpitMosaicMetrics.rowHeight(in: 400, rows: totalRows, spacing: 8)
+        #expect(row > 72)
     }
 
     @Test func unconstrainedBoardKeepsMinimumRowHeight() {
