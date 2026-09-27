@@ -19,23 +19,27 @@ struct BarDeskDepthLadder: View {
     let physicsNote: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if !display {
                 hole(.unavailable)
             } else if let honesty = HonestyStatus.fromWire(status) {
                 hole(honesty)
             } else if status.lowercased() == "success", !bids.isEmpty || !asks.isEmpty {
-                HStack(alignment: .top, spacing: 12) {
-                    column(title: "bids", rows: bids, side: .bid)
-                    column(title: "asks", rows: asks, side: .ask)
+                ScrollView(.vertical, showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 10) {
+                        column(title: "bids", rows: bids, side: .bid)
+                        column(title: "asks", rows: asks, side: .ask)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 note
             } else {
                 hole(.unavailable)
             }
         }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(BarDS.Fill.elevated)
         .clipShape(RoundedRectangle(cornerRadius: BarDS.Radius.small, style: .continuous))
         .overlay(
@@ -67,22 +71,28 @@ struct BarDeskDepthLadder: View {
     }
 
     private func column(title: String, rows: [DeskDepthLevel], side: DepthSide) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(BarDS.monoFont(9.5, weight: .regular))
                 .foregroundColor(side.header)
+                .padding(.bottom, 1)
             ForEach(rows.prefix(20)) { row in
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Text(row.price)
-                        .font(BarDS.monoFont(11, weight: .medium))
+                        .font(BarDS.monoFont(10.5, weight: .medium))
                         .foregroundColor(side.price)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     Text(row.quantity)
-                        .font(BarDS.monoFont(11, weight: .regular))
+                        .font(BarDS.monoFont(10.5, weight: .regular))
                         .foregroundColor(side.quantity)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     if let orders = row.orders {
                         Text(orders)
-                            .font(BarDS.monoFont(10, weight: .regular))
+                            .font(BarDS.monoFont(9.5, weight: .regular))
                             .foregroundColor(BarDS.Text.muted)
+                            .lineLimit(1)
                     }
                 }
             }
