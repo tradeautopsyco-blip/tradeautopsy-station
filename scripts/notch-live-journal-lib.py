@@ -91,29 +91,50 @@ def port_open(host: str, port: int, timeout: float = 0.4) -> bool:
         return False
 
 
-def pid_on_port(port: int) -> Optional[int]:
+def pids_on_port(port: int) -> list[int]:
+    """PIDs touching the port; LISTEN first when lsof can distinguish."""
     try:
         out = subprocess.check_output(
             ["ss", "-ltnp", f"sport = :{port}"],
             stderr=subprocess.DEVNULL,
             text=True,
         )
+        found: list[int] = []
+        for line in out.splitlines():
+            m = re.search(r"pid=(\d+)", line)
+            if m:
+                pid = int(m.group(1))
+                if pid not in found:
+                    found.append(pid)
+        if found:
+            return found
     except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    # Prefer LISTEN — plain `lsof -i :port -t` lists Station clients before the agent.
+    for args in (
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+        ["lsof", "-i", f":{port}", "-t"],
+    ):
         try:
-            out = subprocess.check_output(
-                ["lsof", "-i", f":{port}", "-t"],
-                stderr=subprocess.DEVNULL,
-                text=True,
-            )
-            line = out.strip().splitlines()
-            return int(line[0]) if line else None
-        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            return None
-    for line in out.splitlines():
-        m = re.search(r"pid=(\d+)", line)
-        if m:
-            return int(m.group(1))
-    return None
+            out = subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+        found = []
+        for line in out.strip().splitlines():
+            try:
+                pid = int(line.strip())
+            except ValueError:
+                continue
+            if pid not in found:
+                found.append(pid)
+        if found:
+            return found
+    return []
+
+
+def pid_on_port(port: int) -> Optional[int]:
+    pids = pids_on_port(port)
+    return pids[0] if pids else None
 
 
 def agent_cmdline(pid: int) -> str:
@@ -834,7 +855,8 @@ def run_harness(
             report.journal["declaration_in_list"] = "yes" if in_list else "no"
 
             live = wire("GET", "/api/daemon/bar/live-state")
-            lj = live.json() if isinstance(lj.json(), dict) else {}
+            live_parsed = live.json()
+            lj = live_parsed if isinstance(live_parsed, dict) else {}
             report.working["live_state_http"] = str(live.status)
             notch = lj.get("notch") if isinstance(lj, dict) else {}
             if isinstance(notch, dict):

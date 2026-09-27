@@ -77,6 +77,8 @@ Future loopback inject sketch: [`plans/FILL-MATCHED-INJECT-SKETCH.md`](FILL-MATC
 
 Never log `AGENT_DAEMON_SECRET`. Harness never places broker orders.
 
+**Mac secret discovery:** resolve the listener PID with `lsof -nP -iTCP:9137 -sTCP:LISTEN -t` before plain `lsof -i :9137 -t`. Otherwise Station’s outbound client sockets can sort ahead of the agent and `ps eww` misses `AGENT_DAEMON_SECRET` (Gate A FAIL). Linux uses `ss -ltnp` first (unchanged).
+
 ## CI
 
 Not run from `dogfood-suite.sh` by default.
