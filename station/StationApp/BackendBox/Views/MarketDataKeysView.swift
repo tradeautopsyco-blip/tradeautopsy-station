@@ -9,55 +9,52 @@ public struct MarketDataKeysView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Market Data")
-                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
-                    .foregroundStyle(StationDS.Text.primary)
-
-                Text("Store a Keychain key for a shipping vendor. Paste a key, not a URL.")
-                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(StationDS.Text.muted)
-
+        DeskPageShell(
+            title: "Market Data",
+            subtitle: "Store a Keychain key for a shipping vendor. Paste a key, not a URL."
+        ) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
                 Text(viewModel.provenanceStrip(for: viewModel.selectedProvider))
-                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                    .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
                     .foregroundStyle(StationDS.Text.labels)
 
                 if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
-                        .foregroundStyle(StationDS.Text.labels)
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.callout))
+                        .foregroundStyle(StationDS.Accent.amber)
                 }
 
                 addKeySection
                 keyListSection
             }
-            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.loadKeys()
         }
     }
 
     private var addKeySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Add key")
-                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                .foregroundStyle(StationDS.Text.primary)
+        DeskCard(title: "Add key") {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x1) {
+                Picker("Provider", selection: $viewModel.selectedProvider) {
+                    ForEach(MarketDataProvider.allCases) { provider in
+                        Text(provider.rawValue).tag(provider)
+                    }
+                }
+                .pickerStyle(.menu)
 
-            Picker("Provider", selection: $viewModel.selectedProvider) {
-                ForEach(MarketDataProvider.allCases) { provider in
-                    Text(provider.rawValue).tag(provider)
+                if viewModel.selectedProvider.requiresKey {
+                    SecureField("API key", text: $viewModel.draftAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                } else {
+                    Text("AMFI is a public labs file. No key. Enable and pick a fetch mode.")
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.muted)
                 }
             }
-            .pickerStyle(.menu)
-
+        } footer: {
             if viewModel.selectedProvider.requiresKey {
-                SecureField("API key", text: $viewModel.draftAPIKey)
-                    .textFieldStyle(.roundedBorder)
-
                 Button("Save key") {
                     Task {
                         try? await viewModel.addKey(
@@ -66,84 +63,85 @@ public struct MarketDataKeysView: View {
                         )
                     }
                 }
+                .buttonStyle(.deskPrimary)
                 .disabled(viewModel.draftAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            } else {
-                Text("AMFI is a public labs file. No key. Enable and pick a fetch mode.")
-                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
-                    .foregroundStyle(StationDS.Text.muted)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
     }
 
     @ViewBuilder
     private var keyListSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Bindings")
-                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                .foregroundStyle(StationDS.Text.primary)
-
-            ForEach(viewModel.keys) { entry in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.provider.rawValue)
-                                .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                                .foregroundStyle(StationDS.Text.primary)
-                            Text(entry.maskedValue)
-                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                                .foregroundStyle(StationDS.Text.muted)
-                            Text(entry.enabled ? "Enabled" : "Disabled")
-                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                                .foregroundStyle(StationDS.Text.labels)
-                            if entry.provider.requiresKey {
-                                Text(validationLabel(for: entry.validationState))
-                                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                                    .foregroundStyle(StationDS.Text.labels)
-                            }
-                            if let status = entry.lastObtainStatus {
-                                Text("Last obtain: \(status)")
-                                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                                    .foregroundStyle(StationDS.Text.labels)
-                            }
-                        }
-                        Spacer()
-                        if entry.enabled {
-                            Button("Disable") {
-                                Task { try? await viewModel.disable(id: entry.id) }
-                            }
-                        } else {
-                            Button("Enable") {
-                                Task { try? await viewModel.enable(id: entry.id) }
-                            }
-                        }
-                        if entry.provider.requiresKey {
-                            Button("Delete", role: .destructive) {
-                                Task { try? await viewModel.deleteKey(id: entry.id) }
-                            }
-                        }
+        if viewModel.keys.isEmpty {
+            Text("No market data bindings yet.")
+                .font(DeskChrome.sans(DeskChrome.TypeScale.body))
+                .foregroundStyle(StationDS.Text.muted)
+        } else {
+            DeskCard(title: "Bindings") {
+                VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
+                    ForEach(viewModel.keys) { entry in
+                        bindingRow(entry)
                     }
-                    Picker("Fetch", selection: fetchModeBinding(for: entry)) {
-                        ForEach(VendorFetchMode.allCases, id: \.self) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    Button("Obtain now") {
-                        Task { await viewModel.obtainNow(id: entry.id) }
-                    }
-                    .disabled(!entry.enabled)
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                )
             }
+        }
+    }
+
+    private func bindingRow(_ entry: MarketDataKeyListItem) -> some View {
+        VStack(alignment: .leading, spacing: DeskChrome.Space.x1) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.provider.rawValue)
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.callout, weight: .medium))
+                        .foregroundStyle(StationDS.Text.primary)
+                    Text(entry.maskedValue)
+                        .font(DeskChrome.mono(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.muted)
+                    Text(entry.enabled ? "Enabled" : "Disabled")
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.labels)
+                    if entry.provider.requiresKey {
+                        Text(validationLabel(for: entry.validationState))
+                            .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                            .foregroundStyle(StationDS.Text.labels)
+                    }
+                    if let status = entry.lastObtainStatus {
+                        Text("Last obtain: \(status)")
+                            .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                            .foregroundStyle(StationDS.Text.labels)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 6) {
+                    if entry.enabled {
+                        Button("Disable") { Task { try? await viewModel.disable(id: entry.id) } }
+                            .buttonStyle(.deskSecondary)
+                    } else {
+                        Button("Enable") { Task { try? await viewModel.enable(id: entry.id) } }
+                            .buttonStyle(.deskSecondary)
+                    }
+                    if entry.provider.requiresKey {
+                        Button("Delete", role: .destructive) {
+                            Task { try? await viewModel.deleteKey(id: entry.id) }
+                        }
+                        .buttonStyle(.deskDestructive)
+                    }
+                }
+            }
+            Picker("Fetch", selection: fetchModeBinding(for: entry)) {
+                ForEach(VendorFetchMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            Button("Obtain now") { Task { await viewModel.obtainNow(id: entry.id) } }
+                .buttonStyle(.deskSecondary)
+                .disabled(!entry.enabled)
+        }
+        .padding(.vertical, DeskChrome.Space.x1)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(StationDS.Border.divider)
+                .frame(height: StationDS.borderThin)
         }
     }
 

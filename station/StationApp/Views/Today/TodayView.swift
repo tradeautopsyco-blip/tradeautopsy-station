@@ -21,13 +21,25 @@ public struct TodayView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+        DeskPageShell(title: "Today", subtitle: layoutHeaderSubtitle) {
+            HStack(spacing: DeskChrome.Space.x1) {
+                Picker("Layout", selection: layoutBinding) {
+                    Text(TodayLayoutMode.daySpine.title).tag(TodayLayoutMode.daySpine)
+                    Text(TodayLayoutMode.splitClocks.title).tag(TodayLayoutMode.splitClocks)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 280)
+                .accessibilityLabel("Today layout")
+                Button("Open Notch · Live") { onOpenNotch?() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(StationDS.Accent.teal)
+                    .controlSize(.small)
+            }
+        } content: {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
                     Text(viewModel.presentation.takeaway)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                        .foregroundStyle(StationDS.Text.secondary)
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.headline, weight: .semibold))
+                        .foregroundStyle(StationDS.Text.primary)
                     if viewModel.presentation.showDegradedBanner,
                        let text = viewModel.presentation.degradedBannerText {
                         degradedBanner(text)
@@ -42,13 +54,10 @@ public struct TodayView: View {
                         splitClocks
                     }
                     Text(viewModel.presentation.caption)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
                         .foregroundStyle(StationDS.Text.muted)
-                }
-                .padding(16)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.load()
             await journalViewModel.load()
@@ -67,34 +76,6 @@ public struct TodayView: View {
             get: { inspector },
             set: { inspector = $0 }
         )
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            Text("Today")
-                .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
-                .foregroundStyle(StationDS.Text.primary)
-            Text(layoutHeaderSubtitle)
-                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
-                .foregroundStyle(StationDS.Text.muted)
-            Spacer()
-            Picker("Layout", selection: layoutBinding) {
-                Text(TodayLayoutMode.daySpine.title).tag(TodayLayoutMode.daySpine)
-                Text(TodayLayoutMode.splitClocks.title).tag(TodayLayoutMode.splitClocks)
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 280)
-            .accessibilityLabel("Today layout")
-            Button("Open Notch · Live") { onOpenNotch?() }
-                .buttonStyle(.borderedProminent)
-                .tint(StationDS.Accent.teal)
-                .controlSize(.small)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 44)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(StationDS.Border.divider).frame(height: StationDS.borderThin)
-        }
     }
 
     private var layoutBinding: Binding<TodayLayoutMode> {
@@ -253,9 +234,13 @@ public struct TodayView: View {
     }
 
     private func closedFloorChart(mini: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("This day only — closed P&L vs floor")
-                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+        VStack(alignment: .leading, spacing: DeskChrome.Space.x1) {
+            Text(viewModel.desk.chartReadout)
+                .font(DeskChrome.sans(DeskChrome.TypeScale.callout, weight: .medium))
+                .foregroundStyle(StationDS.Text.primary)
+                .accessibilityLabel("Closed P and L summary")
+            Text("Closed P&L vs daily floor — open MTM is not included.")
+                .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
                 .foregroundStyle(StationDS.Text.secondary)
             TodayClosedFloorChart(
                 points: viewModel.desk.chartPoints,
@@ -266,10 +251,13 @@ public struct TodayView: View {
             )
             .frame(maxWidth: .infinity)
             .frame(height: mini ? 88 : 156)
-            Text(viewModel.desk.chartReadout)
-                .font(StationDS.monoFont(StationDS.FontSize.bodyXS))
-                .foregroundStyle(StationDS.Text.muted)
         }
+        .padding(DeskChrome.Space.cardInset)
+        .background(DeskChrome.cardFill, in: RoundedRectangle(cornerRadius: DeskChrome.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: DeskChrome.cardRadius, style: .continuous)
+                .stroke(DeskChrome.cardStroke, lineWidth: StationDS.borderThin)
+        )
     }
 
     private var remainingUsedLine: String {

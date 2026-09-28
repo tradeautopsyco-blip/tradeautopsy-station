@@ -44,10 +44,10 @@ public struct JournalView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Journal")
-                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .semibold))
+                    .font(DeskChrome.sans(DeskChrome.TypeScale.largeTitle, weight: .bold))
                     .foregroundStyle(StationDS.Text.primary)
                 Text("Every declaration that hit Console · local week, then the hosted sheet")
-                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
+                    .font(DeskChrome.sans(DeskChrome.TypeScale.callout))
                     .foregroundStyle(StationDS.Text.muted)
             }
             Spacer()

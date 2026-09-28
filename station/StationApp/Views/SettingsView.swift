@@ -21,27 +21,19 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Settings")
-                        .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
-                        .foregroundStyle(StationDS.Text.primary)
-                    Text("This Mac · limits sync to the Notch · they do not fire Kill")
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
-                        .foregroundStyle(StationDS.Text.muted)
-                }
-
+        DeskPageShell(
+            title: "Settings",
+            subtitle: "This Mac · limits sync to the Notch · they do not fire Kill"
+        ) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x3) {
                 generalGroup
                 riskLimitsGroup
                 notchGroup
                 softwareUpdatesGroup
                 privacyGroup
             }
-            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(StationDS.Fill.appPanel)
         .onAppear { seedLimitFields() }
         .onDisappear { commitLimit(focusedLimit) }

@@ -8,25 +8,20 @@ public struct BrokersView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Brokers")
-                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
-                    .foregroundStyle(StationDS.Text.primary)
-
-                Text("Connect a broker to sync fills, balances, and open orders.")
-                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(StationDS.Text.muted)
-
+        DeskPageShell(
+            title: "Brokers",
+            subtitle: "Connect a broker to sync fills, balances, and open orders."
+        ) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
                 if let keychainGrantHint = viewModel.keychainGrantHint {
                     Text(keychainGrantHint)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
                         .foregroundStyle(StationDS.Text.muted)
                 }
 
                 if let syncActionMessage = viewModel.syncActionMessage {
                     Text(syncActionMessage)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.callout))
                         .foregroundStyle(StationDS.Accent.amber)
                 }
 
@@ -52,10 +47,8 @@ public struct BrokersView: View {
                     )
                 }
             }
-            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.load()
             while !Task.isCancelled {

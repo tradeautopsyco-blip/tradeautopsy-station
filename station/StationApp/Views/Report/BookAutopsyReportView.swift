@@ -42,54 +42,31 @@ public struct BookAutopsyReportView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .topLeading) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    breadcrumb
-                    Text("Book autopsy")
-                        .font(StationDS.bodyFont(StationDS.FontSize.metricValue + 4, weight: .semibold))
-                        .foregroundStyle(WorkspaceChrome.text)
-                        .padding(.top, 8)
+        DeskPageShell(
+            title: "Report",
+            subtitle: "Book autopsy · closed-day patterns by broker."
+        ) {
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
                     if let search = presentation.search {
                         searchChip(search)
-                            .padding(.top, 10)
                     }
                     cards
-                        .padding(.top, 16)
                     chart
-                        .padding(.top, 20)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
                 .frame(maxWidth: 720, alignment: .leading)
-            }
 
-            if let peek {
-                peekCard(peek)
-                    .padding(.leading, 24)
-                    .padding(.top, 168)
+                if let peek {
+                    peekCard(peek)
+                        .padding(.top, 120)
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(WorkspaceChrome.ground)
         .accessibilityIdentifier("workspace-report")
         .onExitCommand {
             guard selectedSymbol != nil else { return }
             selectedSymbol = nil
         }
-    }
-
-    private var breadcrumb: some View {
-        HStack(spacing: 4) {
-            Text("Report")
-                .foregroundStyle(WorkspaceChrome.muted)
-            Text("/")
-                .foregroundStyle(WorkspaceChrome.faint)
-            Text("Book autopsy")
-                .foregroundStyle(StationDS.Text.section)
-        }
-        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall))
     }
 
     private func searchChip(_ search: BookAutopsySearch) -> some View {

@@ -9,121 +9,89 @@ struct BrokerCardView: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(card.displayName)
-                        .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .medium))
-                        .foregroundStyle(StationDS.Text.primary)
-
-                    if let booksLine = card.booksLine {
-                        Text(booksLine)
-                            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                            .foregroundStyle(StationDS.Text.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    HStack(spacing: 6) {
-                        Text(card.assetClass.capitalized)
-                            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
-                            .foregroundStyle(StationDS.Text.muted)
-                        Text(card.quoteCurrency)
-                            .font(StationDS.monoFont(StationDS.FontSize.bodyXS, weight: .medium))
-                            .foregroundStyle(StationDS.Text.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(StationDS.Fill.input)
-                            .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
-                            .accessibilityLabel("Quote currency \(card.quoteCurrency)")
-                    }
+        DeskCard(title: card.displayName, status: statusPill) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x1) {
+                if let booksLine = card.booksLine {
+                    Text(booksLine)
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Spacer()
+                HStack(spacing: 6) {
+                    Text(card.assetClass.capitalized)
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.muted)
+                    Text(card.quoteCurrency)
+                        .font(DeskChrome.mono(DeskChrome.TypeScale.footnote))
+                        .foregroundStyle(StationDS.Text.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(StationDS.Fill.input)
+                        .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
+                        .accessibilityLabel("Quote currency \(card.quoteCurrency)")
+                }
 
-                statusBadge
+                if card.plannedLabel == nil
+                    || BrokerDogfoodProgram.showsConnectBetaBadge(slug: card.id)
+                    || BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: card.id) {
+                    if let validated = card.lastValidatedAtText {
+                        metadataRow(label: "Last validated", value: validated)
+                    }
+
+                    if let synced = card.lastSyncedAtText {
+                        metadataRow(label: "Last synced", value: synced)
+                    } else if let summary = card.lastSyncSummary {
+                        metadataRow(label: "Sync", value: summary)
+                    }
+
+                    if let warning = card.permissionWarning {
+                        Text(BrokerPermissionWarningCopy.label(for: warning))
+                            .font(DeskChrome.sans(DeskChrome.TypeScale.callout))
+                            .foregroundStyle(StationDS.Accent.amber)
+                    }
+                }
             }
-
+        } footer: {
             if card.plannedLabel == nil
                 || BrokerDogfoodProgram.showsConnectBetaBadge(slug: card.id)
                 || BrokerDogfoodProgram.allowsConnectWhilePlanned(slug: card.id) {
-                if let validated = card.lastValidatedAtText {
-                    metadataRow(label: "Last validated", value: validated)
-                }
-
-                if let synced = card.lastSyncedAtText {
-                    metadataRow(label: "Last synced", value: synced)
-                } else if let summary = card.lastSyncSummary {
-                    metadataRow(label: "Sync", value: summary)
-                }
-
-                if card.isConnectable {
-                    Button("Connect", action: onConnect)
-                    .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-                    .foregroundStyle(StationDS.Text.primary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(StationDS.Fill.input)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: StationDS.Radius.small)
-                            .stroke(StationDS.Border.outlineBtn, lineWidth: StationDS.borderThin)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
-                }
-
-                if let warning = card.permissionWarning {
-                    Text(BrokerPermissionWarningCopy.label(for: warning))
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .regular))
-                        .foregroundStyle(StationDS.Accent.amber)
-                }
-
-                if card.identity != nil {
-                    HStack(spacing: 8) {
+                HStack(spacing: DeskChrome.Space.x1) {
+                    if card.isConnectable {
+                        Button("Connect", action: onConnect)
+                            .buttonStyle(.deskPrimary)
+                    }
+                    if card.identity != nil {
                         if card.isEditEnabled {
-                            controlButton(title: "Edit", enabled: true, action: onEdit)
+                            Button("Edit", action: onEdit)
+                                .buttonStyle(.deskSecondary)
                         }
-                        controlButton(title: "Start", enabled: card.isStartEnabled, action: onStart)
-                        controlButton(title: "Stop", enabled: card.isStopEnabled, action: onStop)
-                        controlButton(
-                            title: "Delete",
-                            enabled: card.isDeleteEnabled,
-                            action: onDelete
-                        )
+                        Button("Start", action: onStart)
+                            .buttonStyle(.deskSecondary)
+                            .disabled(!card.isStartEnabled)
+                        Button("Stop", action: onStop)
+                            .buttonStyle(.deskSecondary)
+                            .disabled(!card.isStopEnabled)
+                        Button("Delete", role: .destructive, action: onDelete)
+                            .buttonStyle(.deskDestructive)
+                            .disabled(!card.isDeleteEnabled)
                     }
                 }
             }
         }
-        .padding(16)
-        .background(StationDS.Fill.card)
-        .overlay(
-            RoundedRectangle(cornerRadius: StationDS.Radius.card)
-                .stroke(StationDS.Border.card, lineWidth: StationDS.borderThin)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.card))
         .opacity(card.plannedLabel != nil && card.identity == nil ? 0.55 : 1)
     }
 
-    private var statusBadge: some View {
-        Text(card.plannedLabel ?? card.statusLabel)
-            .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .medium))
-            .foregroundStyle(statusColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(statusColor.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
+    private var statusPill: DeskStatusPill {
+        DeskStatusPill(text: card.plannedLabel ?? card.statusLabel, tone: pillTone)
     }
 
-    private var statusColor: Color {
+    private var pillTone: DeskStatusPill.Tone {
         switch card.status {
-        case .connected, .syncing:
-            return StationDS.Accent.green
-        case .degraded, .rateLimited, .unavailableAgentOffline:
-            return StationDS.Accent.amber
-        case .failed:
-            return StationDS.Accent.red
-        case .paused, .readyToStart, .validating:
-            return StationDS.Accent.blue
-        case .notConfigured:
-            return StationDS.Text.secondary
+        case .connected, .syncing: return .success
+        case .failed: return .danger
+        case .degraded, .rateLimited, .unavailableAgentOffline: return .warning
+        default: return .neutral
         }
     }
 
@@ -138,18 +106,4 @@ struct BrokerCardView: View {
         }
     }
 
-    private func controlButton(title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
-            .foregroundStyle(enabled ? StationDS.Text.primary : StationDS.Text.muted)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(StationDS.Fill.input)
-            .overlay(
-                RoundedRectangle(cornerRadius: StationDS.Radius.small)
-                    .stroke(StationDS.Border.outlineBtn, lineWidth: StationDS.borderThin)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: StationDS.Radius.small))
-            .disabled(!enabled)
-    }
 }

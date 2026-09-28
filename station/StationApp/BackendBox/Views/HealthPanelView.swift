@@ -8,42 +8,42 @@ public struct HealthPanelView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Health")
-                    .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
-                    .foregroundStyle(StationDS.Text.primary)
-                Text("Station · Backend Box · Kill · Harness. Vendor meters hang under Box. Keys never appear.")
-                    .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
-                    .foregroundStyle(StationDS.Text.muted)
-
+        DeskPageShell(
+            title: "Health",
+            subtitle: "Agent, Backend Box, and harness status. Keys never appear here."
+        ) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x2) {
                 ForEach(viewModel.chrome.rows) { row in
                     healthCard(row)
                 }
             }
-            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StationDS.Fill.appPanel)
         .task {
             await viewModel.refresh()
         }
     }
 
     private func healthCard(_ row: HealthPanelChrome.Row) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            healthLine(row, indent: false)
-            ForEach(row.children) { child in
-                healthLine(child, indent: true)
+        DeskCard(
+            title: row.title,
+            status: DeskStatusPill(text: row.status, tone: pillTone(row.status))
+        ) {
+            VStack(alignment: .leading, spacing: DeskChrome.Space.x1) {
+                healthLine(row, indent: false)
+                ForEach(row.children) { child in
+                    healthLine(child, indent: true)
+                }
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
+    }
+
+    private func pillTone(_ status: String) -> DeskStatusPill.Tone {
+        switch status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "up", "idle": return .success
+        case "down", "error", "failed": return .danger
+        default: return .warning
+        }
     }
 
     private func healthLine(_ row: HealthPanelChrome.Row, indent: Bool) -> some View {
@@ -53,14 +53,10 @@ public struct HealthPanelView: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                if indent {
                     Text(row.title)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodySmall, weight: .medium))
+                        .font(DeskChrome.sans(DeskChrome.TypeScale.callout, weight: .medium))
                         .foregroundStyle(StationDS.Text.primary)
-                    Spacer()
-                    Text(row.status)
-                        .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .medium))
-                        .foregroundStyle(statusColor(row.status))
                 }
                 Text(row.what)
                     .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .regular))
