@@ -2,38 +2,42 @@ import SwiftUI
 
 public struct StationShellView: View {
     @ObservedObject private var coordinator: StationAppCoordinator
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @ObservedObject private var today: TodayViewModel
+    @ObservedObject private var brokers: BrokersViewModel
+    @State private var railCollapsed = false
+    @State private var selectedSymbol: String?
+    @State private var selectedSearch: BookAutopsySearch?
 
     public init(coordinator: StationAppCoordinator) {
         self.coordinator = coordinator
+        self.today = coordinator.todayViewModel
+        self.brokers = coordinator.brokersViewModel
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            SessionPulseStrip(
-                viewModel: coordinator.sessionModel,
-                coordinator: coordinator
-            )
-
             notificationBanner
 
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                StationSidebarList(coordinator: coordinator)
-                    .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
-            } detail: {
+            HStack(spacing: 0) {
+                StationSidebarList(
+                    coordinator: coordinator,
+                    collapsed: $railCollapsed,
+                    selectedSymbol: $selectedSymbol,
+                    selectedSearch: $selectedSearch
+                )
+                .frame(width: railCollapsed ? WorkspaceChrome.railCollapsedWidth : WorkspaceChrome.railWidth)
+
+                Rectangle()
+                    .fill(WorkspaceChrome.line)
+                    .frame(width: 1)
+
                 routeContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(StationDS.Fill.appPanel)
-                    .navigationTitle(coordinator.activeRoute.rawValue)
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    AgentHealthToolbarStatus(coordinator: coordinator)
-                }
+                    .background(WorkspaceChrome.ground)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StationDS.Fill.appPanel)
+        .background(WorkspaceChrome.ground)
         .tint(StationDS.Accent.teal)
     }
 
@@ -79,6 +83,15 @@ public struct StationShellView: View {
             )
         case .journal:
             JournalView(viewModel: coordinator.journalViewModel, onOpenNotch: { coordinator.toggleNotch() })
+        case .report:
+            BookAutopsyReportView(
+                today: today,
+                brokers: brokers,
+                selectedSymbol: $selectedSymbol,
+                selectedSearch: $selectedSearch,
+                onOpenJournal: { coordinator.navigateTo(.journal) },
+                onOpenNotch: { coordinator.toggleNotch() }
+            )
         case .settings:
             SettingsView(coordinator: coordinator)
         }

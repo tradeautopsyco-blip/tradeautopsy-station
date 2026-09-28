@@ -13,6 +13,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
     case health = "Health"
     case marketData = "Market Data"
     case aiWorkflow = "AI / Workflow"
+    case report = "Report"
     case settings = "Settings"
 
     public var isDesk: Bool {
@@ -27,7 +28,7 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
         switch self {
         case .today:
             return .session
-        case .journal, .brokers, .health, .marketData, .aiWorkflow, .settings:
+        case .journal, .brokers, .health, .marketData, .aiWorkflow, .report, .settings:
             return .desk
         }
     }
@@ -40,8 +41,14 @@ public enum StationRoute: String, CaseIterable, Codable, Hashable {
         case .health: return "heart.text.square"
         case .marketData: return "chart.line.uptrend.xyaxis"
         case .aiWorkflow: return "sparkles"
+        case .report: return "chart.bar"
         case .settings: return "gear"
         }
+    }
+
+    /// Rail order. Report sits with the desk, Settings stays reachable.
+    public static var workspaceRoutes: [StationRoute] {
+        [.today, .journal, .brokers, .health, .marketData, .aiWorkflow, .report, .settings]
     }
 
     public static var sessionRoutes: [StationRoute] {

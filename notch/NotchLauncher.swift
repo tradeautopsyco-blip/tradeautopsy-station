@@ -94,7 +94,8 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         if panelController == nil {
             panelController = NotchPanelController(
                 viewModel: viewModel,
-                hostedExpandedContent: hostedExpandedContent
+                hostedExpandedContent: hostedExpandedContent,
+                hidesCollapsedPill: isHostedByStation
             )
         }
         if killSwitchOverlayController == nil {
@@ -106,9 +107,13 @@ public final class NotchLauncher: NSObject, NotchLauncherHost {
         installFnKeyMonitorsIfNeeded()
         viewModel.ensureDictationWired()
         viewModel.startPolling()
-        panelController?.show()
-        // First ⌥Space must not pay for a cold SwiftUI mount of the PLAN tree: `show()` mounts
-        // the expanded layer at final size (opacity 0, hit-test off) and pre-warms the backdrop.
+        if isHostedByStation {
+            // Closed pill stays off screen. ⌥Space / Open Notch expand via `toggle()`.
+            panelController?.prepareOffscreen()
+        } else {
+            panelController?.show()
+        }
+        // First ⌥Space must not pay for a cold SwiftUI mount of the PLAN tree.
         panelController?.prewarmExpandedSurface()
     }
 

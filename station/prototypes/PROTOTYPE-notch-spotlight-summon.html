@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<!-- PROTOTYPE — throwaway. Not production.
+     Question: how should the Station notch appear and disappear?
+     Three motions, same PLAN card, switchable via ?variant= and the bottom bar.
+     Space summons and dismisses. ← → cycles variants. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Notch summon</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bar: 28px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    overflow: hidden;
+    background: #1c1c1e;
+  }
+  .desktop {
+    position: relative;
+    height: 100%;
+    background:
+      radial-gradient(900px 520px at 18% 80%, rgba(90, 140, 220, 0.55), transparent 60%),
+      radial-gradient(700px 480px at 82% 30%, rgba(220, 140, 70, 0.45), transparent 55%),
+      radial-gradient(600px 400px at 50% 60%, rgba(40, 90, 70, 0.4), transparent 50%),
+      linear-gradient(160deg, #3a4a62 0%, #1a2433 42%, #2a211c 100%);
+  }
+  .menubar {
+    height: var(--bar);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 14px;
+    color: rgba(255,255,255,0.92);
+    font-size: 13px;
+    font-weight: 560;
+    background: rgba(30, 30, 32, 0.45);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  }
+  .menubar .spacer { flex: 1; }
+  .menubar .clock { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .stage { position: absolute; inset: var(--bar) 0 0 0; }
+  .panel {
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    width: 760px;
+    height: 460px;
+    transform-origin: top center;
+    overflow: hidden;
+    pointer-events: none;
+    will-change: transform, opacity, width, height, border-radius;
+  }
+  .panel.open { pointer-events: auto; }
+  .fill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+  .fill.glass {
+    background: rgba(22, 22, 24, 0.42);
+    backdrop-filter: blur(40px) saturate(1.6);
+    -webkit-backdrop-filter: blur(40px) saturate(1.6);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.28),
+      0 28px 70px rgba(0,0,0,0.38);
+  }
+  .fill.solid {
+    background: #0d0d0d;
+    box-shadow: 0 28px 50px rgba(0,0,0,0.55);
+  }
+  .fill.island {
+    background: rgba(12, 12, 14, 0.92);
+    box-shadow: 0 22px 50px rgba(0,0,0,0.5);
+  }
+  .stroke {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255,255,255,0.16);
+    pointer-events: none;
+  }
+  .content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    color: rgba(255,255,255,0.92);
+  }
+  .rail {
+    width: 168px;
+    padding: 18px 12px;
+    background: rgba(255,255,255,0.04);
+    border-right: 1px solid rgba(255,255,255,0.08);
+  }
+  .rail h2 {
+    margin: 0 0 14px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+    font-weight: 600;
+  }
+  .rail button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+  .rail button.on { background: rgba(255,255,255,0.08); }
+  .main { flex: 1; padding: 22px 24px; }
+  .main h1 { margin: 0 0 6px; font-size: 22px; font-weight: 620; letter-spacing: -0.02em; }
+  .main p { margin: 0 0 18px; color: rgba(255,255,255,0.55); font-size: 13px; }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 14px;
+  }
+  .row span { color: rgba(255,255,255,0.45); }
+  .state {
+    position: absolute;
+    left: 16px;
+    bottom: 72px;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.72);
+    color: #f2f2f2;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre;
+    z-index: 5;
+  }
+  .hint {
+    position: absolute;
+    right: 16px;
+    bottom: 78px;
+    color: rgba(255,255,255,0.75);
+    font-size: 12px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  }
+  .switcher {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    border-radius: 999px;
+    background: #111;
+    color: #fff;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    z-index: 9;
+  }
+  .switcher button {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 999px;
+    background: #2a2a2a;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .switcher .label {
+    min-width: 220px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="desktop">
+  <div class="menubar">
+    <span></span>
+    <span>TradeAutopsy</span>
+    <span class="spacer"></span>
+    <span>Mon 28 Sep</span>
+    <span class="clock" id="clock">7:59 PM</span>
+  </div>
+  <div class="stage">
+    <div class="panel" id="panel">
+      <div class="fill" id="fill"></div>
+      <div class="stroke"></div>
+      <div class="content" id="content">
+        <aside class="rail">
+          <h2>Session</h2>
+          <button class="on">Plan</button>
+          <button>Live</button>
+          <button>Journal</button>
+        </aside>
+        <div class="main">
+          <h1>PLAN</h1>
+          <p>Declare the next trade. The card is the same in every variant.</p>
+          <div class="row"><span>Desk</span><b>Nifty · intraday</b></div>
+          <div class="row"><span>Risk</span><b>0.5% · floor intact</b></div>
+          <div class="row"><span>Broker</span><b>Kotak · session ready</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<pre class="state" id="state"></pre>
+<div class="hint">Space summon · Esc close · ← → variant</div>
+<nav class="switcher" id="switcher">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <div class="label" id="label">A</div>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+</nav>
+<script>
+const VARIANTS = [
+  {
+    key: "A",
+    name: "Spotlight glass",
+    openResponse: 0.28,
+    closeResponse: 0.22,
+    damping: 1,
+    scaleFrom: 0.97,
+    kind: "glass",
+    cutClose: false
+  },
+  {
+    key: "B",
+    name: "Island morph",
+    openResponse: 0.32,
+    closeResponse: 0.28,
+    damping: 0.86,
+    scaleFrom: 0.92,
+    kind: "island",
+    cutClose: false
+  },
+  {
+    key: "C",
+    name: "Current Station",
+    openResponse: 0.22,
+    closeResponse: 0.18,
+    damping: 1,
+    scaleFrom: 0.96,
+    kind: "solid",
+    cutClose: true
+  }
+];
+
+const SHEET = { w: 760, h: 460, r: 22 };
+const CAPSULE = { w: 196, h: 36, r: 18 };
+
+const panel = document.getElementById("panel");
+const fill = document.getElementById("fill");
+const content = document.getElementById("content");
+const stateEl = document.getElementById("state");
+const labelEl = document.getElementById("label");
+
+const params = new URLSearchParams(location.search);
+let variantKey = VARIANTS.some(v => v.key === params.get("variant")) ? params.get("variant") : "A";
+
+const motion = { x: 0, v: 0 };
+let phase = "closed";
+let shown = false;
+let last = performance.now();
+
+function variant() {
+  return VARIANTS.find(v => v.key === variantKey);
+}
+
+function setVariant(key) {
+  variantKey = key;
+  const url = new URL(location.href);
+  url.searchParams.set("variant", key);
+  history.replaceState(null, "", url);
+  settleClosed();
+  paint(variant());
+  renderState(variant(), 0);
+}
+
+function settleClosed() {
+  motion.x = 0;
+  motion.v = 0;
+  phase = "closed";
+  shown = false;
+}
+
+function cycle(dir) {
+  const i = VARIANTS.findIndex(v => v.key === variantKey);
+  const next = VARIANTS[(i + dir + VARIANTS.length) % VARIANTS.length];
+  setVariant(next.key);
+}
+
+function toggle() {
+  const v = variant();
+  if (phase === "open" || phase === "opening") {
+    if (v.cutClose) {
+      settleClosed();
+      paint(v);
+      renderState(v, 0);
+      return;
+    }
+    phase = "closing";
+  } else {
+    shown = true;
+    phase = "opening";
+  }
+}
+
+function closeNow() {
+  const v = variant();
+  if (phase === "closed") return;
+  if (v.cutClose) {
+    settleClosed();
+    paint(v);
+    renderState(v, 0);
+    return;
+  }
+  phase = "closing";
+}
+
+function spring(dt, target, response, damping) {
+  const omega = (2 * Math.PI) / Math.max(response, 0.05);
+  const accel = -omega * omega * (motion.x - target) - 2 * damping * omega * motion.v;
+  motion.v += accel * dt;
+  motion.x += motion.v * dt;
+}
+
+function tick(now) {
+  const dt = Math.min(0.032, (now - last) / 1000);
+  last = now;
+  const v = variant();
+  const opening = phase === "opening" || phase === "open";
+  const target = opening ? 1 : 0;
+  const response = opening ? v.openResponse : v.closeResponse;
+  if (phase === "opening" || phase === "closing") {
+    spring(dt, target, response, v.damping);
+    if (opening && Math.abs(motion.x - 1) < 0.004 && Math.abs(motion.v) < 0.02) {
+      motion.x = 1;
+      motion.v = 0;
+      phase = "open";
+    }
+    if (!opening && motion.x < 0.02 && Math.abs(motion.v) < 0.05) {
+      settleClosed();
+    }
+  }
+  paint(v);
+  renderState(v, motion.x);
+  requestAnimationFrame(tick);
+}
+
+function paint(v) {
+  const p = Math.max(0, motion.x);
+  const clamped = Math.max(0, Math.min(1, p));
+  const travel = v.damping < 1 ? Math.min(1.06, p) : clamped;
+  labelEl.textContent = v.key + " · " + v.name;
+  panel.classList.toggle("open", phase === "open");
+  panel.hidden = !shown;
+  fill.className = "fill " + (v.kind === "glass" ? "glass" : v.kind === "island" ? "island" : "solid");
+
+  let w = SHEET.w;
+  let h = SHEET.h;
+  let r = SHEET.r;
+  let scale = v.scaleFrom + (1 - v.scaleFrom) * travel;
+  let opacity = clamped;
+  let contentOpacity = clamped;
+
+  if (v.kind === "island") {
+    w = CAPSULE.w + (SHEET.w - CAPSULE.w) * travel;
+    h = CAPSULE.h + (SHEET.h - CAPSULE.h) * travel;
+    r = CAPSULE.r + (SHEET.r - CAPSULE.r) * travel;
+    contentOpacity = Math.max(0, Math.min(1, (clamped - 0.28) / 0.72));
+    opacity = Math.min(1, clamped * 1.4);
+  } else if (v.kind === "glass") {
+    contentOpacity = Math.max(0, Math.min(1, (clamped - 0.12) / 0.88));
+  }
+
+  panel.style.width = w + "px";
+  panel.style.height = h + "px";
+  panel.style.marginLeft = (-w / 2) + "px";
+  panel.style.borderRadius = r + "px";
+  panel.style.opacity = String(opacity);
+  panel.style.transform = "scale(" + scale.toFixed(4) + ")";
+  content.style.opacity = String(contentOpacity);
+}
+
+function renderState(v, progress) {
+  const scale = (v.scaleFrom + (1 - v.scaleFrom) * Math.max(0, Math.min(1, progress))).toFixed(3);
+  const opacity = Math.max(0, Math.min(1, progress)).toFixed(3);
+  stateEl.textContent = [
+    "variant  " + v.key + "  " + v.name,
+    "phase    " + phase,
+    "progress " + progress.toFixed(3),
+    "scale    " + scale,
+    "opacity  " + (shown ? opacity : "0.000"),
+    "spring   response " + (phase === "closing" ? v.closeResponse : v.openResponse) + "  damping " + v.damping,
+    "close    " + (v.cutClose ? "orderOut on the same frame" : "reverse spring, then gone")
+  ].join("\n");
+}
+
+document.getElementById("prev").addEventListener("click", () => cycle(-1));
+document.getElementById("next").addEventListener("click", () => cycle(1));
+
+window.addEventListener("keydown", (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); cycle(-1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); cycle(1); }
+  if (e.key === " " || e.code === "Space") { e.preventDefault(); toggle(); }
+  if (e.key === "Escape") { e.preventDefault(); closeNow(); }
+});
+
+setVariant(variantKey);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -35,7 +35,7 @@ struct DeskRulesHideHostingTests {
         )
     }
 
-    @Test func hideNotchPersistsAndHidesFloatingHost() async {
+    @Test func hideNotchPreferencePersistsWithoutChangingHostVisibility() async {
         let ephemeral = makeEphemeralStore()
         defer { ephemeral.defaults.removePersistentDomain(forName: ephemeral.suite) }
         let floatingNotch = FakeFloatingNotchHost()
@@ -45,12 +45,12 @@ struct DeskRulesHideHostingTests {
         coordinator.setHideNotch(true)
 
         #expect(ephemeral.store.hideNotch == true)
-        #expect(floatingNotch.hideCallCount == 1)
+        #expect(floatingNotch.hideCallCount == 0)
         #expect(floatingNotch.showCallCount == 0)
         #expect(floatingNotch.toggleCallCount == 0)
     }
 
-    @Test func unhideShowsHostAndAltSpaceStillSummons() async {
+    @Test func altSpaceStillSummonsWhenHidePreferenceIsStored() async {
         let ephemeral = makeEphemeralStore()
         defer { ephemeral.defaults.removePersistentDomain(forName: ephemeral.suite) }
         let floatingNotch = FakeFloatingNotchHost()
@@ -76,14 +76,14 @@ struct DeskRulesHideHostingTests {
         coordinator.setHideNotch(false)
 
         #expect(ephemeral.store.hideNotch == false)
-        #expect(floatingNotch.hideCallCount == 1)
-        #expect(floatingNotch.showCallCount == 1)
+        #expect(floatingNotch.hideCallCount == 0)
+        #expect(floatingNotch.showCallCount == 0)
 
         hotkeyRegistrar.toggleNotchHandler?()
         #expect(floatingNotch.toggleCallCount == 1)
     }
 
-    @Test func launchAppliesPersistedHideAfterStart() async {
+    @Test func launchIgnoresPersistedHidePreference() async {
         let ephemeral = makeEphemeralStore()
         defer { ephemeral.defaults.removePersistentDomain(forName: ephemeral.suite) }
         ephemeral.store.setHideNotch(true)
@@ -92,7 +92,7 @@ struct DeskRulesHideHostingTests {
         await coordinator.launch()
 
         #expect(floatingNotch.startCallCount == 1)
-        #expect(floatingNotch.hideCallCount == 1)
+        #expect(floatingNotch.hideCallCount == 0)
     }
 
     @Test func toggleNotchForwardsToFloatingNotchHost() async {

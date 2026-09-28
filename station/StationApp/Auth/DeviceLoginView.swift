@@ -14,7 +14,7 @@ public struct DeviceLoginView: View {
                 .font(StationDS.bodyFont(StationDS.FontSize.brief, weight: .medium))
                 .foregroundStyle(StationDS.Text.primary)
 
-            Text("Sign in with WorkOS device login. Station shows your user code only — never paste a device code.")
+            Text("Sign in once in your browser. Station shows your pairing code only — never paste a device code.")
                 .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                 .foregroundStyle(StationDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -39,7 +39,7 @@ public struct DeviceLoginView: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("deviceLoginUserCode")
                 }
-                Text("Finish sign-in in the browser — Station will connect automatically when WorkOS approves the code.")
+                Text("Finish sign-in in the browser — Station will connect automatically when the code is approved.")
                     .font(StationDS.bodyFont(StationDS.FontSize.body, weight: .regular))
                     .foregroundStyle(StationDS.Text.secondary)
                 HStack(spacing: 8) {

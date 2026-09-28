@@ -55,8 +55,8 @@ public final class DeviceLoginViewModel: ObservableObject {
             userCode = challenge.userCode
             verificationURIComplete = challenge.verificationURIComplete
             phase = .awaitingBrowser
-            let browserTarget = challenge.browserURL ?? challenge.verificationURIComplete
-            if let url = URL(string: browserTarget) {
+            // Single browser step: WorkOS device sign-in (no Console OAuth screen first).
+            if let url = URL(string: challenge.verificationURIComplete) {
                 openURL(url)
             }
             // Poll WorkOS until the browser flow completes — no extra "I've confirmed" click.

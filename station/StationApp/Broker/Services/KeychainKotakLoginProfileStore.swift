@@ -88,7 +88,10 @@ public final class KeychainKotakLoginProfileStore: KotakLoginProfileStoring, @un
     private func authenticateDeviceOwner(reason: String) throws {
         let box = AuthBox()
         let sem = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
+        // LocalAuthentication UI runs on the main run loop. `BrokersViewModel` calls
+        // `unlock` on @MainActor — blocking the main thread on `sem.wait()` deadlocks
+        // Touch ID / passcode and freezes Station until timeout.
+        DispatchQueue.main.async {
             let context = LAContext()
             var laError: NSError?
             guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &laError) else {
@@ -108,9 +111,20 @@ public final class KeychainKotakLoginProfileStore: KotakLoginProfileStoring, @un
                 }
             }
         }
-        let waitResult = sem.wait(timeout: .now() + 120)
-        if waitResult == .timedOut {
-            throw KotakLoginProfileStoreError.userCancelled
+
+        let deadline = Date().addingTimeInterval(120)
+        if Thread.isMainThread {
+            while sem.wait(timeout: .now()) == .timedOut {
+                if Date() >= deadline {
+                    throw KotakLoginProfileStoreError.userCancelled
+                }
+                RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+            }
+        } else {
+            let waitResult = sem.wait(timeout: .now() + 120)
+            if waitResult == .timedOut {
+                throw KotakLoginProfileStoreError.userCancelled
+            }
         }
         if let authError = box.error {
             throw authError

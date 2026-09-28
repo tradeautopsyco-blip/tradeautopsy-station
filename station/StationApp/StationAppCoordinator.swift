@@ -311,12 +311,9 @@ public final class StationAppCoordinator: ObservableObject {
     }
 
     public func setHideNotch(_ hidden: Bool) {
+        // Preference is retained so older saved values stay readable. Visibility is
+        // shortcut-only: the closed pill is never shown.
         deskRulesStore.setHideNotch(hidden)
-        if hidden {
-            floatingNotch.hide()
-        } else {
-            floatingNotch.show()
-        }
     }
 
     public func setDemoEnabled(_ enabled: Bool) {
@@ -370,9 +367,6 @@ public final class StationAppCoordinator: ObservableObject {
         guard !notchAndPollingStarted else { return }
         await sessionHost.start()
         floatingNotch.start()
-        if deskRulesStore.hideNotch {
-            floatingNotch.hide()
-        }
         sessionPolling.startPolling()
         sessionModel.startPolling()
         notchAndPollingStarted = true

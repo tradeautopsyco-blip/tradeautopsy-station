@@ -1,5 +1,12 @@
 # PROTOTYPE — TradeAutopsy Station
 
+**Notch · summon motion (UI, 2026-09-28):**  
+[`PROTOTYPE-notch-spotlight-summon.html`](./PROTOTYPE-notch-spotlight-summon.html) — Spotlight glass / island morph / current cut-off close. Notes: [`PROTOTYPE-notch-spotlight-summon.NOTES.md`](./PROTOTYPE-notch-spotlight-summon.NOTES.md).
+
+```bash
+open station/prototypes/PROTOTYPE-notch-spotlight-summon.html
+```
+
 **Current plan twin (phone + desktop):**  
 [`CONSOLE-STATION-SHARE.html`](./CONSOLE-STATION-SHARE.html) + [`CONSOLE-STATION-SHARE.md`](./CONSOLE-STATION-SHARE.md)  
 Station desk · thin Console · PLAN Notch — fully clickable offline.

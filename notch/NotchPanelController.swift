@@ -133,10 +133,17 @@ final class NotchPanelController {
     private var windowsHiddenForCapture: [NSWindow] = []
 
     private let hostedExpandedContent: (() -> AnyView)?
+    /// Station-hosted: closed state is off screen. Shortcut and Open Notch expand it.
+    private let hidesCollapsedPill: Bool
 
-    init(viewModel: NotchViewModel, hostedExpandedContent: (() -> AnyView)? = nil) {
+    init(
+        viewModel: NotchViewModel,
+        hostedExpandedContent: (() -> AnyView)? = nil,
+        hidesCollapsedPill: Bool = false
+    ) {
         self.viewModel = viewModel
         self.hostedExpandedContent = hostedExpandedContent
+        self.hidesCollapsedPill = hidesCollapsedPill
         let host = NSHostingController(
             rootView: NotchRootView(vm: viewModel, hostedExpandedContent: hostedExpandedContent)
         )
@@ -194,6 +201,11 @@ final class NotchPanelController {
                     self.viewModel.summonPanelAtExpandedFrame = true
                     self.showCollapseBackdropIfNeeded()
                     self.installEscCollapseMonitorIfNeeded()
+                } else if self.hidesCollapsedPill {
+                    self.hideCollapseBackdrop()
+                    self.removeEscCollapseMonitor()
+                    self.viewModel.summonPanelAtExpandedFrame = false
+                    self.hide()
                 } else {
                     self.hideCollapseBackdrop()
                     self.removeEscCollapseMonitor()
@@ -254,6 +266,25 @@ final class NotchPanelController {
         if let backdrop = backdropPanel {
             Task { @MainActor in
                 backdrop.orderOut(nil)
+            }
+        }
+    }
+
+    /// Lay out the collapsed frame and pre-warm backdrop without ordering the pill on screen.
+    func prepareOffscreen() {
+        guard !chromeHiddenForCapture else { return }
+        layoutPanel(expanded: viewModel.isExpanded)
+        if backdropPanel == nil {
+            backdropPanel = makeCollapseBackdropPanel()
+        }
+        panel.orderOut(nil)
+        // Second layout pass: `NSScreen.main` / frames can be wrong on first launch tick.
+        // Stay ordered out unless a shortcut already expanded the panel.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.panel.isVisible else { return }
+            self.layoutPanel(expanded: self.viewModel.isExpanded)
+            if !self.viewModel.isExpanded {
+                self.panel.orderOut(nil)
             }
         }
     }

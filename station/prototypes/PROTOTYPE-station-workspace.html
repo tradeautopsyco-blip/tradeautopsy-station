@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Station workspace — prototype</title>
+<!--
+THROWAWAY PROTOTYPE — not Station.app.
+Question: what should the Station window look like in this dark workspace shell (rail, report, record peek)?
+Three variants, switchable via ?variant=, on this throwaway page (Station has no route for this chrome).
+
+A Rail + hover card — report canvas, favorites open a floating book card over the chart.
+B Docked book — the book is the page; sidebar is only books.
+C Search ledger — saved searches are the nav; a fill expands inline.
+
+Open: ./serve-prototype.sh  then the URL it prints.
+Or: python3 -m http.server 8766  inside station/prototypes.
+← → cycles variants. The white bar is prototype chrome, not the design.
+?prod=1 hides that chrome.
+-->
+<style>
+  :root {
+    --bg: #1c1c1c;
+    --bg-2: #242426;
+    --line: rgba(255,255,255,0.08);
+    --line-strong: rgba(255,255,255,0.14);
+    --text: #f5f5f7;
+    --muted: #8e8e93;
+    --faint: #6e6e73;
+    --blue: #5eb0f8;
+    --link: #6cb6ff;
+    --up: #3ddc84;
+    --down: #ff5a5f;
+    --sel: rgba(255,255,255,0.09);
+    --hover: rgba(255,255,255,0.05);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font);
+    color: var(--text);
+    background: #243044;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, a { font-family: inherit; color: inherit; }
+  button { cursor: pointer; border: 0; background: none; padding: 0; }
+  button:focus-visible, a:focus-visible { outline: 1px solid var(--link); outline-offset: 2px; }
+  svg.ico { width: 16px; height: 16px; flex: 0 0 16px; display: block; }
+
+  .sky {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(900px 420px at 78% 8%, rgba(255, 220, 170, 0.85), transparent 60%),
+      radial-gradient(700px 380px at 18% 0%, rgba(255, 150, 80, 0.45), transparent 62%),
+      radial-gradient(500px 220px at 55% 18%, rgba(255,255,255,0.35), transparent 70%),
+      linear-gradient(180deg, #8aa4c4 0%, #e0b08a 18%, #f0d0ae 30%, #c4a06a 40%, #6f934c 54%, #3d6a34 72%, #244426 100%);
+  }
+  .sky i {
+    position: absolute; border-radius: 50%; background: rgba(255,255,255,0.55); filter: blur(16px);
+  }
+  .sky i:nth-child(1) { width: 180px; height: 48px; top: 8%; left: 8%; }
+  .sky i:nth-child(2) { width: 240px; height: 56px; top: 4%; left: 22%; opacity: 0.7; }
+  .sky i:nth-child(3) { width: 160px; height: 40px; top: 14%; right: 18%; }
+  .meadow {
+    position: fixed; inset: auto 0 0 0; height: 48vh; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(circle at 6% 62%, #ff5a2a 0 5px, transparent 6px),
+      radial-gradient(circle at 9% 78%, #ffd23a 0 4px, transparent 5px),
+      radial-gradient(circle at 4% 84%, #c44bff 0 6px, transparent 7px),
+      radial-gradient(circle at 12% 90%, #ff7a3a 0 5px, transparent 6px),
+      radial-gradient(circle at 14% 70%, #fff 0 3px, transparent 4px),
+      radial-gradient(circle at 18% 88%, #ff4d6a 0 5px, transparent 6px),
+      radial-gradient(circle at 92% 80%, #ffb703 0 5px, transparent 6px),
+      radial-gradient(circle at 96% 68%, #ff5d3a 0 6px, transparent 7px),
+      radial-gradient(circle at 88% 90%, #e7e2ff 0 4px, transparent 5px),
+      radial-gradient(circle at 84% 74%, #7dff6a 0 3px, transparent 4px);
+  }
+
+  .stage {
+    position: relative; z-index: 1;
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 16px 16px 132px;
+  }
+  .win {
+    width: min(1080px, 100%);
+    height: min(720px, calc(100vh - 188px));
+    min-height: 560px;
+    background: var(--bg);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    box-shadow: 0 40px 90px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  .rail {
+    width: 268px;
+    flex: 0 0 268px;
+    display: flex;
+    flex-direction: column;
+    padding: 8px 10px 16px;
+    border-right: 1px solid var(--line);
+    overflow: auto;
+  }
+  .rail::-webkit-scrollbar { width: 8px; }
+  .rail::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 8px; }
+  .rail-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 4px 10px 6px;
+    position: relative;
+  }
+  .ws {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0; border-radius: 8px; padding: 4px 6px;
+  }
+  .ws:hover { background: var(--hover); }
+  .mark {
+    width: 22px; height: 22px; border-radius: 6px;
+    display: grid; place-items: center;
+    background: #111; color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+    font-size: 11px; font-weight: 700;
+  }
+  .ws-name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .chev { color: var(--muted); display: grid; }
+  .chev svg { width: 12px; height: 12px; }
+  .icon-btn {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--text); }
+  .menu {
+    position: absolute; top: 42px; left: 8px; z-index: 5;
+    background: #2c2c2e; border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45), 0 0 0 1px var(--line);
+    padding: 4px; min-width: 180px;
+  }
+  .menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 8px 10px; border-radius: 7px; font-size: 13px;
+  }
+  .menu button:hover, .menu button.on { background: var(--sel); }
+
+  .rail-row {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; text-align: left;
+    padding: 5px 8px; border-radius: 8px;
+    font-size: 13px; color: var(--text);
+  }
+  .rail-row .lbl { flex: 1; min-width: 0; }
+  .rail-row .meta { color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .rail-row svg.ico { color: #c7c7cc; }
+  .rail-row:hover { background: var(--hover); }
+  .rail-row.on { background: var(--sel); }
+  .sec {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 12px 8px 3px;
+    color: var(--muted); font-size: 12px; font-weight: 500;
+  }
+  .plus {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #2a2a2c; color: #ddd;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+    font-size: 13px; line-height: 1;
+  }
+  .plus:hover { background: #3a3a3c; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+  .logo {
+    width: 18px; height: 18px; border-radius: 5px;
+    display: grid; place-items: center;
+    color: #111; font-size: 10px; font-weight: 800; flex: 0 0 18px;
+  }
+
+  .main {
+    flex: 1; min-width: 0; position: relative;
+    display: flex; flex-direction: column;
+    padding: 22px 28px 16px;
+    overflow: auto;
+  }
+  .crumb { font-size: 13px; color: var(--muted); }
+  .crumb b { color: #d1d1d6; font-weight: 500; }
+  h1 {
+    margin: 14px 0 18px;
+    font-size: 30px; font-weight: 600; letter-spacing: -0.03em;
+  }
+  .metrics {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: #1a1a1a;
+  }
+  .metric { padding: 16px 18px 14px; text-align: left; }
+  .metric + .metric { border-left: 1px solid var(--line); }
+  .metric.on { background: rgba(255,255,255,0.03); }
+  .metric-k { display: flex; align-items: center; gap: 8px; color: #d8d8dc; font-size: 13.5px; }
+  .metric-n {
+    margin-top: 8px;
+    font-size: 40px; font-weight: 500; letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums; line-height: 1;
+  }
+  .metric-f {
+    margin-top: 14px;
+    display: flex; justify-content: space-between;
+    color: var(--faint); font-size: 12px;
+  }
+  .metric-f .down { color: var(--down); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: -8px; margin-bottom: 12px;
+    color: var(--muted); font-size: 12px;
+  }
+  .quiet { color: var(--muted); font-size: 14px; max-width: 420px; line-height: 1.45; }
+  .quiet ul { margin: 14px 0 0; padding: 0; list-style: none; }
+  .quiet li {
+    padding: 10px 0; border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; gap: 16px;
+  }
+  .quiet li span { color: var(--text); }
+
+  .plot {
+    position: absolute; left: 20px; right: 16px; bottom: 12px; height: 46%;
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 100%; }
+  .bar-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; }
+  .bar-col i {
+    display: block; width: 100%;
+    background: linear-gradient(180deg, #8ec8fb, #3d93f0);
+    border-radius: 3px 3px 0 0;
+    min-height: 4px;
+  }
+  .bar-col em {
+    font-style: normal; font-size: 11px; color: var(--faint);
+    height: 14px; font-variant-numeric: tabular-nums;
+  }
+
+  .peek {
+    position: absolute; z-index: 4;
+    left: 18px; top: 228px; width: min(448px, 62%);
+    background: #2a2a2c;
+    border-radius: 16px;
+    box-shadow: 0 28px 70px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.07);
+    padding: 16px 16px 0;
+  }
+  .peek-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .peek-id { display: flex; gap: 10px; align-items: center; }
+  .peek-logo {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: grid; place-items: center;
+    color: #111; font-weight: 800; font-size: 16px;
+  }
+  .peek-name { font-size: 16px; font-weight: 650; letter-spacing: -0.02em; }
+  .peek-link { color: var(--link); font-size: 13px; text-decoration: none; }
+  .peek-link:hover { text-decoration: underline; }
+  .peek-acts { display: flex; gap: 6px; }
+  .peek-acts button, .hero-acts button {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: #343436; color: #e8e8ea;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .peek-acts button:hover, .hero-acts button:hover { background: #454548; }
+  .peek-acts svg, .hero-acts svg { width: 14px; height: 14px; }
+  .facts { margin: 14px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+  .fact {
+    display: flex; align-items: center; gap: 10px;
+    color: #e6e6ea; font-size: 11.5px; letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .fact svg { color: #a1a1a6; width: 15px; height: 15px; }
+  .peek-rule { height: 1px; background: var(--line); margin: 12px 0 8px; }
+  .peek-px {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13.5px; font-weight: 600;
+  }
+  .peek-px .tick { color: var(--muted); font-weight: 500; }
+  .peek-px .grow { flex: 1; }
+  .up { color: var(--up); font-weight: 600; }
+  .down { color: var(--down); font-weight: 600; }
+  .peek-chart {
+    position: relative; height: 138px; margin: 8px -16px 0;
+    border-radius: 0 0 16px 16px; overflow: hidden;
+    background: linear-gradient(180deg, rgba(20,30,40,0) 0%, rgba(10,70,130,0.45) 70%, rgba(8,110,190,0.62) 100%);
+  }
+  .peek-chart .bars { position: absolute; left: 12px; right: 12px; bottom: 10px; height: 78px; gap: 3px; }
+  .peek-chart .bar-col em { display: none; }
+  .peek-chart .bar-col i { opacity: 0.95; border-radius: 2px 2px 0 0; }
+  .spark { position: absolute; left: 10px; right: 10px; top: 8px; height: 78px; width: calc(100% - 20px); }
+  .spark polyline { fill: none; stroke: #3ddc84; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+
+  .win.is-collapsed .rail { width: 64px; flex-basis: 64px; padding-left: 8px; padding-right: 8px; }
+  .win.is-collapsed .ws-name, .win.is-collapsed .chev, .win.is-collapsed .lbl,
+  .win.is-collapsed .meta, .win.is-collapsed .sec, .win.is-collapsed .menu { display: none; }
+  .win.is-collapsed .rail-row { justify-content: center; padding-left: 0; padding-right: 0; }
+  .win.is-collapsed .rail-head { justify-content: center; }
+
+  /* B — docked book */
+  .vb { display: flex; }
+  .vb .rail { width: 300px; flex-basis: 300px; }
+  .book-nav {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+    width: 100%; text-align: left;
+    padding: 8px; border-radius: 10px; margin-bottom: 2px;
+  }
+  .book-nav:hover { background: var(--hover); }
+  .book-nav.on { background: var(--sel); }
+  .book-nav .nm, .book-nav .sub { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .book-nav .nm { font-size: 13.5px; font-weight: 600; }
+  .book-nav .sub { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+  .book-nav .px { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+  .book-nav .px small { display: block; font-size: 11px; }
+  .logo.lg { width: 28px; height: 28px; border-radius: 8px; font-size: 13px; flex-basis: 28px; }
+  .hero {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
+  }
+  .hero h1 { margin-bottom: 6px; }
+  .hero h1 a { font-size: 15px; font-weight: 500; margin-left: 8px; vertical-align: 4px; }
+  .fact-row { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #d0d0d4; font-size: 12px; letter-spacing: 0.05em; }
+  .hero-px { text-align: right; }
+  .hero-px .big { font-size: 40px; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .hero-px .chg { margin-top: 4px; font-size: 14px; }
+  .hero-acts { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; }
+  .plot-b {
+    flex: 1; min-height: 280px; margin-top: 18px; position: relative;
+    border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg, transparent, rgba(10,80,150,0.35));
+  }
+  .plot-b .bars { position: absolute; inset: 24px 16px 28px; }
+  .plot-b .spark { top: 36px; height: calc(100% - 90px); }
+
+  /* C — ledger */
+  .vc .rail { width: 240px; flex-basis: 240px; }
+  .lede { margin: -6px 0 16px; color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chips button {
+    padding: 5px 10px; border-radius: 999px;
+    background: #2a2a2c; color: #ddd; font-size: 12px;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .chips button.on { background: #f5f5f7; color: #111; }
+  table.ledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ledger th {
+    text-align: left; font-weight: 500; color: var(--muted); font-size: 11px;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 0 10px 8px; border-bottom: 1px solid var(--line);
+  }
+  .ledger td { padding: 11px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .ledger tr.row { cursor: pointer; }
+  .ledger tr.row:hover td { background: rgba(255,255,255,0.03); }
+  .ledger tr.row.on td { background: rgba(255,255,255,0.05); }
+  .expand td { background: #242426; padding: 0; }
+  .expand-in { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; padding: 12px 10px 14px; }
+  .expand .facts { margin: 0; }
+  .mini-chart { position: relative; height: 72px; }
+  .empty {
+    padding: 28px 8px; color: var(--muted); font-size: 14px;
+  }
+
+  .state {
+    position: fixed; z-index: 40; left: 50%; bottom: 74px; transform: translateX(-50%);
+    width: min(760px, calc(100% - 24px));
+    background: #fff; color: #111;
+    border-radius: 12px; padding: 8px 12px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.45;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+  }
+  .state b { font-weight: 650; }
+  .proto-bar {
+    position: fixed; z-index: 50; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    background: #fff; color: #111;
+    border-radius: 999px; padding: 6px 8px 6px 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  }
+  .proto-bar button {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #111; color: #fff; font-size: 18px; line-height: 1;
+  }
+  .proto-bar button:hover { background: #333; }
+  .proto-bar .label { min-width: 220px; text-align: center; font-size: 13px; padding: 0 6px; }
+  .proto-bar .label strong { font-weight: 700; }
+  body.prod .state, body.prod .proto-bar { display: none; }
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="meadow" aria-hidden="true"></div>
+<div class="stage"><div class="win" id="win"></div></div>
+<div class="state" id="state"></div>
+<nav class="proto-bar" id="proto-bar" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">‹</button>
+  <div class="label" id="variant-label"></div>
+  <button type="button" id="next" aria-label="Next variant">›</button>
+</nav>
+<script>
+/* Three variants of the Station window in the reference workspace shell, switchable via ?variant=. */
+const NAMES = { A: 'Rail + hover card', B: 'Docked book', C: 'Search ledger' };
+const ORDER = ['A', 'B', 'C'];
+
+const NAV = [
+  { id: 'today', label: 'Today', icon: 'sun' },
+  { id: 'journal', label: 'Journal', icon: 'book' },
+  { id: 'brokers', label: 'Brokers', icon: 'building' },
+  { id: 'health', label: 'Health', icon: 'pulse' },
+  { id: 'market', label: 'Market Data', icon: 'chart' },
+  { id: 'ai', label: 'AI / Workflow', icon: 'spark' },
+  { id: 'report', label: 'Report', icon: 'people' },
+];
+
+const BOOKS = {
+  RELIANCE: {
+    id: 'RELIANCE', name: 'Reliance', kind: 'Equity', mark: 'R', hue: '#5eb0f8',
+    domain: 'nse:RELIANCE', place: 'Mumbai, Maharashtra', series: 'Series EQ',
+    cap: '₹18.4L Cr', count: 'Lot 250', ticker: 'RELIANCE', venue: 'NSE',
+    price: '₹2,945', change: '+7.2%', up: true,
+    spark: [42, 48, 44, 50, 46, 40, 38, 43, 36, 34, 39, 45, 41, 37, 44, 52, 48, 55, 51, 58, 64],
+  },
+  NIFTY: {
+    id: 'NIFTY', name: 'Nifty', kind: 'Index', mark: 'N', hue: '#f5a524',
+    domain: 'nse:NIFTY', place: 'Mumbai, NSE', series: 'Weekly',
+    cap: '24,182', count: 'OI 1.42 Cr', ticker: 'NIFTY', venue: 'NSE',
+    price: '24,182', change: '−0.6%', up: false,
+    spark: [72, 70, 68, 66, 69, 64, 61, 63, 58, 55, 57, 52, 50, 54, 48, 46, 49, 45, 44, 42, 40],
+  },
+  BTCUSDT: {
+    id: 'BTCUSDT', name: 'BTCUSDT', kind: 'Crypto', mark: '₿', hue: '#f7931a',
+    domain: 'binance:BTCUSDT', place: 'Binance, USD-M', series: 'Perp',
+    cap: '$64,210', count: 'OI 82.4K', ticker: 'BTCUSDT', venue: 'BINANCE',
+    price: '$64,210', change: '+2.1%', up: true,
+    spark: [28, 32, 30, 36, 34, 40, 37, 33, 35, 42, 39, 44, 41, 46, 43, 48, 52, 49, 55, 58, 62],
+  },
+  KOTAK: {
+    id: 'KOTAK', name: 'Kotak', kind: 'Broker', mark: 'K', hue: '#ff5a6a',
+    domain: 'kotak.neo', place: 'Mumbai, India', series: 'Cash + F&O',
+    cap: '₹12.8L', count: '213 fills', ticker: 'KOTAK', venue: 'NEO',
+    price: '₹12.8L', change: '−12.5%', up: false,
+    spark: [64, 60, 62, 55, 52, 58, 50, 48, 44, 46, 40, 38, 42, 36, 34, 37, 32, 30, 33, 28, 26],
+  },
+  BINANCE: {
+    id: 'BINANCE', name: 'Binance', kind: 'Broker', mark: 'B', hue: '#f3ba2f',
+    domain: 'binance.com', place: 'USD-M, USDT', series: 'Perp',
+    cap: '$4,420', count: '32 fills', ticker: 'BINANCE', venue: 'USD-M',
+    price: '$4,420', change: '+3.4%', up: true,
+    spark: [20, 24, 22, 26, 21, 18, 22, 19, 23, 28, 25, 30, 27, 32, 29, 34, 31, 36, 33, 38, 40],
+  },
+};
+const BOOK_ORDER = ['RELIANCE', 'NIFTY', 'BTCUSDT', 'KOTAK', 'BINANCE'];
+
+const SEARCHES = [
+  { id: 'revenge', name: 'Revenge', hue: '#ff7a45' },
+  { id: 'fomo', name: 'FOMO', hue: '#3ddc84' },
+  { id: 'open-risk', name: 'Open risk', hue: '#ff5c8a' },
+  { id: 'expiry', name: 'This expiry', hue: '#5aa2ff' },
+];
+
+const TRADES = [
+  { id: 't1', time: '09:18', side: 'Buy', sym: 'BTCUSDT', book: 'BTCUSDT', pnl: '+$312', up: true, flag: 'Clean', search: 'expiry' },
+  { id: 't2', time: '10:42', side: 'Buy', sym: 'ETHUSDT', book: 'BINANCE', pnl: '−$418', up: false, flag: 'FOMO', search: 'fomo' },
+  { id: 't3', time: '10:51', side: 'Buy', sym: 'ETHUSDT', book: 'BINANCE', pnl: '−$297', up: false, flag: 'Revenge', search: 'revenge' },
+  { id: 't4', time: '11:14', side: 'Sell', sym: 'SOLUSDT', book: 'BINANCE', pnl: '−$440', up: false, flag: 'Overtrade', search: 'revenge' },
+  { id: 't5', time: '11:40', side: 'Buy', sym: 'NIFTY', book: 'NIFTY', pnl: '−₹6,240', up: false, flag: 'Revenge', search: 'revenge' },
+  { id: 't6', time: '13:05', side: 'Buy', sym: 'RELIANCE', book: 'RELIANCE', pnl: '+₹1,820', up: true, flag: 'Clean', search: 'expiry' },
+  { id: 't7', time: '14:12', side: 'Buy', sym: 'BANKNIFTY', book: 'NIFTY', pnl: '−₹18,400', up: false, flag: 'Open', search: 'open-risk' },
+];
+
+const PAGE_BARS = [22, 26, 24, 30, 28, 34, 32, 38, 30, 42, 40, 46, 44, 36, 48, 52, 58, 50, 64, 72, 84];
+const PAGES = {
+  today: ['Open NIFTY, −0.6%', 'Journal empty', 'Kill switch armed'],
+  journal: ['No lines yet today', 'Shift-enter inserts a sample in the desk prototype'],
+  brokers: ['Kotak Neo · syncing', 'Binance USD-M · syncing'],
+  health: ['Agent on 127.0.0.1:9137', 'DNS kill path installed'],
+  market: ['NSE history · declared gap', 'Binance mark · broker'],
+  ai: ['No workflow key on this desk'],
+};
+
+const state = {
+  variant: 'A',
+  nav: 'report',
+  book: 'RELIANCE',
+  search: null,
+  card: true,
+  rail: 'open',
+  menu: false,
+  desk: 'TradeAutopsy',
+  source: 'kotak',
+  chip: null,
+  row: null,
+  action: 'opened report',
+};
+
+const PATHS = {
+  tray: '<path d="M2.2 7.6h11.6L12.6 13a1 1 0 0 1-1 .8H4.4a1 1 0 0 1-1-.8L2.2 7.6z"/><path d="M2.2 7.6 4.2 3.2h7.6l2 4.4"/><path d="M6.2 10.2h3.6"/>',
+  user: '<circle cx="8" cy="5.4" r="2.1"/><path d="M3.4 13c.7-2.2 2.4-3.3 4.6-3.3s3.9 1.1 4.6 3.3"/>',
+  sun: '<circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v1.5M8 12.7v1.5M1.8 8h1.5M12.7 8h1.5M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1"/>',
+  book: '<path d="M3 3.2h6.2A2.2 2.2 0 0 1 11.4 5.4V13H5.2A2.2 2.2 0 0 0 3 15.2V3.2z"/><path d="M11.4 5.2H13a1 1 0 0 1 1 1V13h-2.6"/>',
+  building: '<path d="M3 13.5h10"/><path d="M4.2 13.5V3.8h7.6v9.7"/><path d="M6.2 6h1.2M8.6 6h1.2M6.2 8.2h1.2M8.6 8.2h1.2M7 13.5v-2.2h2v2.2"/>',
+  pulse: '<path d="M1.8 8h2.4l1.4-3.2 2.2 6.4L9.4 8h4.8"/>',
+  chart: '<path d="M2 12.5 6 7.2l2.4 2.4L14 3.5"/><path d="M10.2 3.5H14V7"/>',
+  spark: '<path d="M8 1.8 9.1 6h4.2L10.2 8.6l1.1 4.2L8 10.4 4.7 12.8 5.8 8.6 2.7 6h4.2L8 1.8z"/>',
+  people: '<circle cx="6" cy="5.5" r="1.8"/><circle cx="11" cy="6" r="1.5"/><path d="M2.6 12.8c.5-1.8 1.9-2.8 3.4-2.8s2.9 1 3.4 2.8"/><path d="M9.2 10.2c.8-.3 1.6-.4 2.2-.2 1.1.3 1.9 1.3 2.3 2.8"/>',
+  panel: '<rect x="2.2" y="2.6" width="11.6" height="10.8" rx="1.6"/><path d="M6.2 2.6v10.8"/>',
+  chev: '<path d="M4 6l4 4 4-4"/>',
+  pin: '<path d="M8 14.2s4.2-3.2 4.2-6.4a4.2 4.2 0 1 0-8.4 0c0 3.2 4.2 6.4 4.2 6.4z"/><circle cx="8" cy="7.6" r="1.3"/>',
+  bulb: '<path d="M6.2 13.2h3.6"/><path d="M6.6 11.6h2.8"/><path d="M8 2.2a4 4 0 0 0-2.2 7.3c.4.3.6.8.6 1.3h3.2c0-.5.2-1 .6-1.3A4 4 0 0 0 8 2.2z"/>',
+  cash: '<rect x="2" y="4" width="12" height="8.2" rx="1.4"/><circle cx="8" cy="8.1" r="1.6"/>',
+  users: '<circle cx="6" cy="6" r="1.7"/><circle cx="10.6" cy="6.4" r="1.4"/><path d="M2.8 12.6c.4-1.7 1.7-2.6 3.2-2.6s2.8.9 3.2 2.6"/><path d="M9.2 10.2c.9-.2 1.8-.1 2.4.4.6.5 1 1.4 1.2 2"/>',
+  link: '<path d="M6.6 9.4 5.2 10.8a2.2 2.2 0 0 1-3.1-3.1L3.5 6.3"/><path d="M9.4 6.6 10.8 5.2a2.2 2.2 0 0 1 3.1 3.1L12.5 9.7"/><path d="M6.2 9.8 9.8 6.2"/>',
+  notch: '<path d="M3 6.2h10v3.6H3z"/><path d="M6.2 6.2V5M9.8 6.2V5"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+};
+
+function icon(name) {
+  return `<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${PATHS[name] || ''}</svg>`;
+}
+
+function bookOf(id) { return BOOKS[id] || BOOKS.RELIANCE; }
+
+function spark(vals) {
+  const w = 320, h = 78;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / (max - min || 1)) * (h - 8) - 4;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}"/></svg>`;
+}
+
+function bars(vals, withLabels) {
+  const labelAt = new Set([0, 5, 10, 15, 20]);
+  return `<div class="bars">${vals.map((v, i) => {
+    const lab = withLabels && labelAt.has(i) ? `<em>${i + 1}</em>` : '<em></em>';
+    return `<div class="bar-col"><i style="height:${v}%"></i>${lab}</div>`;
+  }).join('')}</div>`;
+}
+
+function logo(book, cls) {
+  return `<span class="logo ${cls || ''}" style="background:${book.hue}">${book.mark}</span>`;
+}
+
+function facts(book) {
+  return `<div class="facts">
+    <div class="fact">${icon('pin')}<span>${book.place}</span></div>
+    <div class="fact">${icon('bulb')}<span>${book.series}</span></div>
+    <div class="fact">${icon('cash')}<span>${book.cap}</span></div>
+    <div class="fact">${icon('users')}<span>${book.count}</span></div>
+  </div>`;
+}
+
+function peek(book) {
+  return `<article class="peek" data-peek>
+    <div class="peek-h">
+      <div class="peek-id">
+        <span class="peek-logo" style="background:${book.hue}">${book.mark}</span>
+        <div>
+          <div class="peek-name">${book.name}</div>
+          <a class="peek-link" href="#${book.domain}" data-act="link">${book.domain}</a>
+        </div>
+      </div>
+      <div class="peek-acts">
+        <button type="button" title="Journal" data-act="journal">${icon('book')}</button>
+        <button type="button" title="Notch" data-act="notch">${icon('notch')}</button>
+        <button type="button" title="Copy symbol" data-act="copy">${icon('link')}</button>
+      </div>
+    </div>
+    ${facts(book)}
+    <div class="peek-rule"></div>
+    <div class="peek-px">
+      ${logo(book)}
+      <span>${book.name}</span>
+      <span class="tick">${book.ticker}</span>
+      <span class="grow"></span>
+      <span>${book.price}</span>
+      <span class="${book.up ? 'up' : 'down'}">${book.change}</span>
+    </div>
+    <div class="peek-chart">
+      ${bars(book.spark.map(v => 30 + (v % 50)), false)}
+      ${spark(book.spark)}
+    </div>
+  </article>`;
+}
+
+function workspace(showCollapse) {
+  const menu = state.menu ? `<div class="menu" data-menu>
+    ${['TradeAutopsy', 'Paper desk'].map(d => `<button type="button" data-act="desk" data-desk="${d}" class="${d === state.desk ? 'on' : ''}">${d}</button>`).join('')}
+  </div>` : '';
+  return `<div class="rail-head">
+    <button type="button" class="ws" data-act="menu">
+      <span class="mark">»</span>
+      <span class="ws-name">${state.desk}</span>
+      <span class="chev">${icon('chev')}</span>
+    </button>
+    ${showCollapse ? `<button type="button" class="icon-btn" title="Collapse rail" data-act="collapse">${icon('panel')}</button>` : ''}
+    ${menu}
+  </div>`;
+}
+
+function searchButtons() {
+  return SEARCHES.map(s => `<button type="button" class="rail-row ${state.search === s.id ? 'on' : ''}" data-act="search" data-id="${s.id}">
+    <span class="dot" style="background:${s.hue}"></span><span class="lbl">${s.name}</span>
+  </button>`).join('');
+}
+
+function variantA() {
+  const book = bookOf(state.book);
+  const search = SEARCHES.find(s => s.id === state.search);
+  let body;
+  if (state.nav === 'report') {
+    body = `
+      <div class="crumb"><b>Report</b> / Book autopsy</div>
+      <h1>Book autopsy</h1>
+      ${search ? `<div class="chip"><span class="dot" style="background:${search.hue}"></span> Search · ${search.name}</div>` : ''}
+      <div class="metrics">
+        <button type="button" class="metric ${state.source === 'kotak' ? 'on' : ''}" data-act="source" data-id="kotak">
+          <div class="metric-k"><span class="logo" style="background:#ff5a6a">K</span> Kotak</div>
+          <div class="metric-n">${state.desk === 'Paper desk' ? '48' : '213'}</div>
+          <div class="metric-f"><span>last 30 days</span><span class="down">−12.5%</span></div>
+        </button>
+        <button type="button" class="metric ${state.source === 'binance' ? 'on' : ''}" data-act="source" data-id="binance">
+          <div class="metric-k"><span class="logo" style="background:#f3ba2f">B</span> Binance</div>
+          <div class="metric-n">${state.desk === 'Paper desk' ? '11' : '32'}</div>
+          <div class="metric-f"><span>last 30 days</span></div>
+        </button>
+      </div>
+      <div class="plot" data-act="plot">${bars(PAGE_BARS, true)}</div>
+      ${state.card ? peek(book) : ''}`;
+  } else if (state.nav === 'signals') {
+    body = `<div class="crumb"><b>Signals</b></div><h1>Signals</h1>
+      <div class="quiet"><ul>
+        <li><span>Loss chasing</span> 3 round-trips in 18 min</li>
+        <li><span>Overtrading</span> 4 trades vs median 2</li>
+        <li><span>Size up</span> notional above baseline</li>
+      </ul></div>`;
+  } else {
+    const lines = PAGES[state.nav] || ['Empty on this prototype'];
+    const label = NAV.find(n => n.id === state.nav)?.label || 'Today';
+    body = `<div class="crumb"><b>${label}</b></div><h1>${label}</h1>
+      <div class="quiet"><ul>${lines.map(l => `<li><span>${l}</span></li>`).join('')}</ul></div>`;
+  }
+  const favs = BOOK_ORDER.map(id => {
+    const b = BOOKS[id];
+    return `<button type="button" class="rail-row ${state.book === id ? 'on' : ''}" data-act="book" data-id="${id}">
+      ${logo(b)}<span class="lbl">${b.name}</span><span class="meta">${b.kind}</span>
+    </button>`;
+  }).join('');
+  return `<aside class="rail">
+    ${workspace(true)}
+    <button type="button" class="rail-row ${state.nav === 'signals' ? 'on' : ''}" data-act="nav" data-id="signals">${icon('tray')}<span class="lbl">Signals</span><span class="meta">99+</span></button>
+    <button type="button" class="rail-row ${state.nav === 'today' ? 'on' : ''}" data-act="nav" data-id="today">${icon('user')}<span class="lbl">Today</span><span class="meta">12</span></button>
+    <div class="sec"><span>General</span></div>
+    ${NAV.map(n => `<button type="button" class="rail-row ${state.nav === n.id ? 'on' : ''}" data-act="nav" data-id="${n.id}">${icon(n.icon)}<span class="lbl">${n.label}</span></button>`).join('')}
+    <div class="sec"><span>Favorites</span><button type="button" class="plus" data-act="add" data-id="favorite" aria-label="Add favorite">+</button></div>
+    ${favs}
+    <div class="sec"><span>Searches</span><button type="button" class="plus" data-act="add" data-id="search" aria-label="Add search">+</button></div>
+    ${searchButtons()}
+  </aside>
+  <main class="main">${body}</main>`;
+}
+
+function variantB() {
+  const book = bookOf(state.book);
+  const books = BOOK_ORDER.map(id => {
+    const b = BOOKS[id];
+    return `<button type="button" class="book-nav ${state.book === id ? 'on' : ''}" data-act="book" data-id="${id}">
+      ${logo(b, 'lg')}
+      <span><span class="nm">${b.name}</span><span class="sub">${b.venue} · ${b.kind}</span></span>
+      <span class="px">${b.price}<small class="${b.up ? 'up' : 'down'}">${b.change}</small></span>
+    </button>`;
+  }).join('');
+  return `<aside class="rail">
+    ${workspace(false)}
+    <div class="sec"><span>Books</span><button type="button" class="plus" data-act="add" data-id="favorite">+</button></div>
+    ${books}
+    <div class="sec"><span>Searches</span></div>
+    ${searchButtons()}
+  </aside>
+  <main class="main">
+    <div class="hero">
+      <div>
+        <div class="crumb"><b>Book</b> / ${book.venue}</div>
+        <h1>${book.name} <a class="peek-link" href="#${book.domain}" data-act="link">${book.domain}</a></h1>
+        <div class="fact-row">
+          <span>${book.place}</span><span>${book.series}</span><span>${book.cap}</span><span>${book.count}</span>
+        </div>
+      </div>
+      <div class="hero-px">
+        <div class="big">${book.price}</div>
+        <div class="chg ${book.up ? 'up' : 'down'}">${book.change} session</div>
+        <div class="hero-acts">
+          <button type="button" title="Journal" data-act="journal">${icon('book')}</button>
+          <button type="button" title="Notch" data-act="notch">${icon('notch')}</button>
+          <button type="button" title="Copy symbol" data-act="copy">${icon('link')}</button>
+        </div>
+      </div>
+    </div>
+    <div class="plot-b">
+      ${bars(PAGE_BARS, true)}
+      ${spark(book.spark)}
+    </div>
+  </main>`;
+}
+
+function variantC() {
+  const search = SEARCHES.find(s => s.id === state.search) || SEARCHES[0];
+  const rows = TRADES.filter(t => t.search === search.id && (!state.chip || t.book === state.chip));
+  const chips = `<div class="chips">
+    <button type="button" data-act="chip" data-id="" class="${state.chip ? '' : 'on'}">All books</button>
+    ${BOOK_ORDER.map(id => `<button type="button" data-act="chip" data-id="${id}" class="${state.chip === id ? 'on' : ''}">${BOOKS[id].name}</button>`).join('')}
+  </div>`;
+  const table = rows.length ? `<table class="ledger">
+    <thead><tr><th>Time</th><th>Side</th><th>Symbol</th><th>Flag</th><th>P&L</th></tr></thead>
+    <tbody>${rows.map(t => {
+      const on = state.row === t.id;
+      const shown = BOOKS[t.book] || BOOKS.BINANCE;
+      return `<tr class="row ${on ? 'on' : ''}" data-act="row" data-id="${t.id}" data-book="${t.book}">
+        <td>${t.time}</td><td>${t.side}</td><td>${t.sym}</td><td>${t.flag}</td>
+        <td class="${t.up ? 'up' : 'down'}">${t.pnl}</td>
+      </tr>${on ? `<tr class="expand"><td colspan="5"><div class="expand-in"><div><div class="peek-name" style="margin-bottom:8px">${t.sym}</div>${facts(shown)}</div><div class="mini-chart">${spark(shown.spark)}</div></div></td></tr>` : ''}`;
+    }).join('')}</tbody>
+  </table>` : `<div class="empty">No ${search.name} fills${state.chip ? ` in ${BOOKS[state.chip].name}` : ''}.</div>`;
+  return `<aside class="rail">
+    ${workspace(false)}
+    <div class="sec"><span>Searches</span><button type="button" class="plus" data-act="add" data-id="search">+</button></div>
+    ${SEARCHES.map(s => `<button type="button" class="rail-row ${search.id === s.id ? 'on' : ''}" data-act="search" data-id="${s.id}">
+      <span class="dot" style="background:${s.hue}"></span><span class="lbl">${s.name}</span>
+    </button>`).join('')}
+    <div class="sec"><span>Favorites</span></div>
+    ${BOOK_ORDER.map(id => {
+      const b = BOOKS[id];
+      return `<button type="button" class="rail-row ${state.chip === id ? 'on' : ''}" data-act="book" data-id="${id}">${logo(b)}<span class="lbl">${b.name}</span></button>`;
+    }).join('')}
+  </aside>
+  <main class="main">
+    <div class="crumb"><b>Search</b> / ${search.name}</div>
+    <h1>${search.name}</h1>
+    <p class="lede">${rows.length} fill${rows.length === 1 ? '' : 's'} · last 30 days${state.chip ? ` · ${BOOKS[state.chip].name}` : ''}</p>
+    ${chips}
+    ${table}
+  </main>`;
+}
+
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  const v = (q.get('variant') || 'A').toUpperCase();
+  state.variant = ORDER.includes(v) ? v : 'A';
+  const nav = q.get('nav');
+  if (nav && (nav === 'signals' || NAV.some(n => n.id === nav) || nav === 'today')) state.nav = nav;
+  const book = q.get('book');
+  if (book && BOOKS[book]) state.book = book;
+  state.search = q.get('search') || (state.variant === 'C' ? 'revenge' : null);
+  if (state.variant === 'C' && !SEARCHES.some(s => s.id === state.search)) state.search = 'revenge';
+  state.card = q.get('card') === '0' ? false : true;
+  state.rail = q.get('rail') === 'collapsed' ? 'collapsed' : 'open';
+  state.chip = q.get('chip') && BOOKS[q.get('chip')] ? q.get('chip') : null;
+  state.row = q.get('row');
+  state.desk = q.get('desk') === 'Paper desk' ? 'Paper desk' : 'TradeAutopsy';
+  state.source = q.get('source') === 'binance' ? 'binance' : 'kotak';
+  if (q.get('prod') === '1') document.body.classList.add('prod');
+}
+
+function writeUrl() {
+  const u = new URL(location.href);
+  const q = u.searchParams;
+  q.set('variant', state.variant);
+  q.set('nav', state.nav);
+  q.set('book', state.book);
+  if (state.search) q.set('search', state.search); else q.delete('search');
+  q.set('card', state.card ? '1' : '0');
+  q.set('rail', state.rail);
+  if (state.chip) q.set('chip', state.chip); else q.delete('chip');
+  if (state.row) q.set('row', state.row); else q.delete('row');
+  if (state.desk !== 'TradeAutopsy') q.set('desk', state.desk); else q.delete('desk');
+  if (state.source !== 'kotak') q.set('source', state.source); else q.delete('source');
+  try { history.replaceState(null, '', u); } catch (e) { /* file:// may reject */ }
+}
+
+function render() {
+  const win = document.getElementById('win');
+  win.className = 'win ' + (state.variant === 'A' ? 'va' : state.variant === 'B' ? 'vb' : 'vc') + (state.variant === 'A' && state.rail === 'collapsed' ? ' is-collapsed' : '');
+  win.innerHTML = state.variant === 'A' ? variantA() : state.variant === 'B' ? variantB() : variantC();
+  const searchName = SEARCHES.find(s => s.id === state.search)?.name || '—';
+  document.getElementById('variant-label').innerHTML = `<strong>${state.variant}</strong> (${NAMES[state.variant]})`;
+  document.getElementById('state').innerHTML =
+    `<b>${state.variant}</b> ${NAMES[state.variant]}<br>` +
+    `desk ${state.desk} · nav ${state.nav} · book ${state.book} · card ${state.card ? 'open' : 'closed'} · rail ${state.rail}<br>` +
+    `search ${searchName} · chip ${state.chip || '—'} · row ${state.row || '—'} · source ${state.source}<br>` +
+    `last ${state.action}`;
+  writeUrl();
+}
+
+function setVariant(v) {
+  state.variant = v;
+  state.menu = false;
+  if (v === 'C' && !state.search) state.search = 'revenge';
+  state.action = `variant ${v}`;
+  render();
+}
+
+function cycle(dir) {
+  const i = ORDER.indexOf(state.variant);
+  setVariant(ORDER[(i + dir + ORDER.length) % ORDER.length]);
+}
+
+document.body.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  if (!act) {
+    if (state.menu && !e.target.closest('[data-menu]')) {
+      state.menu = false;
+      state.action = 'closed desk menu';
+      render();
+    }
+    return;
+  }
+  const id = act.dataset.id || '';
+  const kind = act.dataset.act;
+  if (kind === 'menu') {
+    state.menu = !state.menu;
+    state.action = state.menu ? 'opened desk menu' : 'closed desk menu';
+  } else if (kind === 'desk') {
+    state.desk = act.dataset.desk;
+    state.menu = false;
+    state.action = `desk ${state.desk}`;
+  } else if (kind === 'collapse') {
+    state.rail = state.rail === 'open' ? 'collapsed' : 'open';
+    state.action = `rail ${state.rail}`;
+  } else if (kind === 'nav') {
+    state.nav = id;
+    state.menu = false;
+    if (id !== 'report') state.card = false;
+    state.action = `nav ${id}`;
+  } else if (kind === 'book') {
+    if (state.variant === 'C') {
+      state.book = id;
+      state.chip = state.chip === id ? null : id;
+      state.row = null;
+    } else if (state.variant === 'A' && state.book === id && state.nav === 'report') {
+      state.card = !state.card;
+    } else {
+      state.book = id;
+      state.card = true;
+      if (state.variant === 'A') state.nav = 'report';
+    }
+    state.menu = false;
+    state.action = `book ${state.book}`;
+  } else if (kind === 'search') {
+    state.search = state.search === id && state.variant !== 'C' ? null : id;
+    if (state.variant === 'C') state.row = null;
+    state.action = `search ${state.search || 'cleared'}`;
+  } else if (kind === 'source') {
+    state.source = id;
+    state.action = `source ${id}`;
+  } else if (kind === 'chip') {
+    state.chip = id || null;
+    state.row = null;
+    state.action = `chip ${state.chip || 'all'}`;
+  } else if (kind === 'row') {
+    state.row = state.row === id ? null : id;
+    if (BOOKS[act.dataset.book]) state.book = act.dataset.book;
+    state.action = state.row ? `expanded ${id}` : 'collapsed row';
+  } else if (kind === 'add') {
+    state.action = `add ${id} (stub)`;
+  } else if (kind === 'link') {
+    e.preventDefault();
+    state.action = `link ${bookOf(state.book).domain}`;
+  } else if (kind === 'journal' || kind === 'notch' || kind === 'copy') {
+    state.action = `${kind} ${bookOf(state.book).ticker}`;
+  } else if (kind === 'plot') {
+    if (state.card) {
+      state.card = false;
+      state.action = 'closed card';
+    }
+  }
+  render();
+});
+
+document.getElementById('prev').onclick = () => cycle(-1);
+document.getElementById('next').onclick = () => cycle(1);
+
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); cycle(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); cycle(1); }
+  if (e.key === 'Escape') {
+    state.card = false;
+    state.menu = false;
+    state.row = null;
+    state.action = 'escape';
+    render();
+  }
+});
+
+readUrl();
+render();
+</script>
+</body>
+</html>

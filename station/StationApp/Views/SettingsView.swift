@@ -125,14 +125,6 @@ public struct SettingsView: View {
     private var notchGroup: some View {
         settingsGroup(title: "Notch") {
             inset {
-                toggleRow(
-                    title: "Hide Notch",
-                    caption: "⌥Space still summons it when you need the hands",
-                    isOn: Binding(
-                        get: { deskRules.hideNotch },
-                        set: { coordinator.setHideNotch($0) }
-                    )
-                )
                 Button(action: { coordinator.toggleNotch() }) {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 1) {

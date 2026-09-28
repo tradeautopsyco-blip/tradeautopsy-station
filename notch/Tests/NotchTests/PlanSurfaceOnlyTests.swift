@@ -81,13 +81,13 @@ struct PlanSurfaceOnlyTests {
         launcher.dismiss()
     }
 
-    // ⌥Space on the Station-hosted Notch is a PLAN expand/collapse, never a visibility toggle:
-    // the pill must stay on screen across the whole summon.
-    @Test func hostedToggleKeepsPillVisibleInsteadOfHidingTheHud() {
+    // Station-hosted Notch has no closed pill. ⌥Space shows the expanded PLAN surface
+    // and the next ⌥Space orders the panel out.
+    @Test func hostedToggleShowsExpandedSurfaceThenHidesIt() {
         let launcher = NotchLauncher(isHostedByStation: true)
         launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
         launcher.start()
-        #expect(launcher.isPanelVisible)
+        #expect(launcher.isPanelVisible == false)
 
         launcher.toggle()
         #expect(launcher.viewModel.isExpanded)
@@ -95,13 +95,13 @@ struct PlanSurfaceOnlyTests {
 
         launcher.toggle()
         #expect(launcher.viewModel.isExpanded == false)
-        #expect(launcher.isPanelVisible)
+        #expect(launcher.isPanelVisible == false)
 
         launcher.dismiss()
     }
 
     // Second ⌥Space mid-flight re-targets instead of leaving the window stuck at the expanded
-    // frame — the pending frame snap is cancelled and re-armed, never brick-walled.
+    // frame. Closing orders the panel out — there is no closed pill.
     @Test func rapidDoubleToggleSettlesCollapsedWithPanelBackAtPillFrame() async throws {
         let launcher = NotchLauncher(isHostedByStation: true)
         launcher.configure(secret: "test-secret", port: 9137, webBase: "http://127.0.0.1:9137")
@@ -119,7 +119,7 @@ struct PlanSurfaceOnlyTests {
 
         try await Task.sleep(nanoseconds: 500_000_000)
         #expect(launcher.viewModel.summonPanelAtExpandedFrame == false)
-        #expect(launcher.isPanelVisible)
+        #expect(launcher.isPanelVisible == false)
 
         launcher.dismiss()
     }
@@ -211,6 +211,7 @@ struct PlanSurfaceOnlyTests {
 
         launcher.viewModel.collapseExpandedFromOutsideClick()
         #expect(launcher.viewModel.isExpanded == false)
+        #expect(launcher.isPanelVisible == false)
 
         launcher.dismiss()
     }

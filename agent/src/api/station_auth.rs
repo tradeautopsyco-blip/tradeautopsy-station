@@ -5,7 +5,7 @@
 use crate::api::AppState;
 use crate::device_login::{
     begin_device_login, complete_device_login, prove_station_session,
-    station_device_browser_url, DeviceLoginPublic, StationRefreshError, StationSessionIdentity,
+    DeviceLoginPublic, StationRefreshError, StationSessionIdentity,
 };
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -215,12 +215,12 @@ pub async fn station_auth_sign_out_handler(State(state): State<AppState>) -> Res
 
 fn public_to_json(public: &DeviceLoginPublic, console_base: &str) -> Value {
     // Explicit map so we never accidentally serialize private fields.
-    let browser_url = station_device_browser_url(console_base, public).ok();
+    // Same URL as verification_uri_complete — one browser sign-in (AuthKit device), not Console OAuth first.
     json!({
         "user_code": public.user_code,
         "verification_uri": public.verification_uri,
         "verification_uri_complete": public.verification_uri_complete,
-        "browser_url": browser_url,
+        "browser_url": public.verification_uri_complete,
         "expires_in": public.expires_in,
         "interval": public.interval,
     })
@@ -254,9 +254,9 @@ mod tests {
         );
         assert!(json.get("device_code").is_none());
         assert_eq!(json["user_code"], "RRGQ-BJVS");
-        assert!(json["browser_url"]
-            .as_str()
-            .unwrap()
-            .contains("/auth/station-device"));
+        assert_eq!(
+            json["browser_url"].as_str().unwrap(),
+            json["verification_uri_complete"].as_str().unwrap()
+        );
     }
 }

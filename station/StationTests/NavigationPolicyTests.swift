@@ -11,8 +11,14 @@ struct NavigationPolicyTests {
         #expect(StationRoute.sessionRoutes == [.today])
     }
 
-    @Test func deskRoutesAreJournalAndSettings() {
-        #expect(StationRoute.deskRoutes == [.journal, .settings])
+    @Test func deskRoutesAreJournalReportAndSettings() {
+        #expect(StationRoute.deskRoutes == [.journal, .report, .settings])
+    }
+
+    @Test func workspaceRoutesMatchTheRail() {
+        #expect(StationRoute.workspaceRoutes == [
+            .today, .journal, .brokers, .health, .marketData, .aiWorkflow, .report, .settings,
+        ])
     }
 
     // MARK: - routeForPhase

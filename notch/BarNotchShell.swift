@@ -180,26 +180,6 @@ struct BarNotchShell: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                viewModel.requestHidePill()
-            } label: {
-                HStack(spacing: 10) {
-                    BarNavIcon(glyph: .eyeSlash)
-                    Text("Hide notch · ⌥Space")
-                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                    Spacer(minLength: 0)
-                }
-                .foregroundColor(BarDS.Text.hint)
-                .padding(.vertical, 7)
-                .padding(.horizontal, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(NotchPressButtonStyle(pressedScale: 0.98))
-            .accessibilityLabel("Hide notch")
-            .accessibilityHint("Hides the notch pill. Press Option-Space to show it again.")
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
-
             archetypePill
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
