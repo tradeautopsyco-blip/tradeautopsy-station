@@ -3,6 +3,87 @@ import Testing
 @testable import Notch
 
 struct BarWave2WorkingTests {
+    @Test func workingPlanLevelsFromPendingSnapshot() {
+        let pending = BarPendingDeclaration(
+            id: "d1",
+            status: "PENDING",
+            createdAt: nil,
+            symbol: "BTCUSDT",
+            side: "BUY",
+            quantity: 0.01,
+            declarationKind: "intraday",
+            protectiveSlConsent: true,
+            stopLoss: 90_000,
+            target: 100_000,
+            planSnapshot: BarPlanSnapshotSummary(
+                setupLabel: "harness",
+                invalidationLine: nil,
+                calmScale: nil,
+                confidenceScale: nil,
+                frustrationScale: nil,
+                excitementScale: nil,
+                stance: "planned",
+                intent: nil,
+                invalidationKind: nil,
+                invalidationPrice: nil,
+                product: nil,
+                targetPrice: nil,
+                symbol: "BTCUSDT",
+                side: "BUY",
+                quantity: 0.01,
+                stopLoss: nil,
+                bookId: "binance-com-spot",
+                entryPrice: 95_000,
+                emotionIn: nil,
+                invalidation: nil,
+            ),
+            filledQty: nil,
+            avgFill: nil,
+            fillSymbol: nil,
+            fillSide: nil,
+        )
+        let levels = BarWorkingLivePresentation.planLevels(pending: pending)
+        #expect(levels?.entry == 95_000)
+        #expect(levels?.stop == 90_000)
+        #expect(levels?.target == 100_000)
+        #expect(levels?.sideBuy == true)
+    }
+
+    @Test func marginHonestWhenBrokerNotConnected() {
+        let m = BarWorkingLivePresentation.marginDisplay(
+            brokerSyncClass: "not_connected",
+            barSyncState: "NOT_CONNECTED",
+            fundsStatus: "success",
+            freeText: "USDT 999",
+        )
+        #expect(m.value == "—")
+        #expect(m.subtitle == "Broker not synced")
+    }
+
+    @Test func unrealizedSubtitlePendingNoFill() {
+        let sub = BarWorkingLivePresentation.unrealizedSubtitle(
+            pending: BarPendingDeclaration(
+                id: "x",
+                status: "PENDING",
+                createdAt: nil,
+                symbol: "X",
+                side: "BUY",
+                quantity: 1,
+                declarationKind: "intraday",
+                protectiveSlConsent: false,
+                stopLoss: nil,
+                target: nil,
+                planSnapshot: nil,
+                filledQty: nil,
+                avgFill: nil,
+                fillSymbol: nil,
+                fillSide: nil,
+            ),
+            hasOpenFill: false,
+        )
+        #expect(sub == "Pending — no fill yet")
+    }
+
     @Test func unboundLastIsDarkNotBreached() {
         #expect(
             BarWorkingCompare.vsInvalidation(

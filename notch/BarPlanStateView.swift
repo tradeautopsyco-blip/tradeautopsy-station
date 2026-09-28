@@ -75,6 +75,10 @@ struct BarPlanStateView: View {
                 invalidatedWorkingBanner
             }
 
+            if shouldShowPlanSnapshot {
+                BarWorkingLiveCockpit(viewModel: viewModel, liveState: payload)
+            }
+
             if shouldShowMetricStrip { liveMetricStrip }
 
             if shouldShowPlanSnapshot { planSnapshotRows }
@@ -403,16 +407,26 @@ struct BarPlanStateView: View {
         let comp = payload?.composite
         let unreal = payload?.unrealizedPnL
         let worst = comp?.worstCase
-        let unrealDisplay =
-            unreal.map { formatSignedDeskMoney($0) }
-            ?? worst.map { formatSignedDeskMoney($0) }
-            ?? "—"
+        let pending = payload?.pendingDeclaration
+        let hasFill = (pending?.avgFill).map { $0 > 0 } == true || viewModel.hasOpenPositions
+        let unrealDisplay: String = {
+            if let unreal { return formatSignedDeskMoney(unreal) }
+            if hasFill, let worst { return formatSignedDeskMoney(worst) }
+            if pending != nil, !hasFill { return "—" }
+            if let worst { return formatSignedDeskMoney(worst) }
+            return "—"
+        }()
         let unrealColor: Color = {
+            guard hasFill || unreal != nil else { return BarDS.Text.secondary }
             let raw = unreal ?? worst ?? 0
             if raw < 0 { return BarDS.Accent.red }
             if raw > 0 { return BarDS.Accent.green }
             return BarDS.Text.primary
         }()
+        let unrealFootnote = BarWorkingLivePresentation.unrealizedSubtitle(
+            pending: pending,
+            hasOpenFill: hasFill,
+        )
         let maxLossDeclared = payload?.declaredMaxLossINR
         let maxLossDisplay = BarLivePlanMetricStripFormatting.maxLossDeclaredDisplayText(
             declaredMaxLossInr: maxLossDeclared,
@@ -430,7 +444,8 @@ struct BarPlanStateView: View {
                     title: "UNREALISED P&L",
                     value: unrealDisplay,
                     valueColor: unrealColor,
-                    ax: "Unrealised P L, \(unrealDisplay)",
+                    footnote: unrealFootnote,
+                    ax: "Unrealised P L, \(unrealDisplay), \(unrealFootnote)",
                 )
                 metricPill(
                     title: "MAX LOSS DECLARED",
@@ -463,7 +478,13 @@ struct BarPlanStateView: View {
         return BarDS.Accent.teal
     }
 
-    private func metricPill(title: String, value: String, valueColor: Color, ax: String) -> some View {
+    private func metricPill(
+        title: String,
+        value: String,
+        valueColor: Color,
+        footnote: String? = nil,
+        ax: String,
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
@@ -473,6 +494,13 @@ struct BarPlanStateView: View {
                 .font(BarDS.monoFont(BarDS.FontSize.body, weight: .medium))
                 .monospacedDigit()
                 .foregroundColor(valueColor)
+            if let footnote, !footnote.isEmpty {
+                Text(footnote)
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                    .foregroundColor(Color.white.opacity(0.38))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)

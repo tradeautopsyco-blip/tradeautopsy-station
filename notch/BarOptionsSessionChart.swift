@@ -43,6 +43,14 @@ struct SessionChartDragBindings {
     var targetText: Binding<String>
 }
 
+/// Read-only plan levels for Working (no drag). Same line semantics as declare chart.
+struct SessionChartPlanLevels: Equatable {
+    var sideBuy: Bool
+    var entry: Double?
+    var stop: Double?
+    var target: Double?
+}
+
 private struct SessionChartBar {
     let openTimeMs: Int64
     let open: Double
@@ -57,6 +65,8 @@ private struct SessionChartBar {
 struct BarOptionsSessionChart: View {
     let candles: [DeskSessionCandle]
     var drag: SessionChartDragBindings? = nil
+    /// Working desk — declared entry/stop/target without editable drag.
+    var fixedPlanLevels: SessionChartPlanLevels? = nil
     /// Bound quote last only. Nil → no last line, even if history close exists.
     var last: Double? = nil
     var symbol: String = ""
@@ -87,6 +97,13 @@ struct BarOptionsSessionChart: View {
                             plotWidth: plotWidth,
                             scale: scale,
                             drag: drag
+                        )
+                    } else if let fixedPlanLevels {
+                        drawRRBoxes(
+                            context: context,
+                            plotWidth: plotWidth,
+                            scale: scale,
+                            levels: fixedPlanLevels
                         )
                     }
                     for (i, bar) in parsed.enumerated() {
@@ -129,6 +146,13 @@ struct BarOptionsSessionChart: View {
                             plotWidth: plotWidth,
                             scale: scale,
                             drag: drag
+                        )
+                    } else if let fixedPlanLevels {
+                        drawPlanLines(
+                            context: context,
+                            plotWidth: plotWidth,
+                            scale: scale,
+                            levels: fixedPlanLevels
                         )
                     }
                     drawAxis(
@@ -246,6 +270,10 @@ struct BarOptionsSessionChart: View {
                     prices.append(p)
                 }
             }
+        } else if let fixedPlanLevels {
+            for p in [fixedPlanLevels.entry, fixedPlanLevels.stop, fixedPlanLevels.target].compactMap({ $0 }) {
+                prices.append(p)
+            }
         }
         if let ghost {
             prices.append(ghost)
@@ -262,12 +290,49 @@ struct BarOptionsSessionChart: View {
         let entry = Double(drag.entryText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let sl = Double(drag.stopText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let tp = Double(drag.targetText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        drawRRBoxes(
+            context: context,
+            plotWidth: plotWidth,
+            scale: scale,
+            entry: entry,
+            sl: sl,
+            tp: tp,
+            sideBuy: drag.sideBuy
+        )
+    }
+
+    private func drawRRBoxes(
+        context: GraphicsContext,
+        plotWidth: CGFloat,
+        scale: SessionChartScale,
+        levels: SessionChartPlanLevels
+    ) {
+        drawRRBoxes(
+            context: context,
+            plotWidth: plotWidth,
+            scale: scale,
+            entry: levels.entry,
+            sl: levels.stop,
+            tp: levels.target,
+            sideBuy: levels.sideBuy
+        )
+    }
+
+    private func drawRRBoxes(
+        context: GraphicsContext,
+        plotWidth: CGFloat,
+        scale: SessionChartScale,
+        entry: Double?,
+        sl: Double?,
+        tp: Double?,
+        sideBuy: Bool
+    ) {
         guard let entry, let sl, let tp,
               let ratio = BarIntradayDeclareValidator.riskRewardRatio(
                   entry: entry,
                   stop: sl,
                   target: tp,
-                  sideBuy: drag.sideBuy
+                  sideBuy: sideBuy
               )
         else { return }
         let yEntry = scale.y(forPrice: entry)
@@ -323,13 +388,61 @@ struct BarOptionsSessionChart: View {
         let entry = Double(drag.entryText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let sl = Double(drag.stopText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let tp = Double(drag.targetText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        drawPlanLines(
+            context: context,
+            plotWidth: plotWidth,
+            scale: scale,
+            entry: entry,
+            sl: sl,
+            tp: tp,
+            sideBuy: drag.sideBuy
+        )
+        if let ghost, dragging != nil {
+            strokePlanLine(
+                context: context,
+                plotWidth: plotWidth,
+                y: scale.y(forPrice: ghost),
+                color: BarDS.Text.primary.opacity(0.28),
+                badge: "",
+                dashed: true,
+                axisTag: nil
+            )
+        }
+    }
+
+    private func drawPlanLines(
+        context: GraphicsContext,
+        plotWidth: CGFloat,
+        scale: SessionChartScale,
+        levels: SessionChartPlanLevels
+    ) {
+        drawPlanLines(
+            context: context,
+            plotWidth: plotWidth,
+            scale: scale,
+            entry: levels.entry,
+            sl: levels.stop,
+            tp: levels.target,
+            sideBuy: levels.sideBuy
+        )
+    }
+
+    private func drawPlanLines(
+        context: GraphicsContext,
+        plotWidth: CGFloat,
+        scale: SessionChartScale,
+        entry: Double?,
+        sl: Double?,
+        tp: Double?,
+        sideBuy: Bool
+    ) {
         if let entry {
             strokePlanLine(
                 context: context,
                 plotWidth: plotWidth,
                 y: scale.y(forPrice: entry),
                 color: BarDS.Accent.blue,
-                badge: drag.sideBuy ? "BUY" : "SELL",
+                badge: sideBuy ? "BUY" : "SELL",
                 dashed: false,
                 axisTag: SessionChartPriceFormat.string(from: entry)
             )
@@ -354,17 +467,6 @@ struct BarOptionsSessionChart: View {
                 badge: "TP",
                 dashed: true,
                 axisTag: SessionChartPriceFormat.string(from: tp)
-            )
-        }
-        if let ghost, dragging != nil {
-            strokePlanLine(
-                context: context,
-                plotWidth: plotWidth,
-                y: scale.y(forPrice: ghost),
-                color: BarDS.Text.primary.opacity(0.28),
-                badge: "",
-                dashed: true,
-                axisTag: nil
             )
         }
     }
