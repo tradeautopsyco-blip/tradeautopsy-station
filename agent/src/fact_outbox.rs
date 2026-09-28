@@ -517,6 +517,7 @@ mod coalesce_tests {
                 refresh_token: "r".into(),
                 expires_in: 3600,
                 refresh_expires_in: None,
+                device_id: None,
             })
             .expect("save jwt");
         let outbox = FactOutbox::open(&db, upstream)

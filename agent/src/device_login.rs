@@ -73,6 +73,12 @@ enum WorkOsMintProof {
     AccessToken(String),
 }
 
+/// Console paired-device contract (station_devices, PR #379).
+/// Access JWT is 1 hour; refresh family is 30 days. Values are what Console
+/// returns — Station does not invent a different TTL.
+pub const STATION_ACCESS_TTL_SECS: u64 = 60 * 60;
+pub const STATION_REFRESH_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+
 #[derive(Debug, Deserialize)]
 struct ConsoleStationTokenResponse {
     access_token: String,
@@ -80,6 +86,29 @@ struct ConsoleStationTokenResponse {
     expires_in: u64,
     #[serde(default)]
     refresh_expires_in: Option<u64>,
+    #[serde(default)]
+    device_id: Option<String>,
+}
+
+fn normalize_device_id(raw: Option<String>) -> Option<String> {
+    let trimmed = raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    match trimmed {
+        Some(id) if id.len() <= 128 => Some(id),
+        _ => None,
+    }
+}
+
+/// Refresh grant for `POST /api/auth/station/token`. Includes `device_id` when
+/// Keychain has one so Console can match `station_devices` and honor revoke.
+pub(crate) fn refresh_grant_body(current: &StationTokens) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "grant_type": "refresh_token",
+        "refresh_token": current.refresh_token,
+    });
+    if let Some(device_id) = normalize_device_id(current.device_id.clone()) {
+        body["device_id"] = serde_json::Value::String(device_id);
+    }
+    body
 }
 
 /// Begin WorkOS device authorization. Returns UI-safe public fields + private pending handle.
@@ -235,6 +264,7 @@ async fn mint_station_tokens(
         refresh_token: parsed.refresh_token,
         expires_in: parsed.expires_in,
         refresh_expires_in: parsed.refresh_expires_in,
+        device_id: normalize_device_id(parsed.device_id),
     })
 }
 
@@ -297,13 +327,12 @@ pub async fn refresh_stored_station_tokens(
     let resp = http
         .post(format!("{base}/api/auth/station/token"))
         .header("content-type", "application/json")
-        .json(&serde_json::json!({
-            "grant_type": "refresh_token",
-            "refresh_token": current.refresh_token,
-        }))
+        .json(&refresh_grant_body(&current))
         .send()
         .await
-        .map_err(|e| StationRefreshError::Transient(anyhow!(e).context("Console station refresh network")))?;
+        .map_err(|e| {
+            StationRefreshError::Transient(anyhow!(e).context("Console station refresh network"))
+        })?;
 
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
@@ -317,15 +346,19 @@ pub async fn refresh_stored_station_tokens(
         )));
     }
 
-    let parsed: ConsoleStationTokenResponse = serde_json::from_str(&text)
-        .map_err(|e| StationRefreshError::Transient(anyhow!(e).context("parse Console station refresh")))?;
+    let parsed: ConsoleStationTokenResponse = serde_json::from_str(&text).map_err(|e| {
+        StationRefreshError::Transient(anyhow!(e).context("parse Console station refresh"))
+    })?;
     let tokens = StationTokens {
         access_token: parsed.access_token,
         refresh_token: parsed.refresh_token,
         expires_in: parsed.expires_in,
         refresh_expires_in: parsed.refresh_expires_in,
+        device_id: normalize_device_id(parsed.device_id).or(current.device_id),
     };
-    store.save(&tokens).map_err(StationRefreshError::Transient)?;
+    store
+        .save(&tokens)
+        .map_err(StationRefreshError::Transient)?;
     Ok(tokens)
 }
 
@@ -358,7 +391,10 @@ pub async fn prove_station_session(
 }
 
 /// Console-branded device-login page (same Auth UI as `/login`) before WorkOS finishes pairing.
-pub fn station_device_browser_url(console_base: &str, public: &DeviceLoginPublic) -> Result<String> {
+pub fn station_device_browser_url(
+    console_base: &str,
+    public: &DeviceLoginPublic,
+) -> Result<String> {
     let base = console_base.trim_end_matches('/');
     require_console_base_url(base)?;
     Ok(format!(
@@ -485,14 +521,38 @@ mod tests {
     }
 
     #[test]
+    fn refresh_grant_includes_device_id_when_keychain_has_one() {
+        let with_device = StationTokens {
+            access_token: "access".into(),
+            refresh_token: "refresh".into(),
+            expires_in: STATION_ACCESS_TTL_SECS,
+            refresh_expires_in: Some(STATION_REFRESH_TTL_SECS),
+            device_id: Some("  device-row  ".into()),
+        };
+        let body = refresh_grant_body(&with_device);
+        assert_eq!(body["grant_type"], "refresh_token");
+        assert_eq!(body["device_id"], "device-row");
+        assert!(body.get("access_token").is_none());
+
+        let legacy = StationTokens {
+            device_id: None,
+            ..with_device
+        };
+        let legacy_body = refresh_grant_body(&legacy);
+        assert!(legacy_body.get("device_id").is_none());
+        assert_eq!(legacy_body["grant_type"], "refresh_token");
+    }
+
+    #[test]
     fn complete_login_persists_tokens_when_mint_json_is_injected() {
         // Unit-level: store seam after mint shape is known (no live WorkOS).
         let store = MemoryStationTokenStore::default();
         let tokens = StationTokens {
             access_token: "station.access".into(),
             refresh_token: "station.refresh".into(),
-            expires_in: 900,
-            refresh_expires_in: Some(1000),
+            expires_in: STATION_ACCESS_TTL_SECS,
+            refresh_expires_in: Some(STATION_REFRESH_TTL_SECS),
+            device_id: Some("device-1".into()),
         };
         store.save(&tokens).unwrap();
         let loaded = store.load().unwrap().unwrap();

@@ -1,4 +1,4 @@
-use crate::UpstreamClient;
+use crate::{StationRefreshError, UpstreamClient};
 use anyhow::Context;
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -182,7 +182,13 @@ impl CaptureOutbox {
             return Ok(ProcessNowResult::Queued);
         };
         let outcome = self.send_attempt(&mut row).await;
+        // A 401 refresh leaves the capture queued (HTTP 202). Do not re-read
+        // the row: the worker may already have retried and ACKed it.
+        let queued = matches!(outcome, AttemptOutcome::Retry { .. });
         self.apply_outcome(row, outcome)?;
+        if queued {
+            return Ok(ProcessNowResult::Queued);
+        }
         self.current_result(id)
     }
 
@@ -298,21 +304,32 @@ impl CaptureOutbox {
             "{}/api/daemon/journal/toolbar-capture/accept",
             self.upstream.config.base_url
         );
+        match self.upstream.ensure_fresh_station_access(None).await {
+            Err(StationRefreshError::Revoked) => {
+                return AttemptOutcome::DeadLetter {
+                    reason: "station session revoked".into(),
+                };
+            }
+            Ok(()) | Err(StationRefreshError::Transient(_)) => {}
+        }
         // A8 IV — Console identity is Station Bearer only; wire user_id stays local.
-        let response = match self.upstream.authorize_brain(
-            self.upstream
-                .http
-                .post(url)
-                .header("x-request-id", request_id)
-                .json(&payload),
-        ) {
-            Ok(req) => req.send().await,
+        let auth_header = match self.upstream.brain_authorization_header() {
+            Ok(header) => header,
             Err(err) => {
                 return AttemptOutcome::Retry {
                     reason: format!("station bearer missing: {err}"),
                 }
             }
         };
+        let response = self
+            .upstream
+            .http
+            .post(&url)
+            .header("x-request-id", &request_id)
+            .header(reqwest::header::AUTHORIZATION, auth_header.as_str())
+            .json(&payload)
+            .send()
+            .await;
         let resp = match response {
             Ok(v) => v,
             Err(err) => {
@@ -323,6 +340,26 @@ impl CaptureOutbox {
         };
 
         let status = resp.status().as_u16();
+        if status == 401 {
+            let _ = resp.text().await;
+            let rejected = auth_header
+                .strip_prefix("Bearer ")
+                .unwrap_or(auth_header.as_str());
+            // Refresh once, then leave the row queued so the worker retries with
+            // the new access token. The accept call returns 202 queued.
+            return match self
+                .upstream
+                .ensure_fresh_station_access(Some(rejected))
+                .await
+            {
+                Err(StationRefreshError::Revoked) => AttemptOutcome::DeadLetter {
+                    reason: "station session revoked".into(),
+                },
+                Ok(()) | Err(StationRefreshError::Transient(_)) => AttemptOutcome::Retry {
+                    reason: "http 401".into(),
+                },
+            };
+        }
         let text = resp.text().await.unwrap_or_else(|_| "{}".to_string());
         if status == 200 {
             if let Ok(json_body) = serde_json::from_str::<Value>(&text) {
@@ -395,7 +432,12 @@ impl CaptureOutbox {
                         params![STATE_DEAD_LETTER, reason, now, row.id],
                     )?;
                 } else {
-                    let delay = self.retry_delay_ms(row.id, next_attempts);
+                    // 401 already refreshed; retry immediately with the new access token.
+                    let delay = if reason == "http 401" {
+                        0
+                    } else {
+                        self.retry_delay_ms(row.id, next_attempts)
+                    };
                     let next_at = now.saturating_add(delay);
                     conn.execute(
                         "UPDATE capture_outbox
