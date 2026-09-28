@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 const SERVICE: &str = "TradeAutopsy";
 const USER: &str = "station_caller_tokens";
 
+/// Keychain blob for one paired Station (Console `station_devices`).
+///
+/// Console PR #379: access JWT lifetime is 1 hour (`expires_in` 3600) and the
+/// refresh family lasts 30 days (`refresh_expires_in` 2_592_000). `device_id`
+/// is the Keychain-backed device row Linked Stations can revoke. Older blobs
+/// without `device_id` still load; the next mint/refresh fills it in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationTokens {
     pub access_token: String,
@@ -14,6 +20,8 @@ pub struct StationTokens {
     pub expires_in: u64,
     #[serde(default)]
     pub refresh_expires_in: Option<u64>,
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 pub trait StationTokenStore: Send + Sync {
@@ -94,8 +102,9 @@ mod tests {
         let tokens = StationTokens {
             access_token: "access.jwt.here".into(),
             refresh_token: "opaque-refresh".into(),
-            expires_in: 900,
-            refresh_expires_in: Some(5_184_000),
+            expires_in: 3600,
+            refresh_expires_in: Some(2_592_000),
+            device_id: Some("11111111-1111-4111-8111-111111111111".into()),
         };
 
         store.save(&tokens).expect("save");

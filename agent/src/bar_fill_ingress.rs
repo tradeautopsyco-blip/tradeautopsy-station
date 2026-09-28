@@ -523,17 +523,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = UpstreamClient {
-            config: crate::UpstreamConfig {
-                base_url: server.uri(),
-                daemon_secret: "sec-for-test".to_string(),
-            },
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(5))
-                .build()
-                .expect("client"),
-            refresh: Default::default(),
-        };
+        let client = UpstreamClient::new(crate::UpstreamConfig {
+            base_url: server.uri(),
+            daemon_secret: "sec-for-test".to_string(),
+        })
+        .expect("upstream");
         let cfg = fixture_cfg();
         post_bar_broker_fill_ingress(
             &client,

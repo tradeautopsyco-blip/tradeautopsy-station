@@ -16,11 +16,6 @@ mod broker_sync;
 mod broker_sync_control;
 mod broker_validation;
 mod coinm_realized_pnl;
-mod money_matrix;
-mod fx_cds_realized_pnl;
-mod mcx_realized_pnl;
-mod nfo_realized_pnl;
-mod options_realized_pnl;
 mod data;
 mod device_login;
 mod dns_block;
@@ -28,8 +23,9 @@ mod egress;
 mod event_bus;
 mod exchange_info;
 mod fact_outbox;
-mod instruments;
+mod fx_cds_realized_pnl;
 mod inr_cash_wac;
+mod instruments;
 mod kill_policy;
 mod kill_switch_audit;
 mod kotak_nfo_scrip;
@@ -38,15 +34,19 @@ mod kotak_rest_quotes;
 mod kotak_scrip_master;
 mod live_book;
 mod loopback_oauth_tls;
-pub mod rustls_crypto;
+mod m1_envelope;
+mod m1_income_share;
+mod mcx_realized_pnl;
 mod metrics;
+mod money_matrix;
+mod nfo_realized_pnl;
 mod oauth_loopback;
+mod options_realized_pnl;
 mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
 mod round_trip_engine;
-mod m1_envelope;
-mod m1_income_share;
+pub mod rustls_crypto;
 mod share_cited_pnl;
 mod sse_signing;
 mod station_tokens;
@@ -124,6 +124,7 @@ pub fn dns_disable_block_for_tests() -> Result<(), String> {
 pub fn dns_is_block_active_for_tests() -> bool {
     dns_block::is_block_active()
 }
+pub use data::split_fills_by_book;
 pub use egress::{
     Decision as EgressDecision, EgressCall, EgressError, EgressRequest, EgressResponse,
     EgressTransport, Lane, Outcome as EgressOutcome, RefuseKind, RefuseReason, VenueEgress,
@@ -135,6 +136,12 @@ pub use exchange_info::{
     ExchangeInfoSymbolCache, SymbolAssets, SymbolFilters,
 };
 pub use fact_outbox::{EnqueueOutcome, Fact, FactOutbox, FactRow};
+pub use inr_cash_wac::{
+    aggregate_known_pnl_inr, is_aggregate_eligible as is_inr_cash_aggregate_eligible,
+    is_inr_cash_fill, InrCashReconstructResult, InrCashRoundTrip, InrCashWacEngine,
+    BOOK_ID as INR_CASH_BOOK_ID, CALC_PROFILE_ID as INR_CASH_CALC_PROFILE_ID,
+    OWNER_PATH as INR_CASH_WAC_OWNER_PATH,
+};
 pub use instruments::{zerodha_instruments_enabled, InstrumentStore};
 pub use kill_policy::{KillPolicy, KillPolicyStore};
 pub use kill_switch_audit::{
@@ -142,17 +149,13 @@ pub use kill_switch_audit::{
     KillSwitchAuditSigner, KillSwitchAuditStore,
 };
 pub use metrics::AgentMetrics;
+pub use nfo_realized_pnl::NfoRealizedPnlEngine;
 pub use outbox::{
     queued_response_json, CaptureOutbox, DeadLetterStatusItem, OutboxConfig, OutboxCounts,
     OutboxStatusSnapshot, ProcessNowResult,
 };
 pub use recent_trades::RecentTradesStore;
 pub use resolve_kill_switch_broker::resolve_kill_switch_broker;
-pub use inr_cash_wac::{
-    aggregate_known_pnl_inr, is_aggregate_eligible as is_inr_cash_aggregate_eligible,
-    is_inr_cash_fill, InrCashReconstructResult, InrCashRoundTrip, InrCashWacEngine, BOOK_ID as INR_CASH_BOOK_ID,
-    CALC_PROFILE_ID as INR_CASH_CALC_PROFILE_ID, OWNER_PATH as INR_CASH_WAC_OWNER_PATH,
-};
 pub use round_trip_engine::{
     aggregate_known_pnl, is_aggregate_eligible, FillTimeFeePriceLookup, PairAssetFeeLookup,
     ReconstructResult, RoundTrip, RoundTripEngine, StablecoinAndBaseAssetFeeLookup, UnhandledFee,
@@ -166,8 +169,6 @@ pub use today::{
     open_inventory_from_fills, OpenInventoryRow, TodayDegradedReason, TodayHeroPayload,
     TodayPayload, TodayService, TodayStore,
 };
-pub use data::split_fills_by_book;
-pub use nfo_realized_pnl::NfoRealizedPnlEngine;
 pub use ubi::{
     calc_profile, catalog_v1, classify_response, compliance_profile, component_candidate_paths,
     component_crate_dir, component_file_name, component_path_for_slug, decode_credential_blob,
@@ -177,14 +178,13 @@ pub use ubi::{
     stamp_fill_identity, AdapterOrigin, AssetClass, AuthScheme, BrokerAvailability,
     BrokerCredentialVault, BrokerDescriptor, BrokerHttpFixture, BrokerHttpMode,
     BrokerHttpTransport, CalcProfile, ComplianceProfile, CredentialBlob, FillCursor,
-    FillEvent as UbiFillEvent, HostCredentialBlob, InstrumentClass,
-    KeyringBrokerCredentialVault, MemoryBrokerCredentialVault, PreparedHttpRequest,
-    RecordingTransport, ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig,
-    UbiHostError, UbiHostState, WasmBrokerAdapter, WitAssetClass, WitInstrumentClass,
-    ALLOWED_BROKER_HOSTS, BROKER_CREDENTIAL_KEYCHAIN_SERVICE, BYBIT_API_HOST, BYBIT_BOOK_ID,
-    BYBIT_RECV_WINDOW, COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, KRAKEN_API_HOST,
-    KRAKEN_BOOK_ID, OKX_COM_SPOT_BOOK_ID, OKX_API_HOST,
-    KOTAK_SESSION_KEYCHAIN_SERVICE, RESPONSE_HEADER_ALLOWLIST,
+    FillEvent as UbiFillEvent, HostCredentialBlob, InstrumentClass, KeyringBrokerCredentialVault,
+    MemoryBrokerCredentialVault, PreparedHttpRequest, RecordingTransport,
+    ReqwestBrokerHttpTransport, TransportResponse, UbiHostConfig, UbiHostError, UbiHostState,
+    WasmBrokerAdapter, WitAssetClass, WitInstrumentClass, ALLOWED_BROKER_HOSTS,
+    BROKER_CREDENTIAL_KEYCHAIN_SERVICE, BYBIT_API_HOST, BYBIT_BOOK_ID, BYBIT_RECV_WINDOW,
+    COMPONENT_DIR_ENV, FORBIDDEN_COMPONENT_HEADERS, KOTAK_SESSION_KEYCHAIN_SERVICE,
+    KRAKEN_API_HOST, KRAKEN_BOOK_ID, OKX_API_HOST, OKX_COM_SPOT_BOOK_ID, RESPONSE_HEADER_ALLOWLIST,
 };
 pub use usdm_realized_pnl::{
     income_realized_from_json, realized_pnl_usd, usdm_income_call, UsdmIncomeCall, UsdmIncomeRow,
@@ -266,11 +266,19 @@ impl UpstreamConfig {
     }
 }
 
+struct StationTokenSlot {
+    store: Arc<dyn StationTokenStore>,
+    /// Set when `run_agent` installs the process store. Authoritative tokens
+    /// outrank the loopback `STATION_ACCESS_TOKEN` bootstrap.
+    authoritative: bool,
+}
+
 #[derive(Clone)]
 pub struct UpstreamClient {
     pub config: UpstreamConfig,
     pub http: reqwest::Client,
     pub refresh: Arc<StationRefreshGate>,
+    token_slot: Arc<std::sync::RwLock<StationTokenSlot>>,
 }
 
 /// Serializes Station refresh-token rotation and backs off after failures.
@@ -301,9 +309,7 @@ impl UpstreamClient {
     /// Test seam: force `ensure_fresh_station_access` to fail as Revoked.
     #[doc(hidden)]
     pub fn test_force_station_refresh_revoked(&self, force: bool) {
-        self.refresh
-            .force_revoked
-            .store(force, Ordering::SeqCst);
+        self.refresh.force_revoked.store(force, Ordering::SeqCst);
     }
 
     pub fn new(config: UpstreamConfig) -> anyhow::Result<Self> {
@@ -319,15 +325,47 @@ impl UpstreamClient {
             config,
             http,
             refresh: Arc::default(),
+            token_slot: Arc::new(std::sync::RwLock::new(StationTokenSlot {
+                store: Arc::new(KeyringStationTokenStore),
+                authoritative: false,
+            })),
         })
+    }
+
+    /// Bind the process token store (Keychain in prod, memory in tests).
+    pub fn install_token_store(&self, store: Arc<dyn StationTokenStore>) {
+        let mut slot = self
+            .token_slot
+            .write()
+            .unwrap_or_else(|err| err.into_inner());
+        slot.store = store;
+        slot.authoritative = true;
+    }
+
+    fn station_token_store(&self) -> (Arc<dyn StationTokenStore>, bool) {
+        let slot = self
+            .token_slot
+            .read()
+            .unwrap_or_else(|err| err.into_inner());
+        (slot.store.clone(), slot.authoritative)
     }
 
     /// Brain identity: Station Caller Bearer from Keychain (A8). Never x-user-id.
     pub fn brain_authorization_header(&self) -> anyhow::Result<String> {
         self.config.require_https_base()?;
-        // Loopback bootstrap first so tests / wiremock never block on Keychain.
-        // Still gated to loopback-http + STATION_ACCESS_TOKEN (T1) — never a
-        // production identity rail against a real https Console.
+        let (store, authoritative) = self.station_token_store();
+        // Paired-device Keychain wins over the loopback bootstrap token so a
+        // quiet refresh is what BAR and the capture outbox actually send.
+        if authoritative {
+            if let Some(tokens) = store.load()? {
+                if !tokens.access_token.trim().is_empty() {
+                    return Ok(bearer_authorization(&tokens));
+                }
+            }
+        }
+        // Loopback bootstrap when the store is empty. Still gated to
+        // loopback-http + STATION_ACCESS_TOKEN (T1) — never a production
+        // identity rail against a real https Console.
         if self.config.is_loopback_http_bootstrap() {
             if let Ok(token) = std::env::var("STATION_ACCESS_TOKEN") {
                 if !token.trim().is_empty() {
@@ -335,8 +373,10 @@ impl UpstreamClient {
                 }
             }
         }
-        if let Some(tokens) = KeyringStationTokenStore.load()? {
-            return Ok(bearer_authorization(&tokens));
+        if let Some(tokens) = store.load()? {
+            if !tokens.access_token.trim().is_empty() {
+                return Ok(bearer_authorization(&tokens));
+            }
         }
         anyhow::bail!("No Station Caller tokens in Keychain — complete device login")
     }
@@ -362,7 +402,18 @@ impl UpstreamClient {
         if gate.force_revoked.load(Ordering::SeqCst) {
             return Err(StationRefreshError::Revoked);
         }
-        if self.config.is_loopback_http_bootstrap() {
+        let (store, authoritative) = self.station_token_store();
+        let paired = if authoritative {
+            store
+                .load()
+                .map_err(StationRefreshError::Transient)?
+                .is_some()
+        } else {
+            false
+        };
+        // Empty loopback bootstrap has nothing to rotate. A Keychain device
+        // still quiet-refreshes against a loopback Console (tests and local).
+        if self.config.is_loopback_http_bootstrap() && !paired {
             return Ok(());
         }
         let now_ms = Utc::now().timestamp_millis();
@@ -373,7 +424,6 @@ impl UpstreamClient {
         }
 
         let _held = gate.lock.lock().await;
-        let store = KeyringStationTokenStore;
         let current = store
             .load()
             .map_err(StationRefreshError::Transient)?
@@ -389,8 +439,12 @@ impl UpstreamClient {
             return Ok(());
         }
 
-        match device_login::refresh_stored_station_tokens(&self.http, &self.config.base_url, &store)
-            .await
+        match device_login::refresh_stored_station_tokens(
+            &self.http,
+            &self.config.base_url,
+            store.as_ref(),
+        )
+        .await
         {
             Ok(_) => {
                 gate.consecutive_failures.store(0, Ordering::SeqCst);
@@ -398,7 +452,9 @@ impl UpstreamClient {
                 Ok(())
             }
             Err(StationRefreshError::Revoked) => {
-                tracing::warn!("Station refresh token revoked; cleared Keychain — device login required");
+                tracing::warn!(
+                    "Station refresh token revoked; cleared Keychain — device login required"
+                );
                 gate.consecutive_failures.store(0, Ordering::SeqCst);
                 Err(StationRefreshError::Revoked)
             }
@@ -417,6 +473,27 @@ impl UpstreamClient {
             }
         }
     }
+}
+
+/// Rotate the paired-device access JWT before it expires. No UI prompt.
+/// Failures are logged without token material.
+fn spawn_quiet_station_refresh(upstream: Arc<UpstreamClient>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            match upstream.ensure_fresh_station_access(None).await {
+                Ok(()) => {}
+                Err(StationRefreshError::Revoked) => {
+                    tracing::warn!("Station quiet refresh revoked; device login required");
+                }
+                Err(StationRefreshError::Transient(err)) => {
+                    tracing::warn!(error = %err, "Station quiet refresh deferred");
+                }
+            }
+        }
+    });
 }
 
 /// Configuration for [`run_agent`], including mandatory daemon shared secret for wire v1.
@@ -1605,6 +1682,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let station_token_store = config
         .station_token_store
         .unwrap_or_else(|| Arc::new(KeyringStationTokenStore));
+    upstream.install_token_store(station_token_store.clone());
+    spawn_quiet_station_refresh(upstream.clone());
     let station_tokens_in_store = station_token_store.load().ok().flatten().is_some();
     let loopback_bootstrap_jwt = upstream.config.is_loopback_http_bootstrap()
         && std::env::var("STATION_ACCESS_TOKEN")

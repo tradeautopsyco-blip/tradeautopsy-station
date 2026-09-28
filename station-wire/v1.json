@@ -95,7 +95,14 @@
         "session": { "method": "GET", "path": "/api/daemon/auth/station/session" },
         "sign_out": { "method": "POST", "path": "/api/daemon/auth/station/sign-out" },
         "brain_token": { "method": "POST", "path": "/api/auth/station/token" },
-        "brain_session": { "method": "GET", "path": "/api/auth/station/session" }
+        "brain_session": { "method": "GET", "path": "/api/auth/station/session" },
+        "paired_device": {
+          "console": "https://github.com/FExEVIL/tradeautopsy/pull/379",
+          "grant_type": "refresh_token",
+          "device_id": "Keychain field on the station caller blob; sent on refresh",
+          "access_ttl_secs": 3600,
+          "refresh_ttl_secs": 2592000
+        }
       }
     },
     "sse": {
