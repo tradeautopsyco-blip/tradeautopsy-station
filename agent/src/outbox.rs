@@ -76,15 +76,29 @@ struct OutboxRow {
 
 #[derive(Debug)]
 pub enum ProcessNowResult {
-    Acked { response_body: String },
+    Acked {
+        response_body: String,
+    },
     Queued,
-    DeadLetter { reason: String },
+    /// `response_body` is the Console JSON when a 400 dead-letter kept `error.code`.
+    /// `reason` stays the existing rail label (`validation`, …).
+    DeadLetter {
+        reason: String,
+        response_body: Option<String>,
+    },
 }
 
 enum AttemptOutcome {
-    Acked { response_body: String },
-    Retry { reason: String },
-    DeadLetter { reason: String },
+    Acked {
+        response_body: String,
+    },
+    Retry {
+        reason: String,
+    },
+    DeadLetter {
+        reason: String,
+        response_body: Option<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -249,6 +263,7 @@ impl CaptureOutbox {
         } else if state == STATE_DEAD_LETTER {
             Ok(ProcessNowResult::DeadLetter {
                 reason: last_error.unwrap_or_else(|| "dead-letter".to_string()),
+                response_body: response_json,
             })
         } else {
             Ok(ProcessNowResult::Queued)
@@ -292,6 +307,7 @@ impl CaptureOutbox {
             Err(err) => {
                 return AttemptOutcome::DeadLetter {
                     reason: format!("invalid payload_json: {err}"),
+                    response_body: None,
                 }
             }
         };
@@ -308,6 +324,7 @@ impl CaptureOutbox {
             Err(StationRefreshError::Revoked) => {
                 return AttemptOutcome::DeadLetter {
                     reason: "station session revoked".into(),
+                    response_body: None,
                 };
             }
             Ok(()) | Err(StationRefreshError::Transient(_)) => {}
@@ -354,6 +371,7 @@ impl CaptureOutbox {
             {
                 Err(StationRefreshError::Revoked) => AttemptOutcome::DeadLetter {
                     reason: "station session revoked".into(),
+                    response_body: None,
                 },
                 Ok(()) | Err(StationRefreshError::Transient(_)) => AttemptOutcome::Retry {
                     reason: "http 401".into(),
@@ -384,21 +402,17 @@ impl CaptureOutbox {
         }
 
         if status == 400 {
-            if let Ok(json_body) = serde_json::from_str::<Value>(&text) {
-                let code = json_body["error"]["code"].as_str().unwrap_or("");
-                if code == "VALIDATION_ERROR" {
-                    return AttemptOutcome::DeadLetter {
-                        reason: "validation".to_string(),
-                    };
-                }
-            }
+            // Same dead-letter label as before. Keep the Console body so the
+            // manual-fill lane can show `error.code` (VALIDATION_ERROR, …).
             return AttemptOutcome::DeadLetter {
                 reason: "validation".to_string(),
+                response_body: Some(text),
             };
         }
 
         AttemptOutcome::DeadLetter {
             reason: format!("http {status}"),
+            response_body: None,
         }
     }
 
@@ -414,12 +428,15 @@ impl CaptureOutbox {
                     params![STATE_ACKED, response_body, now, row.id],
                 )?;
             }
-            AttemptOutcome::DeadLetter { reason } => {
+            AttemptOutcome::DeadLetter {
+                reason,
+                response_body,
+            } => {
                 conn.execute(
                     "UPDATE capture_outbox
-                     SET state = ?, attempts = attempts + 1, last_error = ?, updated_at_ms = ?
+                     SET state = ?, attempts = attempts + 1, last_error = ?, response_json = ?, updated_at_ms = ?
                      WHERE id = ?",
-                    params![STATE_DEAD_LETTER, reason, now, row.id],
+                    params![STATE_DEAD_LETTER, reason, response_body, now, row.id],
                 )?;
             }
             AttemptOutcome::Retry { reason } => {

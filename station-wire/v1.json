@@ -41,6 +41,11 @@
           "method": "POST",
           "path": "/api/daemon/bar/test/fill-matched",
           "notes": "Harness-only loopback forward; Console requires BAR_TEST_INJECT_FILL_MATCHED=1"
+        },
+        "manual_fill_accept": {
+          "method": "POST",
+          "path": "/api/daemon/journal/manual-fill/accept",
+          "notes": "Broker-miss manual fill. Local recent-trades row plus toolbar-capture outbox. Accept body: explicitPending true and tradeId null unless consoleTradeId is a Console trades UUID (then explicitPending false). Never send the Station-local fill id as tradeId."
         }
       },
       "agent_to_brain_bar": {

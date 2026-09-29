@@ -26,9 +26,13 @@ pub(crate) struct ToolbarCaptureAcceptBody {
     r2_key: Option<String>,
     #[serde(default)]
     image_only: Option<bool>,
+    #[serde(default)]
+    pre_trade_declaration_id: Option<String>,
+    #[serde(default)]
+    journal_fill_source: Option<String>,
 }
 
-fn validation_error(message: &str, request_id: Option<&str>) -> Response {
+pub(crate) fn validation_error(message: &str, request_id: Option<&str>) -> Response {
     (
         StatusCode::BAD_REQUEST,
         Json(json!({
@@ -41,36 +45,52 @@ fn validation_error(message: &str, request_id: Option<&str>) -> Response {
         .into_response()
 }
 
-pub async fn accept_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(raw_body): Json<Value>,
-) -> Response {
-    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
-    let body: ToolbarCaptureAcceptBody = match serde_json::from_value(raw_body.clone()) {
-        Ok(v) => v,
-        Err(_) => return validation_error("request body failed validation", request_id),
-    };
-    // Local outbox partition key from wire hint — not Console identity (A8 IV).
-    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
-        return validation_error(
-            "x-user-id (wire hint) missing after wire verification",
-            request_id,
-        );
-    };
+pub(crate) fn console_error_code(text: &str) -> Option<String> {
+    let json_body: Value = serde_json::from_str(text).ok()?;
+    let code = json_body.get("error")?.get("code")?.as_str()?.trim();
+    if code.is_empty() {
+        None
+    } else {
+        Some(code.to_string())
+    }
+}
 
+fn validate_toolbar_capture_body(body: &ToolbarCaptureAcceptBody) -> Option<&'static str> {
     if body
         .trade_id
         .as_ref()
         .is_some_and(|s| uuid::Uuid::parse_str(s).is_err())
     {
-        return validation_error("tradeId must be UUID", request_id);
+        return Some("tradeId must be UUID");
     }
     if body.idempotency_key.as_ref().is_some_and(|s| s.len() > 256) {
-        return validation_error("idempotencyKey too long", request_id);
+        return Some("idempotencyKey too long");
     }
     if body.r2_key.as_ref().is_some_and(|s| s.len() > 512) {
-        return validation_error("r2Key too long", request_id);
+        return Some("r2Key too long");
+    }
+    if body.pre_trade_declaration_id.as_ref().is_some_and(|s| {
+        let t = s.trim();
+        !t.is_empty() && uuid::Uuid::parse_str(t).is_err()
+    }) {
+        return Some("preTradeDeclarationId must be UUID");
+    }
+    None
+}
+
+/// Enqueue + first delivery attempt for toolbar capture JSON (shared with manual-fill lane).
+pub(crate) async fn accept_capture_value(
+    state: &AppState,
+    user_id: &str,
+    request_id: Option<&str>,
+    raw_body: Value,
+) -> Response {
+    let body: ToolbarCaptureAcceptBody = match serde_json::from_value(raw_body.clone()) {
+        Ok(v) => v,
+        Err(_) => return validation_error("request body failed validation", request_id),
+    };
+    if let Some(msg) = validate_toolbar_capture_body(&body) {
+        return validation_error(msg, request_id);
     }
 
     let request_id = request_id
@@ -103,16 +123,21 @@ pub async fn accept_handler(
         Ok(ProcessNowResult::Queued) => {
             (StatusCode::ACCEPTED, Json(queued_response_json())).into_response()
         }
-        Ok(ProcessNowResult::DeadLetter { reason }) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({
+        Ok(ProcessNowResult::DeadLetter {
+            reason,
+            response_body,
+        }) => {
+            let mut payload = json!({
                 "error_class": "VALIDATION",
                 "message": reason,
                 "retry_after_ms": Value::Null,
                 "request_id": request_id,
-            })),
-        )
-            .into_response(),
+            });
+            if let Some(code) = response_body.as_deref().and_then(console_error_code) {
+                payload["error"] = json!({ "code": code });
+            }
+            (StatusCode::UNPROCESSABLE_ENTITY, Json(payload)).into_response()
+        }
         Err(err) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({
@@ -124,6 +149,21 @@ pub async fn accept_handler(
         )
             .into_response(),
     }
+}
+
+pub async fn accept_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(raw_body): Json<Value>,
+) -> Response {
+    let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+    let Some(user_id) = headers.get("x-user-id").and_then(|v| v.to_str().ok()) else {
+        return validation_error(
+            "x-user-id (wire hint) missing after wire verification",
+            request_id,
+        );
+    };
+    accept_capture_value(&state, user_id, request_id, raw_body).await
 }
 
 fn parse_retry_after_ms(resp: &reqwest::Response) -> Option<u64> {
@@ -188,10 +228,7 @@ pub(crate) async fn forward_daemon_json_with_optional_429_retry(
             let rejected = auth_header
                 .strip_prefix("Bearer ")
                 .unwrap_or(auth_header.as_str());
-            match upstream
-                .ensure_fresh_station_access(Some(rejected))
-                .await
-            {
+            match upstream.ensure_fresh_station_access(Some(rejected)).await {
                 Ok(()) => continue,
                 Err(StationRefreshError::Revoked) => return Ok((status, text)),
                 Err(StationRefreshError::Transient(_)) => return Ok((status, text)),
