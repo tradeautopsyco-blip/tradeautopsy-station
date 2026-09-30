@@ -26,7 +26,16 @@ struct HarnessTopChrome: Equatable {
     struct DataRow: Equatable {
         let nounLabel: String
         let eligible: Bool
-        var statusLabel: String { eligible ? "Eligible" : "Not eligible" }
+        let customStatusLabel: String?
+        var statusLabel: String {
+            customStatusLabel ?? (eligible ? "Eligible" : "Not eligible")
+        }
+
+        init(nounLabel: String, eligible: Bool, customStatusLabel: String? = nil) {
+            self.nounLabel = nounLabel
+            self.eligible = eligible
+            self.customStatusLabel = customStatusLabel
+        }
     }
 
     let books: [Book]
@@ -171,7 +180,11 @@ struct HarnessTopChrome: Equatable {
             let vendor = vendorFenceRows.first { dataNounLabel(obtainNoun: $0.obtainNoun) == "History" }
             return DataRow(nounLabel: "History", eligible: vendor.map(isEligible) ?? false)
         }
-        let success = deskHistoryStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "success"
+        let normalized = deskHistoryStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == "unsupported" {
+            return DataRow(nounLabel: "History", eligible: false, customStatusLabel: "Unsupported")
+        }
+        let success = normalized == "success"
         return DataRow(nounLabel: "History", eligible: success)
     }
 
@@ -183,10 +196,21 @@ struct HarnessTopChrome: Equatable {
         switch normalized {
         case "stale", "loading":
             kind = .warn
+        case "unsupported":
+            kind = .warn
         default:
             kind = .bad
         }
-        return Hole(key: key, value: normalized, kind: kind, retryInstruments: retryInstruments)
+        let display: String
+        switch normalized {
+        case "stale":
+            display = "stale"
+        case "unsupported":
+            display = "unsupported"
+        default:
+            display = normalized
+        }
+        return Hole(key: key, value: display, kind: kind, retryInstruments: retryInstruments)
     }
 
     @MainActor

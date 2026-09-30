@@ -1,6 +1,6 @@
 use crate::{StationRefreshError, StationTokenStore, UpstreamClient};
 use anyhow::Context;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 
 pub enum Fact {
     StationOnline,
+    /// Console `/dashboard/open` — Redis snapshot via `station_open_positions_snapshot`.
+    OpenPositionsSnapshot { body: serde_json::Value },
     /// M1: Station-cited realized PnL for Console consume (A8 Bearer share-up).
     CitedPnl { payload: serde_json::Value },
 }
@@ -16,6 +18,7 @@ impl Fact {
     fn signal_type(&self) -> &'static str {
         match self {
             Fact::StationOnline => "station_online",
+            Fact::OpenPositionsSnapshot { .. } => "station_open_positions_snapshot",
             Fact::CitedPnl { .. } => crate::share_cited_pnl::SIGNAL_TYPE,
         }
     }
@@ -26,6 +29,7 @@ impl Fact {
                 "v": 1,
                 "event_id": event_id,
             }))?),
+            Fact::OpenPositionsSnapshot { body } => Ok(serde_json::to_string(body)?),
             Fact::CitedPnl { payload } => {
                 let mut body = payload.clone();
                 if let Some(obj) = body.as_object_mut() {
@@ -133,6 +137,17 @@ impl FactOutbox {
         {
             return Ok(EnqueueOutcome::Coalesced);
         }
+        if let Fact::OpenPositionsSnapshot { .. } = &fact {
+            if let Some(existing_id) = pending_open_positions_id(&conn)? {
+                conn.execute(
+                    "UPDATE fact_outbox
+                     SET payload_json = ?, created_at_ms = ?, next_attempt_at_ms = ?
+                     WHERE id = ?",
+                    params![payload_json, now, now, existing_id],
+                )?;
+                return Ok(EnqueueOutcome::Coalesced);
+            }
+        }
         if let Fact::CitedPnl { payload } = &fact {
             if let Some(existing_id) = pending_cited_pnl_id(&conn, payload)? {
                 conn.execute(
@@ -151,6 +166,14 @@ impl FactOutbox {
             params![id, fact.signal_type(), payload_json, now, now],
         )?;
         Ok(EnqueueOutcome::Enqueued { id })
+    }
+
+    /// Console open desk — latest holdings snapshot (coalesces one pending row).
+    pub fn enqueue_open_positions_snapshot(
+        &self,
+        body: serde_json::Value,
+    ) -> anyhow::Result<EnqueueOutcome> {
+        self.enqueue(Fact::OpenPositionsSnapshot { body })
     }
 
     /// M1 share-up: enqueue any v2 cited-PnL envelope when JWT is present.
@@ -433,6 +456,18 @@ const MAX_BACKOFF_MS: i64 = 30_000;
 const CLIENT_ERROR_MIN_BACKOFF_MS: i64 = 5_000;
 const AUTH_BACKOFF_MS: i64 = 5 * 60_000;
 const COALESCE_MS: i64 = 15_000;
+
+fn pending_open_positions_id(conn: &Connection) -> anyhow::Result<Option<String>> {
+    conn.query_row(
+        "SELECT id FROM fact_outbox
+         WHERE signal_type = 'station_open_positions_snapshot' AND done_at_ms IS NULL
+         ORDER BY created_at_ms DESC LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Into::into)
+}
 
 fn online_send_pending(conn: &Connection) -> anyhow::Result<bool> {
     let pending: i64 = conn.query_row(

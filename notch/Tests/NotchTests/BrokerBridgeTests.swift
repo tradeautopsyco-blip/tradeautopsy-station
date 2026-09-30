@@ -80,6 +80,16 @@ struct BrokerBridgeTests {
         #expect(received == "kotak_neo")
     }
 
+    @Test func applyBrokerSyncStatePayloadPrefersLastSuccessOverPoll() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.applyBrokerSyncStatePayload([
+            "syncState": "synced",
+            "lastPollAtMs": 500,
+            "lastSuccessAtMs": 1_700_000_000_000,
+        ])
+        #expect(vm.brokerSyncLastPollAtMs == 1_700_000_000_000)
+    }
+
     @Test func applyBrokerSyncStatePayloadSetsSyncedClassSlugAndDeskCurrency() {
         let vm = NotchViewModel(planSurfaceOnly: true)
         vm.brokerSyncClass = "not_connected"

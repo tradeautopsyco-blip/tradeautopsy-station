@@ -81,6 +81,10 @@ struct BarPlanStateView: View {
 
             if shouldShowMetricStrip { liveMetricStrip }
 
+            if shouldShowManualFillPanel {
+                BarManualFillPanel(viewModel: viewModel, liveState: payload)
+            }
+
             if shouldShowPlanSnapshot { planSnapshotRows }
 
             if !shouldShowMetricStrip, let composite = payload?.composite {
@@ -313,6 +317,16 @@ struct BarPlanStateView: View {
 
     private var shouldShowMetricStrip: Bool {
         shouldShowPlanSnapshot
+    }
+
+    /// Working desk — broker miss manual fill (journal capture outbox lane).
+    private var shouldShowManualFillPanel: Bool {
+        switch viewModel.barSurfacePhase {
+        case .armed, .livePlan:
+            return payload?.pendingDeclaration != nil
+        default:
+            return false
+        }
     }
 
     private var needsLiveSecondClock: Bool {

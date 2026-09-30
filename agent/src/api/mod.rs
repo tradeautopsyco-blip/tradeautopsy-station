@@ -34,6 +34,7 @@ mod broker_sync_state;
 mod capture;
 pub mod daemon_commands;
 pub(crate) mod desk;
+mod manual_fill;
 mod quote_selection;
 pub(crate) use quote_selection::QuoteSelections;
 mod health;
@@ -272,6 +273,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/journal/toolbar-capture/accept",
             post(capture::accept_handler),
+        )
+        .route(
+            "/api/daemon/journal/manual-fill/accept",
+            post(manual_fill::accept_handler),
+        )
+        .route(
+            "/api/daemon/journal/toolbar/recent-trades",
+            get(manual_fill::console_recent_trades_handler),
         )
         .route(
             "/api/daemon/journal/toolbar-capture/outbox/status",

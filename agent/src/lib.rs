@@ -22,6 +22,7 @@ mod dns_block;
 mod egress;
 mod event_bus;
 mod exchange_info;
+mod console_open_positions;
 mod fact_outbox;
 mod fx_cds_realized_pnl;
 mod inr_cash_wac;
@@ -42,6 +43,7 @@ mod money_matrix;
 mod nfo_realized_pnl;
 mod oauth_loopback;
 mod options_realized_pnl;
+mod journal_manual_fill;
 mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
@@ -1868,24 +1870,34 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
 
     let fact_worker = fact_outbox.clone();
+    let fact_state = state.clone();
     let fact_online_interval_ms = config.fact_online_interval_ms.max(1);
     tokio::spawn(async move {
-        async fn publish_online(outbox: &Arc<crate::fact_outbox::FactOutbox>) {
+        async fn publish_facts(
+            outbox: &Arc<crate::fact_outbox::FactOutbox>,
+            app: &api::AppState,
+        ) {
             let worker = outbox.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 worker.enqueue(crate::fact_outbox::Fact::StationOnline)
             })
             .await;
-            // Always drain: coalesced heartbeats must still flush a pending row.
+            if let Some(body) = crate::console_open_positions::build_from_app_state(app) {
+                let worker = outbox.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let _ = worker.enqueue_open_positions_snapshot(body);
+                })
+                .await;
+            }
             let _ = outbox.drain().await;
         }
-        publish_online(&fact_worker).await;
+        publish_facts(&fact_worker, &fact_state).await;
         let mut interval =
             tokio::time::interval(std::time::Duration::from_millis(fact_online_interval_ms));
         interval.tick().await;
         loop {
             interval.tick().await;
-            publish_online(&fact_worker).await;
+            publish_facts(&fact_worker, &fact_state).await;
         }
     });
 

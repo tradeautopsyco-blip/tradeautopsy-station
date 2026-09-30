@@ -441,8 +441,10 @@ public final class NotchViewModel: ObservableObject {
     @Published var brokerSyncClass: String = "not_connected"
     /// Per-venue egress posture from SSE `venue_egress_state` (`binance_com` / `kotak_neo`).
     @Published var venuePostureBySlug: [String: VenuePosture] = [:]
-    /// Last successful `/api/daemon/broker/sync-state` poll (`lastPollAtMs` or now).
+    /// Agent `lastSuccessAtMs ?? lastPollAtMs` — mirrors Station Brokers `Last synced`.
     @Published var brokerSyncLastPollAtMs: Int?
+    /// When sync-state `capabilities.quote` last changed (for quote-lane age chip).
+    @Published var deskQuoteCapabilityObservedAt: Date?
     @Published var sessionState: String = "active"
     @Published var isAuthenticated: Bool = true
     @Published var authProvider: String?
@@ -462,6 +464,11 @@ public final class NotchViewModel: ObservableObject {
     @Published var journalCaptureTradeIdRaw: String = ""
     @Published var journalCaptureExplicitPending: Bool = false
     @Published var journalCaptureBusy: Bool = false
+    @Published var manualFillBusy: Bool = false
+    @Published var manualFillLastError: String?
+    @Published var manualFillLastSuccess: String?
+    /// Console `trades.id` rows for Manual Fill “Link to today’s trade” (not local fills).
+    @Published var manualFillConsoleTrades: [ConsoleJournalTradeRow] = []
     @Published var journalCaptureBanner: String?
     @Published var journalCaptureLastError: String?
     @Published var journalCaptureLastSuccess: String?
@@ -1216,9 +1223,12 @@ public final class NotchViewModel: ObservableObject {
         barLiveStateKickoffTask?.cancel()
         barLiveStateKickoffTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 300_000_000)
-            guard let self, !Task.isCancelled else { return }
-            guard self.isExpanded, self.activeTab == .plan else { return }
-            await self.fetchBarLiveState()
+            while !Task.isCancelled {
+                guard let self else { return }
+                guard self.isExpanded, self.activeTab == .plan else { return }
+                await self.fetchBarLiveState()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
         }
     }
 
@@ -3913,6 +3923,85 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    func refreshManualFillConsoleTrades() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/journal/toolbar/recent-trades") else { return }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                manualFillConsoleTrades = []
+                return
+            }
+            let j = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            manualFillConsoleTrades = ManualFillJournalDraft.consoleTrades(from: j)
+        } catch {
+            manualFillConsoleTrades = []
+        }
+    }
+
+    func submitManualFillJournal(
+        symbol: String,
+        sideBuy: Bool,
+        quantity: Double,
+        price: Double,
+        filledAt: Date,
+        declarationId: String?,
+        consoleTradeId: String?
+    ) async {
+        guard isAuthenticated && (sessionState == "active" || sessionState == "expiring_soon") else {
+            manualFillLastError = "Sign in required to queue manual fills."
+            manualFillLastSuccess = nil
+            return
+        }
+        guard let url = URL(string: baseURL() + "/api/daemon/journal/manual-fill/accept") else {
+            manualFillLastError = "Bad daemon URL"
+            return
+        }
+
+        let filledAtMs = Int64(filledAt.timeIntervalSince1970 * 1000)
+        let idem = StationWireClient.makeULID()
+        let body = ManualFillJournalDraft.requestBody(
+            symbol: symbol,
+            sideBuy: sideBuy,
+            quantity: quantity,
+            price: price,
+            filledAtMs: filledAtMs,
+            declarationId: declarationId,
+            idempotencyKey: idem,
+            consoleTradeId: consoleTradeId
+        )
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
+            manualFillLastError = "Could not build JSON"
+            return
+        }
+
+        manualFillBusy = true
+        manualFillLastError = nil
+        manualFillLastSuccess = nil
+        defer { manualFillBusy = false }
+
+        let req = authorizedRequest(url: url, method: "POST", body: payload)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let j = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            let presented = ManualFillJournalDraft.presentAccept(httpStatus: code, body: j)
+            if let err = presented.error {
+                manualFillLastError = err
+                manualFillLastSuccess = nil
+                return
+            }
+            guard let okText = presented.success else {
+                manualFillLastError = "Unexpected server response"
+                return
+            }
+            manualFillLastSuccess = okText
+            manualFillLastError = nil
+            await fetchRecentTrades()
+        } catch {
+            manualFillLastError = error.localizedDescription
+        }
+    }
+
     /// Phase 7: `screencapture -i` → agent `/api/daemon/screenshot/presign` → R2 PUT → agent PATCH pending (no hosted shortcuts).
     func attachJournalCaptureScreenshotToPending() async {
         let pid = journalCaptureLastPendingCaptureId?
@@ -5353,11 +5442,9 @@ extension NotchViewModel {
             brokerSyncClass = sc.lowercased()
             brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
         }
-        if let ms = json["lastPollAtMs"] as? Int {
-            brokerSyncLastPollAtMs = ms
-        } else if let ms = json["lastPollAtMs"] as? Double {
-            brokerSyncLastPollAtMs = Int(ms)
-        } else if let ms = json["lastSuccessAtMs"] as? Int {
+        if let ms = Self.epochMs(from: json, key: "lastSuccessAtMs")
+            ?? Self.epochMs(from: json, key: "lastPollAtMs")
+        {
             brokerSyncLastPollAtMs = ms
         } else if brokerSyncClass == "synced" || brokerSyncClass == "syncing" || brokerSyncClass == "stale" {
             brokerSyncLastPollAtMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -5374,7 +5461,13 @@ extension NotchViewModel {
     func applyDeskCapabilities(from payload: [String: Any]) {
         let caps = payload["capabilities"] as? [String: Any]
         if let q = caps?["quote"] as? String, !q.isEmpty {
-            setIfChanged(\.deskQuoteCapability, q.lowercased())
+            let normalized = q.lowercased()
+            if deskQuoteCapability != normalized {
+                deskQuoteCapability = normalized
+                deskQuoteCapabilityObservedAt = Date()
+            } else if deskQuoteCapabilityObservedAt == nil, normalized == "stale" {
+                deskQuoteCapabilityObservedAt = Date()
+            }
         }
         if let funds = caps?["funds"] as? String, !funds.isEmpty {
             setIfChanged(\.deskFundsCapability, funds.lowercased())
@@ -5400,9 +5493,19 @@ extension NotchViewModel {
             }
             applyBrokerSyncStatePayload(json)
             await refreshAccountChrome()
+            if isExpanded, activeTab == .plan {
+                await fetchBarLiveState()
+            }
         } catch {
             // Agent down: keep last known; UI already has daemon FSM / live-state strips.
         }
+    }
+
+    private static func epochMs(from json: [String: Any], key: String) -> Int? {
+        if let ms = json[key] as? Int { return ms }
+        if let ms = json[key] as? Int64 { return Int(ms) }
+        if let ms = json[key] as? Double { return Int(ms) }
+        return nil
     }
 
     /// Test seam: plant obtain envelopes without hitting the agent.

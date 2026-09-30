@@ -513,6 +513,7 @@ async fn fetch_and_plant_holdings(
                 as_of_ms,
             );
     }
+    crate::console_open_positions::try_enqueue_from_state(state);
     Ok(())
 }
 

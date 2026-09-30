@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Station — prototype</title>
+<!--
+THROWAWAY PROTOTYPE — not Station.app. Question: does this Cloud → Machine desk feel right before implementation?
+
+Open: double-click this file, or run `open -a "Google Chrome" index.html`.
+Click: Today (idle cards → Open Today for the digest) · Brokers (row opens KV detail) · Backend (2×2).
+L2 demo: press 2, or on Today active click “Simulate L2”. Escape dismisses.
+Journal: + adds a line (or the typed text). Shift+Enter inserts a sample. Mic toggles Listening. Send commits the input.
+Kill armed lives in the left rail. A state line under the window updates after each action.
+
+Theme on this desk: StationDS / NOTCH-ui (mint #63E6E2, gain #30D158, loss #FF453A, caution #FF9F0A).
+Layout stays the locked desk. Notch / Dynamic Island is deferred — not built here.
+-->
+<style>
+  :root {
+    /* StationDS / NOTCH-ui Apple dark semantic */
+    --bg: #050505;
+    --bg-elevated: #0a0a0a;
+    --surface: #111111;
+    --surface-raised: #1c1c1e;
+    --surface-input: rgba(255, 255, 255, 0.03);
+    --overlay: rgba(0, 0, 0, 0.72);
+    --border: rgba(255, 255, 255, 0.10);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.20);
+    --panel-titlebar: #0d0d0d;
+    --text: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.60);
+    --text-muted: rgba(255, 255, 255, 0.30);
+    --text-inverse: #052e2c;
+    --accent: #63E6E2;
+    --accent-soft: rgba(99, 230, 226, 0.16);
+    --ok: #30D158;
+    --warn: #FF9F0A;
+    --danger: #FF453A;
+    --info: #0A84FF;
+    --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font-family: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .page {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px 24px;
+  }
+  .proto-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  .window {
+    width: min(1200px, 100%);
+    height: 780px;
+    background: var(--panel-titlebar);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    height: 48px;
+    flex: 0 0 48px;
+    background: var(--panel-titlebar);
+    border-bottom: 1px solid var(--border-subtle);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 12px;
+    position: relative;
+  }
+  .traffic {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 4px;
+  }
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: block;
+  }
+  .dot.r { background: #ff5f57; }
+  .dot.y { background: #febc2e; }
+  .dot.g { background: #28c840; }
+  .app-title {
+    margin-left: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  .tabs button {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 4px;
+    line-height: 16px;
+  }
+  .tabs button.active {
+    background: var(--surface-raised);
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+  .tabs button:hover:not(.active) { color: var(--text-secondary); }
+
+  .desk {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  .rail {
+    width: 300px;
+    flex: 0 0 300px;
+    border-right: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    padding: 16px 16px 88px;
+    overflow: auto;
+  }
+  .section-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+  }
+  .metric { margin-bottom: 16px; }
+  .metric-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .metric-name { font-size: 12px; color: var(--text-secondary); }
+  .metric-value {
+    display: block;
+    margin: 2px 0 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .pills { display: flex; gap: 4px; }
+  .pill {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .pill.on {
+    color: var(--ok);
+    border-color: rgba(48, 209, 88, 0.28);
+    background: rgba(48, 209, 88, 0.08);
+  }
+  .pill.on.accent {
+    color: var(--accent);
+    border-color: rgba(99, 230, 226, 0.28);
+    background: rgba(99, 230, 226, 0.08);
+  }
+  .bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border-subtle);
+    overflow: hidden;
+  }
+  .bar > span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .bar.warn > span { background: var(--warn); }
+  .bar.ok > span { background: var(--ok); }
+
+  .kv {
+    margin-top: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .kv-row {
+    display: grid;
+    grid-template-columns: 108px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    min-height: 34px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .kv-row:last-child { border-bottom: 0; }
+  .kv-label { font-size: 12px; color: var(--text-secondary); }
+  .kv-value {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .kv-value .ok { color: var(--ok); }
+  .kv-value .muted { color: var(--text-muted); }
+  .copy {
+    width: 22px;
+    height: 22px;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 4px;
+    color: var(--text-muted);
+    display: grid;
+    place-items: center;
+    padding: 0;
+  }
+  .copy:hover { border-color: var(--border); color: var(--text); background: var(--surface-raised); }
+  .copy svg { width: 12px; height: 12px; }
+
+  .kill-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 36px;
+    padding: 6px 10px;
+  }
+  .kill-label { font-size: 12px; color: var(--text); }
+  .kill-label.paused { color: var(--text-muted); }
+  .switch {
+    width: 32px;
+    height: 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-input);
+    position: relative;
+    padding: 0;
+  }
+  .switch[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .switch i {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text);
+    display: block;
+  }
+  .switch[aria-pressed="true"] i { left: 15px; background: white; }
+
+  .chips {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface);
+  }
+  .chip .live-dot, .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    display: inline-block;
+  }
+  .chip .live-dot, .status-dot.live {
+    background: var(--ok);
+    box-shadow: 0 0 6px rgba(48, 209, 88, 0.55);
+  }
+
+  .stage {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 24px 88px;
+    overflow: auto;
+    position: relative;
+  }
+  .view { display: none; height: 100%; }
+  .view.show { display: flex; }
+
+  /* Today idle */
+  #view-today-idle {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+  }
+  .mark {
+    width: 72px;
+    height: 72px;
+    opacity: 0.22;
+    color: var(--text-muted);
+  }
+  .triad {
+    width: 100%;
+    max-width: 920px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .card {
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 16px;
+    min-height: 148px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--text);
+  }
+  .card:hover {
+    background: var(--surface-raised);
+    border-color: var(--border-strong);
+  }
+  .card .icon {
+    width: 28px;
+    height: 28px;
+    color: var(--text-secondary);
+  }
+  .card .icon svg { width: 22px; height: 22px; }
+  .card h3 {
+    margin: 8px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .card p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* Today active */
+  #view-today-active {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .digest {
+    max-width: 680px;
+    width: 100%;
+  }
+  .digest-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .digest-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+  .ghost:hover { border-color: var(--border-strong); color: var(--text); background: var(--surface); }
+  .ghost.subtle {
+    border-color: transparent;
+    color: var(--text-muted);
+    padding: 2px 6px;
+  }
+  .block { margin-bottom: 24px; }
+  .block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .check-row, .event-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 13px;
+  }
+  .check-row button.box {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface-input);
+    padding: 0;
+    display: grid;
+    place-items: center;
+    flex: 0 0 14px;
+  }
+  .check-row button.box[aria-pressed="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+  .check-row button.box svg { width: 10px; height: 10px; }
+  .event-time {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    width: 44px;
+    flex: 0 0 44px;
+  }
+  .event-kind {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .cta {
+    background: var(--accent);
+    color: var(--text-inverse);
+    border: 0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 12px;
+  }
+  .cta:hover { background: #8ef0ed; }
+
+  /* Brokers */
+  #view-brokers { flex-direction: column; gap: 16px; }
+  .hero-card {
+    width: 100%;
+    min-height: 72px;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+  }
+  .hero-card h3 { margin: 0; }
+  .broker-split {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    min-height: 0;
+    align-items: start;
+  }
+  .broker-list {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .broker-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto 16px;
+    gap: 10px;
+    align-items: center;
+    padding: 12px;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: left;
+    font-size: 13px;
+  }
+  .broker-row:last-child { border-bottom: 0; }
+  .broker-row.selected { background: var(--surface-raised); }
+  .broker-row:hover { background: var(--surface-raised); }
+  .initials {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg);
+  }
+  .broker-name { font-weight: 500; }
+  .broker-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .broker-sync {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .chev { color: var(--text-muted); font-size: 14px; }
+  .broker-row.paused .broker-name,
+  .broker-row.paused .broker-meta { color: var(--text-muted); }
+  .detail {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px 4px 8px;
+  }
+  .detail h3 {
+    margin: 0 12px 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .honesty {
+    margin: 8px 12px 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+  .detail .kv { margin: 0 8px; background: transparent; border: 0; border-radius: 0; }
+  .detail .kv-row { grid-template-columns: 120px 1fr auto; padding-left: 4px; padding-right: 4px; }
+
+  /* Backend */
+  #view-backend {
+    align-items: center;
+    justify-content: center;
+  }
+  .grid2 {
+    width: 100%;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .cap { min-height: 132px; cursor: default; }
+  .cap:hover { background: var(--surface); border-color: var(--border); }
+  .status-line {
+    margin-top: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .status-line.ok { color: var(--ok); }
+  .status-line.muted { color: var(--text-muted); }
+
+  /* Journal */
+  .journal-sheet, .journal-bar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    z-index: 5;
+  }
+  .journal-sheet {
+    bottom: 76px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 280px;
+    display: none;
+    flex-direction: column;
+  }
+  .journal-sheet.open { display: flex; }
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .sheet-head span { font-size: 12px; color: var(--text-secondary); }
+  .sheet-list { overflow: auto; padding: 4px 0; }
+  .j-line {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .j-line time {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .journal-bar {
+    bottom: 12px;
+    height: 52px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .journal-bar:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--text-secondary);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    flex: 0 0 32px;
+  }
+  .icon-btn:hover { background: var(--surface); color: var(--text); }
+  .icon-btn.hot {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .icon-btn svg, .send svg { width: 16px; height: 16px; }
+  .journal-bar input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    font-size: 13px;
+    padding: 0 4px;
+  }
+  .journal-bar input::placeholder { color: var(--text-muted); }
+  .byok-chip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .listening {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent);
+    display: none;
+  }
+  .journal-bar.listening .listening { display: inline; }
+  .journal-bar.listening input::placeholder { color: transparent; }
+  .send {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-muted);
+    display: grid;
+    place-items: center;
+    padding: 0;
+  }
+  .send.ready { background: var(--accent); color: white; }
+
+  /* L2 */
+  .l2 {
+    position: absolute;
+    inset: 0;
+    background: var(--overlay);
+    z-index: 20;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .l2.open { display: flex; }
+  .l2-sheet {
+    width: 420px;
+    background: var(--surface-raised);
+    border: 1px solid rgba(255, 69, 58, 0.55);
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 0 0 1px rgba(255, 69, 58, 0.35), 0 0 32px rgba(255, 69, 58, 0.16);
+  }
+  .l2-kicker {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--danger);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .l2-sheet h2 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .l2-sheet p {
+    margin: 0 0 20px;
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  .l2-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .danger-btn {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid #f8717155;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+  }
+  .danger-btn:hover { background: #f8717118; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms linear, transform 120ms linear;
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .state-line {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 1200px;
+    width: 100%;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="proto-tag">PROTOTYPE · StationDS theme · mint #63E6E2 · Apple dark</div>
+    <div class="window" id="window">
+      <header class="titlebar">
+        <div class="traffic">
+          <span class="dot r"></span>
+          <span class="dot y"></span>
+          <span class="dot g"></span>
+          <span class="app-title">Station</span>
+        </div>
+        <nav class="tabs" role="tablist">
+          <button type="button" data-tab="today" class="active" role="tab">Today</button>
+          <button type="button" data-tab="brokers" role="tab">Brokers</button>
+          <button type="button" data-tab="backend" role="tab">Backend</button>
+        </nav>
+        <div></div>
+      </header>
+
+      <div class="desk">
+        <aside class="rail">
+          <p class="section-label">Session</p>
+          <div class="metric">
+            <div class="metric-top">
+              <span class="metric-name">Rules armed</span>
+              <span class="pills">
+                <span class="pill on">L1</span>
+                <span class="pill on accent">L2</span>
+                <span class="pill">L3</span>
+              </span>
+            </div>
+            <div class="bar"><span style="width:66%"></span></div>
+            <span class="metric-value">66% armed</span>
+          </div>
+          <div class="metric">
+            <span class="metric-name">Today risk used</span>
+            <span class="metric-value">₹4,200 / ₹10,000 daily loss</span>
+            <div class="bar" id="risk-bar"><span style="width:42%"></span></div>
+          </div>
+          <div class="metric">
+            <span class="metric-name">Journal coverage</span>
+            <span class="metric-value">7 / 12 fills noted</span>
+            <div class="bar ok"><span style="width:58%"></span></div>
+          </div>
+
+          <div class="kv" style="margin-top:8px">
+            <div class="kv-row">
+              <span class="kv-label">Desk mode</span>
+              <span class="kv-value">Live</span>
+              <span></span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">Primary broker</span>
+              <span class="kv-value">Zerodha</span>
+              <span></span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">Console sync</span>
+              <span class="kv-value"><span class="ok">Paired</span> <span class="muted">· 12s lag</span></span>
+              <span></span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">Account</span>
+              <span class="kv-value">India · paid</span>
+              <span></span>
+            </div>
+            <div class="kv-row">
+              <span class="kv-label">BYOK</span>
+              <span class="kv-value">sk-…a4f2</span>
+              <button class="copy" type="button" data-copy="sk-…a4f2" aria-label="Copy BYOK key">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg>
+              </button>
+            </div>
+            <div class="kill-row">
+              <span class="kill-label" id="kill-label">Kill armed</span>
+              <button class="switch" id="kill-switch" type="button" aria-pressed="true" aria-label="Kill armed">
+                <i></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="chips">
+            <span class="chip"><span class="live-dot"></span>ZERODHA · live</span>
+            <span class="chip">BINANCE · paused</span>
+          </div>
+        </aside>
+
+        <main class="stage">
+          <section class="view show" id="view-today-idle">
+            <svg class="mark" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+              <path d="M36 6 64 22v28L36 66 8 50V22L36 6Z" stroke="currentColor" stroke-width="1.5"/>
+              <text x="36" y="42" text-anchor="middle" fill="currentColor" font-family="-apple-system, sans-serif" font-size="16" font-weight="600">TA</text>
+            </svg>
+            <div class="triad">
+              <button class="card" type="button" id="open-today">
+                <span class="icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>
+                </span>
+                <h3>Open Today</h3>
+                <p>Plan, kills, and the day’s log</p>
+              </button>
+              <button class="card" type="button" id="manage-brokers">
+                <span class="icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M9 9.5 11 14M15 9.5 13 14"/></svg>
+                </span>
+                <h3>Manage brokers</h3>
+                <p>2 connected</p>
+              </button>
+              <button class="card" type="button" id="start-journal">
+                <span class="icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4h9l3 3v13H6V4Z"/><path d="M9 11h6M9 15h4"/></svg>
+                </span>
+                <h3>Start journal</h3>
+                <p>Voice or text while you trade</p>
+              </button>
+            </div>
+          </section>
+
+          <section class="view" id="view-today-active">
+            <div class="digest">
+              <div class="digest-head">
+                <h2>Today</h2>
+                <button class="ghost" type="button" id="back-idle">Back to idle</button>
+              </div>
+
+              <div class="block">
+                <div class="block-head"><p class="section-label" style="margin:0">Plan</p></div>
+                <div class="check-row">
+                  <button class="box" type="button" data-plan="0" aria-pressed="true" aria-label="Max 3 trades"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 6.2 4.6 9 10 3"/></svg></button>
+                  <span>Max 3 trades</span>
+                </div>
+                <div class="check-row">
+                  <button class="box" type="button" data-plan="1" aria-pressed="true" aria-label="No revenge after −1R"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 6.2 4.6 9 10 3"/></svg></button>
+                  <span>No revenge after −1R</span>
+                </div>
+                <div class="check-row">
+                  <button class="box" type="button" data-plan="2" aria-pressed="false" aria-label="Flat by 15:15"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 6.2 4.6 9 10 3"/></svg></button>
+                  <span>Flat by 15:15</span>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block-head">
+                  <p class="section-label" style="margin:0">Live</p>
+                  <button class="ghost subtle" type="button" id="sim-l2">Simulate L2</button>
+                </div>
+                <div class="event-row">
+                  <span class="event-time">09:17</span>
+                  <span class="event-kind">L1 notify</span>
+                  <span>daily loss 40%</span>
+                </div>
+                <div class="event-row">
+                  <span class="event-time">10:02</span>
+                  <span class="event-kind">Fill</span>
+                  <span>NIFTY 25100 CE · intent logged</span>
+                </div>
+                <div class="event-row">
+                  <span class="event-time">11:41</span>
+                  <span class="event-kind">L2 overlay</span>
+                  <span>rule: no add-on</span>
+                </div>
+              </div>
+
+              <div class="block">
+                <p class="section-label">Review</p>
+                <button class="cta" type="button" id="open-console">Open Console review</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-brokers">
+            <button class="card hero-card" type="button" id="add-broker">
+              <span class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
+              </span>
+              <span>
+                <h3>Add broker</h3>
+                <p>Connect another execution venue</p>
+              </span>
+            </button>
+            <div class="broker-split">
+              <div class="broker-list" id="broker-list">
+                <button class="broker-row selected" type="button" data-broker="zerodha">
+                  <span class="initials">ZE</span>
+                  <span class="broker-name">Zerodha</span>
+                  <span class="broker-meta"><span class="status-dot live"></span>live</span>
+                  <span class="broker-sync">last sync 4s</span>
+                  <span class="chev">›</span>
+                </button>
+                <button class="broker-row paused" type="button" data-broker="binance">
+                  <span class="initials">BI</span>
+                  <span class="broker-name">Binance</span>
+                  <span class="broker-meta">paused</span>
+                  <span class="broker-sync">last sync 2h</span>
+                  <span class="chev">›</span>
+                </button>
+              </div>
+              <div class="detail" id="broker-detail"></div>
+            </div>
+          </section>
+
+          <section class="view" id="view-backend">
+            <div class="grid2">
+              <article class="card cap">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
+                <h3>Multi-broker ingest</h3>
+                <p>Zerodha + crypto feeds</p>
+                <div class="status-line ok">Live</div>
+              </article>
+              <article class="card cap">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span>
+                <h3>BYOK AI</h3>
+                <p>Your key · journal + review</p>
+                <div class="status-line ok">Key present</div>
+              </article>
+              <article class="card cap">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="7" r="2"/><circle cx="18" cy="17" r="2"/><path d="M8 12h8M16.2 8.6 8.8 11M16.2 15.4 8.8 13"/></svg></span>
+                <h3>Workflows</h3>
+                <p>n8n-style automations (stub)</p>
+                <div class="status-line muted">Stub</div>
+              </article>
+              <article class="card cap">
+                <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 12h8M5 8l-2 4 2 4M19 8l2 4-2 4"/></svg></span>
+                <h3>Station ↔ Console pairing</h3>
+                <p>Paired · durable outbox</p>
+                <div class="status-line ok">Paired</div>
+              </article>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <div class="journal-sheet" id="journal-sheet">
+        <div class="sheet-head">
+          <span>Session captures</span>
+          <button class="ghost subtle" type="button" id="sheet-close">Dismiss</button>
+        </div>
+        <div class="sheet-list" id="journal-list"></div>
+      </div>
+
+      <form class="journal-bar" id="journal-bar">
+        <button class="icon-btn" type="button" id="journal-plus" aria-label="Capture line">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+        <button class="icon-btn" type="button" id="journal-mic" aria-label="Voice capture">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="6" y="2" width="4" height="7" rx="2"/><path d="M4 8a4 4 0 0 0 8 0M8 12v2"/></svg>
+        </button>
+        <span class="listening">Listening…</span>
+        <input id="journal-input" type="text" placeholder="Capture intent or ask about this session…" autocomplete="off">
+        <span class="byok-chip">BYOK · gpt-…</span>
+        <button class="send" id="journal-send" type="submit" aria-label="Send">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        </button>
+      </form>
+
+      <div class="l2" id="l2">
+        <div class="l2-sheet" role="dialog" aria-labelledby="l2-title">
+          <div class="l2-kicker">L2</div>
+          <h2 id="l2-title">Rule interrupt</h2>
+          <p>No add-on after −1R. Intent vs this order.</p>
+          <div class="l2-actions">
+            <button class="ghost" type="button" id="l2-dismiss">Dismiss</button>
+            <button class="danger-btn" type="button" id="l2-log">Log note</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="state-line" id="state-line"></div>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <!-- Notch is deferred. Do not build a Dynamic Island in this prototype. -->
+<script>
+const state = {
+  tab: "today",
+  today: "idle",
+  killArmed: true,
+  broker: "zerodha",
+  journalOpen: false,
+  listening: false,
+  l2: false,
+  plan: [true, true, false],
+  lines: [
+    { t: "08:55", text: "Plan captured · max 3 trades, flat by 15:15" },
+    { t: "09:17", text: "L1 noted · daily loss 40%" },
+    { t: "10:02", text: "Fill NIFTY 25100 CE · intent: continuation, 1 lot" },
+    { t: "11:41", text: "L2 overlay · rule: no add-on" }
+  ]
+};
+
+const brokers = {
+  zerodha: {
+    name: "Zerodha",
+    rows: [
+      ["Environment", "prod"],
+      ["API user", "···8491", "···8491"],
+      ["Heartbeat", "ok"],
+      ["Kill plane", "Mac L3 available"],
+      ["Permissions", "orders read · positions read"]
+    ],
+    note: "Mac L3 ≠ execution-plane pause for remote bots. Execution-plane pause: not wired."
+  },
+  binance: {
+    name: "Binance",
+    rows: [
+      ["Environment", "paused"],
+      ["API user", "···2204", "···2204"],
+      ["Heartbeat", "stale"],
+      ["Kill plane", "Mac L3 available"],
+      ["Permissions", "read only"]
+    ],
+    note: "Paused. Mac L3 does not pause Binance execution. Execution-plane pause: not wired."
+  }
+};
+
+const samples = [
+  "Intent: one lot NIFTY 25100 CE, flat by 15:15 or −1R",
+  "Review: no add-on. Original plan still stands.",
+  "Interrupt noted · skipped the second lot"
+];
+let sampleIdx = 0;
+let toastTimer = 0;
+
+const $ = (id) => document.getElementById(id);
+
+function nowHHMM() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1200);
+}
+
+function pushLine(text) {
+  state.lines.unshift({ t: nowHHMM(), text });
+  if (state.lines.length > 8) state.lines.length = 8;
+  state.journalOpen = true;
+}
+
+function esc(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function renderJournal() {
+  $("journal-list").innerHTML = state.lines.map((line) =>
+    `<div class="j-line"><time>${esc(line.t)}</time><span>${esc(line.text)}</span></div>`
+  ).join("");
+}
+
+function renderBroker() {
+  const b = brokers[state.broker];
+  const rows = b.rows.map((row) => {
+    const copy = row[2]
+      ? `<button class="copy" type="button" data-copy="${row[2]}" aria-label="Copy ${row[0]}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/></svg></button>`
+      : "<span></span>";
+    const val = row[0] === "Heartbeat" && row[1] === "ok"
+      ? `<span class="ok">${row[1]}</span>`
+      : row[1];
+    return `<div class="kv-row"><span class="kv-label">${row[0]}</span><span class="kv-value">${val}</span>${copy}</div>`;
+  }).join("");
+  $("broker-detail").innerHTML =
+    `<h3>${b.name}</h3><div class="kv">${rows}</div><p class="honesty">${b.note}</p>`;
+  document.querySelectorAll(".broker-row").forEach((btn) => {
+    btn.classList.toggle("selected", btn.dataset.broker === state.broker);
+  });
+}
+
+function renderPlan() {
+  document.querySelectorAll("[data-plan]").forEach((btn) => {
+    const on = state.plan[Number(btn.dataset.plan)];
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.querySelector("svg").style.opacity = on ? "1" : "0";
+  });
+}
+
+function render() {
+  document.querySelectorAll(".tabs button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === state.tab);
+  });
+  $("view-today-idle").classList.toggle("show", state.tab === "today" && state.today === "idle");
+  $("view-today-active").classList.toggle("show", state.tab === "today" && state.today === "active");
+  $("view-brokers").classList.toggle("show", state.tab === "brokers");
+  $("view-backend").classList.toggle("show", state.tab === "backend");
+
+  $("kill-switch").setAttribute("aria-pressed", state.killArmed ? "true" : "false");
+  const killLabel = $("kill-label");
+  killLabel.textContent = state.killArmed ? "Kill armed" : "Paused";
+  killLabel.classList.toggle("paused", !state.killArmed);
+
+  $("journal-sheet").classList.toggle("open", state.journalOpen);
+  $("journal-bar").classList.toggle("listening", state.listening);
+  $("journal-mic").classList.toggle("hot", state.listening);
+  const typed = $("journal-input").value.trim().length > 0;
+  $("journal-send").classList.toggle("ready", typed);
+
+  $("l2").classList.toggle("open", state.l2);
+  renderJournal();
+  renderBroker();
+  renderPlan();
+
+  $("state-line").textContent =
+    `PROTOTYPE  tab=${state.tab}  today=${state.today}  kill=${state.killArmed ? "armed" : "paused"}  broker=${state.broker}  journal=${state.lines.length}  listening=${state.listening ? "on" : "off"}  l2=${state.l2 ? "open" : "closed"}  plan=${state.plan.map((v) => v ? "1" : "0").join("")}`;
+}
+
+document.querySelectorAll(".tabs button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.tab = btn.dataset.tab;
+    render();
+  });
+});
+
+$("open-today").addEventListener("click", () => { state.today = "active"; render(); });
+$("manage-brokers").addEventListener("click", () => { state.tab = "brokers"; render(); });
+$("start-journal").addEventListener("click", () => {
+  state.journalOpen = true;
+  render();
+  $("journal-input").focus();
+});
+$("back-idle").addEventListener("click", () => { state.today = "idle"; render(); });
+
+$("kill-switch").addEventListener("click", () => {
+  state.killArmed = !state.killArmed;
+  render();
+});
+
+document.querySelectorAll("[data-plan]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const i = Number(btn.dataset.plan);
+    state.plan[i] = !state.plan[i];
+    render();
+  });
+});
+
+$("broker-list").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-broker]");
+  if (!row) return;
+  state.broker = row.dataset.broker;
+  render();
+});
+
+$("add-broker").addEventListener("click", () => toast("Connect broker — stub"));
+$("open-console").addEventListener("click", () => toast("Console review — link stub"));
+
+function openL2() { state.l2 = true; state.tab = "today"; state.today = "active"; render(); }
+function closeL2() { state.l2 = false; render(); }
+$("sim-l2").addEventListener("click", openL2);
+$("l2-dismiss").addEventListener("click", closeL2);
+$("l2-log").addEventListener("click", () => {
+  pushLine("Interrupt logged · no add-on after −1R");
+  state.l2 = false;
+  render();
+});
+
+$("journal-plus").addEventListener("click", () => {
+  const text = $("journal-input").value.trim();
+  if (text) {
+    pushLine(text);
+    $("journal-input").value = "";
+  } else {
+    pushLine(samples[sampleIdx++ % samples.length]);
+  }
+  render();
+});
+
+$("journal-mic").addEventListener("click", () => {
+  state.listening = !state.listening;
+  render();
+});
+
+$("sheet-close").addEventListener("click", () => {
+  state.journalOpen = false;
+  render();
+});
+
+$("journal-bar").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("journal-input").value.trim();
+  if (!text) return;
+  pushLine(text);
+  $("journal-input").value = "";
+  state.listening = false;
+  render();
+});
+
+$("journal-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.shiftKey) {
+    e.preventDefault();
+    pushLine(samples[sampleIdx++ % samples.length]);
+    render();
+  }
+});
+$("journal-input").addEventListener("input", () => {
+  $("journal-send").classList.toggle("ready", $("journal-input").value.trim().length > 0);
+});
+
+document.addEventListener("keydown", (e) => {
+  const typing = document.activeElement === $("journal-input");
+  if (e.key === "2" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (state.l2) closeL2();
+    else openL2();
+  }
+  if (e.key === "Escape" && state.l2) closeL2();
+});
+
+document.body.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-copy]");
+  if (!btn) return;
+  const value = btn.getAttribute("data-copy");
+  try {
+    await navigator.clipboard.writeText(value);
+    toast("Copied");
+  } catch {
+    toast("Copy failed");
+  }
+});
+
+render();
+</script>
+</body>
+</html>
