@@ -27,6 +27,7 @@ mod fact_outbox;
 mod fx_cds_realized_pnl;
 mod inr_cash_wac;
 mod instruments;
+mod journal_manual_fill;
 mod kill_policy;
 mod kill_switch_audit;
 mod kotak_nfo_scrip;
