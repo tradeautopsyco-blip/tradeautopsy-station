@@ -54,6 +54,8 @@ struct BarPostTradeView: View {
                     unpostedChartsCard
                 }
 
+                BarManualFillPanel(viewModel: viewModel, liveState: viewModel.barLiveState)
+
                 momentA
                 momentB
                 momentC

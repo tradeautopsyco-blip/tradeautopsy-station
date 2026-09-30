@@ -1,0 +1,11 @@
+soak_start 2026-09-28T12:38:05Z
+agent_pid=none
+agent_cmd=unknown
+ticks=10 interval_sec=120
+--- tick 1/10 2026-09-28T12:38:05Z ---
+harness_exit=OK
+gate_a=PASS gate_b=PASS
+--- tick 10/10 2026-09-28T12:38:57Z ---
+harness_exit=OK
+gate_a=PASS gate_b=PASS
+soak_end 2026-09-28T12:38:57Z ticks_ok=10 gate_b_fail_ticks=0

@@ -2107,7 +2107,7 @@ struct BarOptionsDeclareTests {
         cash.deskSelectedInstrumentId = "nse_cm|2885"
         #expect(cash.deskDepthExtractPath(symbol: "nse_cm|2885").contains("book=kotak-nse-bse-cash"))
         #expect(cash.deskDepthExtractPath(symbol: "nse_cm|2885").contains("nse_cm%7C2885"))
-        #expect(cash.deskDepthPhysicsNote.contains("Never synced"))
+        #expect(cash.deskDepthPhysicsNote.contains("unsupported"))
 
         let nfo = NotchViewModel(planSurfaceOnly: true)
         nfo.activeBrokerSlug = "kotak_neo"

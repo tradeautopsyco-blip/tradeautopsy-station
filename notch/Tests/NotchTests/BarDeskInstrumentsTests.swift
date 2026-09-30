@@ -161,8 +161,8 @@ struct BarDeskInstrumentsTests {
             bookId: BarDeskTemplate.kotakCashBookId,
             physics: "bounded_snapshot"
         )
-        #expect(cash.contains("Never synced"))
-        #expect(cash.contains("Never ordered_state"))
+        #expect(cash.contains("unsupported"))
+        #expect(cash.contains("Kotak cash"))
 
         let options = BarDeskTemplate.depthPhysicsNote(
             bookId: BarDeskTemplate.binanceComOptionsBookId,

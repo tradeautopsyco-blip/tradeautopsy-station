@@ -393,7 +393,7 @@ enum BarDeskTemplate {
         case binanceComSpotBookId:
             return "COM REST snapshot plus @depth deltas. Physics \(label). Sequence gap stamps Unusable — never last-good, never synced."
         case kotakCashBookId:
-            return "REST \(label). Never synced. Never ordered_state."
+            return "Depth unsupported on Kotak cash — no live ladder on this book."
         case binanceComOptionsBookId:
             return "REST GET /eapi/v1/depth?limit=50. Levels are [price, quantity]. No orders count. Not COM @depth. Physics \(label). Never synced."
         case binanceComUsdmBookId:
@@ -470,7 +470,14 @@ enum BarDeskLastFormatting {
     /// stays beside it. Other statuses are not a second label on the price.
     static func freshnessBesideLast(status: String) -> String? {
         let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized == "unknown" ? "unknown" : nil
+        switch normalized {
+        case "unknown":
+            return "unknown"
+        case "stale":
+            return "stale"
+        default:
+            return nil
+        }
     }
 }
 

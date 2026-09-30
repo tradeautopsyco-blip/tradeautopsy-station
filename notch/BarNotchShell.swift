@@ -461,7 +461,14 @@ struct BarNotchShell: View {
                     .foregroundColor(BarDS.Accent.amber)
             }
 
-            liveStateFreshnessChip
+            brokerConnectionFreshnessChip
+            if let quoteLane = PlanHeaderFreshness.quoteLaneChipLabel(
+                quoteCapability: viewModel.deskQuoteCapability,
+                laneObservedAt: viewModel.deskQuoteCapabilityObservedAt,
+                now: freshnessClock
+            ) {
+                quoteLaneFreshnessChip(quoteLane)
+            }
             if !chrome.clusterDisplayNames.isEmpty {
                 booksClusterButton(chrome)
             }
@@ -692,19 +699,19 @@ struct BarNotchShell: View {
         }
     }
 
-    private var liveStateFreshnessChip: some View {
+    private var brokerConnectionFreshnessChip: some View {
         let signIn = viewModel.barStateRequiresDeviceLogin
-        let stale = BarLiveStatePollChrome.isStale(
-            lastFetched: viewModel.barLastFetched,
+        let warn = PlanHeaderFreshness.connectionChipIsWarn(
+            syncClass: viewModel.brokerSyncClass,
+            requiresDeviceLogin: signIn
+        )
+        let label = PlanHeaderFreshness.connectionChipLabel(
+            syncClass: viewModel.brokerSyncClass,
+            lastSyncedAtMs: viewModel.brokerSyncLastPollAtMs.map(Int64.init),
+            requiresDeviceLogin: signIn,
             now: freshnessClock
         )
-        let label = signIn
-            ? "Sign in"
-            : BarLiveStatePollChrome.freshnessLabel(
-                lastFetched: viewModel.barLastFetched,
-                now: freshnessClock
-            )
-        let fg = signIn || stale ? BarDS.Accent.amber : BarDS.Text.muted
+        let fg = warn ? BarDS.Accent.amber : BarDS.Text.muted
         return HStack(spacing: 5) {
             Text(label)
                 .font(BarDS.monoFont(11, weight: .medium))
@@ -729,8 +736,20 @@ struct BarNotchShell: View {
         .accessibilityLabel(
             signIn
                 ? "Live Plan needs Station sign-in. Open Station."
-                : "Live Plan refreshed \(label)"
+                : "Broker connection last synced \(label)"
         )
+    }
+
+    private func quoteLaneFreshnessChip(_ label: String) -> some View {
+        Text(label)
+            .font(BarDS.monoFont(11, weight: .medium))
+            .monospacedDigit()
+            .foregroundColor(BarDS.Accent.amber)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 10)
+            .background(BarDS.Accent.amber.opacity(0.10))
+            .clipShape(Capsule())
+            .accessibilityLabel(label)
     }
 
     // MARK: - Main scroll

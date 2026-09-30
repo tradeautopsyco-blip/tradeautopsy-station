@@ -1,0 +1,23 @@
+{
+  "prove_capture_verdict": "FAIL dead_letter increased (4\u21925)",
+  "accept_http": 202,
+  "accept_seconds": 10.01,
+  "baseline_counts": {
+    "acked": 2,
+    "dead_letter": 4,
+    "enqueued": 0,
+    "inflight": 0
+  },
+  "after_counts": {
+    "acked": 2,
+    "dead_letter": 5,
+    "enqueued": 0,
+    "inflight": 0
+  },
+  "drain_timeout_sec": "55",
+  "drain_baseline": "{\"acked\": 2, \"dead_letter\": 4, \"enqueued\": 0, \"inflight\": 0}",
+  "drain_last_counts": "{\"acked\": 2, \"dead_letter\": 5, \"enqueued\": 0, \"inflight\": 0}",
+  "drain_polls": "19",
+  "drain_stop": "dead_letter_increased",
+  "dead_letter_sample": "id=7 attempts=5 reason='network: error sending request for url (https://www.tradeautopsy.in/api/daemon/journal/toolbar-capture/accept)' draft='Harness capture accept probe \u2014 safe to delete.' | id=6 attempts=5 reason='network: error sending request for url (https://www.tradeautopsy.in/api/daemon/journal/toolbar-capture/accept)' draft='Harness timing probe \u2014 safe to delete.' | id=5 attempts=5 reason='network: error sending request for url (https://www.tradeautopsy.in/api/daemon/journal/toolbar-capture/accept)' draft='Harness capture accept probe \u2014 safe to delete.'"
+}
