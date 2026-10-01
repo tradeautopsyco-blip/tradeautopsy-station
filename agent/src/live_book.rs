@@ -56,6 +56,11 @@ pub enum LiveBookEvent {
         broker: Option<String>,
         filled_at_iso: Option<String>,
     },
+    /// Wave 2 — freeze last vs invalidation/target on the declaration snapshot when the session ends.
+    CaptureWorkingCondition {
+        last: Option<f64>,
+        last_status: String,
+    },
 }
 
 impl LiveBook {
@@ -275,6 +280,116 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                 }),
             );
         }
+        LiveBookEvent::CaptureWorkingCondition { last, last_status } => {
+            let Some(obj) = pending_map(book) else {
+                return;
+            };
+            let Some(plan) = obj.get_mut("plan_snapshot").and_then(Value::as_object_mut) else {
+                return;
+            };
+            if plan.contains_key("condition_at_close") {
+                return;
+            }
+            let side_buy = pending_string(book, "side")
+                .map(|s| !s.to_ascii_uppercase().contains("SELL"))
+                .unwrap_or(true);
+            let inv_kind = plan
+                .get("invalidation_kind")
+                .or_else(|| plan.get("invalidation").and_then(|i| i.get("kind")))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let inv_price = json_f64(plan.get("invalidation_price"))
+                .or_else(|| {
+                    plan.get("invalidation")
+                        .and_then(|i| json_f64(i.get("price")))
+                });
+            let target = json_f64(obj.get("target")).or_else(|| json_f64(plan.get("target_price")));
+            let status = last_status.trim().to_ascii_lowercase();
+            let captured = status != "not_captured"
+                && last.is_some_and(|v| v.is_finite() && v > 0.0)
+                && working_last_bound(&status);
+            let inv_state = if captured {
+                working_vs_invalidation(side_buy, last, &status, inv_kind.as_deref(), inv_price)
+            } else {
+                "not_captured".to_string()
+            };
+            let tgt_state = if captured {
+                working_vs_target(side_buy, last, &status, target)
+            } else {
+                "not_captured".to_string()
+            };
+            plan.insert(
+                "condition_at_close".into(),
+                json!({
+                    "last": last.filter(|v| v.is_finite() && *v > 0.0),
+                    "last_status": if captured { status } else { "not_captured" },
+                    "invalidation_state": inv_state,
+                    "target_state": tgt_state,
+                }),
+            );
+        }
+    }
+}
+
+fn working_last_bound(status: &str) -> bool {
+    !matches!(
+        status,
+        "unavailable" | "unsupported" | "empty" | "quotes_http" | "not_connected"
+    )
+}
+
+fn working_vs_invalidation(
+    side_buy: bool,
+    last: Option<f64>,
+    status: &str,
+    kind: Option<&str>,
+    price: Option<f64>,
+) -> String {
+    let k = kind.unwrap_or("").trim().to_ascii_lowercase();
+    if matches!(k.as_str(), "time" | "behaviour" | "behavior" | "context") {
+        return "waiting".into();
+    }
+    let is_price = k == "price" || (k.is_empty() && price.is_some());
+    if !is_price {
+        return "waiting".into();
+    }
+    let bound = working_last_bound(status);
+    let (Some(last), Some(inv)) = (last.filter(|v| v.is_finite() && *v > 0.0), price.filter(|p| *p > 0.0))
+    else {
+        return if bound { "waiting".into() } else { "dark".into() };
+    };
+    if side_buy {
+        return if last <= inv { "breached".into() } else { "intact".into() };
+    }
+    if last >= inv {
+        "breached".into()
+    } else {
+        "intact".into()
+    }
+}
+
+fn working_vs_target(
+    side_buy: bool,
+    last: Option<f64>,
+    status: &str,
+    target: Option<f64>,
+) -> String {
+    let bound = working_last_bound(status);
+    let (Some(last), Some(tgt)) = (
+        last.filter(|v| v.is_finite() && *v > 0.0),
+        target.filter(|t| *t > 0.0),
+    ) else {
+        return if bound { "waiting".into() } else { "dark".into() };
+    };
+    if side_buy {
+        return if last >= tgt { "touched".into() } else { "intact".into() };
+    }
+    if last <= tgt {
+        "touched".into()
+    } else {
+        "intact".into()
     }
 }
 
@@ -732,6 +847,74 @@ mod tests {
         assert_ne!(pending["quantity"], 1.0);
         assert_eq!(pending["book_id"], "binance-com-usdm");
         assert_ne!(pending["book_id"], "binance-com-spot");
+    }
+
+    #[test]
+    fn capture_working_condition_freezes_plan_snapshot_once() {
+        let body = json!({
+            "symbol": "RELIANCE",
+            "side": "BUY",
+            "quantity": 10.0,
+            "stop_loss": 1400.0,
+            "target_price": 1500.0,
+            "declaration_kind": "intraday",
+            "declaration_payload": {
+                "v": 1,
+                "protective_sl_consent": true,
+                "s1": {
+                    "setup_type": "Breakout",
+                    "invalidation_type": "price",
+                    "invalidation_price": 1410.0
+                }
+            }
+        });
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::declare_from_body(&body, "d1".into()));
+        book.apply(LiveBookEvent::CaptureWorkingCondition {
+            last: Some(1405.0),
+            last_status: "fresh".into(),
+        });
+        let snap = book.snapshot().unwrap();
+        let at_close = &pending(&snap)["plan_snapshot"]["condition_at_close"];
+        assert_eq!(at_close["last"], 1405.0);
+        assert_eq!(at_close["last_status"], "fresh");
+        assert_eq!(at_close["invalidation_state"], "breached");
+        assert_eq!(at_close["target_state"], "intact");
+        book.apply(LiveBookEvent::CaptureWorkingCondition {
+            last: Some(9999.0),
+            last_status: "fresh".into(),
+        });
+        assert_eq!(
+            pending(&book.snapshot().unwrap())["plan_snapshot"]["condition_at_close"]["last"],
+            1405.0
+        );
+    }
+
+    #[test]
+    fn capture_working_condition_not_captured_when_last_dark() {
+        let body = json!({
+            "symbol": "RELIANCE",
+            "side": "BUY",
+            "quantity": 10.0,
+            "declaration_kind": "intraday",
+            "declaration_payload": {
+                "v": 1,
+                "protective_sl_consent": false,
+                "s1": {
+                    "invalidation_type": "price",
+                    "invalidation_price": 1410.0
+                }
+            }
+        });
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::declare_from_body(&body, "d1".into()));
+        book.apply(LiveBookEvent::CaptureWorkingCondition {
+            last: Some(1405.0),
+            last_status: "unavailable".into(),
+        });
+        let at_close = &pending(&book.snapshot().unwrap())["plan_snapshot"]["condition_at_close"];
+        assert_eq!(at_close["last_status"], "not_captured");
+        assert_eq!(at_close["invalidation_state"], "not_captured");
     }
 
     #[test]

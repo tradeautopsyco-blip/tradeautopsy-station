@@ -24,16 +24,20 @@ struct BarDeskDepthLadder: View {
                 hole(.unavailable)
             } else if let honesty = HonestyStatus.fromWire(status) {
                 hole(honesty)
-            } else if status.lowercased() == "success", !bids.isEmpty || !asks.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    HStack(alignment: .top, spacing: 10) {
-                        column(title: "bids", rows: bids, side: .bid)
-                        column(title: "asks", rows: asks, side: .ask)
+            } else if status.lowercased() == "success" {
+                if !bids.isEmpty || !asks.isEmpty {
+                    ScrollView(.vertical, showsIndicators: true) {
+                        HStack(alignment: .top, spacing: 10) {
+                            column(title: "bids", rows: bids, side: .bid)
+                            column(title: "asks", rows: asks, side: .ask)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    note
+                } else {
+                    hole(.unusable)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                note
             } else {
                 hole(.unavailable)
             }

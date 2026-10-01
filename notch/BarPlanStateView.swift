@@ -137,7 +137,8 @@ struct BarPlanStateView: View {
                     report: payload?.escrowMatchReport,
                     pending: payload?.pendingDeclaration,
                     last: viewModel.deskQuoteLast,
-                    lastStatus: viewModel.deskLastStatus
+                    lastStatus: viewModel.deskLastStatus,
+                    afterSession: isAfterWorkingSession
                 )
             }
 
@@ -206,15 +207,26 @@ struct BarPlanStateView: View {
         return s == "STALE" || s == "EXPIRED"
     }
 
+    private var isAfterWorkingSession: Bool {
+        viewModel.barSurfacePhase == .debrief
+    }
+
     private var workingPriceInvalidated: Bool {
         guard let pending = payload?.pendingDeclaration else { return false }
         let sideBuy = !pending.side.uppercased().contains("SELL")
+        let snap = pending.planSnapshot
+        if isAfterWorkingSession, let atClose = snap?.conditionAtClose {
+            if !atClose.wasCaptured { return false }
+            if let wired = atClose.invalidationState {
+                return BarWorkingCompare.levelState(fromWire: wired) == .breached
+            }
+        }
         return BarWorkingCompare.isPriceInvalidated(
             sideBuy: sideBuy,
             last: viewModel.deskQuoteLast,
             status: viewModel.deskLastStatus,
-            kind: pending.planSnapshot?.resolvedInvalidationKind,
-            price: pending.planSnapshot?.resolvedInvalidationPrice
+            kind: snap?.resolvedInvalidationKind,
+            price: snap?.resolvedInvalidationPrice
         )
     }
 
@@ -568,6 +580,9 @@ struct BarPlanStateView: View {
                 ),
             )
             invalidationPlanSnapshotBlock
+            if isAfterWorkingSession, let pending = payload?.pendingDeclaration {
+                workingConditionAfterSessionLine(pending: pending)
+            }
             planSnapshotRow(
                 label: "Entry state",
                 value: BarLivePlanSnapshotMapping.entryStateDisplay(plan: planSnapshotFields),
@@ -602,6 +617,33 @@ struct BarPlanStateView: View {
                 .accessibilityLabel(greenLine)
             }
         }
+    }
+
+    private func workingConditionAfterSessionLine(pending: BarPendingDeclaration) -> some View {
+        let sideBuy = !pending.side.uppercased().contains("SELL")
+        let snap = pending.planSnapshot
+        let inv = BarWorkingCompare.invalidationActualText(
+            afterSession: isAfterWorkingSession,
+            atClose: snap?.conditionAtClose,
+            sideBuy: sideBuy,
+            last: viewModel.deskQuoteLast,
+            lastStatus: viewModel.deskLastStatus,
+            kind: snap?.resolvedInvalidationKind,
+            price: snap?.resolvedInvalidationPrice
+        )
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("Working invalidation")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.42))
+            Spacer(minLength: 8)
+            if inv.showHonestyChip {
+                HonestyChip(status: BarWorkingCompare.honestyStatusForLast(lastStatus: viewModel.deskLastStatus))
+            }
+            Text(inv.text)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(invalidationRowPrimaryColor(invalidationLine: inv.text))
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func invalidationRowPrimaryColor(invalidationLine: String) -> Color {

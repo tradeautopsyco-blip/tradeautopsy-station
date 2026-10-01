@@ -221,4 +221,63 @@ struct BarWave2WorkingTests {
             )
         )
     }
+
+
+    @Test func afterSessionUsesFrozenSnapshotNotLiveLast() {
+        let atClose = BarPlanConditionAtClose(
+            last: 1405,
+            lastStatus: "fresh",
+            invalidationState: "breached",
+            targetState: "intact"
+        )
+        let inv = BarWorkingCompare.invalidationActualText(
+            afterSession: true,
+            atClose: atClose,
+            sideBuy: true,
+            last: 9999,
+            lastStatus: "fresh",
+            kind: "price",
+            price: 1410
+        )
+        #expect(inv.text.contains("After session"))
+        #expect(inv.text.contains("1405"))
+        #expect(!inv.text.contains("9999"))
+        #expect(inv.state == .breached)
+    }
+
+
+    @Test func afterSessionNotCapturedWhenSnapshotMissing() {
+        let inv = BarWorkingCompare.invalidationActualText(
+            afterSession: true,
+            atClose: BarPlanConditionAtClose(
+                last: nil,
+                lastStatus: "not_captured",
+                invalidationState: "not_captured",
+                targetState: "not_captured"
+            ),
+            sideBuy: true,
+            last: 1405,
+            lastStatus: "fresh",
+            kind: "price",
+            price: 1410
+        )
+        #expect(inv.text == "not captured")
+    }
+
+
+    @Test func liveInvalidationShowsHonestyChipWhenLastDark() {
+        let inv = BarWorkingCompare.invalidationActualText(
+            afterSession: false,
+            atClose: nil,
+            sideBuy: true,
+            last: 99,
+            lastStatus: "unavailable",
+            kind: "price",
+            price: 100
+        )
+        #expect(inv.showHonestyChip)
+        #expect(inv.state == .dark)
+    }
+
 }
+

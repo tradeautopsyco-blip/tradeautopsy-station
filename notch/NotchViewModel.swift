@@ -2778,8 +2778,14 @@ public final class NotchViewModel: ObservableObject {
         guard display else { return }
         guard rawStatus.lowercased() == "success" else { return }
         guard let data = json["data"] as? [String: Any] else { return }
-        deskDepthBids = Self.deskDepthLevels(from: data["bids"], side: "bid")
-        deskDepthAsks = Self.deskDepthLevels(from: data["asks"], side: "ask")
+        let parsedBids = Self.deskDepthLevels(from: data["bids"], side: "bid")
+        let parsedAsks = Self.deskDepthLevels(from: data["asks"], side: "ask")
+        if parsedBids.isEmpty, parsedAsks.isEmpty {
+            deskDepthStatus = "unusable"
+            return
+        }
+        deskDepthBids = parsedBids
+        deskDepthAsks = parsedAsks
     }
 
     private static func deskDepthLevels(from raw: Any?, side: String) -> [DeskDepthLevel] {
@@ -3144,13 +3150,40 @@ public final class NotchViewModel: ObservableObject {
     }
 
     private func notePositionTransitionForBar(previousCount: Int, newCount: Int) {
-        barDebriefPending = BarDebriefArming.applyPoll(
+        let armed = BarDebriefArming.applyPoll(
             previousCount: previousCount,
             newCount: newCount,
             pending: barDebriefPending,
         )
+        if armed, !barDebriefPending {
+            Task { await captureWorkingConditionAtClose() }
+        }
+        barDebriefPending = armed
         if newCount > 0 {
             clearOptimisticArmedStorage()
+        }
+    }
+
+    /// Wave 2 — freeze last vs invalidation on the declaration snapshot (local LiveBook).
+    func captureWorkingConditionAtClose() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/capture-working-condition") else { return }
+        let bound = SessionChartQuoteLast.isBound(status: deskLastStatus)
+        let last = bound ? SessionChartQuoteLast.value(deskQuoteLast, status: deskLastStatus) : nil
+        let status = bound ? deskLastStatus : "unavailable"
+        let body: [String: Any] = [
+            "last": last as Any,
+            "last_status": status,
+        ]
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        do {
+            let (_, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: payload)
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else { return }
+            await fetchBarLiveState()
+        } catch {
+            return
         }
     }
 
@@ -4624,6 +4657,7 @@ public final class NotchViewModel: ObservableObject {
 
         case "trade_exit":
             barDebriefPending = BarDebriefArming.applyExplicitTradeExit()
+            Task { await captureWorkingConditionAtClose() }
             recomputeBarSurfacePhase()
             return true
 
