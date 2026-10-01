@@ -6,6 +6,8 @@
 
 The three sidebar items already have one job each in `notch/BarNotchShell.swift`: Open (`morning`), Plan (`pretrade`), Working (`live`). The paint mixes those jobs, so each screen looks like a second copy of the others.
 
+**Multi-trade correction (2026-10-01).** Open, Plan, Working, and Debrief are a list plus a selection, not one live ticket. Section 3’s flat / declared / in-trade split is the detail of the **selected** row. A second Confirm must not replace the first. The product arc, conditions, and the single-slot code to remove are in [`harness-trade-arc.md`](./harness-trade-arc.md). DualNoBlend stays per book: two tickets on one book share that book’s currency; another book’s numbers stay off the strip.
+
 | Screen | Job already named in code | What the shot actually shows |
 | --- | --- | --- |
 | Open | Session start. `BriefLeftView` in `notch/TabViews/BriefTab.swift`. Start jumps to Plan (`startTradingFromMorningBrief`). | Book card, index zeros, an empty “What matters” card, calm/confidence, a rule, Start trading. |
@@ -112,9 +114,9 @@ So a flat desk still speaks in the voice of an open trade.
 
 ### Recommended three states
 
-Paint exactly one of these. Do not stack the other two’s chrome.
+These are the detail of the **selected** row. The screen also lists every open plan and position (see [`harness-trade-arc.md`](./harness-trade-arc.md)). “Plan another” stays available while a row is live. Paint one detail state for the selection. Do not stack the other states’ chrome on that row.
 
-**Flat** — no pending declaration, no open position, phase not armed.
+**Flat** — the list is empty.
 
 | Show | Hide |
 | --- | --- |
@@ -125,7 +127,7 @@ Paint exactly one of these. Do not stack the other two’s chrome.
 
 Kill stays a text button in the footer, same warning card as `BarPlanKillChrome`. It is not the next action.
 
-**Declared, not filled** — pending declaration, no fill.
+**Declared, not filled** — the selected row is a pending declaration with no fill.
 
 | Show | |
 | --- | --- |
@@ -136,7 +138,7 @@ Kill stays a text button in the footer, same warning card as `BarPlanKillChrome`
 
 Plan-intact / watch / broken only when `plan_state` is actually GREEN, AMBER, or RED. An empty string is not GREEN.
 
-**In a trade** — open position or a fill on the pending row.
+**In a trade** — the selected row is an open position or a fill on that declaration.
 
 | Show | |
 | --- | --- |
