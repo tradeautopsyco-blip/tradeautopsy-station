@@ -186,13 +186,7 @@ CREATE TABLE IF NOT EXISTS kill_switch_audit (
     }
 
     pub fn db_path_from_env_or_default() -> PathBuf {
-        std::env::var("AGENT_KILL_SWITCH_AUDIT_DB_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let mut p = std::env::temp_dir();
-                p.push("tradeautopsy-agent-kill-switch-audit.db");
-                p
-            })
+        crate::kill_latch::default_kill_switch_audit_db_path()
     }
 
     pub fn append_signed(

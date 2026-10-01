@@ -8,6 +8,7 @@ use crate::{
     event_bus::EventBus,
     exchange_info::ExchangeInfoSymbolCache,
     instruments::InstrumentStore,
+    kill_latch::KillLatchStore,
     kill_policy::KillPolicyStore,
     kill_switch_audit::{KillSwitchAuditSigner, KillSwitchAuditStore},
     kotak_scrip_master::KotakScripMaster,
@@ -38,7 +39,7 @@ mod quote_selection;
 pub(crate) use quote_selection::QuoteSelections;
 mod health;
 mod instruments;
-mod kill_switch;
+pub mod kill_switch;
 pub use kill_switch::{
     effective_level, plan_l3_dns, resolve_clear_fog, resolve_kill_apply, KillApplyDecision,
     KillClearDecision,
@@ -80,8 +81,11 @@ pub struct AppState {
     pub account_book: Arc<Mutex<AccountBook>>,
     pub broker_sync_control: Arc<BrokerSyncController>,
     pub broker_limits: BrokerSyncConfig,
-    /// L1 fog-of-war armed (#190). L1 apply must not set this (T5 / Q8).
+    /// L3 fog-of-war armed (#190). Derived from [`kill_latch`] at boot and after apply/dismiss.
     pub fog_active: Arc<AtomicBool>,
+    pub kill_latch: KillLatchStore,
+    /// When latch sqlite cannot be read, assume armed (fail closed).
+    pub kill_latch_fail_closed: Arc<AtomicBool>,
     pub kill_switch_audit: KillSwitchAuditStore,
     pub audit_signer: Arc<KillSwitchAuditSigner>,
     pub last_l3_broker: Arc<std::sync::Mutex<Option<String>>>,
@@ -336,6 +340,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/daemon/kill-switch/audit",
             get(kill_switch::kill_switch_audit_handler),
+        )
+        .route(
+            "/api/daemon/kill-switch/state",
+            get(kill_switch::kill_switch_state_handler),
         )
         .route("/api/daemon/auth/begin", post(phase8::auth_begin_handler))
         .route("/api/daemon/auth/finish", post(phase8::auth_finish_handler))

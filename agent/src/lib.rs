@@ -18,7 +18,7 @@ mod broker_validation;
 mod coinm_realized_pnl;
 mod data;
 mod device_login;
-mod dns_block;
+pub mod dns_block;
 mod egress;
 mod event_bus;
 mod exchange_info;
@@ -27,6 +27,7 @@ mod fx_cds_realized_pnl;
 mod inr_cash_wac;
 mod instruments;
 mod kill_policy;
+mod kill_latch;
 mod kill_switch_audit;
 mod kotak_nfo_scrip;
 mod kotak_rest_history;
@@ -144,6 +145,7 @@ pub use inr_cash_wac::{
 };
 pub use instruments::{zerodha_instruments_enabled, InstrumentStore};
 pub use kill_policy::{KillPolicy, KillPolicyStore};
+pub use kill_latch::{KillLatchLoad, KillLatchSnapshot, KillLatchStore};
 pub use kill_switch_audit::{
     canonical_audit_message, verify_audit_signature, KillSwitchAuditAppend, KillSwitchAuditRecord,
     KillSwitchAuditSigner, KillSwitchAuditStore,
@@ -512,6 +514,7 @@ pub struct AgentConfig {
     pub today_db_path: PathBuf,
     pub instruments_db_path: PathBuf,
     pub kill_switch_audit_db_path: PathBuf,
+    pub kill_latch_db_path: PathBuf,
     pub broker_adapter: Option<Arc<dyn BrokerAdapter>>,
     pub broker_sync: BrokerSyncConfig,
     pub bar_fill_ingress: Option<BarBrokerFillIngressConfig>,
@@ -664,6 +667,7 @@ impl AgentConfig {
                 p
             });
         let kill_switch_audit_db_path = KillSwitchAuditStore::db_path_from_env_or_default();
+        let kill_latch_db_path = kill_latch::KillLatchStore::db_path_from_env_or_default();
         let metrics_port: Option<u16> = match std::env::var("AGENT_METRICS_PORT").ok() {
             Some(s) => match s.parse::<u16>() {
                 Ok(0) => None,
@@ -696,6 +700,7 @@ impl AgentConfig {
             today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
+            kill_latch_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress,
@@ -777,6 +782,8 @@ impl AgentConfig {
         instruments_db_path.push(format!("rta-instruments-{port}.db"));
         let mut kill_switch_audit_db_path = std::env::temp_dir();
         kill_switch_audit_db_path.push(format!("rta-kill-switch-audit-{port}.db"));
+        let mut kill_latch_db_path = std::env::temp_dir();
+        kill_latch_db_path.push(format!("rta-kill-latch-{port}.db"));
         let mut fact_outbox_db_path = std::env::temp_dir();
         fact_outbox_db_path.push(format!("rta-fact-outbox-{port}.db"));
         let mut instrument_master_cache_dir = std::env::temp_dir();
@@ -796,6 +803,7 @@ impl AgentConfig {
             today_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
+            kill_latch_db_path,
             broker_adapter: None,
             broker_sync: BrokerSyncConfig::default(),
             bar_fill_ingress: None,
@@ -1433,6 +1441,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     let candle_builders = Arc::new(std::sync::Mutex::new(crate::data::CandleBuilders::new()));
     let today_store = TodayStore::open(&config.today_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
+    let kill_latch = kill_latch::KillLatchStore::open(&config.kill_latch_db_path)?;
     let kill_policy = KillPolicyStore::open(&config.kill_switch_audit_db_path)?;
     kill_policy.load_or_insert_defaults()?;
     kill_policy.save(&config.kill_policy)?;
@@ -1517,6 +1526,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     }
 
     let fog_active = Arc::new(AtomicBool::new(false));
+    let kill_latch_fail_closed = Arc::new(AtomicBool::new(false));
 
     let live_book = Arc::new(crate::live_book::LiveBook::new());
     if let Some(planted) = config.live_book_snapshot {
@@ -1740,6 +1750,8 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         broker_sync_control: broker_sync_control.clone(),
         broker_limits: config.broker_sync.clone(),
         fog_active: fog_active.clone(),
+        kill_latch,
+        kill_latch_fail_closed: kill_latch_fail_closed.clone(),
         kill_switch_audit,
         audit_signer,
         last_l3_broker: Arc::new(std::sync::Mutex::new(None)),
@@ -1837,6 +1849,12 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             "s1 desk: no runtime subscription yet — TickBook empty until Start or quote resolve"
         );
     }
+    api::kill_switch::sync_derived_kill_state(&state);
+    api::kill_switch::reconcile_kill_state(&state)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+    api::kill_switch::spawn_kill_latch_expiry_task(state.clone());
+
     let router = api::router(state.clone());
     let oauth_router = api::oauth_callback_router(state.clone());
     loopback_oauth_tls::spawn(oauth_router, oauth_loopback::oauth_tls_port())?;
@@ -1923,7 +1941,33 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             }
         })?;
     tracing::info!(%addr, "tradeautopsy-agent listening");
-    let serve_result = axum::serve(listener, router).await;
+
+    let shutdown = async {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+        #[cfg(unix)]
+        let terminate = async {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            sigterm.recv().await;
+        };
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+        tracing::info!("kill latch: graceful shutdown — hosts block left in force");
+    };
+
+    let serve_result = axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown)
+        .await;
     background.abort_all();
     serve_result?;
     Ok(())

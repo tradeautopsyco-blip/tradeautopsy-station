@@ -270,6 +270,7 @@ pub fn spawn_test_agent_with_options(
         remove_sqlite_files(&cfg.recent_trades_db_path);
     }
     remove_sqlite_files(&cfg.kill_switch_audit_db_path);
+    remove_sqlite_files(&cfg.kill_latch_db_path);
     remove_sqlite_files(&cfg.fact_outbox_db_path);
     remove_sqlite_files(&cfg.history_db_path);
     tokio::spawn(async move {
