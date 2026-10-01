@@ -49,5 +49,11 @@ public struct StationSidebarList: View {
         .scrollContentBackground(.hidden)
         .background(StationDS.Fill.sidebar)
         .tint(StationDS.Accent.teal)
+        .safeAreaInset(edge: .bottom) {
+            StationShippingFundsSidebarRow(
+                glance: coordinator.sessionModel.shippingFundsGlance,
+                brokerSyncClass: coordinator.sessionModel.brokerSyncClass
+            )
+        }
     }
 }

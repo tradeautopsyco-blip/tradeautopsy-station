@@ -23,6 +23,8 @@ struct BarNfoCockpitPlanRail: View {
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
+                BarShippingFundsPlanRow(glance: viewModel.shippingFundsGlance)
+
                 groupLab("State check")
                 BarPlanEmotionCheckView(viewModel: viewModel)
 
@@ -460,6 +462,7 @@ struct BarNfoCockpitPlanRail: View {
             labeledField("Stop — exact price of the option", placeholder: "899.00", text: $stopLossText)
             labeledField("Target", placeholder: "320.00", text: $targetPriceText)
             labeledField("Max planned loss ₹", placeholder: "15000", text: $viewModel.declMaxPlannedLossText)
+            BarPlanSizerPlanRow(viewModel: viewModel, stopLossText: stopLossText)
         }
     }
 

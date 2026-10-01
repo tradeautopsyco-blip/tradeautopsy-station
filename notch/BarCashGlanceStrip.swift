@@ -39,6 +39,7 @@ struct BarCashGlanceStrip: View {
 
     private func title(_ kind: BarCashCockpitSeed.StripKind) -> String {
         switch kind {
+        case .funds: return "FUNDS"
         case .last: return "LAST · YOUR ENTRY"
         case .history: return "HISTORY"
         case .depth: return "DEPTH"
@@ -49,6 +50,8 @@ struct BarCashGlanceStrip: View {
     @ViewBuilder
     private func valueRow(_ kind: BarCashCockpitSeed.StripKind) -> some View {
         switch kind {
+        case .funds:
+            fundsValue
         case .last:
             lastValue
         case .history:
@@ -59,6 +62,22 @@ struct BarCashGlanceStrip: View {
             Text(marginValue)
                 .font(BarDS.monoFont(13, weight: .medium))
                 .foregroundColor(BarDS.Text.primary)
+        }
+    }
+
+    @ViewBuilder
+    private var fundsValue: some View {
+        let glance = viewModel.shippingFundsGlance
+        if glance.isLit {
+            Text(glance.freeText)
+                .font(BarDS.monoFont(13, weight: .medium))
+                .foregroundColor(BarDS.Text.primary)
+        } else if let honesty = HonestyStatus.fromWire(glance.status) {
+            HonestyChip(status: honesty)
+        } else {
+            Text("—")
+                .font(BarDS.monoFont(13, weight: .medium))
+                .foregroundColor(BarDS.Text.muted)
         }
     }
 
@@ -134,6 +153,10 @@ struct BarCashGlanceStrip: View {
 
     private func subtitle(_ kind: BarCashCockpitSeed.StripKind) -> String {
         switch kind {
+        case .funds:
+            let book = viewModel.shippingFundsGlance.bookId.trimmingCharacters(in: .whitespacesAndNewlines)
+            if book.isEmpty { return "obtain(funds) · shipping book" }
+            return "obtain(funds) · \(book)"
         case .last:
             return "market/quote · \(bookLabel)"
         case .history:

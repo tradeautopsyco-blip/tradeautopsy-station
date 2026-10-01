@@ -28,6 +28,8 @@ struct BarCashCockpitPlanRail: View {
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
+                BarShippingFundsPlanRow(glance: viewModel.shippingFundsGlance)
+
                 groupLab("State check")
                 BarPlanEmotionCheckView(viewModel: viewModel)
 
@@ -181,6 +183,9 @@ struct BarCashCockpitPlanRail: View {
                         .font(BarDS.monoFont(12, weight: .medium))
                         .foregroundColor(r >= 2.0 ? BarDS.Accent.green : BarDS.Text.primary)
                 }
+            }
+            if !isOptions {
+                BarPlanSizerPlanRow(viewModel: viewModel, stopLossText: stopLossText)
             }
             if viewModel.declareAssetClass == .spot || viewModel.declareAssetClass == .equity {
                 BarChip(

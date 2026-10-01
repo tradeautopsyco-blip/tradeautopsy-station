@@ -172,6 +172,21 @@ struct BarAccountChromeTests {
         #expect(vm.accountChrome.positionsCount == 0)
         #expect(vm.accountChrome.fundsStatus == "success")
         #expect(vm.accountChrome.fundsStatus != "synced")
+        #expect(!vm.shippingFundsGlance.isLit)
+    }
+
+    @Test func shippingFundsGlanceUsesSpotBookWhilePulseIsUsdm() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.activeExecutionBrokerSlug = "binance_com"
+        vm.deskQuoteCurrency = "USDT"
+        vm.declareAssetClass = .usdm
+        vm.applyShippingFundsGlance(
+            fundsEnvelope: fundsEnvelope(book: "binance-com-spot", asset: "USDT", free: 42.5),
+            startSlug: "binance_com"
+        )
+        #expect(vm.shippingFundsGlance.isLit)
+        #expect(vm.shippingFundsGlance.freeText == "USDT 42.50")
+        #expect(vm.shippingFundsGlance.bookId == "binance-com-spot")
     }
 
     @Test func usdmSessionMoneyUsesIncomeNotDaemonHero() {
@@ -258,6 +273,8 @@ struct BarAccountChromeTests {
             orders: ["status": "unsupported", "book_id": "kotak-nse-bse-cash"]
         )
         #expect(vm.accountChrome.freeText == "INR 19.41")
+        #expect(vm.shippingFundsGlance.isLit)
+        #expect(vm.shippingFundsGlance.freeText == "INR 19.41")
         #expect(vm.accountChrome.holdingsRows.first?.symbol == "IDBI")
         #expect(vm.accountChrome.positionsRows.first?.symbol == "RELIANCE")
         #expect(vm.positions.map(\.symbol) == ["FILL-INV"])

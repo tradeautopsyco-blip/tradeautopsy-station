@@ -27,11 +27,11 @@ enum BarProtectiveSlPlanChrome {
         if st == "missing" {
             let status: String
             if let formattedPrice, !formattedPrice.isEmpty {
-                status = "Set SL at ₹\(formattedPrice) — not placed at broker yet."
+                status = "Plan stop at ₹\(formattedPrice) — on the plan only, not a broker order."
             } else if slPrice != nil {
-                status = "SL not placed"
+                status = "Plan stop not recorded at broker"
             } else {
-                status = "SL not placed"
+                status = "Plan stop not recorded at broker"
             }
             return Presentation(
                 statusText: status,
