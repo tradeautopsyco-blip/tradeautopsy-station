@@ -1,6 +1,6 @@
 # Pre → Working → Post, many trades at once
 
-**Status:** exploration. No new quotes, no invented P&L, no order send.
+**Status:** partial — multi-slot LiveBook + Working list/debrief picker/cited-net unique-or-dash landed; condition fire ids `target_touched` / `plan_stop_touched` append locally.
 **Date:** 2026-10-01
 **Layout of each screen:** [`harness-open-plan-working.md`](./harness-open-plan-working.md). **Sizing:** [`risk-engine.md`](./risk-engine.md).
 
