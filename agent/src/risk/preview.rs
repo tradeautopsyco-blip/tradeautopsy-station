@@ -1,6 +1,6 @@
 //! Honest risk envelope for Plan — cites `docs/reference/behavioral-science/POSITION-SIZING.md` gaps.
 
-use crate::ubi::catalog::{catalog_books, BrokerDescriptor};
+use crate::ubi::{catalog_books, BrokerDescriptor};
 use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
