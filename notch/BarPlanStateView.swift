@@ -23,6 +23,8 @@ struct BarPlanStateView: View {
 
     private var payload: BarLiveStateResponse? { viewModel.barLiveState }
 
+    private var workingPending: BarPendingDeclaration? { viewModel.workingPendingDeclaration }
+
     private var sortedActiveInterventions: [ActiveIntervention] {
         BarInterventionCardSpec.sortedInterventions(payload?.activeInterventions ?? [])
     }
@@ -30,6 +32,10 @@ struct BarPlanStateView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             BarUndeclaredPositionBanner(position: payload?.undeclaredPosition)
+
+            if !workingPendingRows.isEmpty {
+                workingPendingList
+            }
 
             if let pos = payload?.undeclaredPosition,
                let ccy = viewModel.formatQuoteCurrency
@@ -40,7 +46,7 @@ struct BarPlanStateView: View {
                         DetectCardInput(
                             qty: Double(pos.quantity),
                             entry: nil,
-                            planStop: payload?.pendingDeclaration?.stopLoss,
+                            planStop: workingPending?.stopLoss,
                             liveStop: payload?.slPrice,
                             sideBuy: !pos.side.uppercased().contains("SELL"),
                             accountEquity: nil,
@@ -49,7 +55,7 @@ struct BarPlanStateView: View {
                         )
                     )
                 )
-            } else if let pending = payload?.pendingDeclaration,
+            } else if let pending = viewModel.workingPendingDeclaration,
                       let ccy = viewModel.formatQuoteCurrency
                         ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug)
             {
@@ -76,7 +82,11 @@ struct BarPlanStateView: View {
             }
 
             if shouldShowPlanSnapshot {
-                BarWorkingLiveCockpit(viewModel: viewModel, liveState: payload)
+                BarWorkingLiveCockpit(
+                    viewModel: viewModel,
+                    liveState: payload,
+                    selectedPending: workingPending,
+                )
             }
 
             if shouldShowMetricStrip { liveMetricStrip }
@@ -93,6 +103,10 @@ struct BarPlanStateView: View {
 
             if shouldShowDeclareBeforeTradeCTA {
                 declareBeforeTradeCTA
+            }
+
+            if shouldShowPlanAnotherCTA {
+                planAnotherCTA
             }
 
             if shouldShowInterference { interferenceQuestionBlock }
@@ -135,7 +149,7 @@ struct BarPlanStateView: View {
             if embedEscrow {
                 BarEscrowMatchView(
                     report: payload?.escrowMatchReport,
-                    pending: payload?.pendingDeclaration,
+                    pending: workingPending,
                     last: viewModel.deskQuoteLast,
                     lastStatus: viewModel.deskLastStatus,
                     afterSession: isAfterWorkingSession
@@ -199,7 +213,7 @@ struct BarPlanStateView: View {
             )
         }
         .onChange(of: workingPriceInvalidated) { _, invalidated in
-            let pending = payload?.pendingDeclaration
+            let pending = workingPending
             viewModel.syncWorkingConditionFireEdge(
                 invalidated: invalidated,
                 declarationId: workingDeclarationId,
@@ -223,7 +237,7 @@ struct BarPlanStateView: View {
     }
 
     private var workingPriceInvalidated: Bool {
-        guard let pending = payload?.pendingDeclaration else { return false }
+        guard let pending = workingPending else { return false }
         let sideBuy = !pending.side.uppercased().contains("SELL")
         let snap = pending.planSnapshot
         if isAfterWorkingSession, let atClose = snap?.conditionAtClose {
@@ -242,7 +256,7 @@ struct BarPlanStateView: View {
     }
 
     private var workingDeclarationId: String? {
-        payload?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        workingPending?.id.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var invalidatedWorkingBanner: some View {
@@ -332,7 +346,7 @@ struct BarPlanStateView: View {
 
     private var shouldShowPlanSnapshot: Bool {
         viewModel.hasOpenPositions
-            || payload?.pendingDeclaration != nil
+            || !workingPendingRows.isEmpty
             || viewModel.barSurfacePhase == .armed
             || viewModel.barOptimisticArmedDisplay != nil
     }
@@ -350,7 +364,7 @@ struct BarPlanStateView: View {
     private var shouldShowManualFillPanel: Bool {
         switch viewModel.barSurfacePhase {
         case .armed, .livePlan:
-            return payload?.pendingDeclaration != nil
+            return workingPending != nil
         default:
             return false
         }
@@ -389,14 +403,72 @@ struct BarPlanStateView: View {
         )
     }
 
+    private var workingPendingRows: [BarPendingDeclaration] {
+        let rows = payload?.pendingDeclarations ?? []
+        if !rows.isEmpty { return rows }
+        if let one = payload?.pendingDeclaration { return [one] }
+        return []
+    }
+
     private var shouldShowDeclareBeforeTradeCTA: Bool {
-        BarLiveTradeDeclareCTA.shouldShow(
+        guard workingPendingRows.isEmpty else { return false }
+        return BarLiveTradeDeclareCTA.shouldShow(
             surfacePhase: viewModel.barSurfacePhase,
             showingDeclarationForm: viewModel.showingDeclarationForm,
             matchedDeclarationId: payload?.matchedDeclarationId,
-            hasPendingDeclaration: payload?.pendingDeclaration != nil,
+            hasPendingDeclaration: false,
             hasOptimisticArmed: viewModel.barOptimisticArmedDisplay != nil,
         )
+    }
+
+    private var shouldShowPlanAnotherCTA: Bool {
+        guard !workingPendingRows.isEmpty else { return false }
+        if viewModel.showingDeclarationForm { return false }
+        if viewModel.barSurfacePhase == .armed { return false }
+        if viewModel.barOptimisticArmedDisplay != nil { return false }
+        return true
+    }
+
+    private var workingPendingList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("OPEN PLANS")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.38))
+                .tracking(0.6)
+            ForEach(workingPendingRows, id: \.id) { row in
+                let selected = viewModel.workingPendingDeclaration?.id == row.id
+                Button {
+                    viewModel.selectWorkingDeclaration(id: row.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("\(row.symbol) \(row.side)")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        Text(row.status.uppercased())
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if selected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(BarDS.Accent.teal)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(selected ? BarDS.Accent.teal.opacity(0.08) : Color.white.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private var planAnotherCTA: some View {
+        BarBigButton(label: "Plan another →", style: .outline) {
+            viewModel.presentBarDeclarationForm()
+        }
+        .padding(.horizontal, 8)
     }
 
     private var declareBeforeTradeCTA: some View {
@@ -419,7 +491,7 @@ struct BarPlanStateView: View {
     }
 
     private var planSnapshotFields: BarPlanSnapshotSummary? {
-        payload?.pendingDeclaration?.planSnapshot
+        workingPending?.planSnapshot
     }
 
     private var interferenceEchoColor: Color {
@@ -451,7 +523,7 @@ struct BarPlanStateView: View {
         let comp = payload?.composite
         let unreal = payload?.unrealizedPnL
         let worst = comp?.worstCase
-        let pending = payload?.pendingDeclaration
+        let pending = workingPending
         let hasFill = (pending?.avgFill).map { $0 > 0 } == true || viewModel.hasOpenPositions
         let unrealDisplay: String = {
             if let unreal { return formatSignedDeskMoney(unreal) }
@@ -593,12 +665,12 @@ struct BarPlanStateView: View {
             planSnapshotRow(
                 label: "Target",
                 value: BarLivePlanSnapshotMapping.targetDisplay(
-                    pendingTarget: payload?.pendingDeclaration?.target,
+                    pendingTarget: workingPending?.target,
                     format: formatQtyPrice,
                 ),
             )
             invalidationPlanSnapshotBlock
-            if isAfterWorkingSession, let pending = payload?.pendingDeclaration {
+            if isAfterWorkingSession, let pending = workingPending {
                 workingConditionAfterSessionLine(pending: pending)
             }
             planSnapshotRow(
@@ -679,7 +751,7 @@ struct BarPlanStateView: View {
     }
 
     private var primaryStopNumeric: Double? {
-        if let p = payload?.pendingDeclaration?.stopLoss, p > 0 { return p }
+        if let p = workingPending?.stopLoss, p > 0 { return p }
         if let sp = payload?.slPrice, sp > 0 { return sp }
         return nil
     }
@@ -1149,7 +1221,7 @@ struct BarPlanStateView: View {
             o["plan_state"] = planRaw
         }
         let declFromMatch = payload?.matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let declPending = payload?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let declPending = workingPending?.id.trimmingCharacters(in: .whitespacesAndNewlines)
         let declId: String? = {
             if let m = declFromMatch, !m.isEmpty { return m }
             if let p = declPending, !p.isEmpty { return p }

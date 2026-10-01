@@ -12,7 +12,6 @@ enum BarLiveTradeDeclareCTA {
         if showingDeclarationForm { return false }
         if surfacePhase == .armed { return false }
         if hasOptimisticArmed { return false }
-        if hasPendingDeclaration { return false }
         let trimmed = matchedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty
     }

@@ -508,9 +508,16 @@ pub async fn capture_working_condition_handler(
         .unwrap_or("unavailable")
         .trim()
         .to_string();
+    let declaration_id = body
+        .get("declaration_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     state.live_book.apply(LiveBookEvent::CaptureWorkingCondition {
         last,
         last_status,
+        declaration_id,
     });
     if let Some(book) = state.live_book.snapshot() {
         return livebook_json("local", book);

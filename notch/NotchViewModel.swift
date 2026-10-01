@@ -499,6 +499,8 @@ public final class NotchViewModel: ObservableObject {
     // MARK: - Bar / Plan (notch v1 — server projection only)
 
     @Published var barLiveState: BarLiveStateResponse?
+    /// Working list selection — falls back to server `selected_declaration_id` / mirror pending.
+    @Published var selectedWorkingDeclarationId: String?
     @Published var barFeaturesActiveFromApi: Bool?
     /// Live-state GET in flight (`/api/daemon/bar/live-state`).
     @Published var barStateLoading: Bool = false
@@ -1210,9 +1212,34 @@ public final class NotchViewModel: ObservableObject {
         cancelDeclReasonChip = ""
     }
 
+    /// Pending row for Working detail (multi-trade list selection).
+    var workingPendingDeclaration: BarPendingDeclaration? {
+        guard let state = barLiveState else { return nil }
+        let rows = state.pendingDeclarations
+        if !rows.isEmpty {
+            let sid = (
+                selectedWorkingDeclarationId
+                    ?? state.selectedDeclarationId
+                    ?? state.pendingDeclaration?.id
+            )?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !sid.isEmpty, let row = rows.first(where: { $0.id == sid }) {
+                return row
+            }
+            return rows.first
+        }
+        return state.pendingDeclaration
+    }
+
+    func selectWorkingDeclaration(id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        selectedWorkingDeclarationId = trimmed
+    }
+
     /// Pending or optimistic declaration id while armed — for cancel (#144).
     var barCancelDeclarationId: String? {
-        let pending = barLiveState?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pending = workingPendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !pending.isEmpty { return pending }
         if let pub = barPublishedDeclarationId?.trimmingCharacters(in: .whitespacesAndNewlines), !pub.isEmpty {
             return pub
@@ -1331,6 +1358,12 @@ public final class NotchViewModel: ObservableObject {
             if barLiveState != newState {
                 barLiveState = newState
                 needsRecompute = true
+                if let wireSel = newState?.selectedDeclarationId?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !wireSel.isEmpty
+                {
+                    selectedWorkingDeclarationId = wireSel
+                }
                 if oldState?.archetype != newState?.archetype {
                     refreshActiveArchetype()
                 }
