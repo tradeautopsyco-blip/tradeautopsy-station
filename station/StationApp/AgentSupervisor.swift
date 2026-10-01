@@ -61,12 +61,22 @@ public final class AgentSupervisor: AgentSupervising {
         await start()
     }
 
+    /// Stop and respawn the bundled agent on loopback. Refuses when Wave 3 kill latch is active.
+    public func restartAgent() async -> AgentManualRestartOutcome {
+        if await isKillLatched() {
+            return .blockedKillLatched
+        }
+        await shutdown()
+        await retry()
+        return .restarted
+    }
+
     public func shutdown() async {
         supervisionTask?.cancel()
         supervisionTask = nil
 
         if await isKillLatched() {
-            // Quit is not consent — leave the Enforcer running with teeth in force.
+            // Quit / Stop is not consent — leave the Enforcer running with teeth in force.
             spawnedProcess = nil
             spawnedPID = nil
             isHealthy = false
@@ -89,6 +99,7 @@ public final class AgentSupervisor: AgentSupervising {
         isHealthy = false
     }
 
+    /// Reads `GET /api/daemon/kill-switch/state` (Wave 3). Missing endpoint or errors → not latched.
     public func isKillLatched() async -> Bool {
         guard let request = signedKillSwitchStateRequest() else { return false }
         do {

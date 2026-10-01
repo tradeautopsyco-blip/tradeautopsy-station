@@ -34,6 +34,13 @@ public struct StationShellView: View {
                 routeContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(WorkspaceChrome.ground)
+                    .navigationTitle(coordinator.activeRoute.rawValue)
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    AgentRestartToolbarButton(coordinator: coordinator)
+                    AgentHealthToolbarStatus(coordinator: coordinator)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -70,7 +77,7 @@ public struct StationShellView: View {
         case .brokers:
             BrokersView(viewModel: coordinator.brokersViewModel)
         case .health:
-            HealthPanelView(viewModel: coordinator.healthPanelViewModel)
+            HealthPanelView(viewModel: coordinator.healthPanelViewModel, coordinator: coordinator)
         case .marketData:
             MarketDataKeysView(viewModel: coordinator.marketDataKeysViewModel)
         case .aiWorkflow:

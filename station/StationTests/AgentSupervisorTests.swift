@@ -116,7 +116,7 @@ struct AgentSupervisorTests {
         #expect(await supervisor.isKillLatched())
     }
 
-    @Test func station_quit_does_not_kill_latched_agent() async {
+    @Test func stationQuitDoesNotKillLatchedAgent() async {
         MockLoopbackURLProtocol.reset(defaultResponse: .healthyAgent)
         MockLoopbackURLProtocol.killSwitchLatched = true
         let supervisor = makeSupervisor(attachOnly: true)
@@ -124,6 +124,16 @@ struct AgentSupervisorTests {
         let requestsBeforeShutdown = MockLoopbackURLProtocol.requestCount
         await supervisor.shutdown()
         #expect(MockLoopbackURLProtocol.requestCount > requestsBeforeShutdown)
+    }
+
+    @Test func restartAgentBlockedWhenKillLatched() async {
+        MockLoopbackURLProtocol.reset(defaultResponse: .healthyAgent)
+        MockLoopbackURLProtocol.killSwitchLatched = true
+        let supervisor = makeSupervisor(attachOnly: true)
+        await supervisor.start()
+        let outcome = await supervisor.restartAgent()
+        #expect(outcome == .blockedKillLatched)
+        #expect(supervisor.isHealthy)
     }
 
     @Test func slowLoopbackHealthPastLaunchWaitStaysOffline() async {
@@ -188,22 +198,21 @@ private final class MockLoopbackURLProtocol: URLProtocol {
             return
         }
 
-        if let url = request.url?.absoluteString {
-            if url.contains("/api/daemon/kill-switch/state") {
-                let latched = MockLoopbackURLProtocol.killSwitchLatched
-                let body = #"{"active":\#(latched ? "true" : "false"),"dns_active":false}"#
-                    .data(using: .utf8)!
-                let http = HTTPURLResponse(
-                    url: request.url!,
-                    statusCode: 200,
-                    httpVersion: nil,
-                    headerFields: ["Content-Type": "application/json"]
-                )!
-                client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didLoad: body)
-                client?.urlProtocolDidFinishLoading(self)
-                return
-            }
+        if let url = request.url?.absoluteString,
+           url.contains("/api/daemon/kill-switch/state") {
+            let latched = MockLoopbackURLProtocol.killSwitchLatched
+            let body = #"{"active":\#(latched ? "true" : "false"),"dns_active":false}"#
+                .data(using: .utf8)!
+            let http = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+            return
         }
 
         let responseKind = MockLoopbackURLProtocol.responses.isEmpty

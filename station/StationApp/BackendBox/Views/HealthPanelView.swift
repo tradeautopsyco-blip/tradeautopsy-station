@@ -2,9 +2,11 @@ import SwiftUI
 
 public struct HealthPanelView: View {
     @ObservedObject private var viewModel: HealthPanelViewModel
+    @ObservedObject private var coordinator: StationAppCoordinator
 
-    public init(viewModel: HealthPanelViewModel) {
+    public init(viewModel: HealthPanelViewModel, coordinator: StationAppCoordinator) {
         self.viewModel = viewModel
+        self.coordinator = coordinator
     }
 
     public var body: some View {
@@ -16,6 +18,14 @@ public struct HealthPanelView: View {
                 ForEach(viewModel.chrome.rows) { row in
                     healthCard(row)
                 }
+
+                Button {
+                    Task { await coordinator.restartAgentProcess() }
+                } label: {
+                    Label("Restart agent on 9137", systemImage: "arrow.clockwise.circle")
+                }
+                .buttonStyle(.bordered)
+                .help("Stops and respawns the Enforcer unless a kill switch latch is active")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
