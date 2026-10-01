@@ -11,15 +11,15 @@
 		B08F5134B03D7C1EFFE9DCDB /* Station in Frameworks */ = {isa = PBXBuildFile; productRef = 98424BC17ADC2F719A3E09C1 /* Station */; };
 		BB8F410CCE2DDA704C491339 /* StationApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00D125B05DB7B3FC956851D8 /* StationApp.swift */; };
 		E0D51A50A15E61020F99B357 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3D11CEB3F5FE7A11545EA86E /* Sparkle */; };
-		E4D07B0B131CBB25A040DA51 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0D72293B98EDED4462B650F8 /* AppIcon.icon */; };
+		F0564147E70D9E3E36E7AEDE /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 734C6EED01F5D381B2933616 /* AppIcon.icns */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		00D125B05DB7B3FC956851D8 /* StationApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationApp.swift; sourceTree = "<group>"; };
-		0D72293B98EDED4462B650F8 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		1803F1DBF941BC1F4C99ED51 /* station */ = {isa = PBXFileReference; lastKnownFileType = folder; name = station; path = .; sourceTree = SOURCE_ROOT; };
 		1EB9CF8CF2D1E2AD2C16483D /* TradeAutopsy Station.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TradeAutopsy Station.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		391874E7615D745CD1E239EE /* notch */ = {isa = PBXFileReference; lastKnownFileType = folder; name = notch; path = ../notch; sourceTree = SOURCE_ROOT; };
+		734C6EED01F5D381B2933616 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,7 +65,7 @@
 		DC97A23CCFBE071347808BA1 /* StationApp */ = {
 			isa = PBXGroup;
 			children = (
-				0D72293B98EDED4462B650F8 /* AppIcon.icon */,
+				734C6EED01F5D381B2933616 /* AppIcon.icns */,
 				00D125B05DB7B3FC956851D8 /* StationApp.swift */,
 			);
 			path = StationApp;
@@ -81,6 +81,7 @@
 				82A71B735EA93247F921B214 /* Sources */,
 				40A8658C8692D1341C6CC25A /* Resources */,
 				84AFB1D13F2F8313F7BF819E /* Frameworks */,
+				F5CD4BDEF8B6B1CA3E80C203 /* Compile App Icon */,
 				1D449A1042D36A3F90901D33 /* Copy Agent Binary */,
 			);
 			buildRules = (
@@ -141,7 +142,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E4D07B0B131CBB25A040DA51 /* AppIcon.icon in Resources */,
+				F0564147E70D9E3E36E7AEDE /* AppIcon.icns in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,7 +166,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nAGENT=\"${SRCROOT}/../agent/target/release/tradeautopsy-agent\"\nif [ ! -f \"$AGENT\" ]; then\n  echo \"error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/\"\n  exit 1\nfi\ncp \"$AGENT\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\nchmod +x \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent\"\n";
+			shellScript = "set -euo pipefail\nexec \"${SRCROOT}/Scripts/build-and-copy-agent.sh\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS\"\n";
+		};
+		F5CD4BDEF8B6B1CA3E80C203 /* Compile App Icon */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Compile App Icon";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nexec \"${SRCROOT}/Scripts/compile-app-icon.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

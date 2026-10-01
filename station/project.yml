@@ -26,7 +26,7 @@ targets:
     platform: macOS
     sources:
       - path: StationApp/StationApp.swift
-      - path: StationApp/AppIcon.icon
+      - path: StationApp/AppIcon.icns
         type: file
         buildPhase: resources
     settings:
@@ -46,14 +46,13 @@ targets:
       - package: Station
         product: Station
     postBuildScripts:
+      - name: Compile App Icon
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          exec "${SRCROOT}/Scripts/compile-app-icon.sh"
       - name: Copy Agent Binary
         basedOnDependencyAnalysis: false
         script: |
-          set -e
-          AGENT="${SRCROOT}/../agent/target/release/tradeautopsy-agent"
-          if [ ! -f "$AGENT" ]; then
-            echo "error: Agent binary not found at $AGENT — run 'cargo build --release' in agent/"
-            exit 1
-          fi
-          cp "$AGENT" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent"
-          chmod +x "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/tradeautopsy-agent"
+          set -euo pipefail
+          exec "${SRCROOT}/Scripts/build-and-copy-agent.sh" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/MacOS"
