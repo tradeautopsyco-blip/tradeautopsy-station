@@ -3077,9 +3077,20 @@ public final class NotchViewModel: ObservableObject {
         return nil
     }
 
+    private struct BarDeclareArchiveError: Decodable {
+        let status: Int?
+    }
+
     private struct BarDeclareOkResponse: Decodable {
         let ok: Bool?
         let declarationId: String?
+        let archiveError: BarDeclareArchiveError?
+
+        enum CodingKeys: String, CodingKey {
+            case ok
+            case declarationId
+            case archiveError = "archive_error"
+        }
     }
 
     func submitBarDeclaration(body: Data) async {
@@ -3099,7 +3110,9 @@ public final class NotchViewModel: ObservableObject {
                 barStateError = nil
                 barDeclarationLastError = nil
                 barDeclarationConfirmWarning = nil
-                if let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data),
+                let parsed = try? JSONDecoder().decode(BarDeclareOkResponse.self, from: data)
+                let archiveAuth401 = parsed?.archiveError?.status == 401
+                if let parsed,
                    let declId = parsed.declarationId, !declId.isEmpty
                 {
                     barPublishedDeclarationId = BarDeclarationIdReducer.apply(
@@ -3112,6 +3125,10 @@ public final class NotchViewModel: ObservableObject {
                     await follow()
                 } else {
                     await fetchBarLiveState()
+                }
+                if archiveAuth401 {
+                    setIfChanged(\.barStateRequiresDeviceLogin, true)
+                    recomputeBarSurfacePhase()
                 }
             } else {
                 barDeclarationLastError = BarDeclareHTTPErrorPresentation.message(httpStatus: code, body: data)

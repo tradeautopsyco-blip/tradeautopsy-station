@@ -163,6 +163,91 @@ async fn bar_declare_forwards_station_bearer_not_daemon_identity() {
 }
 
 #[tokio::test]
+async fn bar_declare_upstream_401_keeps_livebook_and_returns_archive_error() {
+    const AGENT_PORT: u16 = 39_622;
+    let upstream = Router::new().route(
+        "/api/bar/v1/declarations",
+        post(|| async {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "invalid_token" })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/declare";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let payload = json!({
+        "symbol": "RELIANCE",
+        "side": "BUY",
+        "quantity": 10,
+        "declaration_kind": "intraday",
+        "stop_loss": 1400
+    });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("declare");
+
+    assert_eq!(resp.status(), 200);
+    let out: Value = resp.json().await.expect("json");
+    assert_eq!(out["ok"], true);
+    assert_eq!(out["archive_error"]["status"], 401);
+    let local_id = out["declarationId"]
+        .as_str()
+        .expect("declarationId")
+        .to_string();
+
+    let ls_path = "/api/daemon/bar/live-state";
+    let ls_url = format!("http://127.0.0.1:{AGENT_PORT}{ls_path}");
+    let ls = apply_wire_v1(
+        client().get(&ls_url),
+        "GET",
+        ls_path,
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("live-state");
+    assert_eq!(ls.status(), 200);
+    assert_eq!(
+        ls.headers().get("x-livebook").and_then(|v| v.to_str().ok()),
+        Some("local")
+    );
+    let book: Value = ls.json().await.expect("json");
+    assert_eq!(book["notch"]["pending_declaration"]["id"], local_id);
+    assert_eq!(book["notch"]["pending_declaration"]["status"], "PENDING");
+
+    handle.abort();
+}
+
+#[tokio::test]
 async fn bar_stop_me_proxies_post_to_upstream() {
     const AGENT_PORT: u16 = 39_603;
     let upstream = Router::new().route(

@@ -143,6 +143,9 @@ pub async fn declare_handler(
             }
             upstream_json_response(st, text)
         }
+        Ok((st, text)) if st.as_u16() == 401 => {
+            archive_kept_response(local_id, request_id, st.as_u16(), Some(&text))
+        }
         Ok((st, text)) if st.is_client_error() => {
             state.live_book.apply(LiveBookEvent::Cancel {
                 declaration_id: local_id,
