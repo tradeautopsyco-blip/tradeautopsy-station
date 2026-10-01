@@ -7,6 +7,20 @@ public enum BrokerConnectSheetMode: Equatable, Sendable {
     case kotakTotpOnly
 }
 
+/// Basecamp card policy: Kotak Start asks for a fresh TOTP after this interval since last mint.
+/// Not a broker session TTL — see `plans/MASTER-STATION-NOTCH-BASECAMP-2026-10-01.md` Wave 1.2.
+enum KotakSessionMintCardPolicy {
+    static let totpCardAfterSeconds: TimeInterval = 12 * 60 * 60
+
+    static func requiresFreshTotpBeforeStart(
+        lastValidatedAt: Date?,
+        now: Date = Date()
+    ) -> Bool {
+        guard let lastValidatedAt else { return false }
+        return now.timeIntervalSince(lastValidatedAt) > totpCardAfterSeconds
+    }
+}
+
 @MainActor
 public final class BrokersViewModel: ObservableObject {
     @Published public private(set) var cards: [BrokerCardPresentation] = []
@@ -241,6 +255,13 @@ public final class BrokersViewModel: ObservableObject {
                 return
             }
             syncActionMessage = nil
+            if kotakRequiresFreshTotpBeforeStart(for: identity) {
+                syncActionMessage =
+                    "Session mint is over 12 hours — unlock with Touch ID, then enter a fresh TOTP."
+                presentKotakTotpRemint(for: slug)
+                await load()
+                return
+            }
             do {
                 try await brokerControl.startSync(for: identity)
             } catch BrokerSyncStartError.missingCredentials {
@@ -573,6 +594,15 @@ public final class BrokersViewModel: ObservableObject {
         kotakLoginUnlockedForSheet = false
     }
 
+    private func kotakRequiresFreshTotpBeforeStart(for identity: BrokerConnectionIdentity) -> Bool {
+        guard BrokerConnectServices.authScheme(for: identity.brokerSlug) == .kotakNeoTotpSession else {
+            return false
+        }
+        guard loginProfileStore.hasProfile(for: identity) else { return false }
+        let lastValidatedAt = metadataStore.load(for: identity)?.lastValidatedAt
+        return KotakSessionMintCardPolicy.requiresFreshTotpBeforeStart(lastValidatedAt: lastValidatedAt)
+    }
+
     private func clearOneTimeKotakSecrets() {
         guard connectAuthScheme == .kotakNeoTotpSession else { return }
         connectTotp = ""
@@ -592,6 +622,13 @@ public final class BrokersViewModel: ObservableObject {
 
     public func startSync(for identity: BrokerConnectionIdentity) async {
         syncActionMessage = nil
+        if kotakRequiresFreshTotpBeforeStart(for: identity) {
+            syncActionMessage =
+                "Session mint is over 12 hours — unlock with Touch ID, then enter a fresh TOTP."
+            presentKotakTotpRemint(for: identity.brokerSlug)
+            await load()
+            return
+        }
         do {
             try await brokerControl.startSync(for: identity)
         } catch BrokerSyncStartError.missingCredentials {
