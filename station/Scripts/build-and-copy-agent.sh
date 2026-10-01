@@ -59,20 +59,35 @@ WASM_PACKAGES=(
   "ubi-dhan-adapter:ubi_dhan_adapter.wasm"
 )
 
+resolve_wasm_path() {
+  local pkg="$1"
+  local wasm_file="$2"
+  local workspace_path="${AGENT_DIR}/target/${WASM_TARGET}/${WASM_PROFILE}/${wasm_file}"
+  local crate_path="${AGENT_DIR}/${pkg}/target/${WASM_TARGET}/${WASM_PROFILE}/${wasm_file}"
+  if [ -f "${workspace_path}" ]; then
+    echo "${workspace_path}"
+  elif [ -f "${crate_path}" ]; then
+    echo "${crate_path}"
+  else
+    echo ""
+  fi
+}
+
 echo "Building UBI adapter Wasm components..."
 for entry in "${WASM_PACKAGES[@]}"; do
   pkg="${entry%%:*}"
   wasm_file="${entry##*:}"
-  wasm_path="${AGENT_DIR}/${pkg}/target/${WASM_TARGET}/${WASM_PROFILE}/${wasm_file}"
-  if [ ! -f "${wasm_path}" ]; then
+  wasm_path="$(resolve_wasm_path "${pkg}" "${wasm_file}")"
+  if [ -z "${wasm_path}" ]; then
     echo "  cargo build -p ${pkg} --target ${WASM_TARGET} --release"
     (cd "${AGENT_DIR}" && cargo build --release -j "${CARGO_BUILD_JOBS}" --target "${WASM_TARGET}" -p "${pkg}")
+    wasm_path="$(resolve_wasm_path "${pkg}" "${wasm_file}")"
   fi
-  if [ -f "${wasm_path}" ]; then
+  if [ -n "${wasm_path}" ] && [ -f "${wasm_path}" ]; then
     cp "${wasm_path}" "${DEST}/${wasm_file}"
     echo "  copied ${wasm_file}"
   else
-    echo "warning: missing ${wasm_path} — Start will fail for that broker slug" >&2
+    echo "warning: missing ${wasm_file} (workspace or ${pkg}/target) — Start will fail for that broker slug" >&2
   fi
 done
 

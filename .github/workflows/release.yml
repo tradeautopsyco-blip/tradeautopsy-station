@@ -124,6 +124,9 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install wasm32-wasip2 (UBI adapters in Copy Agent Binary)
+        run: rustup target add wasm32-wasip2
+
       - name: Build tradeautopsy-agent (release)
         working-directory: agent
         run: cargo build --release --locked --bin tradeautopsy-agent
