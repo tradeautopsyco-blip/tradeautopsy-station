@@ -137,8 +137,8 @@ struct BarPlanStateView: View {
                 emotionNowRow
             }
 
-            if shouldShowExitTradeSection {
-                exitTradeSection
+            if shouldShowCancelDeclarationControl {
+                cancelDeclarationSection
                     .padding(.top, 8)
             }
 
@@ -329,9 +329,12 @@ struct BarPlanStateView: View {
         payload?.dailyCheckInRequired == true
     }
 
-    /// Armed phase only — cancel pending declaration before fill (#144).
-    private var shouldShowExitTradeSection: Bool {
-        viewModel.barSurfacePhase == .armed && viewModel.barCancelDeclarationId != nil
+    /// Armed phase only — cancel pending declaration before fill (Wave 5 / #144).
+    private var shouldShowCancelDeclarationControl: Bool {
+        BarCancelDeclarationChrome.showsControl(
+            phase: viewModel.barSurfacePhase,
+            declarationId: viewModel.barCancelDeclarationId,
+        )
     }
 
     private var planKillChrome: BarPlanKillChrome.Presentation {
@@ -1401,47 +1404,61 @@ struct BarPlanStateView: View {
         }
     }
 
-    // MARK: - Exit trade (cancel declaration)
+    // MARK: - Cancel declaration (armed, pre-fill)
 
-    private var exitTradeSection: some View {
+    private var cancelDeclarationSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if viewModel.cancelDeclStep == 0 {
                 Button {
                     viewModel.cancelDeclStep = 1
                 } label: {
-                    Text("Exit trade")
+                    Text(BarCancelDeclarationChrome.entryButtonTitle)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(.orange)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(BarCancelDeclarationChrome.entryButtonTitle)
+                .accessibilityHint(BarCancelDeclarationChrome.notFlattenHint)
             } else if viewModel.cancelDeclStep == 1 {
+                Text(BarCancelDeclarationChrome.confirmPrompt)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(Color.white.opacity(0.55))
+                Text(BarCancelDeclarationChrome.notFlattenHint)
+                    .font(.system(size: 10, weight: .regular, design: .rounded))
+                    .foregroundColor(Color.white.opacity(0.42))
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 6) {
+                    ForEach(BarCancelDeclarationChrome.reasonChips, id: \.slug) { chip in
+                        cancelReasonChipRow(chip)
+                    }
+                }
                 HStack {
-                    Button("Cancel") {
+                    Button(BarCancelDeclarationChrome.dismissTitle) {
                         viewModel.resetCancelDecl()
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundColor(Color.white.opacity(0.45))
                     Spacer()
-                    Text("Cancel declaration?")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                    Spacer()
                     Button("Confirm") {
                         let declId = viewModel.barCancelDeclarationId ?? ""
+                        let chip = viewModel.cancelDeclReasonChip
                         Task {
                             await viewModel.submitCancelDeclaration(
                                 declarationId: declId,
-                                reasonChip: "manual_exit",
+                                reasonChip: chip,
                             )
                         }
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(.red)
+                    .disabled(
+                        BarCancelDeclarationChrome.normalizedReasonChip(viewModel.cancelDeclReasonChip) == nil,
+                    )
                 }
             } else if viewModel.cancelDeclStep == 2 {
-                Text("Cancelling...")
+                Text(BarCancelDeclarationChrome.submittingTitle)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -1451,6 +1468,38 @@ struct BarPlanStateView: View {
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    private func cancelReasonChipRow(_ chip: BarCancelDeclarationChrome.ReasonChip) -> some View {
+        let on = viewModel.cancelDeclReasonChip == chip.slug
+        return Button {
+            viewModel.cancelDeclReasonChip = chip.slug
+        } label: {
+            HStack {
+                Text(chip.label)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(on ? Color.white.opacity(0.92) : Color.white.opacity(0.62))
+                Spacer()
+                if on {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(on ? Color.orange.opacity(0.12) : Color.white.opacity(0.04)),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(on ? Color.orange.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1),
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(chip.label)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 
     // MARK: - Kill
