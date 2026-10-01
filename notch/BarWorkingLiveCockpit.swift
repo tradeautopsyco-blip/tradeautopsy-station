@@ -4,6 +4,8 @@ import SwiftUI
 struct BarWorkingLiveCockpit: View {
     @ObservedObject var viewModel: NotchViewModel
     var liveState: BarLiveStateResponse?
+    /// Selected row from multi-trade list; falls back to live-state mirror pending.
+    var selectedPending: BarPendingDeclaration?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -26,8 +28,12 @@ struct BarWorkingLiveCockpit: View {
         }
     }
 
+    private var effectivePending: BarPendingDeclaration? {
+        selectedPending ?? liveState?.pendingDeclaration
+    }
+
     private var workingSymbol: String {
-        let pending = liveState?.pendingDeclaration?.symbol.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pending = effectivePending?.symbol.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !pending.isEmpty { return pending }
         return viewModel.barDeclarationSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -146,7 +152,7 @@ struct BarWorkingLiveCockpit: View {
     }
 
     private var planLevels: SessionChartPlanLevels? {
-        BarWorkingLivePresentation.planLevels(pending: liveState?.pendingDeclaration)
+        BarWorkingLivePresentation.planLevels(pending: effectivePending)
     }
 
     private var margin: (value: String, subtitle: String) {
@@ -171,13 +177,13 @@ struct BarWorkingLiveCockpit: View {
     }
 
     private var hasOpenFill: Bool {
-        if let avg = liveState?.pendingDeclaration?.avgFill, avg > 0 { return true }
+        if let avg = effectivePending?.avgFill, avg > 0 { return true }
         return viewModel.hasOpenPositions
     }
 
     private var unrealGlanceSubtitle: String {
         BarWorkingLivePresentation.unrealizedSubtitle(
-            pending: liveState?.pendingDeclaration,
+            pending: effectivePending,
             hasOpenFill: hasOpenFill,
         )
     }
@@ -191,7 +197,7 @@ struct BarWorkingLiveCockpit: View {
         if hasOpenFill, let worst {
             return viewModel.formatDeskMoney(worst)
         }
-        if liveState?.pendingDeclaration != nil {
+        if effectivePending != nil {
             return "—"
         }
         if let worst {
