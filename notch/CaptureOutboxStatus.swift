@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CaptureOutboxCounts: Codable, Equatable {
+public struct CaptureOutboxCounts: Codable, Equatable, Sendable {
     public var enqueued: UInt64
     public var inflight: UInt64
     public var acked: UInt64
@@ -14,7 +14,7 @@ public struct CaptureOutboxCounts: Codable, Equatable {
     }
 }
 
-public struct CaptureOutboxDeadLetter: Codable, Equatable, Identifiable {
+public struct CaptureOutboxDeadLetter: Codable, Equatable, Identifiable, Sendable {
     public var outboxId: Int64
     public var requestId: String
     public var attempts: UInt64
@@ -36,7 +36,7 @@ public struct CaptureOutboxDeadLetter: Codable, Equatable, Identifiable {
     }
 }
 
-public struct CaptureOutboxActiveDelivery: Codable, Equatable, Identifiable {
+public struct CaptureOutboxActiveDelivery: Codable, Equatable, Identifiable, Sendable {
     public var state: String
     public var idempotencyKey: String?
     public var lastError: String?
@@ -52,7 +52,7 @@ public struct CaptureOutboxActiveDelivery: Codable, Equatable, Identifiable {
     }
 }
 
-public struct CaptureOutboxStatusSnapshot: Codable, Equatable {
+public struct CaptureOutboxStatusSnapshot: Codable, Equatable, Sendable {
     public var counts: CaptureOutboxCounts
     public var deadLetters: [CaptureOutboxDeadLetter]
     public var activeDeliveries: [CaptureOutboxActiveDelivery]
@@ -64,7 +64,7 @@ public struct CaptureOutboxStatusSnapshot: Codable, Equatable {
     }
 }
 
-public struct CaptureOutboxStatusResponse: Codable {
+public struct CaptureOutboxStatusResponse: Codable, Sendable {
     public var success: Bool
     public var data: CaptureOutboxStatusSnapshot
 }
@@ -129,7 +129,7 @@ public enum CaptureOutboxStatusClient {
     }
 }
 
-public enum CaptureOutboxDeliveryError: LocalizedError {
+public enum CaptureOutboxDeliveryError: LocalizedError, Sendable {
     case missingIdempotencyKey
     case deadLetter(reason: String)
     case timedOut
