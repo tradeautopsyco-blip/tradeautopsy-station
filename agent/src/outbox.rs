@@ -122,9 +122,19 @@ pub struct DeadLetterStatusItem {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureDeliveryTrackItem {
+    pub state: String,
+    pub idempotency_key: Option<String>,
+    pub last_error: Option<String>,
+    pub pending_capture_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct OutboxStatusSnapshot {
     pub counts: OutboxCounts,
     pub dead_letters: Vec<DeadLetterStatusItem>,
+    pub active_deliveries: Vec<CaptureDeliveryTrackItem>,
 }
 
 impl CaptureOutbox {
@@ -442,11 +452,12 @@ impl CaptureOutbox {
             AttemptOutcome::Retry { reason } => {
                 let next_attempts = row.attempts + 1;
                 if next_attempts >= self.config.max_attempts {
+                    let _ = reason;
                     conn.execute(
                         "UPDATE capture_outbox
                          SET state = ?, attempts = attempts + 1, last_error = ?, updated_at_ms = ?
                          WHERE id = ?",
-                        params![STATE_DEAD_LETTER, reason, now, row.id],
+                        params![STATE_DEAD_LETTER, "max_attempts", now, row.id],
                     )?;
                 } else {
                     // 401 already refreshed; retry immediately with the new access token.
@@ -541,9 +552,55 @@ impl CaptureOutbox {
             });
         }
 
+        let recent_ack_cutoff = now_ms().saturating_sub(120_000);
+        let mut track_stmt = conn.prepare(
+            "SELECT state, last_error, response_json, payload_json
+             FROM capture_outbox
+             WHERE state IN (?, ?)
+                OR (state = ? AND updated_at_ms >= ?)
+             ORDER BY updated_at_ms DESC, id DESC
+             LIMIT ?",
+        )?;
+        let track_limit = dead_letter_limit.max(10);
+        let mut track_rows = track_stmt.query(params![
+            STATE_ENQUEUED,
+            STATE_INFLIGHT,
+            STATE_ACKED,
+            recent_ack_cutoff,
+            track_limit,
+        ])?;
+        let mut active_deliveries = Vec::new();
+        while let Some(row) = track_rows.next()? {
+            let state: String = row.get(0)?;
+            let last_error: Option<String> = row.get(1)?;
+            let response_json: Option<String> = row.get(2)?;
+            let payload_json: String = row.get(3)?;
+            let payload = serde_json::from_str::<Value>(&payload_json).unwrap_or(Value::Null);
+            let idempotency_key = payload
+                .get("idempotencyKey")
+                .and_then(|v| v.as_str())
+                .map(ToOwned::to_owned);
+            let pending_capture_id = response_json
+                .as_deref()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .and_then(|body| {
+                    body.get("data")
+                        .and_then(|d| d.get("pending_capture_id"))
+                        .and_then(|v| v.as_str())
+                        .map(ToOwned::to_owned)
+                });
+            active_deliveries.push(CaptureDeliveryTrackItem {
+                state,
+                idempotency_key,
+                last_error,
+                pending_capture_id,
+            });
+        }
+
         Ok(OutboxStatusSnapshot {
             counts,
             dead_letters,
+            active_deliveries,
         })
     }
 }

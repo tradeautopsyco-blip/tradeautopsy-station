@@ -482,6 +482,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var unpostedSendBusyId: UUID?
     @Published var unpostedLinkTradeId: String = ""
     @Published var unpostedSearch: String = ""
+    @Published var captureOutboxStatus: CaptureOutboxStatusSnapshot?
+    @Published var captureOutboxStatusError: String?
     @Published var replaceConfirmTradeId: String?
     /// Trade UUIDs that already have a screenshot this device has sent (one image per trade).
     @Published var tradeIdsWithChart: Set<String> = []
@@ -3419,6 +3421,47 @@ public final class NotchViewModel: ObservableObject {
     func reloadUnpostedCaptures() {
         unpostedSweepDropped = unpostedStore.sweep()
         unpostedCaptures = unpostedStore.all()
+        applyCaptureOutboxDeadLettersToUnpostedTray()
+    }
+
+    func refreshCaptureOutboxStatus() async {
+        guard let snapshot = await CaptureOutboxStatusClient.fetch(
+            port: daemonPort,
+            daemonSecret: daemonSecret
+        ) else {
+            captureOutboxStatusError = "Could not load capture outbox status."
+            return
+        }
+        captureOutboxStatusError = nil
+        captureOutboxStatus = snapshot
+        applyCaptureOutboxDeadLettersToUnpostedTray()
+    }
+
+    private func applyCaptureOutboxDeadLettersToUnpostedTray() {
+        guard let deadLetters = captureOutboxStatus?.deadLetters, !deadLetters.isEmpty else { return }
+        for item in deadLetters {
+            guard let key = item.idempotencyKey, !key.isEmpty else { continue }
+            guard let idx = unpostedCaptures.firstIndex(where: { $0.idempotencyKey == key }) else { continue }
+            var rec = unpostedCaptures[idx]
+            if rec.lastError != item.reason {
+                rec.lastError = item.reason
+                unpostedStore.update(rec)
+            }
+        }
+        unpostedCaptures = unpostedStore.all()
+    }
+
+    private func toolbarCaptureUserError(data: Data?, statusCode: Int) -> String {
+        if let data {
+            if let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let reason = (parsed["reason"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !reason.isEmpty
+            {
+                return reason
+            }
+            return AgentHTTPErrorPresentation.message(httpStatus: statusCode, body: data)
+        }
+        return "Finalize failed (\(statusCode))"
     }
 
     var capturePhaseForJournal: String {
@@ -3625,6 +3668,7 @@ public final class NotchViewModel: ObservableObject {
             next.lastError = error.localizedDescription
             unpostedStore.update(next)
             reloadUnpostedCaptures()
+            await refreshCaptureOutboxStatus()
             return nil
         }
     }
@@ -3749,9 +3793,21 @@ public final class NotchViewModel: ObservableObject {
         let req = authorizedRequest(url: url, method: "POST", body: payload)
         let (data, resp) = try await URLSession.shared.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 202 {
+            let pendingId = try await CaptureOutboxStatusClient.waitForDelivery(
+                idempotencyKey: idempotencyKey,
+                port: daemonPort,
+                daemonSecret: daemonSecret
+            )
+            return pendingId
+        }
         guard status == 200 else {
             handleDaemonErrorResponse(data: data, statusCode: status)
-            throw NSError(domain: "Notch", code: status, userInfo: [NSLocalizedDescriptionKey: daemonProtocolError.map(\.rawValue) ?? "Finalize failed (\(status))"])
+            throw NSError(
+                domain: "Notch",
+                code: status,
+                userInfo: [NSLocalizedDescriptionKey: toolbarCaptureUserError(data: data, statusCode: status)]
+            )
         }
         guard
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -3912,9 +3968,17 @@ public final class NotchViewModel: ObservableObject {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if statusCode == 202 {
+                daemonProtocolError = nil
+                journalCaptureLastSuccess = "Queued for Console delivery — outbox will retry automatically."
+                journalCaptureLastError = nil
+                await refreshCaptureOutboxStatus()
+                return
+            }
             guard statusCode == 200 else {
                 handleDaemonErrorResponse(data: data, statusCode: statusCode)
-                journalCaptureLastError = daemonProtocolError.map { $0.rawValue } ?? "Finalize failed (\(statusCode))"
+                journalCaptureLastError = toolbarCaptureUserError(data: data, statusCode: statusCode)
+                await refreshCaptureOutboxStatus()
                 return
             }
             daemonProtocolError = nil
@@ -3935,6 +3999,7 @@ public final class NotchViewModel: ObservableObject {
             writeJournalCaptureDefaults()
             journalCaptureLastSuccess = "Saved (\(st)) · \(pendingId.prefix(8))… — you can attach a screenshot."
             journalCaptureLastError = nil
+            await refreshCaptureOutboxStatus()
         } catch {
             journalCaptureLastError = error.localizedDescription
         }

@@ -27,6 +27,7 @@ public struct SettingsView: View {
         ) {
             VStack(alignment: .leading, spacing: DeskChrome.Space.x3) {
                 generalGroup
+                journalCaptureGroup
                 riskLimitsGroup
                 notchGroup
                 softwareUpdatesGroup
@@ -81,6 +82,17 @@ public struct SettingsView: View {
         .frame(minHeight: 44)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+
+    private var journalCaptureGroup: some View {
+        settingsGroup(
+            title: "Journal capture",
+            footer: "Toolbar captures queue on this Mac until Console ACKs. Named reasons below are safe to share — no API keys."
+        ) {
+            inset {
+                CaptureOutboxSettingsSection()
+            }
+        }
     }
 
     private var riskLimitsGroup: some View {

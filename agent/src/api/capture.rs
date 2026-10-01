@@ -128,8 +128,9 @@ pub(crate) async fn accept_capture_value(
             response_body,
         }) => {
             let mut payload = json!({
-                "error_class": "VALIDATION",
-                "message": reason,
+                "error_class": "DEAD_LETTER",
+                "message": reason.clone(),
+                "reason": reason,
                 "retry_after_ms": Value::Null,
                 "request_id": request_id,
             });

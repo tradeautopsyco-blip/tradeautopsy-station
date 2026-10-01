@@ -12,6 +12,7 @@ struct UnpostedCaptureTrayView: View {
                     .foregroundColor(BarDS.Accent.amber)
                     .padding(.bottom, 8)
             }
+            captureDeliverySummary
             if !viewModel.unpostedCaptures.isEmpty {
                 escrowRow(
                     key: "Unposted",
@@ -34,6 +35,43 @@ struct UnpostedCaptureTrayView: View {
         }
         .task {
             await viewModel.fetchRecentTrades()
+            await viewModel.refreshCaptureOutboxStatus()
+        }
+    }
+
+    @ViewBuilder
+    private var captureDeliverySummary: some View {
+        if let err = viewModel.captureOutboxStatusError, !err.isEmpty {
+            Text(err)
+                .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
+                .foregroundColor(BarDS.Accent.red)
+                .padding(.bottom, 6)
+        } else if let status = viewModel.captureOutboxStatus {
+            let queued = status.counts.enqueued + status.counts.inflight
+            if queued > 0 || status.counts.deadLetter > 0 {
+                let parts = [
+                    queued > 0 ? "\(queued) delivering" : nil,
+                    status.counts.deadLetter > 0 ? "\(status.counts.deadLetter) failed" : nil,
+                ].compactMap { $0 }
+                Text("Capture outbox · \(parts.joined(separator: " · "))")
+                    .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
+                    .foregroundColor(status.counts.deadLetter > 0 ? BarDS.Accent.amber : BarDS.Text.secondary)
+                    .padding(.bottom, 6)
+            }
+            ForEach(status.deadLetters.prefix(4)) { item in
+                HStack {
+                    Text(item.draftText?.isEmpty == false ? item.draftText! : "Failed capture")
+                        .lineLimit(1)
+                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
+                        .foregroundColor(BarDS.Text.primary)
+                    Spacer(minLength: 8)
+                    Text(item.reason)
+                        .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
+                        .foregroundColor(BarDS.Accent.red)
+                        .lineLimit(1)
+                }
+                .padding(.bottom, 4)
+            }
         }
     }
 
@@ -58,7 +96,8 @@ struct UnpostedCaptureTrayView: View {
                 Text(err)
                     .font(BarDS.bodyFont(BarDS.FontSize.sectionLabel, weight: .medium))
                     .foregroundColor(BarDS.Accent.red)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .help(err)
             } else {
                 Text(Self.timeFmt.string(from: rec.createdAt))
                     .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
