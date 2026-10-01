@@ -513,9 +513,10 @@ public final class NotchViewModel: ObservableObject {
     @Published var todayClosedTrips: [TodayClosedTripCite] = []
     @Published var planKillPhase: BarPlanKillPhase = .idle
     @Published var stopMeStep: Int = 0
-    /// Exit trade / cancel declaration — 0 hidden, 1 confirm, 2 submitting (#144).
+    /// Cancel declaration — 0 hidden, 1 reason + confirm, 2 submitting (Wave 5 / #144).
     @Published var cancelDeclStep: Int = 0
     @Published var cancelDeclError: String?
+    @Published var cancelDeclReasonChip: String = ""
     /// Confirms intent before reason pick — requires `stopMeRequiredTaps` on the entry control (#124 parity).
     @Published var stopMeTapCount: Int = 0
     @Published var stopMeReason: String = ""
@@ -1205,6 +1206,7 @@ public final class NotchViewModel: ObservableObject {
     func resetCancelDecl() {
         cancelDeclStep = 0
         cancelDeclError = nil
+        cancelDeclReasonChip = ""
     }
 
     /// Pending or optimistic declaration id while armed — for cancel (#144).
@@ -3252,6 +3254,10 @@ public final class NotchViewModel: ObservableObject {
 
     func submitCancelDeclaration(declarationId: String, reasonChip: String) async {
         guard cancelDeclStep == 1 else { return }
+        guard let chip = BarCancelDeclarationChrome.normalizedReasonChip(reasonChip) else {
+            cancelDeclError = "Pick a reason first"
+            return
+        }
         cancelDeclStep = 2
         cancelDeclError = nil
         guard let url = URL(string: baseURL() + "/api/daemon/bar/cancel-declaration") else {
@@ -3267,7 +3273,7 @@ public final class NotchViewModel: ObservableObject {
         }
         let body: [String: Any] = [
             "declaration_id": trimmedId,
-            "cancel_reason_chip": reasonChip,
+            "cancel_reason_chip": chip,
         ]
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             cancelDeclStep = 0
@@ -3282,6 +3288,7 @@ public final class NotchViewModel: ObservableObject {
             if (200...299).contains(code) {
                 daemonProtocolError = nil
                 cancelDeclStep = 0
+                cancelDeclReasonChip = ""
                 clearOptimisticArmedStorage()
                 recomputeBarSurfacePhase()
                 await fetchBarLiveState()
