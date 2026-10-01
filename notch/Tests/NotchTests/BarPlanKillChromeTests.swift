@@ -27,6 +27,7 @@ struct BarPlanKillChromeTests {
         #expect(chrome.warningTitle == "Kill")
         #expect(chrome.warningBody.contains("Stop is not Kill"))
         #expect(chrome.warningBody.contains("not a max-loss flatten"))
+        #expect(chrome.warningBody.contains("rolling soon"))
         #expect(!chrome.warningBody.lowercased().contains("max-loss trip"))
         #expect(chrome.confirmTitle == "Confirm")
         #expect(chrome.cancelTitle == "Cancel")

@@ -36,6 +36,15 @@ struct BarNfoCockpitPlanRail: View {
                 legsHost
 
                 groupLab("Risk")
+                BarPlanRiskPreviewRow(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    stopLossText: stopLossText,
+                    quantityText: .constant(viewModel.declLots),
+                    targetPriceText: targetPriceText,
+                    instrumentRole: "option",
+                    onApplyQuantity: { viewModel.declLots = $0 }
+                )
                 riskFields
 
                 groupLab("Horizon — how far ahead the σ rungs look")

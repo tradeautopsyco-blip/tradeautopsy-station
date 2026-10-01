@@ -27,7 +27,7 @@ enum BarPlanKillChrome {
             showsWarningCard: showCard,
             killButtonTitle: "Kill",
             warningTitle: "Kill",
-            warningBody: "This locks the desk. Overlay stays until you tap I'm Calm after the countdown. Broker sites for the armed slug may be blocked. Stop is not Kill. This is not a max-loss flatten.",
+            warningBody: "This locks the desk. Overlay stays until you tap I'm Calm after the countdown. Broker sites for the armed slug may be blocked. Stop is not Kill. This is not a max-loss flatten. Full flatten-to-conditions is rolling soon.",
             confirmTitle: "Confirm",
             cancelTitle: "Cancel"
         )

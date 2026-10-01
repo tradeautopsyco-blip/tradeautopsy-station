@@ -100,6 +100,12 @@ struct BarHarnessPhasesTests {
         )
         #expect(p.suggestedStopText == "—")
         #expect(p.footnote.contains("POSITION-SIZING"))
+        #expect(p.suggestedSizeText == "—")
+    }
+
+    @Test func freeAmountReadsGlanceText() {
+        #expect(BarPlanRiskPreview.freeAmount(from: "INR 19.41") == 19.41)
+        #expect(BarPlanRiskPreview.freeAmount(from: "—") == nil)
     }
 
     @Test func dataVendorHonestyNeverInventsChain() {
@@ -121,7 +127,13 @@ struct BarHarnessPhasesTests {
                 overrideQty: 2,
                 fundsLit: true,
                 fundsBalance: nil,
-                fundsDisplayText: "USDT 5000"
+                fundsDisplayText: "USDT 5000",
+                priceIncrement: nil,
+                multiplier: nil,
+                unitBatchSize: nil,
+                instrumentRole: "spot",
+                leverage: nil,
+                symbol: "BTCUSDT"
             ),
             quoteCurrency: "USDT"
         )

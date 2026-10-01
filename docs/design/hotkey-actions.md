@@ -1,12 +1,10 @@
 # Hotkey actions
 
-**Status:** proposal for a founder pick. Not wired. No default key map.
+**Status:** wired. No default key map.
 **Date:** 2026-10-01
 **Audience:** the next coding agent and the founder.
 
-Prefs already store bindings (`notch/DeskHotkeyPreferences.swift`, UserDefaults key `tradeautopsy.station.hotkey_bindings`) for two ids: `toggle_notch`, `open_station`. `HotkeyRegistrar` does not read that store. It still registers Carbon ⌥Space (toggle Notch) and ⌥⇧Space (open Station).
-
-This note is the action list that store can grow. It does not change Swift.
+Prefs store bindings (`notch/DeskHotkeyPreferences.swift`, UserDefaults key `tradeautopsy.station.hotkey_bindings`). `HotkeyRegistrar.reloadSavedBindings` applies that list. Empty prefs keep Carbon ⌥Space (toggle Notch) and ⌥⇧Space (open Station) and nothing else. A saved `toggle_notch` or `open_station` replaces that default until the row is cleared.
 
 Stable ids are lowercase snake_case. Once a build saves an id, do not rename it. A rename orphans the saved row.
 
@@ -45,11 +43,13 @@ Today’s warning body already says this is not a max-loss flatten (`BarPlanKill
 
 This note does not choose Option B. Do not ship a default map in the same change as the id list. Founder pick first.
 
-## Wiring later
+## Wiring
 
-When a later change teaches `HotkeyRegistrar` to read prefs:
+`HotkeyRegistrar` does this now:
 
-1. Register only saved rows.
-2. Empty prefs → keep today’s two Carbon hotkeys and nothing else.
-3. A saved `toggle_notch` or `open_station` replaces the matching Carbon default for that install.
-4. `configurableActions` in `DeskHotkeyPreferences` grows to this table. Labels can change. Ids cannot.
+1. Register only saved rows, from id 10 upward.
+2. Empty prefs → keep the two Carbon hotkeys and nothing else.
+3. A saved `toggle_notch` or `open_station` replaces the matching Carbon default for that install. Clearing prefs restores it.
+4. `configurableActions` is this table. Labels can change. Ids cannot.
+5. `kill` calls `presentPlanKillWarning`. It does not call `activateKillSwitch`.
+6. Other ids call the same Notch function as the button named in the table. They do not skip Confirm, a cancel reason, or the I’m Calm countdown.

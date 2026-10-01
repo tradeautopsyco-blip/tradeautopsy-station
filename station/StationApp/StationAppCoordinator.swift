@@ -69,6 +69,8 @@ public final class StationAppCoordinator: ObservableObject {
     private var inputMonitoringWarningShownAt: Date?
     private var inputMonitoringPollTask: Task<Void, Never>?
     private var didShowInputMonitoringRestartReminder = false
+    private var hotkeyPrefsObserver: NSObjectProtocol?
+    private let hotkeyPrefsRelay = HotkeyPrefsReloadRelay()
 
     public init(
         agentSupervisor: AgentSupervising,
@@ -191,6 +193,7 @@ public final class StationAppCoordinator: ObservableObject {
                 self?.handleAgentHealthChange(isHealthy: isHealthy)
             }
         }
+        hotkeyPrefsRelay.coordinator = self
     }
 
     public func navigateTo(_ route: StationRoute) {
@@ -363,6 +366,11 @@ public final class StationAppCoordinator: ObservableObject {
         if windowController.isVisible {
             windowController.hide()
         }
+        if let hotkeyPrefsObserver {
+            NotificationCenter.default.removeObserver(hotkeyPrefsObserver)
+            self.hotkeyPrefsObserver = nil
+        }
+        hotkeyPrefsRelay.coordinator = nil
         hotkeyRegistrar.unregisterAll()
         todayViewModel.stopSessionMirrorPolling()
         await agentSupervisor.shutdown()
@@ -431,6 +439,29 @@ public final class StationAppCoordinator: ObservableObject {
         hotkeyRegistrar.registerOpenStation { [weak self] in
             self?.openStation()
         }
+        hotkeyRegistrar.registerDeskActions { [weak self] actionId in
+            self?.floatingNotch.performHotkey(actionId)
+        }
+        reloadHotkeyBindings()
+        guard hotkeyPrefsObserver == nil else { return }
+        hotkeyPrefsObserver = NotificationCenter.default.addObserver(
+            forName: DeskHotkeyPreferences.didSaveNotification,
+            object: nil,
+            queue: .main
+        ) { [relay = hotkeyPrefsRelay] _ in
+            relay.reload()
+        }
+    }
+
+    fileprivate func reloadHotkeyBindings() {
+        let bindings = DeskHotkeyPreferences.load().map {
+            DeskHotkeyRegistration(
+                actionId: $0.actionId,
+                keyCode: $0.keyCode,
+                carbonModifiers: $0.carbonModifiers
+            )
+        }
+        hotkeyRegistrar.reloadSavedBindings(bindings)
     }
 
     private func syncInputMonitoringWarning() {
@@ -490,5 +521,25 @@ public final class StationAppCoordinator: ObservableObject {
             return
         }
 #endif
+    }
+}
+
+/// Notification callbacks are `@Sendable`. This box hops back to the main actor without capturing the coordinator in that closure.
+private final class HotkeyPrefsReloadRelay: @unchecked Sendable {
+    weak var coordinator: StationAppCoordinator?
+
+    func reload() {
+        let coordinator = self.coordinator
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                coordinator?.reloadHotkeyBindings()
+            }
+        } else {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    coordinator?.reloadHotkeyBindings()
+                }
+            }
+        }
     }
 }

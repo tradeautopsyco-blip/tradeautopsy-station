@@ -73,7 +73,7 @@ The empirical science behind TradeAutopsy's scoring and intervention model.
   calibration references.
 - What belongs here: signal weight justifications, threshold calibration citations,
   behavioral bias definitions, intervention-timing science.
-- [`behavioral-science/POSITION-SIZING.md`](./behavioral-science/POSITION-SIZING.md) — pre-trade budget→qty, fees, and leverage multiplier are **NOT SPECIFIED IN SOURCE**. A **FOUNDER CANDIDATE** section proposes identities for a yes/no lock and does not license implementation. Design options: [`docs/design/risk-engine.md`](../design/risk-engine.md).
+- [`behavioral-science/POSITION-SIZING.md`](./behavioral-science/POSITION-SIZING.md) — locked rows (cash, NFO future with a lot, spot, USDM) use NautilusTrader `calculate_fixed_risk_position_size` with `commission_rate = 0`. Coin-M, options, CDS, MCX, fees, and a default risk percent stay **NOT SPECIFIED IN SOURCE**. Design map: [`docs/design/risk-engine.md`](../design/risk-engine.md).
 
 ---
 

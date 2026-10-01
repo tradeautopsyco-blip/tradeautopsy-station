@@ -5,9 +5,13 @@ import Foundation
 final class FakeHotkeyRegistrar: HotkeyRegistering {
     private(set) var registerToggleNotchCallCount = 0
     private(set) var registerOpenStationCallCount = 0
+    private(set) var registerDeskActionsCallCount = 0
     private(set) var unregisterAllCallCount = 0
     private(set) var toggleNotchHandler: (() -> Void)?
     private(set) var openStationHandler: (() -> Void)?
+    private(set) var deskActionHandler: ((String) -> Void)?
+    private(set) var lastReloadedBindings: [DeskHotkeyRegistration] = []
+    private(set) var reloadSavedBindingsCallCount = 0
 
     private(set) var refreshGlobalMonitorCallCount = 0
 
@@ -21,10 +25,21 @@ final class FakeHotkeyRegistrar: HotkeyRegistering {
         openStationHandler = handler
     }
 
+    func registerDeskActions(_ handler: @escaping (String) -> Void) {
+        registerDeskActionsCallCount += 1
+        deskActionHandler = handler
+    }
+
+    func reloadSavedBindings(_ bindings: [DeskHotkeyRegistration]) {
+        reloadSavedBindingsCallCount += 1
+        lastReloadedBindings = bindings
+    }
+
     func unregisterAll() {
         unregisterAllCallCount += 1
         toggleNotchHandler = nil
         openStationHandler = nil
+        deskActionHandler = nil
     }
 
     func refreshGlobalMonitorIfNeeded() {

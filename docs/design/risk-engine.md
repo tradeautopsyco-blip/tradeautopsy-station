@@ -1,6 +1,6 @@
 # Risk engine and position sizing — options
 
-**Status:** partial — `POST /api/daemon/risk/preview` + Plan risk strip (Tradeture layout, honest dashes). `authored_qty` stays null until the founder locks a row in `POSITION-SIZING.md`. The FOUNDER CANDIDATE section in that file is a proposal, not that lock.
+**Status:** partial — `POST /api/daemon/risk/preview` authors quantity on the locked Nautilus rows in `POSITION-SIZING.md` (C1, C2 when the lot is known, C7, C8). Other profiles stay dashed. Fees stay unspecified. This ship does not write the preview onto Console.
 **Date:** 2026-10-01
 **Audience:** the next coding agent and the founder.
 
@@ -176,7 +176,7 @@ A pure function in the agent (suggested home `agent/src/risk/`, called by a loop
 
 **Outputs:** an envelope:
 
-- `authored_qty` — null while the sizing reference stays unspecified
+- `authored_qty` — a number on a locked row when tick (and, for NFO futures, lot) are known; null otherwise
 - `qty_unit` — shares, base, quote, lots, or contracts, from the profile
 - `risk_money` — from the ladder once qty is typed; null when geometry is not a loss
 - `fees_money` — null + reason while the schedule is unspecified
@@ -248,7 +248,7 @@ POST /api/daemon/risk/preview
 → {
   quote_currency, qty_unit,
   authored_qty: null | number,
-  reason: "position_sizing_unspecified" | "funds_dark" | "no_stop" | "ok",
+  reason: "ok" | "funds_dark" | "no_stop_or_entry" | "price_increment_unspecified" | "multiplier_unspecified" | "fixed_money_unspecified" | "coinm_identity_unspecified" | "option_premium_unspecified" | "option_short_max_loss_unspecified" | "profile_not_locked" | "margin_gate_exceeded" | "below_unit_batch",
   risk_money, fees_money, risk_plus_fees,
   reward_minus_fees, rr_ex_fees, rr_in_fees,
   fees_reason: "fee_schedule_unspecified" | null,
@@ -257,7 +257,7 @@ POST /api/daemon/risk/preview
 }
 ```
 
-`authored_qty` stays null until the founder records a YES in the `POSITION-SIZING.md` lock log. The FOUNDER CANDIDATE section is not a primary source and is not that YES. `risk_money` for a **typed** qty may call the same identity as `BarPlanLadder` (already tested) because that is measurement of typed numbers, not a new percent-of-capital rule. Put that call in the agent when the preview exists so Swift stops being the only owner. Until the route exists, leave the Swift ladder where it is.
+`authored_qty` follows the locked Nautilus path in `POSITION-SIZING.md` when the row is YES and the instrument fields exist. Otherwise it stays null. `risk_money` for a **typed** qty still uses the ladder identity (measurement of typed numbers). When both exist, the JSON `risk_money` is the ladder figure. `fixed_risk_money` is the Nautilus money.
 
 Percent of account uses the book’s quote currency. A missing quote dashes the percent (DualNoBlend). Leverage multiplies notional only after a reference says so for that calc profile. Until then the leverage row shows the position readout or a dash.
 

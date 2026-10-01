@@ -120,6 +120,9 @@ struct BarDeclarationFlowView: View {
         .onChange(of: viewModel.declInvalidationType) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: viewModel.declInvalidationCondition) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
         .onChange(of: viewModel.declProtectiveSLConsent) { _, _ in viewModel.clearDeclarationErrorIfNeeded() }
+        .onChange(of: viewModel.hotkeyConfirmRequest) { _, _ in
+            Task { await submit() }
+        }
     }
 
     private var submitReadiness: (ready: Bool, hint: String?) {

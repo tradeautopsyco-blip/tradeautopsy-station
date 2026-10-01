@@ -14,6 +14,7 @@ struct BarPlanSlSuggestorRow: View {
         )
         let pct = Double(marginRiskPct.trimmingCharacters(in: .whitespacesAndNewlines))
         let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
+        let authored = viewModel.planRiskPreviewPresentation?.proposedSizeText ?? "—"
         return BarPlanSlSuggestor.present(
             BarPlanSlSuggestor.Input(
                 riskPercentOfMargin: pct,
@@ -21,7 +22,8 @@ struct BarPlanSlSuggestorRow: View {
                 marginDisplay: margin.value,
                 entry: entry,
                 sideBuy: true,
-                bookId: viewModel.declareBookId ?? ""
+                bookId: viewModel.declareBookId ?? "",
+                authoredSizeText: authored
             )
         )
     }

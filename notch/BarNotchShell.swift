@@ -57,6 +57,7 @@ struct BarNotchShell: View {
             syncActiveScreenFromPhase(animated: false)
             syncDeclarationFormFlagToActiveScreen()
             openAnalysisIfNeeded(for: activeScreen.wrappedValue)
+            applyHotkeyScreenRequest()
         }
         .onReceive(NotchOneSecondClock.publisher) { freshnessClock = $0 }
         .onChange(of: viewModel.barSurfacePhase) { _, _ in
@@ -84,6 +85,9 @@ struct BarNotchShell: View {
                 }
             }
         }
+        .onChange(of: viewModel.hotkeyScreenRequest) { _, _ in
+            applyHotkeyScreenRequest()
+        }
         .alert("Replace this trade’s chart?", isPresented: replaceChartAlertPresented) {
             Button("Cancel", role: .cancel) {
                 viewModel.cancelReplaceChart()
@@ -93,6 +97,16 @@ struct BarNotchShell: View {
             }
         } message: {
             Text("\(replaceConfirmSymbol) already has one. Confirm replaces it. One image per trade.")
+        }
+    }
+
+    private func applyHotkeyScreenRequest() {
+        guard let raw = viewModel.hotkeyScreenRequest,
+              let screen = BarNotchScreen(rawValue: raw) else { return }
+        viewModel.hotkeyScreenRequest = nil
+        guard screen != activeScreen.wrappedValue else { return }
+        withAnimation(NotchTheme.contentAnimation) {
+            activeScreen.wrappedValue = screen
         }
     }
 

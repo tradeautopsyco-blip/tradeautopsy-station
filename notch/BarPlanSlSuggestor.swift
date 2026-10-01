@@ -1,6 +1,6 @@
 import Foundation
 
-/// SL suggestor from % of margin — formula blocked until `docs/reference/` cites sizing (`POSITION-SIZING.md`).
+/// Stop-from-size is not in the locked Nautilus identity. Size-from-stop is the risk preview.
 enum BarPlanSlSuggestor {
     struct Input: Equatable, Sendable {
         var riskPercentOfMargin: Double?
@@ -9,6 +9,7 @@ enum BarPlanSlSuggestor {
         var entry: Double?
         var sideBuy: Bool
         var bookId: String
+        var authoredSizeText: String = "—"
     }
 
     struct Presentation: Equatable, Sendable {
@@ -17,31 +18,23 @@ enum BarPlanSlSuggestor {
         var footnote: String
     }
 
-    static let blockedFootnote =
-        "Stop/size from margin % is not shipped — POSITION-SIZING.md has no primary formula. DualNoBlend per book."
+    static let stopNotLockedFootnote =
+        "Suggested stop is not in the locked formula. Size uses risk % and the stop when the preview can author it. POSITION-SIZING.md."
 
     static func present(_ input: Input) -> Presentation {
         guard input.marginLit else {
             return Presentation(
                 suggestedStopText: "—",
                 suggestedSizeText: "—",
-                footnote: "Margin dark — cannot suggest stop from margin %."
+                footnote: "Margin dark — cannot suggest a size from margin %."
             )
         }
-        guard let pct = input.riskPercentOfMargin, pct > 0, pct.isFinite else {
-            return Presentation(
-                suggestedStopText: "—",
-                suggestedSizeText: "—",
-                footnote: blockedFootnote
-            )
-        }
-        _ = input.entry
-        _ = input.sideBuy
-        _ = input.bookId
+        let size = input.authoredSizeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sizeText = size.isEmpty ? "—" : size
         return Presentation(
             suggestedStopText: "—",
-            suggestedSizeText: "—",
-            footnote: blockedFootnote
+            suggestedSizeText: sizeText,
+            footnote: stopNotLockedFootnote
         )
     }
 }

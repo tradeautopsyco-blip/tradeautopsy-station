@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct BarDeskHotkeyPreferencesView: View {
-    @State private var toggleKeyCode: String = ""
-    @State private var openKeyCode: String = ""
+    @State private var keyCodes: [String: String] = [:]
     @State private var savedMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             BarSectionLabel(text: "Hotkeys")
-            Text("Record key codes for each action. ⌥Space / ⌥⇧Space stay the system defaults until Station applies custom bindings in a future build — no invented default map.")
+            Text("Type a key code and save. Blank rows stay unbound. With no saved rows, ⌥Space still toggles Notch and ⌥⇧Space still opens Station. Nothing here binds Kill, Confirm, or Cancel until you type a code. Saved rows use ⌥, except Open Station which uses ⌥⇧.")
                 .font(BarDS.bodyFont(11, weight: .regular))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -36,23 +35,39 @@ struct BarDeskHotkeyPreferencesView: View {
                     .foregroundColor(BarDS.Accent.teal)
             }
         }
+        .onAppear(perform: load)
     }
 
     private func binding(for actionId: String) -> Binding<String> {
-        switch actionId {
-        case "toggle_notch": return $toggleKeyCode
-        case "open_station": return $openKeyCode
-        default: return .constant("")
+        Binding(
+            get: { keyCodes[actionId] ?? "" },
+            set: { keyCodes[actionId] = $0 }
+        )
+    }
+
+    private func load() {
+        var map: [String: String] = [:]
+        for row in DeskHotkeyPreferences.load() {
+            map[row.actionId] = String(row.keyCode)
         }
+        keyCodes = map
     }
 
     private func save() {
         var items: [DeskHotkeyBinding] = []
-        if let code = UInt32(toggleKeyCode.trimmingCharacters(in: .whitespacesAndNewlines)), code > 0 {
-            items.append(DeskHotkeyBinding(actionId: "toggle_notch", keyCode: code, carbonModifiers: UInt32(optionKey)))
-        }
-        if let code = UInt32(openKeyCode.trimmingCharacters(in: .whitespacesAndNewlines)), code > 0 {
-            items.append(DeskHotkeyBinding(actionId: "open_station", keyCode: code, carbonModifiers: UInt32(optionKey | shiftKey)))
+        for action in DeskHotkeyPreferences.configurableActions {
+            let raw = (keyCodes[action.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let code = UInt32(raw), code > 0 else { continue }
+            let modifiers: UInt32 = action.id == "open_station"
+                ? UInt32(optionKey | shiftKey)
+                : UInt32(optionKey)
+            items.append(
+                DeskHotkeyBinding(
+                    actionId: action.id,
+                    keyCode: code,
+                    carbonModifiers: modifiers
+                )
+            )
         }
         DeskHotkeyPreferences.save(items)
         savedMessage = items.isEmpty ? "Cleared custom bindings." : "Saved \(items.count) binding(s)."

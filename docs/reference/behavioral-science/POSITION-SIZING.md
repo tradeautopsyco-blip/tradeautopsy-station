@@ -7,28 +7,28 @@
 | Field            | Value                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
 | **Topic**        | Pre-trade position size from a risk budget, for every Station book |
-| **Primary source** | None. Internal plans and a Tradeture screenshot were read and rejected as sources. The **FOUNDER CANDIDATE** section is a product proposal for a yes/no lock. It is not a primary source. |
+| **Primary source** | NautilusTrader `calculate_fixed_risk_position_size` (`crates/risk/src/sizing.rs`, `develop`, commit `fcd3c5e0f09b849ef665b2ac8eadb75db22c18ff`). That identity is locked for risk-percent plus stop → quantity on C1, C2 when the lot is known, C7, and C8. Coin-M, option premium, option short, CDS, MCX, fixed-money mode, and stop-from-size stay **NOT SPECIFIED IN SOURCE**. |
 | **Snapshot date** | 2026-10-01 |
-| **Source version** | n/a — candidate section added 2026-10-01; still no external source version |
-| **Staleness warning** | Primary source is still missing. The FOUNDER CANDIDATE section does not license implementation. Leave authored quantity unset, and do not ship a default risk percent, a fee, or a leverage multiplier, until the founder records YES or NO on that section’s rows. Fees stay out of this version after a size lock. A default risk percent is a separate lock and is not set here. |
+| **Source version** | `develop` @ `fcd3c5e0f09b849ef665b2ac8eadb75db22c18ff` (2026-08-10, “Apply contract multiplier in FixedRiskSizer #4699”). Read 2026-10-01. Station reimplements the chain. It does not link the crate. |
+| **Staleness warning** | Locked rows may author quantity when the instrument fields below are present. Unlocked rows stay dashed. `commission_rate` is 0. There is no default risk percent. `exchange_rate` is 1 (the free figure is already the book quote). |
 | **Author**       | TradeAutopsy Station |
 
 ---
 
-> ⚠️ **BLOCKER**
+> ⚠️ **BLOCKER** (narrowed 2026-10-01)
 >
-> The FOUNDER CANDIDATE section writes concrete identities so each one can be accepted or rejected. A dated YES in that section is the product lock. Until that YES is written, feature code leaves authored quantity unset. A YES is not a citation of an exchange, a broker, or a paper.
+> C0 (percent path), C1, C2 when `multiplier` is a known lot, C7, and C8 are locked to the Nautilus chain below with `commission_rate = 0`. Feature code may set `authored_qty` on those rows only.
 >
-> The following facts are needed before a calculator may author quantity, fees, or leverage-adjusted notional. They are **NOT SPECIFIED IN SOURCE**:
+> These facts stay **NOT SPECIFIED IN SOURCE**. Code for them stays dashed:
 >
-> - A primary source for `quantity = risk_budget / distance` (or any other identity), including rounding and the unit (shares, base asset, lots, contracts).
-> - Whether the default budget is a typed amount, a percent of obtain(funds), or both, and what the percent is.
-> - A pre-trade fee schedule per calc profile (what is included, the rate, the currency, and whether reward is net of fees). Fees are out of this version. Do not invent a schedule. A later manual fee box in Station only is future work and is not part of any identity in the candidate section.
-> - Whether venue leverage changes the quantity identity on `crypto_usdm_usd` / `crypto_coinm_usd`, and the formula if it does.
-> - Option-seller max loss. The options mechanics note says the spot/futures sizing taxonomy may not apply.
-> - A product default for `risk_pct`. The candidate takes a trader-typed percent and names no default.
+> - Stop given a typed size. The Nautilus function solves size from a stop. It does not solve a stop from a size.
+> - Fixed-money mode (`fixed_money_unspecified`). C0 is the percent path only.
+> - A product default for `risk_pct`.
+> - A pre-trade fee schedule. `commission_rate` stays 0. A later manual fee box in Station only is future work.
+> - Coin-M (`coinm_identity_unspecified`), option long premium (`option_premium_unspecified`), option short (`option_short_max_loss_unspecified`), CDS and MCX (`profile_not_locked`).
+> - Venue leverage as a term inside the quantity identity. USDM does not multiply by leverage. An India margin check may run after a size exists. It is not the sizer.
 >
-> Feature code must leave authored quantity unset. Display of a trader-typed quantity times a trader-typed stop distance may follow the existing Notch ladder tests; that measurement is not this document’s formula. The candidate identities do not change that.
+> A trader-typed quantity times a trader-typed stop distance may still follow the Notch ladder. That measurement is not this size solve. Dark or non-positive funds author no quantity (`funds_dark`).
 
 ---
 
@@ -42,8 +42,9 @@
 | Tradeture screenshot | Founder attachment, 2026-10-01 (ad frame, exchange OKX, risk 1.1%) | 2026-10-01 | UX inspiration in the design doc. Not a formula source. |
 | Kotak margin calculator | [`docs/reference/india/kotak-neo/MARGIN-CALCULATOR.md`](../india/kotak-neo/MARGIN-CALCULATOR.md) | 2026-08-27 | Calculator path unspecified. Not a sizer. |
 | Binance options mechanics | [`docs/reference/crypto/binance-global/options/MECHANICS.md`](../crypto/binance-global/options/MECHANICS.md) | 2026-10-01 | Says a spot/futures position-size model may not map onto options. |
-| OpenAlgo citation | [`docs/research/openalgo-citation.md`](../../research/openalgo-citation.md) | 2026-09-23 | Vocab oracle. No position-size formula in that pin. |
-| Founder candidate section | This file, section **FOUNDER CANDIDATE** | 2026-10-01 | Product proposal for a yes/no lock. Not a primary source. |
+| NautilusTrader FixedRiskSizer | `nautilus_trader` `develop` `crates/risk/src/sizing.rs` `calculate_fixed_risk_position_size`, commit `fcd3c5e0f09b849ef665b2ac8eadb75db22c18ff` | 2026-10-01 | Primary source for locked rows. LGPL-3.0 crate. Station reimplements the chain and does not depend on it. |
+| OpenAlgo citation | [`docs/research/openalgo-citation.md`](../../research/openalgo-citation.md), pin `ad3cd54df476b330c4e4b01a31a3ad53deb9012b` | 2026-10-01 | Not a risk→qty source. Founder: Indian books use lots × lot size after the Nautilus size, and sandbox margin `qty × price / leverage` as a check after that size. `services/risk` stop, trail, and aggregate are exit/MTM, not entry size. AGPL — cite only. This file does not vendor or paste OpenAlgo code, and it does not claim line numbers from a re-read of those functions. |
+| Founder lock log | This file, section **FOUNDER CANDIDATE** | 2026-10-01 | YES on C0 percent path, C1, C2 (lot required), C7, C8. Other rows stay NO / not found. |
 
 ---
 
@@ -53,29 +54,43 @@
 
 ### Budget to quantity
 
-**Source:** No primary source.
+**Source:** NautilusTrader `calculate_fixed_risk_position_size`, for the locked rows only. Unlocked rows remain **NOT SPECIFIED IN SOURCE**.
 
 **Verbatim definition / formula:**
 
+The source chain, with Station’s fixed inputs called out:
+
 ```
-NOT SPECIFIED IN SOURCE
+risk_points = abs(entry - stop) / price_increment
+risk_money = equity * risk
+risk_money = risk_money - (risk_money * commission_rate * 2)
+position_size = risk_money / exchange_rate / risk_points / price_increment / multiplier
+position_size = position_size / units
+if unit_batch_size > 0:
+    position_size = floor(position_size / unit_batch_size) * unit_batch_size
 ```
+
+`price_increment` cancels, so the size is `risk_money / (exchange_rate * abs(entry - stop) * multiplier)` before the batch floor. The source can also apply `hard_limit` and `max_quantity`. Station does not. Station sets `commission_rate = 0`, `exchange_rate = 1`, `units = 1`. `risk` is the trader-typed percent divided by 100 (`1` in the field is 0.01 in the function). Equity at or below 0 is `funds_dark` here, not an authored 0. A batch floor of 0 is `below_unit_batch` and the Plan rail must not Apply it.
+
+**NOT SPECIFIED IN SOURCE** for every row the lock log does not mark YES.
 
 **Field / term reference:**
 
 | Term / Field | Source definition | Units / type |
 | ------------ | ----------------- | ------------ |
-| risk budget | NOT SPECIFIED IN SOURCE | money in the book quote currency, or a percent |
-| distance | NOT SPECIFIED IN SOURCE | price |
-| quantity | NOT SPECIFIED IN SOURCE | book-specific unit |
+| `risk` | Fraction of equity. Station field percent ÷ 100. | fraction |
+| `equity` | Account equity in the source. Station uses the lit free figure for this book. | money in the book quote |
+| `price_increment` | Instrument price increment. | price |
+| `multiplier` | Contract multiplier in the source. Station: 1 for cash/spot/USDM; NFO future lot. | number |
+| quantity | Result after the batch floor. Lots on NFO futures; shares or base on cash/spot/USDM. | book unit |
 
 **Gaps (NOT SPECIFIED IN SOURCE):**
 
-- The identity itself.
-- Rounding to tick, step, or lot.
-- Behavior when funds obtain is dark.
-- Behavior when stop is missing.
+- Stop solved from a typed size.
+- Fixed-money budget.
 - A default percent.
+- Coin-M, option premium, option short, CDS, and MCX.
+- `hard_limit` and `max_quantity` from the source. Station does not apply them.
 
 ---
 
@@ -84,7 +99,7 @@ NOT SPECIFIED IN SOURCE
 > - Do not treat the roadmap sentence `size = planned_risk / distance_to_invalidation` as sourced. It is a candidate written in an internal plan.
 > - Do not treat the Tradeture frame’s 1.1% or its fee amounts as sourced.
 > - Existing `BarPlanLadder` arithmetic measures a quantity the trader already typed. It is not an authorization to solve for quantity.
-> - The FOUNDER CANDIDATE section is where a product lock would be recorded. It is not sourced law.
+> - The lock log records which rows use the Nautilus chain. Rows marked NO are not sourced law.
 
 ---
 
@@ -157,13 +172,33 @@ NOT SPECIFIED IN SOURCE
 
 ## FOUNDER CANDIDATE — SL suggestor / budget→qty / stop from margin %
 
-**Status:** proposal. Not locked. Not a primary source. Not licensed to implement.
+**Status:** partially locked 2026-10-01. The Nautilus chain is the primary source for the YES rows. It is not a license for the other rows.
 
-**How to lock:** write a date and YES or NO in the lock log at the end of this section. One row at a time is enough. A YES on a row licenses only that row. A NO leaves that row dashed and does not borrow another row’s identity.
+**How a row locks:** a date and YES or NO in the lock log. A YES licenses only that row.
 
-**What stays true after any YES:** fees stay out of the identity. No product default for `risk_pct`. Dark funds author no quantity. Leverage is not a term. Coin-M and short options stay on their own rows.
+**What stays true after the YES rows:** fees stay out (`commission_rate = 0`). No product default for `risk_pct`. Dark funds author no quantity. Leverage is not a term in the size identity. Coin-M, option premium, and short options stay on their own rows. Suggested stop stays **—**. Nautilus does not solve stop from size.
 
-This section is the concrete proposal behind the Plan control “SL suggestor (% of margin)” (`notch/BarPlanSlSuggestor.swift`). That control still prints **—** for stop and size. `POST /api/daemon/risk/preview` still returns `authored_qty: null`.
+The Plan control “SL suggestor (% of margin)” (`notch/BarPlanSlSuggestor.swift`) still prints **—** for stop. Proposed size comes from `POST /api/daemon/risk/preview` when the row is locked and the instrument fields are present. Apply writes that size onto the Plan form. It does not place an order.
+
+### Locked application (C1, C2, C7, C8)
+
+| Input | Station value |
+| --- | --- |
+| `equity` | Lit obtain-funds free for this book. Dark or ≤ 0 → `funds_dark`, `authored_qty` null. |
+| `risk` | Trader-typed percent / 100. Empty → `risk_pct_required`. No product default. |
+| `entry`, `stop` | Trader-typed prices. Missing → `no_stop_or_entry`. |
+| `price_increment` | Instrument tick. Missing on a locked row → `price_increment_unspecified`. |
+| `multiplier` | Cash, spot, and USDM default 1 when the client omits it. NFO future uses the lot and has no default 1 (`multiplier_unspecified` when the lot is missing). |
+| `exchange_rate` | Always 1. The free figure is already the book quote. The preview does not accept a client FX rate. |
+| `commission_rate` | 0. |
+| `units` | 1. |
+| `unit_batch_size` | Cash and NFO future default 1. Spot and USDM default 0 (no floor) unless the client sends a step. |
+
+NFO future (`instrument_role = nfo_future`): `authored_qty` is lots. `resolved_quantity` is lots × lot (the OpenAlgo lot conversion, display and margin only). Apply writes lots. An empty role on the NFO book is `instrument_role_required` because that book mixes futures and options.
+
+India margin gate, after a positive size, cash and NFO future only: `required = qty_for_margin × entry / leverage`. NFO uses the share quantity. No leverage → `margin_gate = leverage_unspecified` and the quantity still stands. `required > equity` → `authored_qty` null, reason `margin_gate_exceeded`. Spot and USDM do not run this gate. It is not the sizer, and it is not the Nautilus `hard_limit`.
+
+`budget_mode` other than `risk_percent` → `fixed_money_unspecified`.
 
 Design map of books and profiles: [`docs/design/risk-engine.md`](../../design/risk-engine.md) §2. Declare tabs that exist today (`notch/BarDeskInstruments.swift` `BarDeclareAssetClass.supported`): Binance → Spot, Options, USDM, Coin-M; Kotak → Equity, Options. Other catalog books are named here so a later tab does not invent a second formula. DualNoBlend: one book, one quote currency. Never add an INR free figure to a USD free figure.
 
@@ -402,29 +437,29 @@ Future, not this version: a manual fee amount typed in Station only. No schedule
 
 ### Lock log
 
-Empty until the founder writes it. Do not pre-fill YES.
+YES rows use the Nautilus chain in “Locked application”. NO and blank-formula rows stay dashed.
 
 | Row | Profile / case | Founder | Date | YES or NO |
 | --- | --- | --- | --- | --- |
-| C0 | Shared prelude: lit free × typed %, fees ignored, dark funds dash, no default % | | | |
-| C1 | `equities_inr_cash` multiplier 1, shares | | | |
-| C2 | `equities_inr_nfo` future, agreeing lot | | | |
-| C3 | NFO option long, premium × agreeing lot | | | |
-| C4 | NFO option short blocked | | | |
-| C5 | `fx_cds_inr` algebra waiting on a cited lot | | | |
-| C6 | `commodity_inr_mcx` algebra waiting on a cited lot | | | |
-| C7 | `crypto_spot_usd` multiplier 1, base qty, no quote-size solve | | | |
-| C8 | `crypto_usdm_usd` multiplier 1, no leverage | | | |
-| C9 | `crypto_coinm_usd` no identity | | | |
-| C10 | `crypto_options_usd` long, per-contract premium, multiplier 1 | | | |
-| C11 | `crypto_options_usd` short blocked | | | |
+| C0 | Shared prelude: lit free × typed %, fees ignored (`commission_rate = 0`), dark funds dash, no default % | Founder | 2026-10-01 | YES for the percent path only. Fixed money stays NO. |
+| C1 | `equities_inr_cash` multiplier 1, shares | Founder | 2026-10-01 | YES |
+| C2 | `equities_inr_nfo` future, lot required, Apply writes lots | Founder | 2026-10-01 | YES when the lot is known. Missing lot stays dashed. |
+| C3 | NFO option long, premium × agreeing lot | | 2026-10-01 | NO — `option_premium_unspecified` |
+| C4 | NFO option short blocked | | 2026-10-01 | NO formula. Block stands (`option_short_max_loss_unspecified`). |
+| C5 | `fx_cds_inr` | | 2026-10-01 | NO — `profile_not_locked` |
+| C6 | `commodity_inr_mcx` | | 2026-10-01 | NO — `profile_not_locked` |
+| C7 | `crypto_spot_usd` multiplier 1, base qty, no quote-size solve | Founder | 2026-10-01 | YES |
+| C8 | `crypto_usdm_usd` multiplier 1, no leverage in the identity | Founder | 2026-10-01 | YES |
+| C9 | `crypto_coinm_usd` no identity | | 2026-10-01 | NO — `coinm_identity_unspecified` |
+| C10 | `crypto_options_usd` long, per-contract premium | | 2026-10-01 | NO — `option_premium_unspecified` |
+| C11 | `crypto_options_usd` short blocked | | 2026-10-01 | NO formula. Block stands (`option_short_max_loss_unspecified`). |
 
 ---
 
 ## Verification Checklist
 
-- [ ] A primary source (exchange rulebook, broker doc, or peer-reviewed method the founder accepts) is pasted into “Budget to quantity” before any code sets `authored_qty`. A YES in the FOUNDER CANDIDATE lock log is a product lock, not this checkbox.
-- [ ] Founder lock log (C0–C11) has a date and YES or NO before any code sets `authored_qty` from that row. Unfilled rows stay dashed.
+- [x] The locked rows cite NautilusTrader `calculate_fixed_risk_position_size` in “Budget to quantity” before code sets `authored_qty`. Unlocked rows stay **NOT SPECIFIED IN SOURCE**.
+- [x] Founder lock log (C0–C11) has a date and YES or NO. Only YES rows may set `authored_qty`.
 - [ ] Founder lock: typed money vs percent of funds, recorded in this file after the source, under OUR INTERPRETATION. C0 is the percent path only. It does not set a default percent.
 - [ ] Founder lock: R:R below 1 is a color, a warn, or a block — recorded the same way.
 - [ ] Fees stay out of this version. No profile shows a fee number from a schedule. A future manual Station fee box is not implemented from this file.
@@ -441,7 +476,8 @@ Empty until the founder writes it. Do not pre-fill YES.
 | Use prototype role fractions 0.5% / 1% / 2% and “calm ≥ 4 halves” | `risk-demo-logic.mjs` says it is not a reference source. | Not copied. |
 | Treat OpenAlgo “about 1%” as the gate | The OpenAlgo citation pin in this repo does not state a position-size formula. | Not used. |
 | Invent option-seller max loss from premium | Options mechanics reference says the taxonomy may not map. Options money owner is an explicit none. NFO pricing says a short-call bound is unspecified. | C4 and C11 stay blocked. Long rows use premium distance only as a candidate, still dashed until YES. |
-| Treat the FOUNDER CANDIDATE algebra as a primary source | No exchange, broker, or paper is quoted as the source of those identities | Left as a proposal. BLOCKER stays. Display stays dashed until a lock-log YES. |
+| Treat every FOUNDER CANDIDATE row as locked because Nautilus exists | The source solves size from a stop for a generic instrument. It does not state Coin-M inverse, option premium, option-short max loss, CDS, MCX, a default percent, or a fee schedule | YES only on C0 percent path, C1, C2 when lot is known, C7, C8. Other rows stay dashed. |
+| Treat OpenAlgo as the sizer | Founder: OpenAlgo has no FixedRisk. Lot conversion and the sandbox margin check run after a size. AGPL, so this file does not paste that code | Used only as the India lot display and the post-size margin gate. |
 | Use the Binance.US post-fill line `sell_qty × (avg_sell_price − avg_buy_price)` as the pre-trade law for every book | That sentence is Binance.US spot, after the fill, USD-quoted | Named under C7 as a shape the founder may reuse for matching-quote spot. Not copied into other profiles. |
 | Paste the Coin-M line `contracts × contract_value × (1/entry − 1/exit)` into the candidate | `futures-coinm/MECHANICS.md` says that line is unverified general knowledge and must not be used | C9 has no identity. Outputs stay —. |
 | Default `risk_pct` to 1% or 1.1% | No source. The default-percent lock is still open | No default. Empty percent stays —. |

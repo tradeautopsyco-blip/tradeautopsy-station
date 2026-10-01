@@ -49,4 +49,8 @@ public final class FloatingNotchHost: FloatingNotchHosting {
     public func reportBrokerBridgeOutcome(result: String?, error: String?) {
         launcher.viewModel.reportBrokerBridgeOutcome(result: result, error: error)
     }
+
+    public func performHotkey(_ actionId: String) {
+        launcher.viewModel.performDeskHotkey(actionId)
+    }
 }
