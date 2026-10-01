@@ -76,6 +76,8 @@ struct BarLiveStateResponse: Decodable {
     let lastSyncAt: String?
     let declarationSubmitBlocked: Bool?
     let pendingDeclaration: BarPendingDeclaration?
+    let pendingDeclarations: [BarPendingDeclaration]
+    let selectedDeclarationId: String?
     let archetype: String?
     let slStatus: String?
     let slFailureReason: String?
@@ -122,6 +124,8 @@ struct BarLiveStateResponse: Decodable {
         case lastSyncAt = "last_sync_at"
         case declarationSubmitBlocked = "declaration_submit_blocked"
         case pendingDeclaration = "pending_declaration"
+        case pendingDeclarations = "pending_declarations"
+        case selectedDeclarationId = "selected_declaration_id"
         case archetype
         case slStatus = "sl_status"
         case slFailureReason = "sl_failure_reason"
@@ -164,6 +168,9 @@ struct BarLiveStateResponse: Decodable {
         lastSyncAt = try c.decodeIfPresent(String.self, forKey: .lastSyncAt)
         declarationSubmitBlocked = try c.decodeIfPresent(Bool.self, forKey: .declarationSubmitBlocked)
         pendingDeclaration = try c.decodeIfPresent(BarPendingDeclaration.self, forKey: .pendingDeclaration)
+        pendingDeclarations =
+            try c.decodeIfPresent([BarPendingDeclaration].self, forKey: .pendingDeclarations) ?? []
+        selectedDeclarationId = try c.decodeIfPresent(String.self, forKey: .selectedDeclarationId)
         archetype = try c.decodeIfPresent(String.self, forKey: .archetype)
         slStatus = try c.decodeIfPresent(String.self, forKey: .slStatus)
         slFailureReason = try c.decodeIfPresent(String.self, forKey: .slFailureReason)
@@ -205,6 +212,8 @@ struct BarLiveStateResponse: Decodable {
         lastSyncAt: String?,
         declarationSubmitBlocked: Bool?,
         pendingDeclaration: BarPendingDeclaration?,
+        pendingDeclarations: [BarPendingDeclaration] = [],
+        selectedDeclarationId: String? = nil,
         archetype: String? = nil,
         slStatus: String? = nil,
         slFailureReason: String? = nil,
@@ -243,6 +252,8 @@ struct BarLiveStateResponse: Decodable {
         self.lastSyncAt = lastSyncAt
         self.declarationSubmitBlocked = declarationSubmitBlocked
         self.pendingDeclaration = pendingDeclaration
+        self.pendingDeclarations = pendingDeclarations
+        self.selectedDeclarationId = selectedDeclarationId
         self.archetype = archetype
         self.slStatus = slStatus
         self.slFailureReason = slFailureReason

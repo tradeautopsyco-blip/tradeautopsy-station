@@ -31,6 +31,10 @@ struct BarPlanStateView: View {
         VStack(alignment: .leading, spacing: 12) {
             BarUndeclaredPositionBanner(position: payload?.undeclaredPosition)
 
+            if !workingPendingRows.isEmpty {
+                workingPendingList
+            }
+
             if let pos = payload?.undeclaredPosition,
                let ccy = viewModel.formatQuoteCurrency
                 ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug)
@@ -49,7 +53,7 @@ struct BarPlanStateView: View {
                         )
                     )
                 )
-            } else if let pending = payload?.pendingDeclaration,
+            } else if let pending = viewModel.workingPendingDeclaration,
                       let ccy = viewModel.formatQuoteCurrency
                         ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: viewModel.resolvedDeskSlug)
             {
@@ -93,6 +97,10 @@ struct BarPlanStateView: View {
 
             if shouldShowDeclareBeforeTradeCTA {
                 declareBeforeTradeCTA
+            }
+
+            if shouldShowPlanAnotherCTA {
+                planAnotherCTA
             }
 
             if shouldShowInterference { interferenceQuestionBlock }
@@ -389,14 +397,72 @@ struct BarPlanStateView: View {
         )
     }
 
+    private var workingPendingRows: [BarPendingDeclaration] {
+        let rows = payload?.pendingDeclarations ?? []
+        if !rows.isEmpty { return rows }
+        if let one = payload?.pendingDeclaration { return [one] }
+        return []
+    }
+
     private var shouldShowDeclareBeforeTradeCTA: Bool {
-        BarLiveTradeDeclareCTA.shouldShow(
+        guard workingPendingRows.isEmpty else { return false }
+        return BarLiveTradeDeclareCTA.shouldShow(
             surfacePhase: viewModel.barSurfacePhase,
             showingDeclarationForm: viewModel.showingDeclarationForm,
             matchedDeclarationId: payload?.matchedDeclarationId,
-            hasPendingDeclaration: payload?.pendingDeclaration != nil,
+            hasPendingDeclaration: false,
             hasOptimisticArmed: viewModel.barOptimisticArmedDisplay != nil,
         )
+    }
+
+    private var shouldShowPlanAnotherCTA: Bool {
+        guard !workingPendingRows.isEmpty else { return false }
+        if viewModel.showingDeclarationForm { return false }
+        if viewModel.barSurfacePhase == .armed { return false }
+        if viewModel.barOptimisticArmedDisplay != nil { return false }
+        return true
+    }
+
+    private var workingPendingList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("OPEN PLANS")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(Color.white.opacity(0.38))
+                .tracking(0.6)
+            ForEach(workingPendingRows, id: \.id) { row in
+                let selected = viewModel.workingPendingDeclaration?.id == row.id
+                Button {
+                    viewModel.selectWorkingDeclaration(id: row.id)
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("\(row.symbol) \(row.side)")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        Text(row.status.uppercased())
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if selected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(BarDS.Accent.teal)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(selected ? BarDS.Accent.teal.opacity(0.08) : Color.white.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private var planAnotherCTA: some View {
+        BarBigButton(label: "Plan another →", style: .outline) {
+            viewModel.presentBarDeclarationForm()
+        }
+        .padding(.horizontal, 8)
     }
 
     private var declareBeforeTradeCTA: some View {

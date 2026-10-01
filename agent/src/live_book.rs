@@ -2,6 +2,10 @@
 //!
 //! N1: declare / cancel / protective / fill **apply** here. Console is write-behind.
 //! This module does not compute PnL, charges, or notional.
+//!
+//! Many tickets: `notch.pending_declarations` is the list. Declare appends.
+//! `notch.pending_declaration` mirrors the selected row for older readers.
+//! DualNoBlend stays per book — this list does not blend quote currencies.
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Map, Value};
@@ -56,10 +60,12 @@ pub enum LiveBookEvent {
         broker: Option<String>,
         filled_at_iso: Option<String>,
     },
-    /// Wave 2 — freeze last vs invalidation/target on the declaration snapshot when the session ends.
+    /// Wave 2 — freeze last vs invalidation/target on declaration snapshots.
+    /// `declaration_id` set: that row only. Absent: every pending row not frozen yet.
     CaptureWorkingCondition {
         last: Option<f64>,
         last_status: String,
+        declaration_id: Option<String>,
     },
 }
 
@@ -68,7 +74,11 @@ impl LiveBook {
         Self::default()
     }
 
-    pub fn hydrate(&self, value: Value) {
+    pub fn hydrate(&self, mut value: Value) {
+        if value.get("notch").and_then(Value::as_object).is_some() {
+            normalize_pending_slots(&mut value);
+            mirror_selected(&mut value);
+        }
         let mut g = self.inner.lock().expect("live book");
         g.value = Some(value);
         g.hydrated_at = Some(Instant::now());
@@ -134,12 +144,15 @@ fn empty_book() -> Value {
         "notch": {
             "plan_state": "",
             "sync_state": "GREEN",
-            "pending_declaration": Value::Null
+            "pending_declaration": Value::Null,
+            "pending_declarations": [],
+            "selected_declaration_id": Value::Null
         }
     })
 }
 
 fn apply_event(book: &mut Value, event: LiveBookEvent) {
+    normalize_pending_slots(book);
     match event {
         LiveBookEvent::Declare {
             local_id,
@@ -185,40 +198,47 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
                     .expect("pending object")
                     .insert("ticket".into(), ticket);
             }
-            notch_map(book).insert("pending_declaration".into(), pending);
+            let selected = local_id.clone();
+            push_pending(book, pending);
+            set_selected(book, &selected);
         }
         LiveBookEvent::ReconcileArchive {
             local_id,
             server_id,
         } => {
-            if server_id.is_empty() {
-                return;
-            }
-            if pending_id(book).as_deref() == Some(local_id.as_str()) {
-                if let Some(obj) = pending_map(book) {
+            if !server_id.is_empty() {
+                if let Some(obj) = row_map_mut(book, &local_id) {
                     obj.insert("id".into(), json!(server_id));
                 }
+                if selected_id(book).as_deref() == Some(local_id.as_str()) {
+                    set_selected(book, &server_id);
+                }
+                rename_matched(book, &local_id, &server_id);
             }
         }
         LiveBookEvent::Cancel { declaration_id } => {
-            if pending_id(book).as_deref() == Some(declaration_id.as_str()) {
-                notch_map(book).insert("pending_declaration".into(), Value::Null);
+            remove_pending(book, &declaration_id);
+            if selected_id(book).as_deref() == Some(declaration_id.as_str()) {
+                match last_pending_id(book) {
+                    Some(id) => set_selected(book, &id),
+                    None => clear_selected(book),
+                }
             }
+            clear_matched_if(book, &declaration_id);
         }
         LiveBookEvent::Protective {
             declaration_id,
             stop_loss,
         } => {
-            let matches = match declaration_id.as_deref() {
-                None | Some("") => pending_id(book).is_some(),
-                Some(id) => pending_id(book).as_deref() == Some(id),
-            };
-            if !matches {
-                return;
-            }
             if let Some(sl) = stop_loss {
-                if let Some(obj) = pending_map(book) {
-                    obj.insert("stop_loss".into(), json!(sl));
+                let target = match declaration_id.as_deref() {
+                    Some(id) if !id.is_empty() => Some(id.to_string()),
+                    _ => selected_id(book),
+                };
+                if let Some(id) = target {
+                    if let Some(obj) = row_map_mut(book, &id) {
+                        obj.insert("stop_loss".into(), json!(sl));
+                    }
                 }
             }
         }
@@ -230,107 +250,47 @@ fn apply_event(book: &mut Value, event: LiveBookEvent) {
             broker,
             filled_at_iso,
         } => {
-            let pending_sym = pending_string(book, "symbol");
-            let pending_side = pending_string(book, "side");
-            let symbol_ok = pending_sym
-                .as_ref()
-                .is_some_and(|s| s.eq_ignore_ascii_case(&symbol));
-            let side_ok = pending_side
-                .as_ref()
-                .is_some_and(|s| s.eq_ignore_ascii_case(&side));
-            if symbol_ok && side_ok {
-                let prev_qty = pending_f64(book, "filled_qty").unwrap_or(0.0);
-                let prev_avg = pending_f64(book, "avg_fill");
-                let new_qty = prev_qty + qty;
-                let new_avg = match (prev_avg, price, qty > 0.0, new_qty > 0.0) {
-                    (_, Some(px), true, true) if prev_qty <= 0.0 => Some(px),
-                    (Some(avg), Some(px), true, true) => {
-                        Some((avg * prev_qty + px * qty) / new_qty)
-                    }
-                    (avg, None, _, _) => avg,
-                    (_, Some(px), _, _) => Some(px),
+            let matches = matching_pending_ids(book, &symbol, &side);
+            if matches.len() == 1 {
+                let id = matches[0].clone();
+                if let Some(obj) = row_map_mut(book, &id) {
+                    apply_fill_fields(obj, &symbol, &side, qty, price);
+                }
+                notch_map(book).insert("matched_declaration_id".into(), json!(id));
+            } else {
+                let qty_int = if qty.fract() == 0.0 {
+                    json!(qty as i64)
+                } else {
+                    json!(qty)
                 };
-                if let Some(obj) = pending_map(book) {
-                    obj.insert("fill_symbol".into(), json!(symbol));
-                    obj.insert("fill_side".into(), json!(side.to_ascii_uppercase()));
-                    obj.insert("filled_qty".into(), json!(new_qty));
-                    if let Some(avg) = new_avg {
-                        obj.insert("avg_fill".into(), json!(avg));
-                    }
-                }
-                if let Some(id) = pending_id(book) {
-                    notch_map(book).insert("matched_declaration_id".into(), json!(id));
-                }
-                return;
+                notch_map(book).insert(
+                    "undeclared_position".into(),
+                    json!({
+                        "symbol": symbol,
+                        "side": side,
+                        "quantity": qty_int,
+                        "price": price,
+                        "filledAtMs": filled_at_iso,
+                        "broker": broker,
+                    }),
+                );
             }
-            let qty_int = if qty.fract() == 0.0 {
-                json!(qty as i64)
-            } else {
-                json!(qty)
-            };
-            notch_map(book).insert(
-                "undeclared_position".into(),
-                json!({
-                    "symbol": symbol,
-                    "side": side,
-                    "quantity": qty_int,
-                    "price": price,
-                    "filledAtMs": filled_at_iso,
-                    "broker": broker,
-                }),
-            );
         }
-        LiveBookEvent::CaptureWorkingCondition { last, last_status } => {
-            let Some(obj) = pending_map(book) else {
-                return;
+        LiveBookEvent::CaptureWorkingCondition {
+            last,
+            last_status,
+            declaration_id,
+        } => {
+            let ids = match declaration_id.as_deref() {
+                Some(id) if !id.is_empty() => vec![id.to_string()],
+                _ => pending_ids(book),
             };
-            let Some(plan) = obj.get_mut("plan_snapshot").and_then(Value::as_object_mut) else {
-                return;
-            };
-            if plan.contains_key("condition_at_close") {
-                return;
+            for id in ids {
+                freeze_condition_on_row(book, &id, last, &last_status);
             }
-            let side_buy = pending_string(book, "side")
-                .map(|s| !s.to_ascii_uppercase().contains("SELL"))
-                .unwrap_or(true);
-            let inv_kind = plan
-                .get("invalidation_kind")
-                .or_else(|| plan.get("invalidation").and_then(|i| i.get("kind")))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            let inv_price = json_f64(plan.get("invalidation_price"))
-                .or_else(|| {
-                    plan.get("invalidation")
-                        .and_then(|i| json_f64(i.get("price")))
-                });
-            let target = json_f64(obj.get("target")).or_else(|| json_f64(plan.get("target_price")));
-            let status = last_status.trim().to_ascii_lowercase();
-            let captured = status != "not_captured"
-                && last.is_some_and(|v| v.is_finite() && v > 0.0)
-                && working_last_bound(&status);
-            let inv_state = if captured {
-                working_vs_invalidation(side_buy, last, &status, inv_kind.as_deref(), inv_price)
-            } else {
-                "not_captured".to_string()
-            };
-            let tgt_state = if captured {
-                working_vs_target(side_buy, last, &status, target)
-            } else {
-                "not_captured".to_string()
-            };
-            plan.insert(
-                "condition_at_close".into(),
-                json!({
-                    "last": last.filter(|v| v.is_finite() && *v > 0.0),
-                    "last_status": if captured { status } else { "not_captured" },
-                    "invalidation_state": inv_state,
-                    "target_state": tgt_state,
-                }),
-            );
         }
     }
+    mirror_selected(book);
 }
 
 fn working_last_bound(status: &str) -> bool {
@@ -400,6 +360,267 @@ fn notch_map(book: &mut Value) -> &mut Map<String, Value> {
         *notch = json!({});
     }
     notch.as_object_mut().expect("notch object")
+}
+
+fn row_id(row: &Value) -> Option<String> {
+    row.get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn normalize_pending_slots(book: &mut Value) {
+    let needs_array = book
+        .get("notch")
+        .and_then(|n| n.get("pending_declarations"))
+        .and_then(Value::as_array)
+        .is_none();
+    if needs_array {
+        let legacy = book
+            .get("notch")
+            .and_then(|n| n.get("pending_declaration"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let rows = if legacy.is_null() {
+            Vec::new()
+        } else {
+            vec![legacy]
+        };
+        notch_map(book).insert("pending_declarations".into(), json!(rows));
+    }
+    let needs_sel = book
+        .get("notch")
+        .and_then(|n| n.get("selected_declaration_id"))
+        .is_none();
+    if needs_sel {
+        let sel = pending_id(book).map(Value::from).unwrap_or(Value::Null);
+        notch_map(book).insert("selected_declaration_id".into(), sel);
+    }
+}
+
+fn mirror_selected(book: &mut Value) {
+    let sel = selected_id(book);
+    let mirror = sel
+        .as_deref()
+        .and_then(|id| row_by_id(book, id))
+        .unwrap_or(Value::Null);
+    notch_map(book).insert("pending_declaration".into(), mirror);
+    if let Some(id) = sel {
+        notch_map(book).insert("selected_declaration_id".into(), json!(id));
+    }
+}
+
+fn row_by_id(book: &Value, id: &str) -> Option<Value> {
+    book.get("notch")
+        .and_then(|n| n.get("pending_declarations"))
+        .and_then(Value::as_array)
+        .and_then(|rows| {
+            rows.iter()
+                .find(|r| row_id(r).as_deref() == Some(id))
+                .cloned()
+        })
+}
+
+fn pending_ids(book: &Value) -> Vec<String> {
+    book.get("notch")
+        .and_then(|n| n.get("pending_declarations"))
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(row_id)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn push_pending(book: &mut Value, row: Value) {
+    let notch = notch_map(book);
+    if !notch.contains_key("pending_declarations") {
+        notch.insert("pending_declarations".into(), json!([]));
+    }
+    if let Some(rows) = notch
+        .get_mut("pending_declarations")
+        .and_then(Value::as_array_mut)
+    {
+        rows.push(row);
+    }
+}
+
+fn remove_pending(book: &mut Value, id: &str) {
+    let notch = notch_map(book);
+    let Some(rows) = notch
+        .get_mut("pending_declarations")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    rows.retain(|r| row_id(r).as_deref() != Some(id));
+}
+
+fn last_pending_id(book: &Value) -> Option<String> {
+    book.get("notch")
+        .and_then(|n| n.get("pending_declarations"))
+        .and_then(Value::as_array)
+        .and_then(|rows| rows.last())
+        .and_then(row_id)
+}
+
+fn selected_id(book: &Value) -> Option<String> {
+    book.get("notch")
+        .and_then(|n| n.get("selected_declaration_id"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| pending_id(book))
+}
+
+fn set_selected(book: &mut Value, id: &str) {
+    notch_map(book).insert("selected_declaration_id".into(), json!(id));
+}
+
+fn clear_selected(book: &mut Value) {
+    let notch = notch_map(book);
+    notch.insert("selected_declaration_id".into(), Value::Null);
+    notch.insert("pending_declaration".into(), Value::Null);
+}
+
+fn row_map_mut<'a>(book: &'a mut Value, id: &str) -> Option<&'a mut Map<String, Value>> {
+    let notch = notch_map(book);
+    let rows = notch.get_mut("pending_declarations")?.as_array_mut()?;
+    for row in rows.iter_mut() {
+        if row_id(row).as_deref() == Some(id) {
+            return row.as_object_mut();
+        }
+    }
+    None
+}
+
+fn rename_matched(book: &mut Value, local_id: &str, server_id: &str) {
+    let notch = notch_map(book);
+    let matched = notch
+        .get("matched_declaration_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if matched == Some(local_id) {
+        notch.insert("matched_declaration_id".into(), json!(server_id));
+    }
+}
+
+fn clear_matched_if(book: &mut Value, id: &str) {
+    let notch = notch_map(book);
+    let matched = notch
+        .get("matched_declaration_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if matched == Some(id) {
+        notch.insert("matched_declaration_id".into(), Value::Null);
+    }
+}
+
+fn matching_pending_ids(book: &Value, symbol: &str, side: &str) -> Vec<String> {
+    book.get("notch")
+        .and_then(|n| n.get("pending_declarations"))
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter(|r| {
+                    let sym = r.get("symbol").and_then(Value::as_str);
+                    let sd = r.get("side").and_then(Value::as_str);
+                    sym.is_some_and(|s| s.eq_ignore_ascii_case(symbol))
+                        && sd.is_some_and(|s| s.eq_ignore_ascii_case(side))
+                })
+                .filter_map(row_id)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn apply_fill_fields(
+    obj: &mut Map<String, Value>,
+    symbol: &str,
+    side: &str,
+    qty: f64,
+    price: Option<f64>,
+) {
+    let prev_qty = json_f64(obj.get("filled_qty")).unwrap_or(0.0);
+    let prev_avg = json_f64(obj.get("avg_fill"));
+    let new_qty = prev_qty + qty;
+    let new_avg = match (prev_avg, price, qty > 0.0, new_qty > 0.0) {
+        (_, Some(px), true, true) if prev_qty <= 0.0 => Some(px),
+        (Some(avg), Some(px), true, true) => Some((avg * prev_qty + px * qty) / new_qty),
+        (avg, None, _, _) => avg,
+        (_, Some(px), _, _) => Some(px),
+    };
+    obj.insert("fill_symbol".into(), json!(symbol));
+    obj.insert("fill_side".into(), json!(side.to_ascii_uppercase()));
+    obj.insert("filled_qty".into(), json!(new_qty));
+    if let Some(avg) = new_avg {
+        obj.insert("avg_fill".into(), json!(avg));
+    }
+}
+
+fn freeze_condition_on_row(
+    book: &mut Value,
+    id: &str,
+    last: Option<f64>,
+    last_status: &str,
+) {
+    let Some(obj) = row_map_mut(book, id) else {
+        return;
+    };
+    if obj
+        .get("plan_snapshot")
+        .and_then(|p| p.as_object())
+        .is_some_and(|p| p.contains_key("condition_at_close"))
+    {
+        return;
+    }
+    let side_buy = obj
+        .get("side")
+        .and_then(Value::as_str)
+        .map(|s| !s.to_ascii_uppercase().contains("SELL"))
+        .unwrap_or(true);
+    let row_target = json_f64(obj.get("target"));
+    let Some(plan) = obj.get_mut("plan_snapshot").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let inv_kind = plan
+        .get("invalidation_kind")
+        .or_else(|| plan.get("invalidation").and_then(|i| i.get("kind")))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let inv_price = json_f64(plan.get("invalidation_price"))
+        .or_else(|| plan.get("invalidation").and_then(|i| json_f64(i.get("price"))));
+    let target = row_target.or_else(|| json_f64(plan.get("target_price")));
+    let status = last_status.trim().to_ascii_lowercase();
+    let captured = status != "not_captured"
+        && last.is_some_and(|v| v.is_finite() && v > 0.0)
+        && working_last_bound(&status);
+    let inv_state = if captured {
+        working_vs_invalidation(side_buy, last, &status, inv_kind.as_deref(), inv_price)
+    } else {
+        "not_captured".to_string()
+    };
+    let tgt_state = if captured {
+        working_vs_target(side_buy, last, &status, target)
+    } else {
+        "not_captured".to_string()
+    };
+    plan.insert(
+        "condition_at_close".into(),
+        json!({
+            "last": last.filter(|v| v.is_finite() && *v > 0.0),
+            "last_status": if captured { status } else { "not_captured".to_string() },
+            "invalidation_state": inv_state,
+            "target_state": tgt_state,
+        }),
+    );
 }
 
 fn pending_map(book: &mut Value) -> Option<&mut Map<String, Value>> {
@@ -873,6 +1094,7 @@ mod tests {
         book.apply(LiveBookEvent::CaptureWorkingCondition {
             last: Some(1405.0),
             last_status: "fresh".into(),
+            declaration_id: None,
         });
         let snap = book.snapshot().unwrap();
         let at_close = &pending(&snap)["plan_snapshot"]["condition_at_close"];
@@ -883,6 +1105,7 @@ mod tests {
         book.apply(LiveBookEvent::CaptureWorkingCondition {
             last: Some(9999.0),
             last_status: "fresh".into(),
+            declaration_id: None,
         });
         assert_eq!(
             pending(&book.snapshot().unwrap())["plan_snapshot"]["condition_at_close"]["last"],
@@ -911,8 +1134,10 @@ mod tests {
         book.apply(LiveBookEvent::CaptureWorkingCondition {
             last: Some(1405.0),
             last_status: "unavailable".into(),
+            declaration_id: None,
         });
-        let at_close = &pending(&book.snapshot().unwrap())["plan_snapshot"]["condition_at_close"];
+        let snap = book.snapshot().unwrap();
+        let at_close = &pending(&snap)["plan_snapshot"]["condition_at_close"];
         assert_eq!(at_close["last_status"], "not_captured");
         assert_eq!(at_close["invalidation_state"], "not_captured");
     }
@@ -956,5 +1181,161 @@ mod tests {
         assert_ne!(pending["ticket"]["path"], "/fapi/v1/order");
         assert_eq!(pending["book_id"], "binance-com-usdm");
         assert_eq!(pending["status"], "PENDING");
+    }
+
+    fn pending_list(book: &Value) -> &Value {
+        &book["notch"]["pending_declarations"]
+    }
+
+    #[test]
+    fn second_declare_appends_and_keeps_first_id() {
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::Declare {
+            local_id: "first".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            quantity: 1.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: None,
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Declare {
+            local_id: "second".into(),
+            symbol: "TCS".into(),
+            side: "SELL".into(),
+            quantity: 2.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: None,
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        let snap = book.snapshot().expect("book");
+        let rows = pending_list(&snap).as_array().expect("array");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["id"], "first");
+        assert_eq!(rows[0]["symbol"], "RELIANCE");
+        assert_eq!(rows[1]["id"], "second");
+        assert_eq!(pending(&snap)["id"], "second");
+        assert_eq!(snap["notch"]["selected_declaration_id"], "second");
+    }
+
+    #[test]
+    fn cancel_second_leaves_first_pending() {
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::Declare {
+            local_id: "first".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            quantity: 1.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: Some(1400.0),
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Declare {
+            local_id: "second".into(),
+            symbol: "TCS".into(),
+            side: "SELL".into(),
+            quantity: 1.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: Some(3500.0),
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Cancel {
+            declaration_id: "second".into(),
+        });
+        let snap = book.snapshot().unwrap();
+        let rows = pending_list(&snap).as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["id"], "first");
+        assert_eq!(rows[0]["stop_loss"], 1400.0);
+        assert_eq!(pending(&snap)["id"], "first");
+    }
+
+    #[test]
+    fn protective_by_id_does_not_patch_other_row() {
+        let book = LiveBook::new();
+        book.apply(LiveBookEvent::Declare {
+            local_id: "a".into(),
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            quantity: 1.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: Some(1400.0),
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Declare {
+            local_id: "b".into(),
+            symbol: "TCS".into(),
+            side: "BUY".into(),
+            quantity: 1.0,
+            declaration_kind: "intraday".into(),
+            stop_loss: Some(3500.0),
+            target: None,
+            protective_sl_consent: false,
+            plan_snapshot: None,
+            book_id: None,
+            ticket_intent: None,
+        });
+        book.apply(LiveBookEvent::Protective {
+            declaration_id: Some("a".into()),
+            stop_loss: Some(1390.0),
+        });
+        let snap = book.snapshot().unwrap();
+        let rows = pending_list(&snap).as_array().unwrap();
+        assert_eq!(rows[0]["stop_loss"], 1390.0);
+        assert_eq!(rows[1]["stop_loss"], 3500.0);
+    }
+
+    #[test]
+    fn fill_with_two_same_symbol_side_stays_undeclared() {
+        let book = LiveBook::new();
+        for id in ["d1", "d2"] {
+            book.apply(LiveBookEvent::Declare {
+                local_id: id.into(),
+                symbol: "RELIANCE".into(),
+                side: "BUY".into(),
+                quantity: 1.0,
+                declaration_kind: "intraday".into(),
+                stop_loss: None,
+                target: None,
+                protective_sl_consent: false,
+                plan_snapshot: None,
+                book_id: None,
+                ticket_intent: None,
+            });
+        }
+        book.apply(LiveBookEvent::Fill {
+            symbol: "RELIANCE".into(),
+            side: "BUY".into(),
+            qty: 1.0,
+            price: Some(1420.0),
+            broker: None,
+            filled_at_iso: None,
+        });
+        let snap = book.snapshot().unwrap();
+        assert!(snap["notch"]["undeclared_position"].is_object());
+        assert!(snap["notch"]["matched_declaration_id"].is_null());
+        let rows = pending_list(&snap).as_array().unwrap();
+        assert!(rows[0].get("filled_qty").is_none());
+        assert!(rows[1].get("filled_qty").is_none());
     }
 }
