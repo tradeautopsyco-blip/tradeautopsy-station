@@ -7,7 +7,7 @@ Do not treat items below as specified formulas or broker capabilities until refe
 
 ---
 
-1. **SL suggestor** — UI + margin % input on Plan; stop/size stay **—** until `POSITION-SIZING.md` cites a formula (DualNoBlend per book).
+1. **SL suggestor** — UI + margin % input on Plan; stop/size stay **—** until a founder YES is recorded in the `POSITION-SIZING.md` lock log (the FOUNDER CANDIDATE section is not that YES; DualNoBlend per book).
 
 2. **Indian options UI** — Kotak NFO options cockpit on declare; Working adds `BarOptionsGlanceStrip` when cockpit surface applies (not USDM math).
 
@@ -17,4 +17,4 @@ Do not treat items below as specified formulas or broker capabilities until refe
 
 5. **Tags + playbooks + live conditions** — Local tags/playbooks on Plan; condition fires per `declaration_id` + list chips; Console authoring still TBD.
 
-6. **User-custom hotkeys** — Prefs UI + `DeskHotkeyPreferences` storage; ⌥Space defaults remain until product maps saved bindings in `HotkeyRegistrar`.
+6. **User-custom hotkeys** — Prefs UI + `DeskHotkeyPreferences` storage. Stable action ids are proposed in [`hotkey-actions.md`](./hotkey-actions.md). Prefs stay empty (no default map) until the founder picks. `HotkeyRegistrar` still does not apply saved bindings.

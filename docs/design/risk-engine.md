@@ -1,6 +1,6 @@
 # Risk engine and position sizing — options
 
-**Status:** partial — `POST /api/daemon/risk/preview` + Plan risk strip (Tradeture layout, honest dashes). `authored_qty` stays null until `POSITION-SIZING.md` cites a formula.
+**Status:** partial — `POST /api/daemon/risk/preview` + Plan risk strip (Tradeture layout, honest dashes). `authored_qty` stays null until the founder locks a row in `POSITION-SIZING.md`. The FOUNDER CANDIDATE section in that file is a proposal, not that lock.
 **Date:** 2026-10-01
 **Audience:** the next coding agent and the founder.
 
@@ -257,7 +257,7 @@ POST /api/daemon/risk/preview
 }
 ```
 
-`authored_qty` stays null until `POSITION-SIZING.md` cites a primary source for the budget→qty rule. `risk_money` for a **typed** qty may call the same identity as `BarPlanLadder` (already tested) because that is measurement of typed numbers, not a new percent-of-capital rule. Put that call in the agent when the preview exists so Swift stops being the only owner. Until the route exists, leave the Swift ladder where it is.
+`authored_qty` stays null until the founder records a YES in the `POSITION-SIZING.md` lock log. The FOUNDER CANDIDATE section is not a primary source and is not that YES. `risk_money` for a **typed** qty may call the same identity as `BarPlanLadder` (already tested) because that is measurement of typed numbers, not a new percent-of-capital rule. Put that call in the agent when the preview exists so Swift stops being the only owner. Until the route exists, leave the Swift ladder where it is.
 
 Percent of account uses the book’s quote currency. A missing quote dashes the percent (DualNoBlend). Leverage multiplies notional only after a reference says so for that calc profile. Until then the leverage row shows the position readout or a dash.
 

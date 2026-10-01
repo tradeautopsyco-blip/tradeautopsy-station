@@ -73,7 +73,7 @@ The empirical science behind TradeAutopsy's scoring and intervention model.
   calibration references.
 - What belongs here: signal weight justifications, threshold calibration citations,
   behavioral bias definitions, intervention-timing science.
-- [`behavioral-science/POSITION-SIZING.md`](./behavioral-science/POSITION-SIZING.md) — pre-trade budget→qty, fees, and leverage multiplier are **NOT SPECIFIED IN SOURCE**. Design options: [`docs/design/risk-engine.md`](../design/risk-engine.md).
+- [`behavioral-science/POSITION-SIZING.md`](./behavioral-science/POSITION-SIZING.md) — pre-trade budget→qty, fees, and leverage multiplier are **NOT SPECIFIED IN SOURCE**. A **FOUNDER CANDIDATE** section proposes identities for a yes/no lock and does not license implementation. Design options: [`docs/design/risk-engine.md`](../design/risk-engine.md).
 
 ---
 
