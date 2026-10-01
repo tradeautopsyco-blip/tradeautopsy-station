@@ -121,6 +121,7 @@ public struct JournalDeclarationCard: Equatable, Identifiable, Sendable {
     public let attachments: JournalAttachments
     public let citedNet: Double?
     public let citedCurrency: String?
+    public let n2DaySheet: JournalN2DaySheet?
 
     public init(
         id: String,
@@ -137,7 +138,8 @@ public struct JournalDeclarationCard: Equatable, Identifiable, Sendable {
         fidelity: JournalFidelity,
         attachments: JournalAttachments,
         citedNet: Double?,
-        citedCurrency: String?
+        citedCurrency: String?,
+        n2DaySheet: JournalN2DaySheet? = nil
     ) {
         self.id = id
         self.status = status
@@ -154,12 +156,18 @@ public struct JournalDeclarationCard: Equatable, Identifiable, Sendable {
         self.attachments = attachments
         self.citedNet = citedNet
         self.citedCurrency = citedCurrency
+        self.n2DaySheet = n2DaySheet
     }
 
     public var isMatched: Bool { status == "matched" }
     public var isPending: Bool { status == "pending" }
     public var isUnmatched: Bool { status == "expired" || status == "cancelled" }
-    public var isPostDue: Bool { isMatched && notes.postIsEmpty }
+    public var isPostDue: Bool {
+        guard isMatched else { return false }
+        if let n2 = n2DaySheet, !n2.debrief.momentCEmpty { return false }
+        if let n2 = n2DaySheet, n2.debrief.momentCEmpty { return true }
+        return notes.postIsEmpty
+    }
 }
 
 public struct JournalDaySheet: Equatable, Sendable {

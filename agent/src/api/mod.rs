@@ -28,6 +28,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod bar;
+mod journal_n2;
+mod morning_brief;
 mod broker_credentials;
 mod broker_sync;
 mod broker_sync_state;
@@ -90,6 +92,7 @@ pub struct AppState {
     /// One sqlite row next to audit. Apply always loads this store.
     pub kill_policy: KillPolicyStore,
     pub today_service: Arc<crate::today::TodayService>,
+    pub journal_n2: crate::journal_n2::JournalN2Store,
     /// In-flight WorkOS device grant (`device_code` never leaves this process).
     pub device_login_pending: Arc<std::sync::Mutex<Option<crate::DeviceLoginPending>>>,
     /// Station Caller tokens (Keychain in prod; memory in tests when injected).
@@ -268,6 +271,11 @@ pub fn router(state: AppState) -> Router {
             post(broker_credentials::present_handler),
         )
         .route("/api/daemon/today", get(today::handler))
+        .route("/api/daemon/morning-brief", get(morning_brief::handler))
+        .route(
+            "/api/daemon/journal/condition-fire",
+            post(journal_n2::condition_fire_handler),
+        )
         .route("/api/daemon/positions", get(positions::handler))
         .route(
             "/api/daemon/journal/toolbar-capture/accept",

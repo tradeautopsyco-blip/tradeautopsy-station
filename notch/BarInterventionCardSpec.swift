@@ -9,8 +9,8 @@ import Foundation
 enum BarInterventionCardSpec {
     enum PrimaryAccessory: Equatable {
         case none
-        /// Kill / enforcement — web Bar until Notch has full override UX (#122).
-        case manageInWebBar
+        /// Kill / enforcement — opens Notch Kill (Wave 7; no web Bar URL).
+        case openKill
     }
 
     struct Chrome: Equatable {
@@ -41,7 +41,7 @@ enum BarInterventionCardSpec {
             // T5 K3 — intervention must not re-open Notch `place_sl`.
             return .none
         case "bar_kill_switch", "kill_switch":
-            return .manageInWebBar
+            return .openKill
         default:
             return .none
         }

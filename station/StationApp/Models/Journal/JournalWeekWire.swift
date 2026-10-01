@@ -30,6 +30,7 @@ enum JournalWeekWire {
         var notes: Notes?
         var fidelity: Fidelity?
         var attachments: Attachments?
+        var n2DaySheet: JournalN2Wire.DaySheet?
 
         enum CodingKeys: String, CodingKey {
             case id, status, symbol, side, quantity, snapshot, notes, fidelity, attachments
@@ -37,6 +38,7 @@ enum JournalWeekWire {
             case quantityFilled = "quantity_filled"
             case localDate = "local_date"
             case protectiveSlConsent = "protective_sl_consent"
+            case n2DaySheet = "n2_day_sheet"
         }
     }
 
@@ -183,7 +185,8 @@ enum JournalWeekWire {
                 voice: item.attachments?.voice ?? false
             ),
             citedNet: nil,
-            citedCurrency: nil
+            citedCurrency: nil,
+            n2DaySheet: JournalN2Wire.map(item.n2DaySheet)
         )
     }
 }

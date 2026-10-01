@@ -1,6 +1,7 @@
 //! Bar v1 — forward Notch calls to hosted `/api/bar/v1/*` (Station Bearer identity).
 
 use crate::api::capture::{forward_daemon_json_with_optional_429_retry, upstream_json_response};
+use crate::api::journal_n2::enrich_week_declarations;
 use crate::api::AppState;
 use crate::live_book::LiveBookEvent;
 use axum::extract::{Query, State};
@@ -89,6 +90,8 @@ pub async fn declarations_list_handler(
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
     let upstream_path = declarations_upstream_path(&params);
 
+    let scope_week = params.get("scope").map(|s| s.as_str()) == Some("week");
+
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
         reqwest::Method::GET,
@@ -99,7 +102,13 @@ pub async fn declarations_list_handler(
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
+        Ok((st, text)) => {
+            if scope_week && st.is_success() {
+                let enriched = enrich_week_declarations(&text, &state.journal_n2);
+                return upstream_json_response(st, enriched);
+            }
+            upstream_json_response(st, text)
+        }
         Err(msg) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({
@@ -424,6 +433,10 @@ pub async fn post_trade_debrief_handler(
     Json(body): Json<Value>,
 ) -> Response {
     let request_id = headers.get("x-request-id").and_then(|v| v.to_str().ok());
+
+    if let Err(e) = state.journal_n2.upsert_debrief_patch(&body) {
+        tracing::warn!("journal n2 debrief patch: {e}");
+    }
 
     match forward_daemon_json_with_optional_429_retry(
         &state.upstream,
