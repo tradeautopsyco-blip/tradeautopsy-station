@@ -1,13 +1,65 @@
 name: CI
 
-# Automatic CI disabled (macOS minutes are 10×). Run manually before releases.
+# PR + main gate. Cheap Linux leg covers the UBI wasm adapters; the agent lib
+# suite is macOS-only today (keyring apple-native, notify macos_kqueue are
+# unconditional deps) so it stays on macos-15 — Lib tests only, no integration
+# binaries, no xcodebuild. See docs/ci.md.
 on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'plans/**'
+      - '**.md'
+      - 'updater/**'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'plans/**'
+      - '**.md'
+      - 'updater/**'
   workflow_dispatch:
 
-# One macOS job (macOS minutes cost 10× Linux on GitHub). Previously six parallel macOS jobs.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  macos-ci:
-    name: macOS build and test
+  ubi-wasm:
+    name: UBI adapters (wasm32-wasip2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent/target
+          key: ${{ runner.os }}-ubi-wasm-${{ hashFiles('agent/Cargo.lock') }}
+
+      - name: Build every UBI adapter component
+        working-directory: agent
+        run: |
+          set -euo pipefail
+          for manifest in ubi-*-adapter/Cargo.toml; do
+            echo "=== $manifest"
+            cargo build --release --locked --target wasm32-wasip2 \
+              --manifest-path "$manifest"
+          done
+
+  agent:
+    name: Rust agent — lib tests
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -24,67 +76,11 @@ jobs:
             agent/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
 
-      - name: Rust agent — build and test
+      - name: cargo test --lib
         working-directory: agent
         env:
           RUSTFLAGS: "-D unused"
           TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
         run: |
           cargo build --lib
-          cargo test --all-features
-
-      - name: Notch — build and test
-        working-directory: notch
-        run: |
-          swift build
-          swift test
-
-      - name: Station — SwiftPM build and test
-        run: |
-          swift build --package-path station/
-          swift test --package-path station/
-
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      - name: Regenerate Xcode project
-        working-directory: station
-        run: xcodegen generate
-
-      - name: Build Station.app
-        working-directory: station
-        run: |
-          xcodebuild \
-            -project "TradeAutopsy Station.xcodeproj" \
-            -scheme "TradeAutopsy Station" \
-            -configuration Debug \
-            -destination "platform=macOS,arch=arm64" \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Locate .app
-        id: locate
-        run: |
-          APP=$(find station/build -name "TradeAutopsy Station.app" -type d | head -1)
-          test -n "$APP"
-          echo "app_path=$APP" >> "$GITHUB_OUTPUT"
-
-      - name: Zip .app and pack DMG
-        run: |
-          APP="${{ steps.locate.outputs.app_path }}"
-          cd "$(dirname "$APP")"
-          zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
-          chmod +x scripts/pack-station-dmg.sh
-          ./scripts/pack-station-dmg.sh --from-app "$APP"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: TradeAutopsy-Station-app
-          path: |
-            station/build/**/TradeAutopsyStation.zip
-            dist/TradeAutopsy-Station-*.dmg
-          retention-days: 7
+          cargo test --lib

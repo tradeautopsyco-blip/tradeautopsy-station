@@ -1,0 +1,95 @@
+name: Nightly
+
+# Heavy/off-PR work: full agent lib suite + the loopback path-stress harness,
+# and an optional live prod soak on manual dispatch only.
+# Live soak needs the STATION_LIVE_SOAK_ENV_B64 repo secret (a base64-encoded
+# ~/.tradeautopsy/station.env). No credentials live in this file.
+# See docs/ci.md.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      live_soak:
+        description: "Also run scripts/station-live-stress-soak.sh against prod Console"
+        type: boolean
+        default: false
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: Path stress + optional live soak
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
+
+      - name: Agent lib tests
+        working-directory: agent
+        env:
+          RUSTFLAGS: "-D unused"
+          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
+        run: cargo test --lib
+
+      - name: Loopback path stress
+        env:
+          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
+        run: |
+          set -euo pipefail
+          if [[ ! -f scripts/station-path-stress.sh ]]; then
+            echo "::notice::scripts/station-path-stress.sh not on this ref yet; skipping"
+            exit 0
+          fi
+          chmod +x scripts/station-path-stress.sh
+          ./scripts/station-path-stress.sh
+
+      - name: Live prod soak (manual dispatch only)
+        if: github.event_name == 'workflow_dispatch' && inputs.live_soak
+        env:
+          STATION_LIVE_SOAK_ENV_B64: ${{ secrets.STATION_LIVE_SOAK_ENV_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${STATION_LIVE_SOAK_ENV_B64:-}" ]]; then
+            echo "::notice::STATION_LIVE_SOAK_ENV_B64 secret absent; skipping live soak"
+            exit 0
+          fi
+          if [[ ! -f scripts/station-live-stress-soak.sh ]]; then
+            echo "::notice::scripts/station-live-stress-soak.sh not on this ref yet; skipping"
+            exit 0
+          fi
+          mkdir -p "$HOME/.tradeautopsy"
+          printf '%s' "$STATION_LIVE_SOAK_ENV_B64" | base64 --decode > "$HOME/.tradeautopsy/station.env"
+          chmod 600 "$HOME/.tradeautopsy/station.env"
+          chmod +x scripts/station-live-stress-soak.sh
+          ./scripts/station-live-stress-soak.sh --no-launch
+
+      - name: Upload stress results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-stress-${{ github.run_number }}
+          path: |
+            plans/STATION-PATH-STRESS-RESULTS.json
+            plans/STATION-PATH-STRESS.md
+            plans/STATION-LIVE-STRESS-SOAK-*.md
+            plans/STATION-LIVE-STRESS-SOAK-*.json
+          if-no-files-found: ignore
+          retention-days: 30
