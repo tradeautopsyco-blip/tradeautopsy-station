@@ -501,7 +501,16 @@ pub async fn test_fill_matched_handler(
     )
     .await
     {
-        Ok((st, text)) => upstream_json_response(st, text),
+        Ok((st, text)) => {
+            if st.is_success() {
+                if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                    state
+                        .today_service
+                        .try_record_console_test_fill_matched_cite(&body, &parsed);
+                }
+            }
+            upstream_json_response(st, text)
+        }
         Err(msg) => (
             StatusCode::BAD_GATEWAY,
             Json(json!({

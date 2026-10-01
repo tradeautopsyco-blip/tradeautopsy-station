@@ -72,6 +72,8 @@ Harness always PATCHes after Working with body from `build_debrief_payload()` (m
 
 Loopback inject (implemented): [`plans/FILL-MATCHED-INJECT-SKETCH.md`](FILL-MATCHED-INJECT-SKETCH.md) · agent `POST /api/daemon/bar/test/fill-matched`.
 
+When Console returns `trip_cite` on inject, scoreboard **Match fidelity** also reports `journal_trip_cite` from `GET /api/daemon/journal/trip-cites` (Station-owned net for Wave 0.3 cite join). Production `FILL_MATCHED` on real fill ingest is **FExEVIL/tradeautopsy** (not this repo).
+
 ## Tradeflow lanes
 
 | Lane | Routes |
