@@ -17,6 +17,8 @@ public final class SessionModel: ObservableObject {
     @Published public var deskQuoteCurrency: String?
     @Published public var deskCalcProfileId: String?
     @Published public private(set) var brokerSyncClass: String = "not_connected"
+    /// Wave 4.1 — obtain `funds` on the shipping book (cash / spot), not fill-inventory.
+    @Published public var shippingFundsGlance: BarShippingFundsGlance.Presentation = .dark
 
     /// Seconds since the last kill-switch state update (SSE or daemon poll). `Int.max` if never received.
     public var killSwitchStateAgeSecs: Int {
@@ -103,6 +105,7 @@ public final class SessionModel: ObservableObject {
         }
         Task {
             await fetchPositions()
+            await refreshShippingFundsGlance()
         }
     }
 
@@ -269,6 +272,11 @@ public final class SessionModel: ObservableObject {
             brokerSyncClass = c
             brokerSessionActive = (brokerSyncClass == "synced" || brokerSyncClass == "stale")
             applyDeskHonesty(from: payload)
+            if brokerSessionActive {
+                Task { await refreshShippingFundsGlance() }
+            } else {
+                shippingFundsGlance = .dark
+            }
             return true
 
         default:
@@ -359,7 +367,50 @@ public final class SessionModel: ObservableObject {
             }
             if let o = decoded.openOrders { openOrders = o }
             positions = decoded.positions
+            await refreshShippingFundsGlance()
         } catch {}
+    }
+
+    public func refreshShippingFundsGlance() async {
+        guard brokerSessionActive,
+              let slug = activeBrokerSlug,
+              let ctx = BarShippingFundsGlance.shippingContext(startSlug: slug)
+        else {
+            shippingFundsGlance = .dark
+            return
+        }
+        let path = BarAccountChrome.obtainPath(
+            adapter: ctx.adapter,
+            bookId: ctx.bookId,
+            operation: "funds"
+        )
+        guard let url = URL(string: baseURL() + path) else { return }
+        do {
+            let (data, resp) = try await urlSession.data(for: authorizedRequest(url: url))
+            guard (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return }
+            let ccy = deskQuoteCurrency ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: slug) ?? ""
+            shippingFundsGlance = BarShippingFundsGlance.present(
+                fundsEnvelope: json,
+                shippingBookId: ctx.bookId,
+                quoteCurrency: ccy
+            )
+        } catch {}
+    }
+
+    /// Test seam — plant obtain `funds` without hitting the agent.
+    public func applyShippingFundsObtainEnvelope(_ envelope: [String: Any]?, startSlug: String?) {
+        guard let ctx = BarShippingFundsGlance.shippingContext(startSlug: startSlug) else {
+            shippingFundsGlance = .dark
+            return
+        }
+        let ccy = deskQuoteCurrency ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: startSlug) ?? ""
+        shippingFundsGlance = BarShippingFundsGlance.present(
+            fundsEnvelope: envelope,
+            shippingBookId: ctx.bookId,
+            quoteCurrency: ccy
+        )
     }
 
     // MARK: - Kill-switch dismiss

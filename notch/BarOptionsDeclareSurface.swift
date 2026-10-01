@@ -98,7 +98,7 @@ enum BarCashCockpitSeed {
     }
 
     enum StripKind: Equatable, Hashable {
-        case last, history, depth, margin
+        case funds, last, history, depth, margin
     }
 
     struct Tile: Equatable, Hashable {
@@ -209,7 +209,7 @@ enum BarCashCockpitSeed {
         switch asset {
         case .usdm, .coinm, .spot, .equity, .options:
             // Depth summary removed from top strip — detailed Depth tile stays on the mosaic.
-            return [.last, .history]
+            return [.funds, .last, .history]
         }
     }
 }

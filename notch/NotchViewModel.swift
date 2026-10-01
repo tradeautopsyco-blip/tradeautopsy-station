@@ -693,6 +693,8 @@ public final class NotchViewModel: ObservableObject {
     @Published var deskInstrumentsCapability: String = "unavailable"
     /// S8 obtain pulse + ledger for the shipping book of Start. Never Today fill-inventory.
     @Published var accountChrome: BarAccountChrome.Snapshot = .empty
+    /// Wave 4.1 — obtain `funds` on the **shipping** book only (cash / spot), not named futures books.
+    @Published var shippingFundsGlance: BarShippingFundsGlance.Presentation = .dark
     /// Last successful USDM `positionbook` row count — DualNoBlend vs daemon `/positions`.
     private var usdmPositionbookCount: Int = 0
     /// Drop stale account obtain replies when Start slug / session changes.
@@ -5569,6 +5571,7 @@ extension NotchViewModel {
         applyDeskCapabilities(from: json)
         if brokerSyncClass == "not_connected" {
             accountChrome = .empty
+            shippingFundsGlance = .dark
         }
     }
 
@@ -5636,6 +5639,7 @@ extension NotchViewModel {
             startSlug: activeExecutionBrokerSlug
         ) else {
             accountChrome = .empty
+            shippingFundsGlance = .dark
             return
         }
         let ccy = deskQuoteCurrency
@@ -5649,6 +5653,12 @@ extension NotchViewModel {
             positions: positions,
             orders: orders
         )
+        if let slug = activeExecutionBrokerSlug,
+           let ship = BarAccountChrome.shippingBookId(forStartSlug: slug),
+           ship == book
+        {
+            applyShippingFundsGlance(fundsEnvelope: funds, startSlug: slug)
+        }
         if declareAssetClass.isNamedComFutures {
             let fundsBook = (funds?["book_id"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -5669,13 +5679,22 @@ extension NotchViewModel {
               )
         else {
             accountChrome = .empty
+            shippingFundsGlance = .dark
             return
         }
         accountChromeGeneration += 1
         let gen = accountChromeGeneration
+        let shippingBook = BarAccountChrome.shippingBookId(forStartSlug: slug)
+        let shippingNeedsOwnFetch = shippingBook != nil && shippingBook != book
         async let funds = getExtractJSON(
             BarAccountChrome.obtainPath(adapter: adapter, bookId: book, operation: "funds")
         )
+        async let shippingFundsOnly: [String: Any]? = {
+            guard shippingNeedsOwnFetch, let shippingBook else { return nil }
+            return await getExtractJSON(
+                BarAccountChrome.obtainPath(adapter: adapter, bookId: shippingBook, operation: "funds")
+            )
+        }()
         let holdingsJSON: [String: Any]?
         let positionsJSON: [String: Any]?
         let ordersJSON: [String: Any]?
@@ -5702,12 +5721,34 @@ extension NotchViewModel {
             ordersJSON = await orders
         }
         let fundsJSON = await funds
+        let shippingFundsJSON = await shippingFundsOnly
         guard gen == accountChromeGeneration else { return }
         applyAccountObtainEnvelopes(
             funds: fundsJSON,
             holdings: holdingsJSON,
             positions: positionsJSON,
             orders: ordersJSON
+        )
+        if let shippingBook {
+            let envelopeForShipping = shippingBook == book ? fundsJSON : shippingFundsJSON
+            applyShippingFundsGlance(fundsEnvelope: envelopeForShipping, startSlug: slug)
+        } else {
+            shippingFundsGlance = .dark
+        }
+    }
+
+    func applyShippingFundsGlance(fundsEnvelope: [String: Any]?, startSlug: String?) {
+        guard let ctx = BarShippingFundsGlance.shippingContext(startSlug: startSlug) else {
+            shippingFundsGlance = .dark
+            return
+        }
+        let ccy = deskQuoteCurrency
+            ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: startSlug)
+            ?? ""
+        shippingFundsGlance = BarShippingFundsGlance.present(
+            fundsEnvelope: fundsEnvelope,
+            shippingBookId: ctx.bookId,
+            quoteCurrency: ccy
         )
     }
 

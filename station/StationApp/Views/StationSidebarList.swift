@@ -78,6 +78,12 @@ public struct StationSidebarList: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(WorkspaceChrome.rail)
         .accessibilityIdentifier("workspace-rail")
+        .safeAreaInset(edge: .bottom) {
+            StationShippingFundsSidebarRow(
+                glance: coordinator.sessionModel.shippingFundsGlance,
+                brokerSyncClass: coordinator.sessionModel.brokerSyncClass
+            )
+        }
     }
 
     private var todayCountBadge: String? {

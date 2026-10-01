@@ -27,11 +27,11 @@ struct BarCashCockpitSeedTests {
         #expect(BarCashCockpitSeed.tiles(for: .usdm) == BarCashCockpitSeed.tiles(for: .equity))
     }
 
-    @Test func cashGlanceStripIsLastAndHistoryOnly() {
-        #expect(BarCashCockpitSeed.stripKinds(for: .equity) == [.last, .history])
-        #expect(BarCashCockpitSeed.stripKinds(for: .spot) == [.last, .history])
-        #expect(BarCashCockpitSeed.stripKinds(for: .usdm) == [.last, .history])
-        #expect(BarCashCockpitSeed.stripKinds(for: .coinm) == [.last, .history])
+    @Test func cashGlanceStripIncludesShippingFunds() {
+        #expect(BarCashCockpitSeed.stripKinds(for: .equity) == [.funds, .last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .spot) == [.funds, .last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .usdm) == [.funds, .last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .coinm) == [.funds, .last, .history])
     }
 
     @Test func leftoverOptionsOnStandardFormStillUsesCashCockpitTiles() {
@@ -39,7 +39,7 @@ struct BarCashCockpitSeedTests {
             for: .options, slug: "binance_com", instrumentId: "BTCUSDT"
         ) == .standardForm)
         #expect(BarCashCockpitSeed.tiles(for: .options) == BarCashCockpitSeed.tiles(for: .spot))
-        #expect(BarCashCockpitSeed.stripKinds(for: .options) == [.last, .history])
+        #expect(BarCashCockpitSeed.stripKinds(for: .options) == [.funds, .last, .history])
     }
 
     @Test func cashHeroAndFocusMatchPrototype() {

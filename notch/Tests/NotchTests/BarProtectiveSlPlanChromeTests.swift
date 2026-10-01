@@ -12,7 +12,8 @@ struct BarProtectiveSlPlanChromeTests {
             formattedPrice: "1,425"
         )
         #expect(chrome.showsSetSlButton == false)
-        #expect(chrome.statusText?.localizedCaseInsensitiveContains("not placed") == true)
+        #expect(chrome.statusText?.localizedCaseInsensitiveContains("plan stop") == true)
+        #expect(chrome.statusText?.localizedCaseInsensitiveContains("broker order") == true)
         #expect(chrome.showsCancelSlButton == false)
     }
 
