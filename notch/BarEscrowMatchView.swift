@@ -7,6 +7,7 @@ struct BarEscrowMatchView: View {
     var pending: BarPendingDeclaration? = nil
     var last: Double? = nil
     var lastStatus: String = "unavailable"
+    var afterSession: Bool = false
 
     @State private var expandedRowIds: Set<String> = []
 
@@ -17,7 +18,8 @@ struct BarEscrowMatchView: View {
             from: report,
             pending: pending,
             last: last,
-            lastStatus: lastStatus
+            lastStatus: lastStatus,
+            afterSession: afterSession
         )
         let summary = BarEscrowMatchPresentation.summaryLine(from: report)
 
@@ -146,7 +148,19 @@ struct BarEscrowMatchView: View {
                     HStack(alignment: .center, spacing: 0) {
                         ledgerColumn(text: row.declared, title: "Declared", alignLeading: true)
                         connectorBar(tone: row.tone)
-                        ledgerColumn(text: row.actual, title: "Actual", alignLeading: false)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("ACTUAL")
+                                .font(BarDS.bodyFont(8, weight: .bold))
+                                .foregroundColor(BarDS.Text.muted)
+                            if row.showLastHonestyChip {
+                                HonestyChip(status: BarWorkingCompare.honestyStatusForLast(lastStatus: lastStatus))
+                            }
+                            Text(row.actual)
+                                .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .medium))
+                                .foregroundColor(BarDS.Text.primary)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
                 .padding(.vertical, 6)

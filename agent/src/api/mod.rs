@@ -318,6 +318,10 @@ pub fn router(state: AppState) -> Router {
             get(bar::loss_limits_get_handler).post(bar::loss_limits_post_handler),
         )
         .route(
+            "/api/daemon/bar/capture-working-condition",
+            post(bar::capture_working_condition_handler),
+        )
+        .route(
             "/api/daemon/bar/test/fill-matched",
             post(bar::test_fill_matched_handler),
         )

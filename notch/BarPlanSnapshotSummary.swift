@@ -13,6 +13,26 @@ struct BarPlanInvalidationSnapshot: Codable, Equatable, Sendable {
     let line: String?
 }
 
+/// Frozen Working compare at session end (`plan_snapshot.condition_at_close`, Wave 2).
+struct BarPlanConditionAtClose: Codable, Equatable, Sendable {
+    let last: Double?
+    let lastStatus: String?
+    let invalidationState: String?
+    let targetState: String?
+
+    enum CodingKeys: String, CodingKey {
+        case last
+        case lastStatus = "last_status"
+        case invalidationState = "invalidation_state"
+        case targetState = "target_state"
+    }
+
+    var wasCaptured: Bool {
+        let status = lastStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        return status != "not_captured" && status != ""
+    }
+}
+
 /// PLAN SNAPSHOT narrative fields (`plan_snapshot` on `pending_declaration`, #113).
 struct BarPlanSnapshotSummary: Codable, Equatable {
     let setupLabel: String?
@@ -35,6 +55,7 @@ struct BarPlanSnapshotSummary: Codable, Equatable {
     let entryPrice: Double?
     let emotionIn: BarPlanEmotionInSnapshot?
     let invalidation: BarPlanInvalidationSnapshot?
+    let conditionAtClose: BarPlanConditionAtClose?
 
     enum CodingKeys: String, CodingKey {
         case setupLabel = "setup_label"
@@ -52,6 +73,7 @@ struct BarPlanSnapshotSummary: Codable, Equatable {
         case entryPrice = "entry_price"
         case emotionIn = "emotion_in"
         case invalidation
+        case conditionAtClose = "condition_at_close"
     }
 
     var resolvedInvalidationKind: String? {

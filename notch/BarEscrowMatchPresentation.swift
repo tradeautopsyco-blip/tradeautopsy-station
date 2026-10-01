@@ -16,6 +16,8 @@ struct BarEscrowRowPresentation: Identifiable, Equatable {
     let actual: String
     let tone: BarEscrowRowTone
     let breakReason: String?
+    /// Live session only — show honesty chip when last is dark for invalidation.
+    let showLastHonestyChip: Bool
 }
 
 enum BarEscrowMatchPresentation {
@@ -23,10 +25,16 @@ enum BarEscrowMatchPresentation {
         from report: BarEscrowMatchReport?,
         pending: BarPendingDeclaration? = nil,
         last: Double? = nil,
-        lastStatus: String = "unavailable"
+        lastStatus: String = "unavailable",
+        afterSession: Bool = false
     ) -> [BarEscrowRowPresentation] {
         if let pending {
-            return pendingDeclaredRows(pending, last: last, lastStatus: lastStatus)
+            return pendingDeclaredRows(
+                pending,
+                last: last,
+                lastStatus: lastStatus,
+                afterSession: afterSession
+            )
         }
         return rows(from: report)
     }
@@ -35,7 +43,8 @@ enum BarEscrowMatchPresentation {
     static func pendingDeclaredRows(
         _ pending: BarPendingDeclaration,
         last: Double? = nil,
-        lastStatus: String = "unavailable"
+        lastStatus: String = "unavailable",
+        afterSession: Bool = false
     ) -> [BarEscrowRowPresentation] {
         let qtyText = BarWorkingCompare.formatQty(pending.quantity)
         let product = pending.planSnapshot?.product?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -48,21 +57,28 @@ enum BarEscrowMatchPresentation {
         let snap = pending.planSnapshot
         let invKind = snap?.resolvedInvalidationKind
         let invPrice = snap?.resolvedInvalidationPrice
-        let invState = BarWorkingCompare.vsInvalidation(
+        let atClose = snap?.conditionAtClose
+        let invActual = BarWorkingCompare.invalidationActualText(
+            afterSession: afterSession,
+            atClose: atClose,
             sideBuy: sideBuy,
             last: last,
-            status: lastStatus,
+            lastStatus: lastStatus,
             kind: invKind,
             price: invPrice
         )
         let targetVal = pending.target ?? snap?.targetPrice
-        let tgtState = BarWorkingCompare.vsTarget(
+        let tgtActual = BarWorkingCompare.targetActualText(
+            afterSession: afterSession,
+            atClose: atClose,
             sideBuy: sideBuy,
             last: last,
-            status: lastStatus,
+            lastStatus: lastStatus,
             target: targetVal
         )
-        let lastText = BarWorkingCompare.labeledLast(last: last, status: lastStatus)
+        let invState = invActual.state
+        let tgtState = tgtActual.state
+        let invHonestyChip = invActual.showHonestyChip
         let invDeclared: String = {
             if let p = invPrice, p > 0 {
                 let kind = invKind?.isEmpty == false ? invKind! : "price"
@@ -108,14 +124,18 @@ enum BarEscrowMatchPresentation {
                 id: "pending.invalidation",
                 label: "Invalidation",
                 declared: invDeclared,
-                actual: invState == .waiting ? "waiting" : lastText,
-                tone: BarWorkingCompare.tone(for: invState)
+                actual: invActual.text,
+                tone: BarWorkingCompare.tone(for: invState),
+                breakReason: invHonestyChip
+                    ? "Last unavailable — invalidation not evaluated live."
+                    : nil,
+                showLastHonestyChip: invHonestyChip
             ),
             row(
                 id: "pending.target",
                 label: "Target / policy",
                 declared: tgtDeclared,
-                actual: lastText,
+                actual: tgtActual.text,
                 tone: BarWorkingCompare.tone(for: tgtState)
             ),
         ]
@@ -138,7 +158,9 @@ enum BarEscrowMatchPresentation {
         label: String,
         declared: String,
         actual: String = "—",
-        tone: BarEscrowRowTone = .amber
+        tone: BarEscrowRowTone = .amber,
+        breakReason: String? = nil,
+        showLastHonestyChip: Bool = false
     ) -> BarEscrowRowPresentation {
         BarEscrowRowPresentation(
             id: id,
@@ -146,21 +168,23 @@ enum BarEscrowMatchPresentation {
             declared: declared,
             actual: actual,
             tone: tone,
-            breakReason: nil
+            breakReason: breakReason,
+            showLastHonestyChip: showLastHonestyChip
         )
     }
 
     static func rows(from report: BarEscrowMatchReport?) -> [BarEscrowRowPresentation] {
         guard let report, !report.nodes.isEmpty else { return [] }
         return report.nodes.map { node in
-            BarEscrowRowPresentation(
-                id: node.id,
-                label: node.label,
-                declared: node.declared,
-                actual: node.actual,
-                tone: tone(from: node.match),
-                breakReason: node.breakReason,
-            )
+        BarEscrowRowPresentation(
+            id: node.id,
+            label: node.label,
+            declared: node.declared,
+            actual: node.actual,
+            tone: tone(from: node.match),
+            breakReason: node.breakReason,
+            showLastHonestyChip: false,
+        )
         }
     }
 

@@ -480,6 +480,32 @@ pub async fn loss_limits_get_handler(
     }
 }
 
+/// Wave 2 — freeze Working last vs invalidation on `plan_snapshot.condition_at_close` (local LiveBook only).
+pub async fn capture_working_condition_handler(
+    State(state): State<AppState>,
+    Json(body): Json<Value>,
+) -> Response {
+    let last = body.get("last").and_then(Value::as_f64);
+    let last_status = body
+        .get("last_status")
+        .and_then(Value::as_str)
+        .unwrap_or("unavailable")
+        .trim()
+        .to_string();
+    state.live_book.apply(LiveBookEvent::CaptureWorkingCondition {
+        last,
+        last_status,
+    });
+    if let Some(book) = state.live_book.snapshot() {
+        return livebook_json("local", book);
+    }
+    (
+        StatusCode::OK,
+        Json(json!({ "ok": true })),
+    )
+        .into_response()
+}
+
 /// POST test-only matched fill inject — forward to Console internal route (env-gated on brain).
 pub async fn test_fill_matched_handler(
     State(state): State<AppState>,

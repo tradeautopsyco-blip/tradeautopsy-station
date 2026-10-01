@@ -14,6 +14,99 @@ enum BarWorkingCompare {
         SessionChartQuoteLast.isBound(status: status)
     }
 
+    static func levelState(fromWire raw: String?) -> BarWorkingLevelState? {
+        switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "" {
+        case "waiting": return .waiting
+        case "intact": return .intact
+        case "breached": return .breached
+        case "touched": return .touched
+        case "dark": return .dark
+        case "not_captured": return nil
+        default: return nil
+        }
+    }
+
+    /// During session: obtain last. After session: frozen snapshot only — never live last.
+    static func invalidationActualText(
+        afterSession: Bool,
+        atClose: BarPlanConditionAtClose?,
+        sideBuy: Bool,
+        last: Double?,
+        lastStatus: String,
+        kind: String?,
+        price: Double?
+    ) -> (text: String, state: BarWorkingLevelState, showHonestyChip: Bool) {
+        if afterSession {
+            guard let atClose, atClose.wasCaptured else {
+                return ("not captured", .dark, false)
+            }
+            let status = atClose.lastStatus ?? "unknown"
+            let lastLine = labeledLast(last: atClose.last, status: status)
+            let text = "After session · \(lastLine)"
+            if let wired = atClose.invalidationState, let state = levelState(fromWire: wired) {
+                return (text, state, false)
+            }
+            let state = vsInvalidation(
+                sideBuy: sideBuy,
+                last: atClose.last,
+                status: status,
+                kind: kind,
+                price: price
+            )
+            return (text, state, false)
+        }
+        let state = vsInvalidation(
+            sideBuy: sideBuy,
+            last: last,
+            status: lastStatus,
+            kind: kind,
+            price: price
+        )
+        let lastText = labeledLast(last: last, status: lastStatus)
+        let text = state == .waiting ? "waiting" : lastText
+        let chip = state == .dark
+        return (text, state, chip)
+    }
+
+    static func targetActualText(
+        afterSession: Bool,
+        atClose: BarPlanConditionAtClose?,
+        sideBuy: Bool,
+        last: Double?,
+        lastStatus: String,
+        target: Double?
+    ) -> (text: String, state: BarWorkingLevelState) {
+        if afterSession {
+            guard let atClose, atClose.wasCaptured else {
+                return ("not captured", .dark)
+            }
+            let status = atClose.lastStatus ?? "unknown"
+            let lastLine = labeledLast(last: atClose.last, status: status)
+            let text = "After session · \(lastLine)"
+            if let wired = atClose.targetState, let state = levelState(fromWire: wired) {
+                return (text, state)
+            }
+            let state = vsTarget(
+                sideBuy: sideBuy,
+                last: atClose.last,
+                status: status,
+                target: target
+            )
+            return (text, state)
+        }
+        let state = vsTarget(
+            sideBuy: sideBuy,
+            last: last,
+            status: lastStatus,
+            target: target
+        )
+        return (labeledLast(last: last, status: lastStatus), state)
+    }
+
+    static func honestyStatusForLast(lastStatus: String) -> HonestyStatus {
+        HonestyStatus.fromWire(lastStatus) ?? (lastBound(status: lastStatus) ? .unknown : .unavailable)
+    }
+
     static func labeledLast(last: Double?, status: String) -> String {
         let bound = lastBound(status: status)
         let tag = status.trimmingCharacters(in: .whitespacesAndNewlines)

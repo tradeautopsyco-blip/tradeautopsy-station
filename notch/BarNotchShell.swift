@@ -801,7 +801,8 @@ struct BarNotchShell: View {
                 report: viewModel.barLiveState?.escrowMatchReport,
                 pending: viewModel.barLiveState?.pendingDeclaration,
                 last: viewModel.deskQuoteLast,
-                lastStatus: viewModel.deskLastStatus
+                lastStatus: viewModel.deskLastStatus,
+                afterSession: viewModel.barSurfacePhase == .debrief
             )
         case .patterns:
             BarPatternsChartView()
