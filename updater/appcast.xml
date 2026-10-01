@@ -3,14 +3,25 @@
     <channel>
         <title>TradeAutopsy Station</title>
         <item>
-            <title>0.2.1</title>
-            <pubDate>Sat, 26 Sep 2026 20:30:00 +0530</pubDate>
+            <title>0.2.2</title>
+            <pubDate>Thu, 01 Oct 2026 11:53:22 +0000</pubDate>
             <link>https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases</link>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[Maintenance release 0.2.1 (build 5). Sparkle feed and GitHub Actions release pipeline verified. Unsigned — right-click Open after download.]]></description>
-            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.1/TradeAutopsy-Station.dmg" length="21501940" type="application/octet-stream" sparkle:edSignature="2iCxqiXokYWEvvKG+Ye4SxoxBNaQ0fjqFzG/y30P3GZBoeeMHcTlp6WtbJLsfELhCv/ARBPpK6x0XNjz4d+wDg=="/>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[Bugfix release 0.2.2.
+
+- Export Notch shipping-funds APIs so Station builds and shows the sidebar funds glance.
+- Handle daemon `DEAD_LETTER` protocol errors in Notch connection UI.
+- Fix honesty chip fallback when last status is not a wire honesty dialect.
+- Fix agent spawn guard (`await` in `AgentSupervisor`).
+- Swift 6 Sendable on capture outbox types (Release CI).
+- Fix agent risk preview catalog import for release builds.
+- Working list invalidation chip covers `touched` level state.
+
+**Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.]]></description>
+            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.2/TradeAutopsy-Station.dmg" length="21643922" type="application/octet-stream" sparkle:edSignature="x7IKcwWTzt19jv/sVFOlw+xRxv56rgS1dqVmOqGsfaaE7HINTkyBrn0KXFm3ftzRAPrnThp1LJWA86hh+6SSAg=="/>
         </item>
     </channel>
 </rss>
