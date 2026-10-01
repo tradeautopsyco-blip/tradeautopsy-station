@@ -8,6 +8,8 @@ Station already runs many books. A risk calculator that only knows one instrumen
 
 Foundation for any later formula: [`docs/reference/behavioral-science/POSITION-SIZING.md`](../reference/behavioral-science/POSITION-SIZING.md). That file records the gaps. It is not a sizing rule.
 
+Harness layout (Open / Plan / Working), separate from the formula: [`docs/design/harness-open-plan-working.md`](./harness-open-plan-working.md).
+
 ---
 
 ## 1. What already exists
