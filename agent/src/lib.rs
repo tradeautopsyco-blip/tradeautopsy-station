@@ -48,6 +48,7 @@ mod oauth_loopback;
 mod options_realized_pnl;
 mod outbox;
 mod recent_trades;
+mod risk;
 mod resolve_kill_switch_broker;
 mod round_trip_engine;
 pub mod rustls_crypto;

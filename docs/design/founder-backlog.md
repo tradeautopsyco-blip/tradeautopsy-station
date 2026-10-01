@@ -1,20 +1,20 @@
 # Founder backlog (after multi-trade LiveBook)
 
-**Status:** queued — not in scope for the LiveBook PR.  
-**LiveBook shipped:** multi-slot `pending_declarations`, declaration-scoped cancel/protective, Working list + Plan another — see [harness-trade-arc.md](./harness-trade-arc.md) §7 step 1–2 and PR #21.
+**Status:** partial (2026-10-01 harness PR) — UI/storage wired; formulas and Carbon hotkey **application** stay blocked where noted below.  
+**LiveBook shipped:** multi-slot `pending_declarations`, declaration-scoped cancel/protective, Working list + Plan another — PR #21.
 
 Do not treat items below as specified formulas or broker capabilities until reference docs and code paths exist.
 
 ---
 
-1. **SL suggestor** — Trader picks risk % of margin (e.g. 2%); Station suggests size / stop for **all asset classes** (DualNoBlend per book; cite `docs/reference/` before any formula).
+1. **SL suggestor** — UI + margin % input on Plan; stop/size stay **—** until `POSITION-SIZING.md` cites a formula (DualNoBlend per book).
 
-2. **Indian options UI** — Same interaction pattern as crypto USDM declare/working UI (not a copy of USDM math).
+2. **Indian options UI** — Kotak NFO options cockpit on declare; Working adds `BarOptionsGlanceStrip` when cockpit surface applies (not USDM math).
 
-3. **Enable Station unavailable surfaces** — Option chain, OI, history, etc. When the connected broker adapter does not expose data, show an honest prompt to add a **data vendor** (no invented chain/OI).
+3. **Enable Station unavailable surfaces** — `BarDataVendorHonesty` copy on chain/OI holes; still no invented chain/OI.
 
-4. **Chart crosshair** — Read-only crosshair on session/working charts where quote/history is bound.
+4. **Chart crosshair** — Read-only crosshair on `BarOptionsSessionChart` when history is bound (hover).
 
-5. **Tags + playbooks + live conditions** — Authoring and wiring TBD (Console vs Station setup); conditions remain per `declaration_id`.
+5. **Tags + playbooks + live conditions** — Local tags/playbooks on Plan; condition fires per `declaration_id` + list chips; Console authoring still TBD.
 
-6. **User-custom hotkeys** — User-defined shortcuts in Station/Notch; no default map without product spec.
+6. **User-custom hotkeys** — Prefs UI + `DeskHotkeyPreferences` storage; ⌥Space defaults remain until product maps saved bindings in `HotkeyRegistrar`.

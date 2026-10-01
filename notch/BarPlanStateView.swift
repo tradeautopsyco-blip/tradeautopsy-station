@@ -25,6 +25,15 @@ struct BarPlanStateView: View {
 
     private var workingPending: BarPendingDeclaration? { viewModel.workingPendingDeclaration }
 
+    private var harnessDetail: BarWorkingHarnessDetail {
+        BarWorkingHarnessDetailResolver.resolve(
+            pendingRows: workingPendingRows,
+            selectedPending: workingPending,
+            hasOpenPositions: viewModel.hasOpenPositions,
+            hasUndeclaredInventory: payload?.undeclaredPosition != nil
+        )
+    }
+
     private var sortedActiveInterventions: [ActiveIntervention] {
         BarInterventionCardSpec.sortedInterventions(payload?.activeInterventions ?? [])
     }
@@ -75,7 +84,13 @@ struct BarPlanStateView: View {
                 )
             }
 
-            planStateBanner
+            if harnessDetail == .flat {
+                flatWorkingHeadline
+            }
+
+            if shouldShowHarnessPlanBanner {
+                planStateBanner
+            }
 
             if workingPriceInvalidated {
                 invalidatedWorkingBanner
@@ -97,12 +112,18 @@ struct BarPlanStateView: View {
 
             if shouldShowPlanSnapshot { planSnapshotRows }
 
-            if !shouldShowMetricStrip, let composite = payload?.composite {
+            if harnessDetail == .inTrade, !shouldShowMetricStrip, let composite = payload?.composite,
+               composite.worstCase != nil
+            {
                 compositeRiskLine(composite, showStaleSuffix: syncShowsStaleSuffix)
             }
 
             if shouldShowDeclareBeforeTradeCTA {
-                declareBeforeTradeCTA
+                if harnessDetail == .flat {
+                    flatPlanCTA
+                } else {
+                    declareBeforeTradeCTA
+                }
             }
 
             if shouldShowPlanAnotherCTA {
@@ -129,7 +150,9 @@ struct BarPlanStateView: View {
                     .animation(.easeInOut(duration: 0.15), value: viewModel.barInterferenceEcho)
             }
 
-            BarLiveCaptureCard(viewModel: viewModel)
+            if harnessDetail != .flat {
+                BarLiveCaptureCard(viewModel: viewModel)
+            }
 
             if shouldShowScalperSessionPanel { scalperSessionLivePanel }
 
@@ -146,7 +169,7 @@ struct BarPlanStateView: View {
                 interventionBanner(intervention, isPrimary: idx == 0)
             }
 
-            if embedEscrow {
+            if embedEscrow, harnessDetail == .inTrade {
                 BarEscrowMatchView(
                     report: payload?.escrowMatchReport,
                     pending: workingPending,
@@ -223,6 +246,25 @@ struct BarPlanStateView: View {
                 invalidationPrice: pending?.planSnapshot?.resolvedInvalidationPrice
             )
         }
+        .onChange(of: viewModel.deskQuoteLast) { _, _ in
+            syncPlanLevelFiresForSelection()
+        }
+    }
+
+    private func syncPlanLevelFiresForSelection() {
+        guard let pending = workingPending else { return }
+        let sideBuy = !pending.side.uppercased().contains("SELL")
+        let snap = pending.planSnapshot
+        let stop = pending.stopLoss ?? snap?.stopLoss
+        let target = pending.target ?? snap?.targetPrice
+        viewModel.syncWorkingPlanLevelFires(
+            declarationId: pending.id,
+            sideBuy: sideBuy,
+            last: viewModel.deskQuoteLast,
+            lastStatus: viewModel.deskLastStatus,
+            stop: stop,
+            target: target
+        )
     }
 
     // MARK: - Banner ladder (sync → thesis → plan)
@@ -410,6 +452,28 @@ struct BarPlanStateView: View {
         return []
     }
 
+    private var shouldShowHarnessPlanBanner: Bool {
+        BarWorkingHarnessDetailResolver.shouldShowPlanStateBanner(
+            detail: harnessDetail,
+            planStateRaw: payload?.planState
+        )
+    }
+
+    private var flatWorkingHeadline: some View {
+        Text("No open trade.")
+            .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .medium))
+            .foregroundColor(BarDS.Text.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+    }
+
+    private var flatPlanCTA: some View {
+        BarBigButton(label: "Plan a trade →", style: .primary) {
+            viewModel.presentBarDeclarationForm()
+        }
+        .padding(.horizontal, 8)
+    }
+
     private var shouldShowDeclareBeforeTradeCTA: Bool {
         guard workingPendingRows.isEmpty else { return false }
         return BarLiveTradeDeclareCTA.shouldShow(
@@ -446,6 +510,15 @@ struct BarPlanStateView: View {
                         Text(row.status.uppercased())
                             .font(.system(size: 10, weight: .medium, design: .rounded))
                             .foregroundColor(.secondary)
+                        Text(
+                            BarWorkingLivePresentation.listInvalidationChip(
+                                pending: row,
+                                last: viewModel.deskQuoteLast,
+                                lastStatus: viewModel.deskLastStatus
+                            )
+                        )
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
                         Spacer()
                         if selected {
                             Image(systemName: "checkmark.circle.fill")
@@ -1354,7 +1427,12 @@ struct BarPlanStateView: View {
             return .thesisUnknown
         }
 
-        let upper = trimmedPlan.isEmpty ? "GREEN" : trimmedPlan.uppercased()
+        guard let upper = BarWorkingHarnessDetailResolver.normalizedPlanUpper(
+            planStateRaw: trimmedPlan,
+            detail: harnessDetail
+        ) else {
+            return .thesisUnknown
+        }
         let sentence = resolvedPlanBannerSentence(planUpper: upper, apiSentence: payload?.primarySentence)
         let terminal = payload?.isRedTerminal ?? false
         return .serverPlan(state: upper, sentence: sentence, terminal: terminal)

@@ -12,7 +12,7 @@ struct BriefLeftView: View {
             briefCapsHeader("Open")
             openDeskHeader
 
-            if !viewModel.openHidesIndexChips {
+            if viewModel.openShowsPreMarketIndices {
                 BarCard {
                     Text("Pre-market")
                         .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
@@ -49,16 +49,10 @@ struct BriefLeftView: View {
                     .padding(.vertical, 2)
             }
 
-            briefCapsHeader("What matters")
-
-            BarCard {
-                if let b = viewModel.morningBrief {
+            if let b = viewModel.morningBrief {
+                briefCapsHeader("What matters")
+                BarCard {
                     behavioralBriefContent(b)
-                } else {
-                    Text("No session series yet.")
-                        .font(BarDS.bodyFont(BarDS.FontSize.body, weight: .regular))
-                        .foregroundColor(BarDS.Text.primary.opacity(0.72))
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -79,7 +73,7 @@ struct BriefLeftView: View {
             .disabled(!viewModel.openStartUnlocked)
             .opacity(viewModel.openStartUnlocked ? 1 : 0.45)
             .accessibilityLabel("Start trading, open plan declaration")
-            .accessibilityHint(viewModel.openStartUnlocked ? "Opens Plan" : "Set calm, confidence, and the rule first")
+            .accessibilityHint(viewModel.openStartUnlocked ? "Opens Plan" : "Set the rule for today first")
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -98,6 +92,9 @@ struct BriefLeftView: View {
     private var openDeskHeader: some View {
         let clock = viewModel.sessionClockPresentation
         let book = viewModel.selectedMarketBookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let deskLabel = book.isEmpty
+            ? (viewModel.resolvedDeskSlug?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Desk")
+            : book
         let ccy = viewModel.formatQuoteCurrency ?? "—"
         let undeclared = viewModel.barLiveState?.undeclaredPosition
         let overnight = viewModel.positions.filter { $0.qty != 0 }
@@ -105,7 +102,7 @@ struct BriefLeftView: View {
         let floor = viewModel.dailyLossLimit
         return BarCard {
             VStack(alignment: .leading, spacing: 8) {
-                Text(book.isEmpty ? "No book" : book)
+                Text(deskLabel)
                     .font(BarDS.monoFont(BarDS.FontSize.bodyXS, weight: .semibold))
                     .foregroundColor(BarDS.Text.primary)
                 HStack {
@@ -126,9 +123,11 @@ struct BriefLeftView: View {
                         .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                         .foregroundColor(BarDS.Accent.amber)
                 }
-                Text("Yesterday Today \(yesterday.map { viewModel.formatDeskMoney($0) } ?? "—")")
-                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
-                    .foregroundColor(BarDS.Text.secondary)
+                if let yesterday {
+                    Text("Yesterday \(viewModel.formatDeskMoney(yesterday))")
+                        .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
+                        .foregroundColor(BarDS.Text.secondary)
+                }
                 Text("Floor \(floor.map { viewModel.formatDeskMoney($0) } ?? "—") · label only, does not fire Kill")
                     .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
                     .foregroundColor(BarDS.Text.hint)
@@ -138,53 +137,17 @@ struct BriefLeftView: View {
 
     private var openStartGate: some View {
         BarCard {
-            Text("Start gate")
+            Text("One rule for today")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                 .foregroundColor(BarDS.Text.section)
                 .textCase(.uppercase)
                 .padding(.bottom, 8)
-            Text("Calm, confidence, and one local non-negotiable. Plan still asks frustration, excitement, stance, and the 7-box.")
+            Text("Plan still asks calm, confidence, frustration, excitement, stance, and the gate strip.")
                 .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .regular))
                 .foregroundColor(BarDS.Text.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 8)
-            HStack(spacing: 6) {
-                ForEach(1...5, id: \.self) { n in
-                    Button {
-                        viewModel.declEmotionalCalm = n
-                    } label: {
-                        Text("C\(n)")
-                            .font(BarDS.monoFont(10, weight: .semibold))
-                            .foregroundColor(viewModel.declEmotionalCalm == n ? Color(hex: "#050505") : BarDS.Text.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(viewModel.declEmotionalCalm == n ? BarDS.Accent.teal : Color.white.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Calm \(n)")
-                }
-            }
-            HStack(spacing: 6) {
-                ForEach(1...5, id: \.self) { n in
-                    Button {
-                        viewModel.declEmotionalConfidence = n
-                    } label: {
-                        Text("K\(n)")
-                            .font(BarDS.monoFont(10, weight: .semibold))
-                            .foregroundColor(viewModel.declEmotionalConfidence == n ? Color(hex: "#050505") : BarDS.Text.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(viewModel.declEmotionalConfidence == n ? BarDS.Accent.teal : Color.white.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Confidence \(n)")
-                }
-            }
-            .padding(.top, 4)
             BarInputField(placeholder: "One local non-negotiable", text: $viewModel.openNonNegotiable)
-                .padding(.top, 8)
         }
     }
 

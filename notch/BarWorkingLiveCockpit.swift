@@ -13,6 +13,9 @@ struct BarWorkingLiveCockpit: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(Color.white.opacity(0.38))
                 .tracking(0.6)
+            if usesIndianOptionsWorkingChrome {
+                BarOptionsGlanceStrip(viewModel: viewModel)
+            }
             glanceStrip
             conditionsStrip
             sessionChart
@@ -30,6 +33,16 @@ struct BarWorkingLiveCockpit: View {
 
     private var effectivePending: BarPendingDeclaration? {
         selectedPending ?? liveState?.pendingDeclaration
+    }
+
+    /// Kotak NFO options — same glance strip pattern as declare cockpit (not USDM math).
+    private var usesIndianOptionsWorkingChrome: Bool {
+        BarOptionsDeclareSurface.usesCockpit(
+            for: viewModel.declareAssetClass,
+            slug: viewModel.resolvedDeskSlug,
+            instrumentId: viewModel.deskSelectedInstrumentId,
+            instrumentType: viewModel.deskSelectedInstrumentType
+        )
     }
 
     private var workingSymbol: String {

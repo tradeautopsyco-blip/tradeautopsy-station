@@ -100,7 +100,7 @@ struct BarOptionsDeclareView: View {
         case .unavailable:
             VStack(alignment: .leading, spacing: 8) {
                 HonestyChip(status: .unavailable)
-                Text("BoundedSnapshot is complete-or-refused. No strike grid while the master and chain are holes.")
+                Text(BarDataVendorHonesty.body(status: viewModel.deskChainStatus, capability: "option_chain"))
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +192,7 @@ struct BarOptionsDeclareView: View {
         } else if let honesty = HonestyStatus.fromWire(viewModel.deskOiStatus) {
             VStack(alignment: .leading, spacing: 8) {
                 HonestyChip(status: honesty)
-                Text("market/open_interest · quote field open_int. oi_las* stay dark. Not eapi sumOpenInterest.")
+                Text(BarDataVendorHonesty.body(status: viewModel.deskOiStatus, capability: "open_interest"))
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +200,7 @@ struct BarOptionsDeclareView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HonestyChip(status: .unavailable)
-                Text("market/open_interest · quote field open_int. oi_las* stay dark. Not eapi sumOpenInterest.")
+                Text(BarDataVendorHonesty.body(status: "unavailable", capability: "open_interest"))
                     .font(BarDS.monoFont(10, weight: .regular))
                     .foregroundColor(BarDS.Text.muted)
                     .fixedSize(horizontal: false, vertical: true)

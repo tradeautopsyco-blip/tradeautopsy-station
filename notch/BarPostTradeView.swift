@@ -38,6 +38,7 @@ struct BarPostTradeView: View {
     @State private var noteC: String = ""
     @State private var tick: Date = Date()
     @State private var emotionOut: Int = 0
+    @State private var showManualFillLane: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -54,14 +55,27 @@ struct BarPostTradeView: View {
                     unpostedChartsCard
                 }
 
-                BarManualFillPanel(viewModel: viewModel, liveState: viewModel.barLiveState)
+                debriefDeclarationPicker
 
-                momentA
-                momentB
-                momentC
-                if postTrade.fidelityRingVisible {
-                    fidelitySection
-                    submitRow
+                if debriefSelectionReady {
+                    Button(showManualFillLane ? "Hide broker-miss fill" : "Broker missed a fill…") {
+                        showManualFillLane.toggle()
+                    }
+                    .buttonStyle(.plain)
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                    .foregroundColor(BarDS.Text.hint)
+
+                    if showManualFillLane {
+                        BarManualFillPanel(viewModel: viewModel, liveState: viewModel.barLiveState)
+                    }
+
+                    momentA
+                    momentB
+                    momentC
+                    if postTrade.fidelityRingVisible {
+                        fidelitySection
+                        submitRow
+                    }
                 }
 
                 Button("Dismiss (no save)") {
@@ -81,6 +95,8 @@ struct BarPostTradeView: View {
             noteC = ""
             emotionOut = viewModel.declEmotionNow
             tick = Date()
+            showManualFillLane = false
+            Task { await viewModel.fetchWeekDeclarationsForDebrief() }
         }
         .onReceive(NotchOneSecondClock.publisher) { tick = $0 }
     }
@@ -384,12 +400,15 @@ struct BarPostTradeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button {
+                let declSelected = viewModel.debriefSelectedDeclarationId?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 let declFromMatch = viewModel.barLiveState?.matchedDeclarationId?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let declPending = viewModel.barLiveState?.pendingDeclaration?.id
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let undeclared = viewModel.barLiveState?.undeclaredPosition
                 let declId: String? = {
+                    if let s = declSelected, !s.isEmpty { return s }
                     if let m = declFromMatch, !m.isEmpty { return m }
                     if let p = declPending, !p.isEmpty { return p }
                     return nil
@@ -438,21 +457,81 @@ struct BarPostTradeView: View {
         }
     }
 
+    private var debriefSelectionReady: Bool {
+        viewModel.debriefSelectedDeclarationId?.isEmpty == false
+    }
+
+    private var debriefSelectedRow: BarWeekDeclarationRow? {
+        guard let id = viewModel.debriefSelectedDeclarationId else { return nil }
+        return viewModel.weekDeclarationPickerItems.first { $0.id == id }
+    }
+
+    private var debriefSelectedPending: BarPendingDeclaration? {
+        guard let id = viewModel.debriefSelectedDeclarationId else { return nil }
+        let rows = viewModel.barLiveState?.pendingDeclarations ?? []
+        if let hit = rows.first(where: { $0.id == id }) { return hit }
+        if viewModel.barLiveState?.pendingDeclaration?.id == id {
+            return viewModel.barLiveState?.pendingDeclaration
+        }
+        return nil
+    }
+
+    private var debriefDeclarationPicker: some View {
+        BarCard {
+            Text("Closed tickets today")
+                .font(BarDS.bodyFont(BarDS.FontSize.bodySmall, weight: .bold))
+                .foregroundColor(BarDS.Text.primary)
+                .padding(.bottom, 6)
+            if viewModel.weekDeclarationPickerItems.isEmpty {
+                Text("No closed declarations in this week list yet — pick loads from the agent archive.")
+                    .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
+                    .foregroundColor(BarDS.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(viewModel.weekDeclarationPickerItems) { row in
+                    let selected = viewModel.debriefSelectedDeclarationId == row.id
+                    Button {
+                        viewModel.selectDebriefDeclaration(id: row.id)
+                        postTrade = .initial
+                        adherenceTri = AdherenceTriState()
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(row.symbol) \(row.side)")
+                                    .font(BarDS.bodyFont(12, weight: .semibold))
+                                Text(row.localDate ?? row.status)
+                                    .font(BarDS.monoFont(10, weight: .regular))
+                                    .foregroundColor(BarDS.Text.hint)
+                            }
+                            Spacer()
+                            if selected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(BarDS.Accent.teal)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
     private var citedNetDisplay: String {
-        BarDebriefCitedNet.display(
+        let symbol = debriefSelectedRow?.symbol
+            ?? debriefSelectedPending?.symbol
+            ?? viewModel.barLiveState?.undeclaredPosition?.symbol
+        return BarDebriefCitedNet.displayUniqueOrAmbiguous(
             optionsOrNfo: viewModel.sessionPnLOwnerMissing || viewModel.declareAssetClass == .options,
-            net: BarDebriefCitedNet.net(
-                symbol: viewModel.barLiveState?.pendingDeclaration?.symbol
-                    ?? viewModel.barLiveState?.undeclaredPosition?.symbol,
-                trips: viewModel.todayClosedTrips.map { ($0.symbol, $0.net) }
-            ),
+            symbol: symbol,
+            trips: viewModel.todayClosedTrips.map { ($0.symbol, $0.net) },
             currency: viewModel.formatQuoteCurrency
         )
     }
 
     private var liveNoteText: String {
         var parts: [String] = []
-        if let avg = viewModel.barLiveState?.pendingDeclaration?.avgFill {
+        if let avg = debriefSelectedPending?.avgFill {
             parts.append("Avg fill \(BarWorkingCompare.formatPrice(avg))")
         }
         if viewModel.declEmotionNow >= 1 {
@@ -464,14 +543,14 @@ struct BarPostTradeView: View {
     }
 
     private var snapshotStopLine: String {
-        if let sl = viewModel.barLiveState?.pendingDeclaration?.stopLoss {
+        if let sl = debriefSelectedPending?.stopLoss {
             return "Declared SL \(BarWorkingCompare.formatPrice(sl))"
         }
         return "Matches your declared stop for this plan."
     }
 
     private var snapshotSizeLine: String {
-        if let q = viewModel.barLiveState?.pendingDeclaration?.quantity {
+        if let q = debriefSelectedPending?.quantity {
             return "Declared qty \(BarWorkingCompare.formatQty(q))"
         }
         return "No drift vs declared size."

@@ -66,6 +66,7 @@ mod station_auth;
 mod sync_hint;
 mod today;
 mod journal_trip_cites;
+mod risk;
 mod vendor_bindings;
 
 #[derive(Clone)]
@@ -317,6 +318,10 @@ pub fn router(state: AppState) -> Router {
             get(bar::declarations_list_handler),
         )
         .route("/api/daemon/bar/declare", post(bar::declare_handler))
+        .route(
+            "/api/daemon/risk/preview",
+            post(risk::preview_handler),
+        )
         .route("/api/daemon/bar/stop-me", post(bar::stop_me_handler))
         .route(
             "/api/daemon/bar/stop-me/clear",

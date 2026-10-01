@@ -161,6 +161,20 @@ struct BarOptionsSessionChart: View {
                         scale: scale,
                         formingUp: formingUp
                     )
+                    if drag == nil, let idx = hoverIndex, parsed.indices.contains(idx) {
+                        let bar = parsed[idx]
+                        let slot = plotWidth / CGFloat(max(visible.count, 1))
+                        let x = slot * (CGFloat(idx) + 0.5)
+                        SessionChartCrosshair.draw(
+                            context: &context,
+                            plotWidth: plotWidth,
+                            height: size.height,
+                            candleCenterX: x,
+                            barHigh: bar.high,
+                            barLow: bar.low,
+                            scale: scale
+                        )
+                    }
                 }
                 legendOverlay(parsed: parsed)
                 if visible.count >= 2 {

@@ -91,4 +91,29 @@ enum BarWorkingLivePresentation {
         guard let v, v > 0, v.isFinite else { return nil }
         return v
     }
+
+    /// Compact chip for Working list rows (`harness-trade-arc.md` §5).
+    static func listInvalidationChip(
+        pending: BarPendingDeclaration,
+        last: Double?,
+        lastStatus: String
+    ) -> String {
+        let snap = pending.planSnapshot
+        let kind = snap?.resolvedInvalidationKind ?? "price"
+        let price = snap?.resolvedInvalidationPrice
+        let sideBuy = !pending.side.uppercased().contains("SELL")
+        let state = BarWorkingCompare.vsInvalidation(
+            sideBuy: sideBuy,
+            last: last,
+            status: lastStatus,
+            kind: kind,
+            price: price
+        )
+        switch state {
+        case .breached: return "Inv breached"
+        case .intact: return "Inv intact"
+        case .waiting: return "Inv waiting"
+        case .dark: return "Inv dark"
+        }
+    }
 }

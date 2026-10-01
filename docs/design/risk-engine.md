@@ -1,6 +1,6 @@
 # Risk engine and position sizing — options
 
-**Status:** exploration. This document does not lock a formula, a default risk percent, or an order path.
+**Status:** partial — `POST /api/daemon/risk/preview` + Plan risk strip (Tradeture layout, honest dashes). `authored_qty` stays null until `POSITION-SIZING.md` cites a formula.
 **Date:** 2026-10-01
 **Audience:** the next coding agent and the founder.
 

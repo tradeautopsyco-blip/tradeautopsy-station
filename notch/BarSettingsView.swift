@@ -741,6 +741,8 @@ struct BarSettingsView: View {
                 .buttonStyle(.plain)
             }
             BarDeskRulesReadout(store: DeskRulesStore.shared)
+            BarDeskHotkeyPreferencesView()
+                .padding(.top, 8)
         }
     }
 

@@ -975,7 +975,13 @@ public final class NotchViewModel: ObservableObject {
     private var toolbarShowCoalesceTask: Task<Void, Never>?
     private var barLiveStateKickoffTask: Task<Void, Never>?
     private var barLiveStateFetchInFlight = false
-    private var workingInvalidationWasBreached = false
+    private var workingInvalidationBreachedIds: Set<String> = []
+    private var workingTargetTouchedIds: Set<String> = []
+    private var workingPlanStopTouchedIds: Set<String> = []
+    @Published var planRiskPreviewPresentation: BarPlanRiskPreview.Presentation?
+    private var planRiskPreviewTask: Task<Void, Never>?
+    @Published var debriefSelectedDeclarationId: String?
+    @Published var weekDeclarationPickerItems: [BarWeekDeclarationRow] = []
     /// Consecutive live-state chrome misses — not the hybrid-armed reconcile counter.
     private var barLiveStateStripFailures: Int = 0
     /// Incremented when `live-state` fails while [hybrid armed](BarOptimisticArmedSnapshot) is active; cleared on 200.
@@ -1306,8 +1312,8 @@ public final class NotchViewModel: ObservableObject {
         invalidationPrice: Double?
     ) {
         let id = declarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if invalidated, !workingInvalidationWasBreached, !id.isEmpty {
-            workingInvalidationWasBreached = true
+        if invalidated, !id.isEmpty, !workingInvalidationBreachedIds.contains(id) {
+            workingInvalidationBreachedIds.insert(id)
             let snap = BarJournalConditionFire.workingSnapshotJSON(
                 invalidated: true,
                 last: last,
@@ -1317,9 +1323,122 @@ public final class NotchViewModel: ObservableObject {
             )
             Task { await postJournalConditionFire(declarationId: id, ruleId: "invalidation_price", working: snap) }
         }
-        if !invalidated {
-            workingInvalidationWasBreached = false
+        if !invalidated, !id.isEmpty {
+            workingInvalidationBreachedIds.remove(id)
         }
+    }
+
+    /// `target_touched` / `plan_stop_touched` logs (`harness-trade-arc.md` §5).
+    func syncWorkingPlanLevelFires(
+        declarationId: String?,
+        sideBuy: Bool,
+        last: Double?,
+        lastStatus: String,
+        stop: Double?,
+        target: Double?
+    ) {
+        let id = declarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !id.isEmpty else { return }
+        guard BarWorkingCompare.labeledLast(last: last, status: lastStatus) != "— · dark" else { return }
+
+        if let target, target > 0 {
+            let touched = sideBuy
+                ? (last ?? 0) >= target
+                : (last ?? 0) <= target
+            if touched, !workingTargetTouchedIds.contains(id) {
+                workingTargetTouchedIds.insert(id)
+                Task { await postJournalConditionFire(declarationId: id, ruleId: "target_touched") }
+            }
+        }
+        if let stop, stop > 0 {
+            let touched = sideBuy
+                ? (last ?? 0) <= stop
+                : (last ?? 0) >= stop
+            if touched, !workingPlanStopTouchedIds.contains(id) {
+                workingPlanStopTouchedIds.insert(id)
+                Task { await postJournalConditionFire(declarationId: id, ruleId: "plan_stop_touched") }
+            }
+        }
+    }
+
+    func schedulePlanRiskPreview(request: BarPlanRiskPreview.Request) {
+        planRiskPreviewTask?.cancel()
+        planRiskPreviewTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled, let self else { return }
+            await self.fetchPlanRiskPreview(request: request)
+        }
+    }
+
+    func fetchPlanRiskPreview(request: BarPlanRiskPreview.Request) async {
+        let quote = deskQuoteCurrency
+            ?? DeskMoneyFormatting.quoteCurrency(forBrokerSlug: activeExecutionBrokerSlug)
+            ?? ""
+        let local = BarPlanRiskPreview.localPresentation(request, quoteCurrency: quote)
+        guard let url = URL(string: baseURL() + "/api/daemon/risk/preview") else {
+            planRiskPreviewPresentation = local
+            return
+        }
+        let body = BarPlanRiskPreview.requestJSON(request)
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            planRiskPreviewPresentation = local
+            return
+        }
+        do {
+            let (respData, resp) = try await URLSession.shared.data(
+                for: authorizedRequest(url: url, method: "POST", body: data)
+            )
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code),
+                  let json = try? JSONSerialization.jsonObject(with: respData) as? [String: Any]
+            else {
+                planRiskPreviewPresentation = local
+                return
+            }
+            planRiskPreviewPresentation = BarPlanRiskPreview.presentation(fromAgent: json, localFallback: local)
+        } catch {
+            planRiskPreviewPresentation = local
+        }
+    }
+
+    /// After Confirm — empty form for the next ticket (`harness-trade-arc.md` §3).
+    func clearBarDeclarationFormForAnotherTrade() {
+        barDeclarationSymbol = ""
+        deskSelectedInstrumentId = ""
+        declEntryPrice = ""
+        declSetupType = ""
+        declInvalidationType = ""
+        declInvalidationCondition = ""
+        declInvalidationPrice = ""
+        declIntent = ""
+        declLots = ""
+        declEmotionNow = 0
+        declGateStripState = BarPlanGateStripState(
+            capitalAck: false,
+            onePercentAck: false,
+            maxLossAck: false,
+            hedgeAck: false,
+            reviewAck: false
+        )
+        planRiskPreviewPresentation = nil
+    }
+
+    func fetchWeekDeclarationsForDebrief() async {
+        guard let url = URL(string: baseURL() + "/api/daemon/bar/declarations?scope=week&limit=50") else {
+            return
+        }
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: authorizedRequest(url: url))
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(code) else { return }
+            weekDeclarationPickerItems = BarWeekDeclarations.parseWeekList(data)
+        } catch {
+            weekDeclarationPickerItems = []
+        }
+    }
+
+    func selectDebriefDeclaration(id: String) {
+        debriefSelectedDeclarationId = id
     }
 
     func fetchBarLiveState() async {
@@ -3203,6 +3322,7 @@ public final class NotchViewModel: ObservableObject {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if (200...299).contains(code) {
                 showingDeclarationForm = false
+                clearBarDeclarationFormForAnotherTrade()
                 daemonProtocolError = nil
                 barStateError = nil
                 barDeclarationLastError = nil
@@ -5159,11 +5279,11 @@ public final class NotchViewModel: ObservableObject {
     }
 
     var openStartUnlocked: Bool {
-        BarOpenStartGate.unlocked(
-            calm: declEmotionalCalm,
-            confidence: declEmotionalConfidence,
-            rule: openNonNegotiable
-        )
+        BarOpenStartGate.unlocked(rule: openNonNegotiable)
+    }
+
+    var openShowsPreMarketIndices: Bool {
+        !openHidesIndexChips && BarOpenStartGate.showsPreMarketIndices(morningBrief: morningBrief)
     }
 
     var openHidesIndexChips: Bool {

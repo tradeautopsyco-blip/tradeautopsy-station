@@ -1,6 +1,6 @@
 # Harness Open / Plan / Working — layout options
 
-**Status:** exploration. This note does not change a formula, invent a quote, or move Confirm’s required fields.
+**Status:** partial — Open rule-only gate, Plan numbers-first + risk preview strip, Working three-state detail landed in Notch (2026-10-01 PR). Confirm gates unchanged.
 **Date:** 2026-10-01
 **Screens:** founder shots of Open, Plan, and Working on Kotak Neo, NSE closed, agent offline, two obtain holes.
 

@@ -30,11 +30,21 @@ struct BarCashCockpitPlanRail: View {
 
                 BarShippingFundsPlanRow(glance: viewModel.shippingFundsGlance)
 
-                groupLab("State check")
-                BarPlanEmotionCheckView(viewModel: viewModel)
-
                 groupLab("Numbers")
                 numbersFields
+
+                BarPlanRiskPreviewRow(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    stopLossText: stopLossText,
+                    quantityText: quantityText,
+                    targetPriceText: targetPriceText
+                )
+
+                BarPlanSlSuggestorRow(viewModel: viewModel, stopLossText: stopLossText)
+
+                groupLab("State check")
+                BarPlanEmotionCheckView(viewModel: viewModel)
 
                 if isOptions {
                     groupLab("Contract")
@@ -64,6 +74,8 @@ struct BarCashCockpitPlanRail: View {
                     groupLab("Gate")
                     BarPlanGateStripView(viewModel: viewModel, exitFilled: cashExitFilled)
                 }
+
+                BarPlanAuthoringExtras(viewModel: viewModel)
 
                 if viewModel.showsConfirmControl {
                     confirmBar
@@ -183,9 +195,6 @@ struct BarCashCockpitPlanRail: View {
                         .font(BarDS.monoFont(12, weight: .medium))
                         .foregroundColor(r >= 2.0 ? BarDS.Accent.green : BarDS.Text.primary)
                 }
-            }
-            if !isOptions {
-                BarPlanSizerPlanRow(viewModel: viewModel, stopLossText: stopLossText)
             }
             if viewModel.declareAssetClass == .spot || viewModel.declareAssetClass == .equity {
                 BarChip(
