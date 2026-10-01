@@ -268,6 +268,18 @@ struct HotkeyRegistrarTests {
         #expect(floatingNotch.lastHotkeyActionId == "kill")
     }
 
+    @Test func unboundCarbonIdDoesNothing() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerDeskActions { floatingNotch.performHotkey($0) }
+        registrar.reloadSavedBindings([])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 10)
+
+        #expect(floatingNotch.performHotkeyCallCount == 0)
+    }
+
     @Test func altSpaceDoesNotToggleWhenSavedBindingSuppressesDefault() {
         let floatingNotch = FakeFloatingNotchHost()
         let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))

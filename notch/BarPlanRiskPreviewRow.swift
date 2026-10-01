@@ -104,36 +104,16 @@ struct BarPlanRiskPreviewRow: View {
     }
 
     private func buildRequest() -> BarPlanRiskPreview.Request {
-        let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
-        let stop = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let target = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let qty = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
         let budget = Double(budgetValueText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let glance = viewModel.shippingFundsGlance
-        let tick = Double(viewModel.deskTickSize ?? "")
-        let step = Double(viewModel.deskStepSize ?? "")
-        let levText = viewModel.futuresMarginReadout(symbol: viewModel.barDeclarationSymbol).leverage
-        let lev = Double(levText ?? "")
-        return BarPlanRiskPreview.Request(
-            bookId: viewModel.declareBookId ?? "",
+        return BarPlanRiskPreview.planRequest(
+            viewModel: viewModel,
             sideBuy: sideBuy,
             budgetMode: budgetMode,
             budgetValue: budget,
-            entry: entry,
-            stop: stop,
-            target: target,
-            overrideQty: qty,
-            fundsLit: glance.isLit,
-            fundsBalance: BarPlanRiskPreview.freeAmount(from: glance.freeText),
-            fundsDisplayText: glance.freeText,
-            priceIncrement: tick.flatMap { $0 > 0 ? $0 : nil },
-            multiplier: nil,
-            unitBatchSize: step.flatMap { $0 > 0 ? $0 : nil },
-            instrumentRole: instrumentRole,
-            leverage: (instrumentRole == "nfo_future" || instrumentRole == "cash")
-                ? lev.flatMap { $0 > 0 ? $0 : nil }
-                : nil,
-            symbol: viewModel.barDeclarationSymbol
+            stopLossText: stopLossText,
+            quantityText: quantityText,
+            targetPriceText: targetPriceText,
+            instrumentRole: instrumentRole
         )
     }
 

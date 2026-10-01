@@ -103,6 +103,22 @@ struct BarHarnessPhasesTests {
         #expect(p.suggestedSizeText == "—")
     }
 
+    @Test func slSuggestorShowsAuthoredSizeFromPreview() {
+        let p = BarPlanSlSuggestor.present(
+            BarPlanSlSuggestor.Input(
+                riskPercentOfMargin: 1,
+                marginLit: true,
+                marginDisplay: "USDT 5000",
+                entry: 100,
+                sideBuy: true,
+                bookId: "binance-com-spot",
+                authoredSizeText: "10"
+            )
+        )
+        #expect(p.suggestedSizeText == "10")
+        #expect(p.suggestedStopText == "—")
+    }
+
     @Test func freeAmountReadsGlanceText() {
         #expect(BarPlanRiskPreview.freeAmount(from: "INR 19.41") == 19.41)
         #expect(BarPlanRiskPreview.freeAmount(from: "—") == nil)

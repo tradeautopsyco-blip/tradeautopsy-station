@@ -62,6 +62,13 @@ struct DeskHotkeyDispatchTests {
         #expect(vm.killSwitchActive)
     }
 
+    @Test func unknownHotkeyIdIsNoOp() {
+        let vm = NotchViewModel(planSurfaceOnly: true)
+        vm.performDeskHotkey("not_in_hotkey_actions_md")
+        #expect(vm.hotkeyConfirmRequest == 0)
+        #expect(vm.hotkeyScreenRequest == nil)
+    }
+
     @Test func prefsListKeepsStableIdsAndPostsOnSave() {
         let ids = DeskHotkeyPreferences.configurableActions.map(\.id)
         #expect(ids.contains("kill"))

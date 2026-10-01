@@ -42,7 +42,14 @@ struct BarCashCockpitPlanRail: View {
                     instrumentRole: planInstrumentRole
                 )
 
-                BarPlanSlSuggestorRow(viewModel: viewModel, stopLossText: stopLossText)
+                BarPlanSlSuggestorRow(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    quantityText: $quantityText,
+                    stopLossText: stopLossText,
+                    targetPriceText: targetPriceText,
+                    instrumentRole: planInstrumentRole
+                )
 
                 groupLab("State check")
                 BarPlanEmotionCheckView(viewModel: viewModel)

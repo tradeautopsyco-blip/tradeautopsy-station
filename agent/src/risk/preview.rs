@@ -491,4 +491,82 @@ mod tests {
         });
         assert_eq!(out["reason"].as_str(), Some("funds_dark"));
     }
+
+    #[test]
+    fn missing_stop_keeps_authored_null() {
+        let out = compute_preview(RiskPreviewInput {
+            book_id: "binance-com-spot".into(),
+            budget_mode: "risk_percent".into(),
+            budget_value: Some(1.0),
+            entry: Some(100.0),
+            stop: None,
+            funds_lit: true,
+            funds_balance: Some(10_000.0),
+            price_increment: Some(0.01),
+            ..RiskPreviewInput::default()
+        });
+        assert!(out["authored_qty"].is_null());
+        assert_eq!(out["reason"].as_str(), Some("no_stop_or_entry"));
+    }
+
+    #[test]
+    fn nfo_future_without_lot_stays_dashed() {
+        let out = compute_preview(RiskPreviewInput {
+            book_id: "kotak-nse-nfo".into(),
+            budget_mode: "risk_percent".into(),
+            budget_value: Some(1.0),
+            entry: Some(100.0),
+            stop: Some(90.0),
+            funds_lit: true,
+            funds_balance: Some(500_000.0),
+            price_increment: Some(0.05),
+            instrument_role: "nfo_future".into(),
+            ..RiskPreviewInput::default()
+        });
+        assert!(out["authored_qty"].is_null());
+        assert_eq!(
+            out["authored_qty_reason"].as_str(),
+            Some("multiplier_unspecified")
+        );
+    }
+
+    #[test]
+    fn margin_gate_exceeded_clears_qty() {
+        let out = compute_preview(RiskPreviewInput {
+            book_id: "kotak-nse-bse-cash".into(),
+            budget_mode: "risk_percent".into(),
+            budget_value: Some(50.0),
+            entry: Some(100.0),
+            stop: Some(99.0),
+            funds_lit: true,
+            funds_balance: Some(1_000.0),
+            price_increment: Some(0.05),
+            instrument_role: "cash".into(),
+            leverage: Some(2.0),
+            ..RiskPreviewInput::default()
+        });
+        assert!(out["authored_qty"].is_null());
+        assert_eq!(
+            out["authored_qty_reason"].as_str(),
+            Some("margin_gate_exceeded")
+        );
+        assert_eq!(out["margin_gate"].as_str(), Some("exceeded"));
+    }
+
+    #[test]
+    fn fixed_risk_money_matches_equity_times_percent() {
+        let out = compute_preview(RiskPreviewInput {
+            book_id: "binance-com-spot".into(),
+            budget_mode: "risk_percent".into(),
+            budget_value: Some(2.0),
+            entry: Some(100.0),
+            stop: Some(90.0),
+            funds_lit: true,
+            funds_balance: Some(50_000.0),
+            price_increment: Some(0.01),
+            ..RiskPreviewInput::default()
+        });
+        assert_eq!(out["fixed_risk_money"].as_f64(), Some(1_000.0));
+        assert_eq!(out["commission_rate"].as_f64(), Some(0.0));
+    }
 }

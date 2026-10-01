@@ -183,6 +183,49 @@ enum BarPlanRiskPreview {
         }
     }
 
+    /// Shared builder for Plan risk preview and SL suggestor (DualNoBlend book_id on the request).
+    static func planRequest(
+        viewModel: NotchViewModel,
+        sideBuy: Bool,
+        budgetMode: BudgetMode,
+        budgetValue: Double?,
+        stopLossText: String,
+        quantityText: String,
+        targetPriceText: String,
+        instrumentRole: String
+    ) -> Request {
+        let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
+        let stop = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let target = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let qty = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let glance = viewModel.shippingFundsGlance
+        let tick = Double(viewModel.deskTickSize ?? "")
+        let step = Double(viewModel.deskStepSize ?? "")
+        let levText = viewModel.futuresMarginReadout(symbol: viewModel.barDeclarationSymbol).leverage
+        let lev = Double(levText ?? "")
+        return Request(
+            bookId: viewModel.declareBookId ?? "",
+            sideBuy: sideBuy,
+            budgetMode: budgetMode,
+            budgetValue: budgetValue,
+            entry: entry,
+            stop: stop,
+            target: target,
+            overrideQty: qty,
+            fundsLit: glance.isLit,
+            fundsBalance: freeAmount(from: glance.freeText),
+            fundsDisplayText: glance.freeText,
+            priceIncrement: tick.flatMap { $0 > 0 ? $0 : nil },
+            multiplier: nil,
+            unitBatchSize: step.flatMap { $0 > 0 ? $0 : nil },
+            instrumentRole: instrumentRole,
+            leverage: (instrumentRole == "nfo_future" || instrumentRole == "cash")
+                ? lev.flatMap { $0 > 0 ? $0 : nil }
+                : nil,
+            symbol: viewModel.barDeclarationSymbol
+        )
+    }
+
     static func requestJSON(_ req: Request) -> [String: Any] {
         var o: [String: Any] = [
             "book_id": req.bookId,
