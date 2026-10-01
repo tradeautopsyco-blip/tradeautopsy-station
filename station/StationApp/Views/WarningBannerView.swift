@@ -21,6 +21,12 @@ public struct WarningBannerView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if warning.reason == .killSwitchLatched {
+                Text("The kill switch latch keeps the Enforcer alive with DNS teeth. Dismiss the kill from the desk before restarting.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if let logPath = warning.logPath {
                 Text("Log: \(logPath.path)")
                     .font(.caption)

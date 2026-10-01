@@ -27,7 +27,8 @@ public struct StationShellView: View {
                     .navigationTitle(coordinator.activeRoute.rawValue)
             }
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    AgentRestartToolbarButton(coordinator: coordinator)
                     AgentHealthToolbarStatus(coordinator: coordinator)
                 }
             }
@@ -66,7 +67,7 @@ public struct StationShellView: View {
         case .brokers:
             BrokersView(viewModel: coordinator.brokersViewModel)
         case .health:
-            HealthPanelView(viewModel: coordinator.healthPanelViewModel)
+            HealthPanelView(viewModel: coordinator.healthPanelViewModel, coordinator: coordinator)
         case .marketData:
             MarketDataKeysView(viewModel: coordinator.marketDataKeysViewModel)
         case .aiWorkflow:

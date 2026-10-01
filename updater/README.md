@@ -7,7 +7,7 @@ This directory is served as the Sparkle feed on **Vercel** (primary):
 
 Deploy: `./scripts/deploy-updates-feed.sh` from repo root (or automatic via **Deploy Sparkle feed (Vercel)** on push to `updater/appcast.xml`). See [docs/runbooks/updates-domain-vercel.md](../docs/runbooks/updates-domain-vercel.md).
 
-Release workflow defaults to **unsigned** DMGs; only `PRIVATE_SPARKLE_KEY` is required for signed appcast entries. Apple secrets are optional until you enable **notarize** on the workflow dispatch form.
+Release workflow defaults to **notarized** DMGs when Apple secrets are present (`notarize: true` on dispatch). Set `notarize: false` for ad-hoc unsigned builds. `PRIVATE_SPARKLE_KEY` is always required for signed appcast entries.
 
 **GitHub Pages** (optional backup): `.github/workflows/static.yml` on push to `main`.
 

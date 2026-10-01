@@ -342,6 +342,26 @@ public final class StationAppCoordinator: ObservableObject {
         }
     }
 
+    /// One-button agent restart (Wave 6). Does not SIGKILL when kill latch is active.
+    public func restartAgentProcess() async {
+        let outcome = await agentSupervisor.restartAgent()
+        switch outcome {
+        case .blockedKillLatched:
+            agentHealthWarning = AgentHealthWarning(
+                reason: .killSwitchLatched,
+                message: "Cannot restart the agent while the Enforcer is holding a kill. Dismiss the kill switch first.",
+                logPath: nil,
+                canRetry: false
+            )
+            syncAgentHealthFromSupervisor()
+        case .restarted:
+            syncAgentHealthFromSupervisor()
+            if agentSupervisor.isHealthy {
+                await startNotchAndPolling()
+            }
+        }
+    }
+
     public func quit() async {
         if windowController.isVisible {
             windowController.hide()

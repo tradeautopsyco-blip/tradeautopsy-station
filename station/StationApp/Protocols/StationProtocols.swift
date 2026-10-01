@@ -6,6 +6,8 @@ public protocol AgentSupervising: AnyObject {
     func start() async
     func retry() async
     func shutdown() async
+    func isKillLatched() async -> Bool
+    func restartAgent() async -> AgentManualRestartOutcome
     var isHealthy: Bool { get }
     var ownsSpawnedAgent: Bool { get }
     var currentWarning: AgentHealthWarning? { get }

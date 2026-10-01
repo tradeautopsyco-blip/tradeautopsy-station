@@ -5,6 +5,7 @@ import Foundation
 public final class AgentSupervisor: AgentSupervising {
     nonisolated public static let defaultPort: UInt16 = 9137
     nonisolated public static let healthPath = "/api/daemon/health"
+    nonisolated public static let killSwitchStatePath = "/api/daemon/kill-switch/state"
     /// Agent HTTP bind is after ~10s of boot (DBs, adapters). 10s raced and killed a live child.
     nonisolated public static let launchTimeout: TimeInterval = 30
     nonisolated public static let runtimePollInterval: TimeInterval = 2
@@ -60,9 +61,27 @@ public final class AgentSupervisor: AgentSupervising {
         await start()
     }
 
+    /// Stop and respawn the bundled agent on loopback. Refuses when Wave 3 kill latch is active.
+    public func restartAgent() async -> AgentManualRestartOutcome {
+        if await isKillLatched() {
+            return .blockedKillLatched
+        }
+        await shutdown()
+        await retry()
+        return .restarted
+    }
+
     public func shutdown() async {
         supervisionTask?.cancel()
         supervisionTask = nil
+
+        if await isKillLatched() {
+            // Quit / Stop is not consent — leave the Enforcer running with teeth in force.
+            spawnedProcess = nil
+            spawnedPID = nil
+            isHealthy = false
+            return
+        }
 
         if let process = spawnedProcess {
             await terminateOwnedProcess(process)
@@ -78,6 +97,23 @@ public final class AgentSupervisor: AgentSupervising {
             killBundledAgentOrphans()
         }
         isHealthy = false
+    }
+
+    /// Reads `GET /api/daemon/kill-switch/state` (Wave 3). Missing endpoint or errors → not latched.
+    public func isKillLatched() async -> Bool {
+        guard let request = signedKillSwitchStateRequest() else { return false }
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                return false
+            }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return false
+            }
+            return json["active"] as? Bool == true
+        } catch {
+            return false
+        }
     }
 
     private func terminateOwnedProcess(_ process: Process) async {
@@ -145,7 +181,7 @@ public final class AgentSupervisor: AgentSupervising {
             spawnedPID = nil
             spawnedProcess = nil
             do {
-                try spawnAgent()
+                try await spawnAgent()
             } catch {
                 await handleFailure(message: "Failed to spawn agent: \(error.localizedDescription)")
                 continue
@@ -227,7 +263,7 @@ public final class AgentSupervisor: AgentSupervising {
         beginRuntimeSupervision()
     }
 
-    private func spawnAgent() throws {
+    private func spawnAgent() async throws {
         guard let binaryURL = Bundle.main.url(forAuxiliaryExecutable: "tradeautopsy-agent")
             ?? Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("tradeautopsy-agent")
         else {
@@ -235,7 +271,10 @@ public final class AgentSupervisor: AgentSupervising {
         }
 
         // Reap any leftover agent from a previous Station that didn't shut down cleanly.
-        killBundledAgentOrphans()
+        // Never reap a latched orphan — attach on the next start instead.
+        if !(await portHasListener() && await isKillLatched()) {
+            killBundledAgentOrphans()
+        }
 
         let process = Process()
         process.executableURL = binaryURL
@@ -415,7 +454,14 @@ public final class AgentSupervisor: AgentSupervising {
     }
 
     private func signedHealthRequest() -> URLRequest? {
-        let path = Self.healthPath
+        signedWireGetRequest(path: Self.healthPath)
+    }
+
+    private func signedKillSwitchStateRequest() -> URLRequest? {
+        signedWireGetRequest(path: Self.killSwitchStatePath)
+    }
+
+    private func signedWireGetRequest(path: String) -> URLRequest? {
         var request = StationWireClient.signedRequest(
             method: "GET",
             path: path,

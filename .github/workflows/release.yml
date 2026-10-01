@@ -13,10 +13,10 @@ on:
         type: string
         default: ""
       notarize:
-        description: "Developer ID sign + notarize DMG (requires Apple secrets). Default is ad-hoc unsigned."
+        description: "Developer ID sign + notarize DMG (requires Apple secrets). Default on for founder releases; set false for ad-hoc unsigned (no Apple secrets)."
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: tradeautopsy-station-release
@@ -212,7 +212,7 @@ jobs:
       - name: Ad-hoc build notice
         if: env.NOTARIZE != 'true'
         run: |
-          echo "::notice::Ad-hoc unsigned DMG — recipients must right-click Open once (Gatekeeper). Sparkle EdDSA still signs the appcast enclosure."
+          echo "::notice::Ad-hoc unsigned DMG (notarize=false). Recipients must right-click Open once (Gatekeeper). Sparkle EdDSA still signs the appcast enclosure."
 
       - name: Pack DMG
         run: |

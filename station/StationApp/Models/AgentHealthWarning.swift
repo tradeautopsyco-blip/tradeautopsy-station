@@ -6,6 +6,7 @@ public struct AgentHealthWarning: Equatable {
         case portCollisionNonAgent
         case crashLoopExceeded
         case runtimeDisconnected
+        case killSwitchLatched
     }
 
     public var reason: Reason

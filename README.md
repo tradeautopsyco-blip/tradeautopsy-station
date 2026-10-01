@@ -36,7 +36,7 @@ cd agent && cargo test
 
 Releases use [Sparkle](https://sparkle-project.org/) against `https://updates.tradeautopsy.in/appcast.xml` (see `updater/` and `.github/workflows/release.yml`).
 
-**Default today:** GitHub Actions ships **ad-hoc unsigned** DMGs (`notarize: false`). Downloaders get Gatekeeper once per build — **right-click → Open → Open**. Sparkle still verifies the feed with EdDSA and can install updates; each update is also unsigned until you run the workflow with **notarize: true** and Apple secrets.
+**Default today:** GitHub Actions release workflow defaults to **Developer ID + notarized** DMGs when Apple secrets are configured (`notarize: true`). Set **notarize: false** on dispatch for ad-hoc unsigned builds (contributors without Apple secrets). Unsigned downloaders get Gatekeeper once per build — **right-click → Open → Open**. Sparkle still verifies the feed with EdDSA.
 
 **Later:** Developer ID + notarization (`notarize: true` + secrets from `./scripts/set-apple-release-secrets.sh`) removes Gatekeeper friction. The first **notarized** install resets TCC and Keychain vs ad-hoc builds.
 

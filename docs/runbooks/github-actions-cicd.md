@@ -37,7 +37,7 @@ Private repos: included minutes are limited; **macOS** runners consume **10×** 
 |--------|----------------|
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | Feed deploy Action |
 | `PRIVATE_SPARKLE_KEY` | Release workflow appcast signatures |
-| Apple secrets | Release with `notarize: true` only |
+| Apple secrets | Release workflow (defaults to `notarize: true`; set false for unsigned) |
 | `CURSOR_API_KEY` | Agent Dispatch |
 
 Copy secrets from the old repo manually (GitHub does not expose secret values).
