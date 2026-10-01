@@ -3,20 +3,20 @@
     <channel>
         <title>TradeAutopsy Station</title>
         <item>
-            <title>0.2.3</title>
-            <pubDate>Thu, 01 Oct 2026 13:28:34 +0000</pubDate>
+            <title>0.2.4</title>
+            <pubDate>Thu, 01 Oct 2026 15:46:18 +0000</pubDate>
             <link>https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases</link>
-            <sparkle:version>7</sparkle:version>
-            <sparkle:shortVersionString>0.2.3</sparkle:shortVersionString>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>0.2.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[Release 0.2.3.
+            <description><![CDATA[Release 0.2.4.
 
-- Fix DMG/Finder app icon: compile AppIcon.icns into the bundle (no raw AppIcon.icon folder).
-- Committed icns fallback for CI on Xcode 16 when actool cannot compile Icon Composer sources.
+- Sign in works on a fresh Mac. No ~/.tradeautopsy/station.env file. Station uses https://www.tradeautopsy.in and the public WorkOS client.
+- Journal capture status waits briefly for the local agent instead of failing on the first paint.
 
 **Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.]]></description>
-            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.3/TradeAutopsy-Station.dmg" length="22423498" type="application/octet-stream" sparkle:edSignature="lbG1o0quksyE2Zh7rpseeprenAyprKzcjznZClPIobGEYej8SD8gkQ7ldmwFpWBtR8GQBdXhAsY4sp7K84kFCA=="/>
+            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.4/TradeAutopsy-Station.dmg" length="22462662" type="application/octet-stream" sparkle:edSignature="42gVpwk6F14FRNAkTC4Dku0SFhbSwjIgZw746Cmv/5frh8F0jyK10MWRzCC8Mn7BelW+r472/BIf8KHXZzqjCg=="/>
         </item>
     </channel>
 </rss>
