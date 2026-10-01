@@ -500,6 +500,155 @@ struct KotakLoginProfileRemintTests {
         #expect(profiles.unlockCallCount == 1)
     }
 
+    @Test func kotakSessionMintCardPolicy_requiresTotpAfterTwelveHours() {
+        let minted = Date(timeIntervalSince1970: 1_700_000_000)
+        let justInside = minted.addingTimeInterval(KotakSessionMintCardPolicy.totpCardAfterSeconds)
+        let justOutside = minted.addingTimeInterval(KotakSessionMintCardPolicy.totpCardAfterSeconds + 1)
+
+        #expect(
+            KotakSessionMintCardPolicy.requiresFreshTotpBeforeStart(
+                lastValidatedAt: minted,
+                now: justInside
+            ) == false
+        )
+        #expect(
+            KotakSessionMintCardPolicy.requiresFreshTotpBeforeStart(
+                lastValidatedAt: minted,
+                now: justOutside
+            ) == true
+        )
+        #expect(KotakSessionMintCardPolicy.requiresFreshTotpBeforeStart(lastValidatedAt: nil) == false)
+    }
+
+    @Test func startSyncPastTwelveHoursOpensTotpBeforeAgentStart() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.KotakStart12hGate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
+        metadataStore.save(
+            BrokerConnectionMetadata(
+                lastValidatedAt: Date().addingTimeInterval(-(KotakSessionMintCardPolicy.totpCardAfterSeconds + 60))
+            ),
+            for: .kotakNeoProd
+        )
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync,
+            loginProfileStore: profiles
+        )
+
+        await viewModel.startSync(for: .kotakNeoProd)
+
+        #expect(broker.startSyncCallCount == 0)
+        #expect(viewModel.isConnectSheetPresented)
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+        #expect(viewModel.connectTotp.isEmpty)
+        #expect(viewModel.syncActionMessage?.contains("12 hours") == true)
+        #expect(profiles.unlockCallCount == 1)
+    }
+
+    @Test func startSyncWithinTwelveHoursDoesNotOpenTotpSheet() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let suite = "StationTests.KotakStart12hOk.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
+        metadataStore.save(
+            BrokerConnectionMetadata(
+                lastValidatedAt: Date().addingTimeInterval(-(KotakSessionMintCardPolicy.totpCardAfterSeconds - 60))
+            ),
+            for: .kotakNeoProd
+        )
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync,
+            loginProfileStore: profiles
+        )
+
+        await viewModel.startSync(for: .kotakNeoProd)
+
+        #expect(broker.startSyncCallCount == 1)
+        #expect(viewModel.isConnectSheetPresented == false)
+        #expect(profiles.unlockCallCount == 0)
+    }
+
+    @Test func beginConnectPastTwelveHoursOpensTotpBeforeAgentStart() async {
+        let broker = FakeBrokerControlClient()
+        broker.scenario = .notConfigured
+        let store = FakeBrokerCredentialStore()
+        let profiles = FakeKotakLoginProfileStore()
+        try? profiles.save(
+            KotakLoginProfile(
+                consumerKey: "ck-saved",
+                mobileNumber: "+919999999999",
+                ucc: "UCC1",
+                mpin: "9999"
+            ),
+            for: .kotakNeoProd
+        )
+        let sync = FakeBrokerSyncControl()
+        let runtime = FakeBrokerAgentRuntimeClient()
+        let suite = "StationTests.KotakBeginConnect12hGate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let metadataStore = UserDefaultsBrokerMetadataStore(defaults: defaults)
+        metadataStore.save(
+            BrokerConnectionMetadata(
+                lastValidatedAt: Date().addingTimeInterval(-(KotakSessionMintCardPolicy.totpCardAfterSeconds + 60))
+            ),
+            for: .kotakNeoProd
+        )
+
+        let viewModel = BrokersViewModel(
+            brokerControl: broker,
+            credentialStore: store,
+            metadataStore: metadataStore,
+            syncControl: sync,
+            runtimeClient: runtime,
+            loginProfileStore: profiles
+        )
+        await viewModel.beginConnect(for: "kotak_neo")
+
+        #expect(broker.startSyncCallCount == 0)
+        #expect(viewModel.isConnectSheetPresented)
+        #expect(viewModel.connectSheetMode == .kotakTotpOnly)
+        #expect(runtime.fetchSyncHealthCallCount == 0)
+        #expect(profiles.unlockCallCount == 1)
+    }
+
     @Test func beginConnectOpensFullFormWhenNoKotakProfile() async {
         let broker = FakeBrokerControlClient()
         broker.scenario = .notConfigured
