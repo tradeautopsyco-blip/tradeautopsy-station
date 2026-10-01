@@ -148,3 +148,5 @@ Picker: closed rows from the week list (and any local N2 row). Opening Debrief w
 5. New fire ids `target_touched` and `plan_stop_touched` only as logs of the compares above. No new price source.
 
 Out of this note: blending books, placing stops, inventing last, inventing net, one-ticket Working.
+
+**Later founder queue (not LiveBook):** [`founder-backlog.md`](./founder-backlog.md).
