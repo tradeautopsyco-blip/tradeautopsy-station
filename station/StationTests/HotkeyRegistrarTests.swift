@@ -211,6 +211,89 @@ struct HotkeyRegistrarTests {
         #expect(coordinator.inputMonitoringRestartReminder == nil)
     }
 
+    @Test func emptySavedBindingsKeepDefaultCarbonIds() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+        registrar.reloadSavedBindings([])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 1)
+
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
+    @Test func savedToggleReplacesDefaultCarbonId() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+        registrar.reloadSavedBindings([
+            DeskHotkeyRegistration(actionId: "toggle_notch", keyCode: 122, carbonModifiers: 0x800),
+        ])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 1)
+        #expect(floatingNotch.toggleCallCount == 0)
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 10)
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
+    @Test func clearingSavedBindingsRestoresDefaultCarbonId() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+        registrar.reloadSavedBindings([
+            DeskHotkeyRegistration(actionId: "toggle_notch", keyCode: 122, carbonModifiers: 0x800),
+        ])
+        registrar.reloadSavedBindings([])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 1)
+        #expect(floatingNotch.toggleCallCount == 1)
+    }
+
+    @Test func savedDeskBindingDispatchesActionId() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerDeskActions { floatingNotch.performHotkey($0) }
+        registrar.reloadSavedBindings([
+            DeskHotkeyRegistration(actionId: "kill", keyCode: 40, carbonModifiers: 0x800),
+        ])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 10)
+
+        #expect(floatingNotch.performHotkeyCallCount == 1)
+        #expect(floatingNotch.lastHotkeyActionId == "kill")
+    }
+
+    @Test func unboundCarbonIdDoesNothing() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerDeskActions { floatingNotch.performHotkey($0) }
+        registrar.reloadSavedBindings([])
+
+        registrar.dispatchCarbonHotKeyForTesting(id: 10)
+
+        #expect(floatingNotch.performHotkeyCallCount == 0)
+    }
+
+    @Test func altSpaceDoesNotToggleWhenSavedBindingSuppressesDefault() {
+        let floatingNotch = FakeFloatingNotchHost()
+        let registrar = HotkeyRegistrar(inputMonitoringChecker: FakeInputMonitoringChecker(granted: false))
+        defer { registrar.unregisterAll() }
+        registrar.registerToggleNotch { floatingNotch.toggle() }
+        registrar.reloadSavedBindings([
+            DeskHotkeyRegistration(actionId: "toggle_notch", keyCode: 122, carbonModifiers: 0x800),
+        ])
+
+        registrar.dispatchKeyDownForTesting(makeKeyEvent(modifierFlags: .option))
+
+        #expect(floatingNotch.toggleCallCount == 0)
+    }
+
     private func makeCoordinator(
         dateProvider: @escaping () -> Date = Date.init,
         inputMonitoringChecker: InputMonitoringChecking

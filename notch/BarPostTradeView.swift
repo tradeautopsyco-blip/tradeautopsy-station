@@ -65,10 +65,6 @@ struct BarPostTradeView: View {
                     .font(BarDS.bodyFont(BarDS.FontSize.bodyXS, weight: .medium))
                     .foregroundColor(BarDS.Text.hint)
 
-                    if showManualFillLane {
-                        BarManualFillPanel(viewModel: viewModel, liveState: viewModel.barLiveState)
-                    }
-
                     momentA
                     momentB
                     momentC
@@ -76,6 +72,10 @@ struct BarPostTradeView: View {
                         fidelitySection
                         submitRow
                     }
+                }
+
+                if showManualFillLane {
+                    BarManualFillPanel(viewModel: viewModel, liveState: viewModel.barLiveState)
                 }
 
                 Button("Dismiss (no save)") {
@@ -95,8 +95,12 @@ struct BarPostTradeView: View {
             noteC = ""
             emotionOut = viewModel.declEmotionNow
             tick = Date()
-            showManualFillLane = false
+            showManualFillLane = viewModel.consumeManualFillRequest()
             Task { await viewModel.fetchWeekDeclarationsForDebrief() }
+        }
+        .onChange(of: viewModel.requestManualFillLane) { _, flag in
+            guard flag, viewModel.consumeManualFillRequest() else { return }
+            showManualFillLane = true
         }
         .onReceive(NotchOneSecondClock.publisher) { tick = $0 }
     }

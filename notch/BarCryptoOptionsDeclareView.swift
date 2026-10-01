@@ -1220,6 +1220,14 @@ struct BarCryptoOptionsDeclareView: View {
             labeledField("Stop — exact premium in USDT", placeholder: "0.0006", text: $stopLossText)
             labeledField("Target — premium in USDT", placeholder: "0.0030", text: $targetPriceText)
             labeledField("Max planned loss USDT", placeholder: "250", text: $viewModel.declMaxPlannedLossText)
+            BarPlanRiskPreviewRow(
+                viewModel: viewModel,
+                sideBuy: $sideBuy,
+                stopLossText: stopLossText,
+                quantityText: $quantityText,
+                targetPriceText: targetPriceText,
+                instrumentRole: "option"
+            )
         }
     }
 

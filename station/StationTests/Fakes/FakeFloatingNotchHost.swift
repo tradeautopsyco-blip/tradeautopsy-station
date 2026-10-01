@@ -19,6 +19,8 @@ final class FakeFloatingNotchHost: FloatingNotchHosting {
     private(set) var lastBridgeResult: String?
     private(set) var lastBridgeError: String?
     private(set) var reportBridgeOutcomeCallCount = 0
+    private(set) var lastHotkeyActionId: String?
+    private(set) var performHotkeyCallCount = 0
 
     func configure(secret: String, port: UInt16, webBase: String) {
         configureCallCount += 1
@@ -60,5 +62,10 @@ final class FakeFloatingNotchHost: FloatingNotchHosting {
         reportBridgeOutcomeCallCount += 1
         lastBridgeResult = result
         lastBridgeError = error
+    }
+
+    func performHotkey(_ actionId: String) {
+        performHotkeyCallCount += 1
+        lastHotkeyActionId = actionId
     }
 }

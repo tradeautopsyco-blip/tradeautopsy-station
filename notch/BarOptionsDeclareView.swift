@@ -744,6 +744,15 @@ struct BarOptionsDeclareView: View {
             labeledField("Stop — exact price of the option", placeholder: "899.00", text: $stopLossText)
             labeledField("Target", placeholder: "320.00", text: $targetPriceText)
             labeledField("Max planned loss ₹", placeholder: "15000", text: $viewModel.declMaxPlannedLossText)
+            BarPlanRiskPreviewRow(
+                viewModel: viewModel,
+                sideBuy: $sideBuy,
+                stopLossText: stopLossText,
+                quantityText: .constant(viewModel.declLots),
+                targetPriceText: targetPriceText,
+                instrumentRole: "nfo_future",
+                onApplyQuantity: { viewModel.declLots = $0 }
+            )
         }
     }
 

@@ -37,11 +37,19 @@ struct BarCashCockpitPlanRail: View {
                     viewModel: viewModel,
                     sideBuy: $sideBuy,
                     stopLossText: stopLossText,
-                    quantityText: quantityText,
-                    targetPriceText: targetPriceText
+                    quantityText: $quantityText,
+                    targetPriceText: targetPriceText,
+                    instrumentRole: planInstrumentRole
                 )
 
-                BarPlanSlSuggestorRow(viewModel: viewModel, stopLossText: stopLossText)
+                BarPlanSlSuggestorRow(
+                    viewModel: viewModel,
+                    sideBuy: $sideBuy,
+                    quantityText: $quantityText,
+                    stopLossText: stopLossText,
+                    targetPriceText: targetPriceText,
+                    instrumentRole: planInstrumentRole
+                )
 
                 groupLab("State check")
                 BarPlanEmotionCheckView(viewModel: viewModel)
@@ -84,6 +92,16 @@ struct BarCashCockpitPlanRail: View {
             .padding(.vertical, 4)
         }
         .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .topLeading)
+    }
+
+    private var planInstrumentRole: String {
+        switch viewModel.declareAssetClass {
+        case .equity: return "cash"
+        case .spot: return "spot"
+        case .usdm: return "usdm"
+        case .coinm: return "coinm"
+        case .options: return "option"
+        }
     }
 
     private var isOptions: Bool { viewModel.declareAssetClass == .options }

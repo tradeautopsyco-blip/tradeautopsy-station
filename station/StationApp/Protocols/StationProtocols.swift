@@ -13,10 +13,27 @@ public protocol AgentSupervising: AnyObject {
     var currentWarning: AgentHealthWarning? { get }
 }
 
+/// One saved row from Notch prefs. Carbon still owns the two shell defaults when this list is empty.
+public struct DeskHotkeyRegistration: Equatable, Sendable {
+    public var actionId: String
+    public var keyCode: UInt32
+    public var carbonModifiers: UInt32
+
+    public init(actionId: String, keyCode: UInt32, carbonModifiers: UInt32) {
+        self.actionId = actionId
+        self.keyCode = keyCode
+        self.carbonModifiers = carbonModifiers
+    }
+}
+
 @MainActor
 public protocol HotkeyRegistering: AnyObject {
     func registerToggleNotch(_ handler: @escaping () -> Void)
     func registerOpenStation(_ handler: @escaping () -> Void)
+    /// Notch actions other than toggle / open Station. `toggle_notch` and `open_station` stay on their own handlers.
+    func registerDeskActions(_ handler: @escaping (String) -> Void)
+    /// Empty list keeps ⌥Space and ⌥⇧Space. A saved `toggle_notch` or `open_station` replaces that default.
+    func reloadSavedBindings(_ bindings: [DeskHotkeyRegistration])
     func unregisterAll()
     /// Install global monitor after Input Monitoring is granted mid-session.
     func refreshGlobalMonitorIfNeeded()
@@ -47,6 +64,8 @@ public protocol FloatingNotchHosting: AnyObject {
     func setBrokerBridge(onConnect: @escaping (String) -> Void, onReauth: @escaping (String) -> Void)
     func setDeviceLoginBridge(onOpen: @escaping () -> Void)
     func reportBrokerBridgeOutcome(result: String?, error: String?)
+    /// Desk action ids from `docs/design/hotkey-actions.md`, other than `toggle_notch` and `open_station`.
+    func performHotkey(_ actionId: String)
 }
 
 @MainActor

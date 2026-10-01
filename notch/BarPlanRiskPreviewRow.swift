@@ -5,8 +5,10 @@ struct BarPlanRiskPreviewRow: View {
     @ObservedObject var viewModel: NotchViewModel
     @Binding var sideBuy: Bool
     var stopLossText: String
-    var quantityText: String
+    @Binding var quantityText: String
     var targetPriceText: String
+    var instrumentRole: String = "cash"
+    var onApplyQuantity: ((String) -> Void)? = nil
 
     @State private var budgetMode: BarPlanRiskPreview.BudgetMode = .riskPercent
     @State private var budgetValueText: String = ""
@@ -56,6 +58,19 @@ struct BarPlanRiskPreviewRow: View {
             metricRow("R:R excl fees", presentation.rrExFeesText)
             metricRow("R:R incl fees", presentation.rrInFeesText)
             metricRow("Proposed size", presentation.proposedSizeText, dashed: presentation.proposedSizeDashed)
+            if !presentation.proposedSizeDashed {
+                Button("Apply size") {
+                    let size = presentation.proposedSizeText
+                    if let onApplyQuantity {
+                        onApplyQuantity(size)
+                    } else {
+                        quantityText = size
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(BarDS.bodyFont(11, weight: .semibold))
+                .foregroundColor(BarDS.Accent.teal)
+            }
 
             Text(presentation.footnote)
                 .font(BarDS.monoFont(10, weight: .regular))
@@ -89,24 +104,16 @@ struct BarPlanRiskPreviewRow: View {
     }
 
     private func buildRequest() -> BarPlanRiskPreview.Request {
-        let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
-        let stop = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let target = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let qty = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
         let budget = Double(budgetValueText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let glance = viewModel.shippingFundsGlance
-        return BarPlanRiskPreview.Request(
-            bookId: viewModel.declareBookId ?? "",
+        return BarPlanRiskPreview.planRequest(
+            viewModel: viewModel,
             sideBuy: sideBuy,
             budgetMode: budgetMode,
             budgetValue: budget,
-            entry: entry,
-            stop: stop,
-            target: target,
-            overrideQty: qty,
-            fundsLit: glance.isLit,
-            fundsBalance: nil,
-            fundsDisplayText: glance.freeText
+            stopLossText: stopLossText,
+            quantityText: quantityText,
+            targetPriceText: targetPriceText,
+            instrumentRole: instrumentRole
         )
     }
 

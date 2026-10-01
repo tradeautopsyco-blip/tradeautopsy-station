@@ -489,6 +489,12 @@ public final class NotchViewModel: ObservableObject {
     @Published var tradeIdsWithChart: Set<String> = []
     /// Paste / shutter should jump PLAN sidebar to Live trade (ignored during debrief).
     @Published var requestLiveCaptureScreen: Bool = false
+    /// Hotkey focus. Raw value of `BarNotchScreen` (`Open`, `Plan`, `Working`, `Debrief`). The shell clears it.
+    @Published var hotkeyScreenRequest: String?
+    /// Increments when `confirm_declare` should run the same submit path as Plan Confirm.
+    @Published var hotkeyConfirmRequest: Int = 0
+    /// Hotkey asks Debrief to show the manual-fill lane. Does not queue a fill.
+    @Published var requestManualFillLane: Bool = false
     private var stagedCaptureData: Data?
     private var stagedCaptureType: String = "image/png"
     private let unpostedStore = UnpostedCaptureStore(directory: UnpostedCaptureStore.defaultDirectory())
@@ -1203,6 +1209,49 @@ public final class NotchViewModel: ObservableObject {
     func presentPlanKillWarning() {
         guard planKillAgentUp else { return }
         planKillPhase = .warning
+    }
+
+    /// Saved desk hotkeys. Same functions as the buttons. Does not skip Confirm, a reason, or the calm countdown.
+    public func performDeskHotkey(_ actionId: String) {
+        switch actionId {
+        case "kill":
+            presentPlanKillWarning()
+        case "confirm_declare":
+            hotkeyConfirmRequest += 1
+        case "plan_another":
+            presentBarDeclarationForm()
+            hotkeyScreenRequest = BarNotchScreen.pretrade.rawValue
+        case "focus_open":
+            hotkeyScreenRequest = BarNotchScreen.morning.rawValue
+        case "focus_plan":
+            hotkeyScreenRequest = BarNotchScreen.pretrade.rawValue
+        case "focus_working":
+            hotkeyScreenRequest = BarNotchScreen.live.rawValue
+        case "focus_debrief":
+            hotkeyScreenRequest = BarNotchScreen.posttrade.rawValue
+        case "cancel_selected_declaration":
+            guard barCancelDeclarationId != nil else { return }
+            hotkeyScreenRequest = BarNotchScreen.live.rawValue
+            cancelDeclStep = 1
+        case "capture_working_condition":
+            guard barCancelDeclarationId != nil else { return }
+            Task { await captureWorkingConditionAtClose() }
+        case "protective_sl_chrome":
+            hotkeyScreenRequest = BarNotchScreen.live.rawValue
+        case "dismiss_kill_overlay":
+            Task { await dismissKillSwitchFromOverlay() }
+        case "open_manual_fill":
+            requestManualFillLane = true
+            hotkeyScreenRequest = BarNotchScreen.posttrade.rawValue
+        default:
+            break
+        }
+    }
+
+    func consumeManualFillRequest() -> Bool {
+        guard requestManualFillLane else { return false }
+        requestManualFillLane = false
+        return true
     }
 
     func cancelPlanKillWarning() {
