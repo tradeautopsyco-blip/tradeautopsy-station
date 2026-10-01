@@ -43,6 +43,8 @@ final class FakeAgentSupervisor: AgentSupervising {
         }
     }
 
+    func isKillLatched() async -> Bool { false }
+
     func simulateRuntimeDisconnect() {
         guard isHealthy else { return }
         isHealthy = false

@@ -448,6 +448,25 @@ fn stop_hosts_watcher() {
     }
 }
 
+/// Boot reconcile: latch armed and hosts already blocked — re-arm watcher without
+/// rewriting a correct hosts file.
+#[cfg(target_os = "macos")]
+pub fn reconcile_armed_blocked(broker: &str) -> Result<(), String> {
+    if let Ok(mut active) = ACTIVE_BLOCKS.lock() {
+        active.insert((BlockReason::KillSwitch, broker.to_string()));
+    }
+    if managed_region_is_stale() {
+        macos::rewrite_managed_region()?;
+    }
+    start_hosts_watcher(broker.to_string());
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn reconcile_armed_blocked(_broker: &str) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 pub fn enable_block_with_watcher(broker: &str) -> Result<(), String> {
     let broker_owned = broker.to_string();

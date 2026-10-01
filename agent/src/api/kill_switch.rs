@@ -2,6 +2,7 @@
 
 use crate::api::AppState;
 use crate::dns_block;
+use crate::kill_latch::{KillLatchLoad, KillLatchSnapshot};
 use crate::kill_policy::KillPolicy;
 use crate::kill_switch_audit::KillSwitchAuditAppend;
 use crate::resolve_kill_switch_broker::resolve_kill_switch_broker;
@@ -130,20 +131,167 @@ fn hosts_for_audit(broker: &str) -> Vec<String> {
 }
 
 fn last_applied_level(state: &AppState) -> Option<u64> {
-    state
-        .last_applied_level
-        .lock()
-        .ok()
-        .and_then(|g| *g)
-        .map(|v| v as u64)
+    last_applied_level_from_latch(state).or_else(|| {
+        state
+            .last_applied_level
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .map(|v| v as u64)
+    })
 }
 
-fn remember_apply(state: &AppState, level: u64, broker: &str) {
-    if let Ok(mut last) = state.last_l3_broker.lock() {
-        *last = Some(broker.to_string());
+/// RAM mirrors for legacy readers — single source of truth is the latch sqlite row.
+pub fn sync_derived_kill_state(state: &AppState) {
+    let latch = effective_latch_load(state);
+    match latch {
+        EffectiveLatch::Inactive => {
+            if let Ok(mut last) = state.last_l3_broker.lock() {
+                *last = None;
+            }
+            if let Ok(mut last) = state.last_applied_level.lock() {
+                *last = None;
+            }
+            state.fog_active.store(false, Ordering::SeqCst);
+        }
+        EffectiveLatch::Active(snap) => {
+            if let Ok(mut last) = state.last_applied_level.lock() {
+                *last = Some(snap.level.min(255) as u8);
+            }
+            if snap.level >= 3 {
+                if let Ok(mut last) = state.last_l3_broker.lock() {
+                    *last = Some(snap.broker.clone());
+                }
+                state.fog_active.store(true, Ordering::SeqCst);
+            } else {
+                if let Ok(mut last) = state.last_l3_broker.lock() {
+                    *last = None;
+                }
+                state.fog_active.store(false, Ordering::SeqCst);
+            }
+        }
     }
-    if let Ok(mut last) = state.last_applied_level.lock() {
-        *last = Some(level.min(u8::MAX as u64) as u8);
+}
+
+enum EffectiveLatch {
+    Inactive,
+    Active(KillLatchSnapshot),
+}
+
+fn effective_latch_load(state: &AppState) -> EffectiveLatch {
+    if state.kill_latch_fail_closed.load(Ordering::SeqCst) {
+        return EffectiveLatch::Active(KillLatchSnapshot {
+            active: true,
+            level: 3,
+            broker: state
+                .last_l3_broker
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            armed_at_ms: 0,
+            expires_at_ms: None,
+            requires_ack: true,
+        });
+    }
+    match state.kill_latch.load() {
+        Ok(KillLatchLoad::Inactive) => EffectiveLatch::Inactive,
+        Ok(KillLatchLoad::Active(s)) => EffectiveLatch::Active(s),
+        Err(e) => {
+            warn!("kill latch read failed (fail closed): {e}");
+            state.kill_latch_fail_closed.store(true, Ordering::SeqCst);
+            EffectiveLatch::Active(KillLatchSnapshot {
+                active: true,
+                level: 3,
+                broker: state
+                    .last_l3_broker
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                armed_at_ms: 0,
+                expires_at_ms: None,
+                requires_ack: true,
+            })
+        }
+    }
+}
+
+pub fn latch_public_snapshot(state: &AppState) -> (bool, Option<KillLatchSnapshot>) {
+    match effective_latch_load(state) {
+        EffectiveLatch::Inactive => (false, None),
+        EffectiveLatch::Active(s) => (true, Some(s)),
+    }
+}
+
+fn write_latch_for_apply(
+    state: &AppState,
+    level: u64,
+    broker: &str,
+    policy: &KillPolicy,
+) -> Result<(), String> {
+    let now = unix_now_ms();
+    let expires = if level >= 2 {
+        Some(now.saturating_add(i64::from(policy.countdown_secs).saturating_mul(1000)))
+    } else {
+        None
+    };
+    let snap = KillLatchSnapshot {
+        active: true,
+        level: level.min(i32::MAX as u64) as i32,
+        broker: broker.to_string(),
+        armed_at_ms: now,
+        expires_at_ms: expires,
+        requires_ack: level >= 3,
+    };
+    state
+        .kill_latch
+        .arm(&snap)
+        .map_err(|e| format!("kill latch arm: {e}"))?;
+    sync_derived_kill_state(state);
+    Ok(())
+}
+
+fn clear_latch_after_hosts_clean(state: &AppState) -> Result<(), String> {
+    state
+        .kill_latch
+        .clear()
+        .map_err(|e| format!("kill latch clear: {e}"))?;
+    sync_derived_kill_state(state);
+    Ok(())
+}
+
+fn last_applied_level_from_latch(state: &AppState) -> Option<u64> {
+    match effective_latch_load(state) {
+        EffectiveLatch::Inactive => None,
+        EffectiveLatch::Active(s) => Some(s.level.max(0) as u64),
+    }
+}
+
+fn append_audit_event(
+    state: &AppState,
+    event_type: &str,
+    level: i32,
+    broker: &str,
+    trigger: Option<&str>,
+    hosts: Vec<String>,
+) {
+    match state.kill_switch_audit.append_signed(
+        state.audit_signer.as_ref(),
+        KillSwitchAuditAppend {
+            event_type: event_type.to_string(),
+            level,
+            broker: broker.to_string(),
+            trigger: trigger.map(str::to_string),
+            hosts,
+        },
+    ) {
+        Ok(record) => info!(
+            audit_id = record.id,
+            event_type = %record.event_type,
+            "kill switch audit row appended"
+        ),
+        Err(e) => warn!("kill switch audit append ({event_type}) failed: {e}"),
     }
 }
 
@@ -265,8 +413,9 @@ async fn apply_kill_switch_teeth(
         trigger.unwrap_or("—")
     );
 
+    write_latch_for_apply(state, level, broker, &policy)?;
+
     if level <= 1 {
-        remember_apply(state, level, broker);
         // Q8: L1 is desk state only — do not set fog_active.
         append_audit_fire(state, level as i32, broker, trigger, Vec::new());
         state.event_bus.publish(kill_state(
@@ -279,7 +428,6 @@ async fn apply_kill_switch_teeth(
     }
 
     if level == 2 {
-        remember_apply(state, level, broker);
         append_audit_fire(state, level as i32, broker, trigger, Vec::new());
         state.event_bus.publish(kill_state(
             true,
@@ -293,7 +441,6 @@ async fn apply_kill_switch_teeth(
     if level >= 3 {
         let hosts = dns_block::hosts_for_broker(broker);
         let write_dns = plan_l3_dns(policy.website_block, hosts)?;
-        remember_apply(state, level, broker);
         if write_dns {
             let broker_for_block = broker.to_string();
             let block_result = tokio::task::spawn_blocking(move || {
@@ -309,8 +456,7 @@ async fn apply_kill_switch_teeth(
             Vec::new()
         };
         append_audit_fire(state, level as i32, broker, trigger, audit_hosts);
-        // Leftover L3 readers still look at fog_active.
-        state.fog_active.store(true, Ordering::SeqCst);
+        sync_derived_kill_state(state);
         state.event_bus.publish(kill_state(
             true,
             Some("L3"),
@@ -340,28 +486,153 @@ pub async fn apply_clear_fog(state: &AppState) -> Result<(), String> {
 }
 
 pub async fn dismiss_kill_switch_state(state: &AppState) -> Result<(), String> {
-    let broker = state
-        .last_l3_broker
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .unwrap_or_else(|| "unknown".to_string());
+    let broker = match effective_latch_load(state) {
+        EffectiveLatch::Active(s) => s.broker,
+        EffectiveLatch::Inactive => state
+            .last_l3_broker
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_else(|| "unknown".to_string()),
+    };
     let dns = tokio::task::spawn_blocking(dns_block::disable_block_and_watcher).await;
-    match dns {
-        Ok(Ok(())) => info!("KillSwitch DNS block removed"),
-        Ok(Err(e)) => warn!("KillSwitch DNS unblock failed: {e}"),
-        Err(e) => warn!("KillSwitch DNS unblock join error: {e}"),
+    let hosts_clean = match dns {
+        Ok(Ok(())) => {
+            info!("KillSwitch DNS block removed");
+            true
+        }
+        Ok(Err(e)) => {
+            warn!("KillSwitch DNS unblock failed: {e}");
+            false
+        }
+        Err(e) => {
+            warn!("KillSwitch DNS unblock join error: {e}");
+            false
+        }
+    };
+    if !hosts_clean && dns_block::is_block_active() {
+        return Err("hosts block still active — latch not cleared".to_string());
     }
     append_audit_dismiss(state, &broker, None);
-    if let Ok(mut last) = state.last_l3_broker.lock() {
-        *last = None;
-    }
-    if let Ok(mut last) = state.last_applied_level.lock() {
-        *last = None;
-    }
-    state.fog_active.store(false, Ordering::SeqCst);
+    clear_latch_after_hosts_clean(state)?;
     state.event_bus.publish(kill_state(false, None, None, false));
     Ok(())
+}
+
+/// Compare durable latch intent to `/etc/hosts` (or test override) before serving HTTP.
+pub async fn reconcile_kill_state(state: &AppState) -> Result<(), String> {
+    let policy = loaded_policy(state);
+    let dns_active = dns_block::is_block_active();
+    let latch = effective_latch_load(state);
+
+    match latch {
+        EffectiveLatch::Active(snap) => {
+            if snap
+                .expires_at_ms
+                .is_some_and(|exp| unix_now_ms() > exp)
+            {
+                info!("kill latch expired — auto dismiss");
+                return dismiss_kill_switch_state(state).await;
+            }
+            if snap.level >= 3 && policy.website_block {
+                let hosts = dns_block::hosts_for_broker(&snap.broker);
+                if hosts.is_empty() {
+                    return Err(format!(
+                        "latched broker {} has no Kill DNS hosts (R8)",
+                        snap.broker
+                    ));
+                }
+                if dns_active {
+                    let broker = snap.broker.clone();
+                    tokio::task::spawn_blocking(move || dns_block::reconcile_armed_blocked(&broker))
+                        .await
+                        .map_err(|e| format!("reconcile armed+blocked join: {e}"))??;
+                } else {
+                    let broker = snap.broker.clone();
+                    let block_result = tokio::task::spawn_blocking(move || {
+                        dns_block::enable_block_with_watcher(&broker)
+                    })
+                    .await
+                    .map_err(|e| format!("reconcile reapply join: {e}"))?;
+                    block_result?;
+                    append_audit_event(
+                        state,
+                        "reapply",
+                        snap.level,
+                        &snap.broker,
+                        Some("boot_reconcile"),
+                        hosts_for_audit(&snap.broker),
+                    );
+                }
+            }
+            sync_derived_kill_state(state);
+            Ok(())
+        }
+        EffectiveLatch::Inactive => {
+            if dns_active {
+                let dns = tokio::task::spawn_blocking(dns_block::disable_block_and_watcher)
+                    .await
+                    .map_err(|e| format!("stale hosts cleanup join: {e}"))?;
+                dns?;
+                append_audit_event(
+                    state,
+                    "cleanup",
+                    0,
+                    "unknown",
+                    Some("boot_reconcile"),
+                    Vec::new(),
+                );
+            }
+            sync_derived_kill_state(state);
+            Ok(())
+        }
+    }
+}
+
+pub fn spawn_kill_latch_expiry_task(state: AppState) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let expired = match effective_latch_load(&state) {
+                EffectiveLatch::Active(s) => s
+                    .expires_at_ms
+                    .is_some_and(|exp| unix_now_ms() > exp),
+                EffectiveLatch::Inactive => false,
+            };
+            if expired {
+                let _ = dismiss_kill_switch_state(&state).await;
+            }
+        }
+    });
+}
+
+pub async fn kill_switch_state_handler(State(state): State<AppState>) -> Response {
+    let dns_active = dns_block::is_block_active();
+    let (active, snap) = latch_public_snapshot(&state);
+    let body = if let Some(s) = snap {
+        json!({
+            "active": active,
+            "level": s.level,
+            "broker": s.broker,
+            "armed_at_ms": s.armed_at_ms,
+            "expires_at_ms": s.expires_at_ms,
+            "requires_ack": s.requires_ack,
+            "dns_active": dns_active,
+        })
+    } else {
+        json!({
+            "active": false,
+            "level": null,
+            "broker": null,
+            "armed_at_ms": null,
+            "expires_at_ms": null,
+            "requires_ack": false,
+            "dns_active": dns_active,
+        })
+    };
+    (StatusCode::OK, Json(body)).into_response()
 }
 
 pub async fn kill_switch_handler(
