@@ -668,7 +668,7 @@ class Soak:
             "host": self.host,
             "port": self.port,
             "known_good": known_good,
-            "totp": totp_note,
+            "session_card": totp_note,
             "sparkle": appcast_note,
             "orphans": self.orphans,
             "paths": [

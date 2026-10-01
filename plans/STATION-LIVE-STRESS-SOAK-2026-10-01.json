@@ -1,0 +1,355 @@
+{
+  "started": "2026-10-01T12:16:22Z",
+  "ended": "2026-10-01T12:18:03Z",
+  "server_base_url": "https://www.tradeautopsy.in",
+  "host": "127.0.0.1",
+  "port": 9137,
+  "known_good": "Gate A=PASS; Gate B=PASS (profile prefix only); Gate C=PASS (syncState=not_connected at ramp start)",
+  "sparkle": "HTTP 200 newest short=0.2.2 sparkle:version=6; installed TradeAutopsy Station.app 0.2.1 (5)",
+  "orphans": [
+    "aab1e2b2-a83a-4056-96ef-7890366f112e"
+  ],
+  "paths": [
+    {
+      "path": "plan_jwt",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.599
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 4.43
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 4.585
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 4.687
+        }
+      ]
+    },
+    {
+      "path": "station_status",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.004
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.006
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.017
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 0.021
+        }
+      ]
+    },
+    {
+      "path": "morning_brief_n2",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.001
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.002
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.005
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 0.008
+        }
+      ]
+    },
+    {
+      "path": "journal_cite_due",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "matched=0 due_empty_post=0 trip_cites_today=0",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 1.075
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 4.164
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 4.712
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 4.616
+        }
+      ]
+    },
+    {
+      "path": "conditions_depth",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.003
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.004
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.014
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 0.021
+        }
+      ]
+    },
+    {
+      "path": "kill_latch_read",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "POST /kill-switch not sent",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.005
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.004
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.01
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 0.011
+        }
+      ]
+    },
+    {
+      "path": "funds_sizer",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "balances not logged; preview uses a synthetic 10000",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 1.068
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 1.04
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 1.331
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 1.379
+        }
+      ]
+    },
+    {
+      "path": "totp_12h_sync",
+      "passed_n": 32,
+      "ok_requests": 53,
+      "first_failure": "none (held through concurrency 32)",
+      "notes": "binance_com: age_h=1032.7 card_due=True; kotak_neo: age_h=2.8 card_due=False; zerodha_kite: age_h=168.4 card_due=True; mint POST withheld",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.002
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.001
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.003
+        },
+        {
+          "concurrency": 32,
+          "ok": 32,
+          "fail": 0,
+          "p95_s": 0.005
+        }
+      ]
+    },
+    {
+      "path": "sparkle_restart",
+      "passed_n": 0,
+      "ok_requests": 0,
+      "first_failure": "withheld (supervisor does not respawn after external SIGTERM)",
+      "notes": "feed check is sparkle_feed",
+      "waves": []
+    },
+    {
+      "path": "sparkle_feed",
+      "passed_n": 16,
+      "ok_requests": 21,
+      "first_failure": "none (held through concurrency 16)",
+      "notes": "HTTP 200 newest short=0.2.2 sparkle:version=6; installed TradeAutopsy Station.app 0.2.1 (5)",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 0.045
+        },
+        {
+          "concurrency": 4,
+          "ok": 4,
+          "fail": 0,
+          "p95_s": 0.355
+        },
+        {
+          "concurrency": 16,
+          "ok": 16,
+          "fail": 0,
+          "p95_s": 0.095
+        }
+      ]
+    },
+    {
+      "path": "declare",
+      "passed_n": 2,
+      "ok_requests": 3,
+      "first_failure": "cancel HTTP 409 {\"ok\":false,\"error\":{\"code\":\"declaration_not_cancellable\"}}",
+      "notes": "each success cancels",
+      "waves": [
+        {
+          "concurrency": 1,
+          "ok": 1,
+          "fail": 0,
+          "p95_s": 5.055
+        },
+        {
+          "concurrency": 2,
+          "ok": 2,
+          "fail": 0,
+          "p95_s": 5.125
+        },
+        {
+          "concurrency": 4,
+          "ok": 3,
+          "fail": 1,
+          "p95_s": 5.132
+        }
+      ]
+    },
+    {
+      "path": "cancel",
+      "passed_n": 1,
+      "ok_requests": 1,
+      "first_failure": "none (first HTTP 200; second HTTP 409 (idempotent 4xx ok))",
+      "notes": "",
+      "waves": []
+    }
+  ],
+  "session_card": "binance_com age_h=1032.7 card_due=true; kotak_neo age_h=2.8 card_due=false; zerodha_kite age_h=168.4 card_due=true; mint POST withheld",
+  "post_soak": {
+    "syncState": "synced",
+    "brokerSlug": "binance_com",
+    "funds_obtain_n32": "status=success fail=0 p95_s=2.2",
+    "declare_409": "superseded, pending_count=0"
+  }
+}
