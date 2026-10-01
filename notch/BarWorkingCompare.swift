@@ -104,7 +104,7 @@ enum BarWorkingCompare {
     }
 
     static func honestyStatusForLast(lastStatus: String) -> HonestyStatus {
-        HonestyStatus.fromWire(lastStatus) ?? (lastBound(status: lastStatus) ? .unknown : .unavailable)
+        HonestyStatus.fromWire(lastStatus) ?? .unavailable
     }
 
     static func labeledLast(last: Double?, status: String) -> String {

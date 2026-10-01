@@ -2,7 +2,7 @@ import Foundation
 
 /// S8 Notch account chrome — obtain-backed pulse + ledger on the **shipping book of Start**.
 /// Not Today fill-inventory (`GET /api/daemon/positions`). DualNoBlend: one book, one currency strip.
-enum BarAccountChrome {
+public enum BarAccountChrome {
     struct Row: Equatable, Identifiable {
         var id: String
         var symbol: String
@@ -94,7 +94,7 @@ enum BarAccountChrome {
         }
     }
 
-    static func obtainPath(adapter: String, bookId: String, operation: String) -> String {
+    public static func obtainPath(adapter: String, bookId: String, operation: String) -> String {
         let a = adapter.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? adapter
         let b = bookId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? bookId
         let o = operation.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? operation

@@ -1,18 +1,18 @@
 import Foundation
 
 /// Obtain `funds` on the **shipping** AccountBook (Kotak cash, Binance spot) — not named USDM/NFO books.
-enum BarShippingFundsGlance {
-    struct Presentation: Equatable, Sendable {
-        var freeText: String
-        var status: String
-        var bookId: String
+public enum BarShippingFundsGlance {
+    public struct Presentation: Equatable, Sendable {
+        public var freeText: String
+        public var status: String
+        public var bookId: String
 
-        static let dark = Presentation(freeText: "—", status: "unavailable", bookId: "")
+        public static let dark = Presentation(freeText: "—", status: "unavailable", bookId: "")
 
-        var isLit: Bool { status == "success" }
+        public var isLit: Bool { status == "success" }
     }
 
-    static func present(
+    public static func present(
         fundsEnvelope: [String: Any]?,
         shippingBookId: String,
         quoteCurrency: String
@@ -32,7 +32,7 @@ enum BarShippingFundsGlance {
         )
     }
 
-    static func shippingContext(startSlug: String?) -> (adapter: String, bookId: String)? {
+    public static func shippingContext(startSlug: String?) -> (adapter: String, bookId: String)? {
         guard let book = BarAccountChrome.shippingBookId(forStartSlug: startSlug),
               let adapter = BarAccountChrome.obtainAdapterId(forStartSlug: startSlug)
         else { return nil }

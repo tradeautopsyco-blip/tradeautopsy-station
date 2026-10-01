@@ -905,6 +905,8 @@ public final class NotchViewModel: ObservableObject {
                 return "Request Invalid"
             case .rateLimited:
                 return "Rate Limited"
+            case .deadLetter:
+                return "Delivery Failed"
             case .unknown:
                 return "Agent error"
             }
@@ -924,7 +926,7 @@ public final class NotchViewModel: ObservableObject {
     var daemonConnectionColor: Color {
         if let daemonProtocolError {
             switch daemonProtocolError {
-            case .protoVersion, .validation, .rateLimited:
+            case .protoVersion, .validation, .rateLimited, .deadLetter:
                 return Color(hex: "#F5A524")
             case .sigInvalid, .unknown:
                 return Color(hex: "#FF3B30")

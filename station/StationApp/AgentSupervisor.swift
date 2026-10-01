@@ -272,7 +272,9 @@ public final class AgentSupervisor: AgentSupervising {
 
         // Reap any leftover agent from a previous Station that didn't shut down cleanly.
         // Never reap a latched orphan — attach on the next start instead.
-        if !(await portHasListener() && await isKillLatched()) {
+        let portListening = await portHasListener()
+        let killLatched = await isKillLatched()
+        if !(portListening && killLatched) {
             killBundledAgentOrphans()
         }
 
