@@ -109,11 +109,6 @@ enum BarWorkingLivePresentation {
             kind: kind,
             price: price
         )
-        switch state {
-        case .breached: return "Inv breached"
-        case .intact: return "Inv intact"
-        case .waiting: return "Inv waiting"
-        case .dark: return "Inv dark"
-        }
+        return BarWorkingCompare.invalidationChipLabel(for: state)
     }
 }

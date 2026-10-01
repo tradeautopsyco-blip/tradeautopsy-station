@@ -175,6 +175,17 @@ enum BarWorkingCompare {
         }
     }
 
+    /// Working list-row chip for invalidation level state.
+    static func invalidationChipLabel(for state: BarWorkingLevelState) -> String {
+        switch state {
+        case .breached: return "Inv breached"
+        case .intact: return "Inv intact"
+        case .waiting: return "Inv waiting"
+        case .dark: return "Inv dark"
+        case .touched: return "Inv touched"
+        }
+    }
+
     static func formatPrice(_ v: Double) -> String {
         let f = NumberFormatter()
         f.maximumFractionDigits = 2
