@@ -5,6 +5,7 @@ public enum JournalFacet: String, CaseIterable, Sendable {
     case matched
     case pending
     case unmatched
+    case due
     case impulsive
 }
 
@@ -358,6 +359,9 @@ public struct JournalWeek: Equatable, Sendable {
             filteredImpulsive = []
         case .unmatched:
             filteredDecls = dayItems.filter { $0.isUnmatched && matchesSearch($0) }
+            filteredImpulsive = []
+        case .due:
+            filteredDecls = dayItems.filter { $0.isPostDue && matchesSearch($0) }
             filteredImpulsive = []
         }
 

@@ -62,6 +62,7 @@ mod sse;
 mod station_auth;
 mod sync_hint;
 mod today;
+mod journal_trip_cites;
 mod vendor_bindings;
 
 #[derive(Clone)]
@@ -269,6 +270,10 @@ pub fn router(state: AppState) -> Router {
             post(broker_credentials::present_handler),
         )
         .route("/api/daemon/today", get(today::handler))
+        .route(
+            "/api/daemon/journal/trip-cites",
+            get(journal_trip_cites::handler),
+        )
         .route("/api/daemon/positions", get(positions::handler))
         .route(
             "/api/daemon/journal/toolbar-capture/accept",

@@ -87,7 +87,41 @@ struct JournalWeekProjectionTests {
         let all = JournalWeek.build(payload: payload, inventory: [], citedTrips: [], selectedDay: "2026-09-11", facet: .all, query: "")
         #expect(all.sidebarDue == true)
         #expect(all.declarations.map(\.id).sorted() == ["done", "due"])
-        #expect(JournalFacet.allCases == [.all, .matched, .pending, .unmatched, .impulsive])
+        #expect(JournalFacet.allCases == [.all, .matched, .pending, .unmatched, .due, .impulsive])
+    }
+
+    @Test func dueFacetIsMatchedWithEmptyPostOnly() {
+        let payload = JournalWeekPayload(
+            timezone: "Asia/Kolkata",
+            weekStart: "2026-09-06T18:30:00.000Z",
+            weekEnd: "2026-09-13T18:30:00.000Z",
+            items: [
+                card(id: "due", status: "matched", symbol: "RELIANCE", post: ""),
+                card(id: "done", status: "matched", symbol: "HDFCBANK", post: "Done."),
+                card(id: "pend", status: "pending", symbol: "TCS", post: ""),
+            ],
+            days: []
+        )
+        let due = JournalWeek.build(
+            payload: payload,
+            inventory: [],
+            citedTrips: [],
+            selectedDay: "2026-09-11",
+            facet: .due,
+            query: ""
+        )
+        #expect(due.declarations.map(\.id) == ["due"])
+    }
+
+    @Test func dualNoBlendDropsCiteWhenCurrencyDisagreesWithDesk() {
+        let rows = [
+            JournalClosedTripInventoryRow(declarationId: "inr", net: 100, currency: "INR"),
+            JournalClosedTripInventoryRow(declarationId: "usd", net: 40, currency: "USD"),
+        ]
+        let inrOnly = JournalTripCiteInventory.citedTrips(rows: rows, deskQuoteCurrency: "INR")
+        #expect(inrOnly.map(\.declarationId) == ["inr"])
+        let none = JournalTripCiteInventory.citedTrips(rows: rows, deskQuoteCurrency: nil)
+        #expect(none.count == 2)
     }
 
     @Test func paintedCardKeepsSnapshotAndStripsProcessFidelity() {

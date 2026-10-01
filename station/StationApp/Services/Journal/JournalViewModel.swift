@@ -18,21 +18,27 @@ public final class JournalViewModel: ObservableObject {
     @Published public private(set) var isLoading = false
 
     private let client: JournalAgentClient
+    private let inventoryClient: JournalInventoryAgentClient
     private let sessionModel: SessionModel
     private let agentHealthy: () -> Bool
     private let demoDeskStore: DemoDeskStore
     private var lastPayload: JournalWeekPayload?
+    private var lastInventoryRows: [JournalClosedTripInventoryRow] = []
     private var positionsCancellable: AnyCancellable?
     private var demoCancellable: AnyCancellable?
     private var demoPositions: [DeskPosition] = []
+    private var demoInventoryRows: [JournalClosedTripInventoryRow] = []
 
     public init(
         client: JournalAgentClient,
+        inventoryClient: JournalInventoryAgentClient? = nil,
         sessionModel: SessionModel,
         agentHealthy: @escaping () -> Bool,
         demoDeskStore: DemoDeskStore? = nil
     ) {
         self.client = client
+        self.inventoryClient = inventoryClient
+            ?? LocalJournalInventoryAgentClient(isAgentHealthy: agentHealthy)
         self.sessionModel = sessionModel
         self.agentHealthy = agentHealthy
         let demo = demoDeskStore ?? .shared
@@ -77,17 +83,24 @@ public final class JournalViewModel: ObservableObject {
             let fixture = StationDemoDesk.build()
             lastPayload = fixture.journalPayload
             demoPositions = fixture.positions
+            demoInventoryRows = fixture.journalTripInventoryRows
             selectedDay = lastPayload?.days.last?.localDate ?? lastPayload?.items.last?.localDate
             rebuild()
             return
         }
         demoPositions = []
+        demoInventoryRows = []
         if !agentHealthy() {
             lastPayload = nil
+            lastInventoryRows = []
             rebuild()
             return
         }
         lastPayload = await client.fetchWeek()
+        lastInventoryRows = await inventoryClient.fetchWeekTripCites(
+            weekStart: lastPayload?.weekStart,
+            weekEnd: lastPayload?.weekEnd
+        )
         if selectedDay == nil {
             selectedDay = lastPayload?.days.last?.localDate ?? lastPayload?.items.last?.localDate
         }
@@ -95,10 +108,15 @@ public final class JournalViewModel: ObservableObject {
     }
 
     private func rebuild() {
+        let inventoryRows = demoDeskStore.demoEnabled ? demoInventoryRows : lastInventoryRows
+        let citedTrips = JournalTripCiteInventory.citedTrips(
+            rows: inventoryRows,
+            deskQuoteCurrency: sessionModel.deskQuoteCurrency
+        )
         week = JournalWeek.build(
             payload: lastPayload,
             inventory: demoDeskStore.demoEnabled ? demoPositions : sessionModel.positions,
-            citedTrips: [],
+            citedTrips: citedTrips,
             selectedDay: selectedDay,
             facet: facet,
             query: query

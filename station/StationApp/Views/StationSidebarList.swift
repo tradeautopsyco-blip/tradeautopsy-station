@@ -45,7 +45,7 @@ public struct StationSidebarList: View {
                     row(
                         title: route.rawValue,
                         systemImage: route.sfSymbol,
-                        trailing: route == .today ? todayCountBadge : nil,
+                        trailing: routeTrailingBadge(route),
                         selected: coordinator.activeRoute == route,
                         identifier: "workspace-route-\(route.rawValue)"
                     ) { coordinator.navigateTo(route) }
@@ -134,6 +134,13 @@ public struct StationSidebarList: View {
                     .padding(.vertical, 2)
             }
         }
+    }
+
+
+    private func routeTrailingBadge(_ route: StationRoute) -> String? {
+        if route == .today { return todayCountBadge }
+        if route == .journal, coordinator.journalViewModel.sidebarDue { return "Due" }
+        return nil
     }
 
     private func row(
