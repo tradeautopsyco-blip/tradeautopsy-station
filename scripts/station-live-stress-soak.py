@@ -74,6 +74,8 @@ def load_journal_lib(root: str) -> Any:
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load {path}")
     mod = importlib.util.module_from_spec(spec)
+    # Python 3.14 dataclasses look up cls.__module__ during class body exec.
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 
