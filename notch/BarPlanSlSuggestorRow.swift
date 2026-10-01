@@ -90,8 +90,7 @@ struct BarPlanSlSuggestorRow: View {
 
     private func schedulePreview() {
         let pct = Double(marginRiskPct.trimmingCharacters(in: .whitespacesAndNewlines))
-        let req = BarPlanRiskPreview.planRequest(
-            viewModel: viewModel,
+        let req = viewModel.buildPlanRiskPreviewRequest(
             sideBuy: sideBuy,
             budgetMode: .riskPercent,
             budgetValue: pct,

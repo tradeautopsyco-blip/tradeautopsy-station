@@ -183,49 +183,6 @@ enum BarPlanRiskPreview {
         }
     }
 
-    /// Shared builder for Plan risk preview and SL suggestor (DualNoBlend book_id on the request).
-    static func planRequest(
-        viewModel: NotchViewModel,
-        sideBuy: Bool,
-        budgetMode: BudgetMode,
-        budgetValue: Double?,
-        stopLossText: String,
-        quantityText: String,
-        targetPriceText: String,
-        instrumentRole: String
-    ) -> Request {
-        let entry = Double(viewModel.declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
-        let stop = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let target = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let qty = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
-        let glance = viewModel.shippingFundsGlance
-        let tick = Double(viewModel.deskTickSize ?? "")
-        let step = Double(viewModel.deskStepSize ?? "")
-        let levText = viewModel.futuresMarginReadout(symbol: viewModel.barDeclarationSymbol).leverage
-        let lev = Double(levText ?? "")
-        return Request(
-            bookId: viewModel.declareBookId ?? "",
-            sideBuy: sideBuy,
-            budgetMode: budgetMode,
-            budgetValue: budgetValue,
-            entry: entry,
-            stop: stop,
-            target: target,
-            overrideQty: qty,
-            fundsLit: glance.isLit,
-            fundsBalance: freeAmount(from: glance.freeText),
-            fundsDisplayText: glance.freeText,
-            priceIncrement: tick.flatMap { $0 > 0 ? $0 : nil },
-            multiplier: nil,
-            unitBatchSize: step.flatMap { $0 > 0 ? $0 : nil },
-            instrumentRole: instrumentRole,
-            leverage: (instrumentRole == "nfo_future" || instrumentRole == "cash")
-                ? lev.flatMap { $0 > 0 ? $0 : nil }
-                : nil,
-            symbol: viewModel.barDeclarationSymbol
-        )
-    }
-
     static func requestJSON(_ req: Request) -> [String: Any] {
         var o: [String: Any] = [
             "book_id": req.bookId,
@@ -246,5 +203,49 @@ enum BarPlanRiskPreview {
         if let v = req.leverage { o["leverage"] = v }
         if !req.symbol.isEmpty { o["symbol"] = req.symbol }
         return o
+    }
+}
+
+extension NotchViewModel {
+    /// Shared builder for Plan risk preview and SL suggestor (DualNoBlend book_id on the request).
+    func buildPlanRiskPreviewRequest(
+        sideBuy: Bool,
+        budgetMode: BarPlanRiskPreview.BudgetMode,
+        budgetValue: Double?,
+        stopLossText: String,
+        quantityText: String,
+        targetPriceText: String,
+        instrumentRole: String
+    ) -> BarPlanRiskPreview.Request {
+        let entry = Double(declEntryPrice.trimmingCharacters(in: .whitespacesAndNewlines))
+        let stop = Double(stopLossText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let target = Double(targetPriceText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let qty = Double(quantityText.trimmingCharacters(in: .whitespacesAndNewlines))
+        let glance = shippingFundsGlance
+        let tick = Double(deskTickSize ?? "")
+        let step = Double(deskStepSize ?? "")
+        let levText = futuresMarginReadout(symbol: barDeclarationSymbol).leverage
+        let lev = Double(levText ?? "")
+        return BarPlanRiskPreview.Request(
+            bookId: declareBookId ?? "",
+            sideBuy: sideBuy,
+            budgetMode: budgetMode,
+            budgetValue: budgetValue,
+            entry: entry,
+            stop: stop,
+            target: target,
+            overrideQty: qty,
+            fundsLit: glance.isLit,
+            fundsBalance: BarPlanRiskPreview.freeAmount(from: glance.freeText),
+            fundsDisplayText: glance.freeText,
+            priceIncrement: tick.flatMap { $0 > 0 ? $0 : nil },
+            multiplier: nil,
+            unitBatchSize: step.flatMap { $0 > 0 ? $0 : nil },
+            instrumentRole: instrumentRole,
+            leverage: (instrumentRole == "nfo_future" || instrumentRole == "cash")
+                ? lev.flatMap { $0 > 0 ? $0 : nil }
+                : nil,
+            symbol: barDeclarationSymbol
+        )
     }
 }

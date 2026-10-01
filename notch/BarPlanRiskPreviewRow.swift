@@ -105,8 +105,7 @@ struct BarPlanRiskPreviewRow: View {
 
     private func buildRequest() -> BarPlanRiskPreview.Request {
         let budget = Double(budgetValueText.trimmingCharacters(in: .whitespacesAndNewlines))
-        return BarPlanRiskPreview.planRequest(
-            viewModel: viewModel,
+        return viewModel.buildPlanRiskPreviewRequest(
             sideBuy: sideBuy,
             budgetMode: budgetMode,
             budgetValue: budget,
