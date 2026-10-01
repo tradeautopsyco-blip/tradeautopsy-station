@@ -26,6 +26,7 @@ struct BarProtectiveSlPlanChromeTests {
         }
         #expect(BarInterventionCardSpec.primaryAccessory(interventionType: "bar_protective_sl") == .none)
         #expect(BarInterventionCardSpec.primaryAccessory(interventionType: "naked_window") == .none)
+        #expect(BarInterventionCardSpec.primaryAccessory(interventionType: "kill_switch") == .openKill)
     }
 
     @Test func cancelSlStillOfferedWhenSlStatusPlaced() {

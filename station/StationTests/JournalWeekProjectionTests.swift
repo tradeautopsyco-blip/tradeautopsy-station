@@ -73,6 +73,36 @@ struct JournalWeekProjectionTests {
         #expect(unmatched.declarations.map(\.id).sorted() == ["c", "e"])
     }
 
+    @Test func emptyMomentCOnN2SetsDueEvenWhenPostFilled() {
+        let n2 = JournalN2DaySheet(
+            localDate: "2026-09-11",
+            debrief: JournalN2Debrief(momentANote: "Gap", momentCNote: "", momentCContext: ""),
+            conditionFires: [JournalN2ConditionFire(ruleId: "invalidation_price", firedAtMs: 1)],
+            hasWorkingSnapshot: true
+        )
+        var c = card(id: "n2due", status: "matched", symbol: "INFY", post: "legacy post")
+        c = JournalDeclarationCard(
+            id: c.id,
+            status: c.status,
+            declarationKind: c.declarationKind,
+            symbol: c.symbol,
+            side: c.side,
+            quantity: c.quantity,
+            quantityFilled: c.quantityFilled,
+            localDate: c.localDate,
+            protectiveSlConsent: c.protectiveSlConsent,
+            snapshot: c.snapshot,
+            notes: c.notes,
+            fidelity: c.fidelity,
+            attachments: c.attachments,
+            citedNet: c.citedNet,
+            citedCurrency: c.citedCurrency,
+            n2DaySheet: n2
+        )
+        #expect(c.isPostDue == true)
+        #expect(JournalCardPaint.statusChips(c).contains("Due"))
+    }
+
     @Test func emptyPostOnMatchedSetsSidebarDue() {
         let payload = JournalWeekPayload(
             timezone: "Asia/Kolkata",
@@ -130,7 +160,7 @@ struct JournalWeekProjectionTests {
         #expect(line.contains("Pullback"))
         #expect(line.contains("SL 1260"))
         #expect(!line.lowercased().contains("fidelity"))
-        #expect(JournalCardPaint.statusChips(painted) == ["Matched"])
+        #expect(JournalCardPaint.statusChips(painted) == ["Matched", "Due"])
         let labels = JournalCardPaint.drawerRows(painted).map(\.label)
         #expect(labels.contains("SL"))
         #expect(labels.contains("Target"))

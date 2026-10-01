@@ -28,6 +28,7 @@ mod fx_cds_realized_pnl;
 mod inr_cash_wac;
 mod instruments;
 mod journal_manual_fill;
+mod journal_n2;
 mod kill_policy;
 mod kill_latch;
 mod kill_switch_audit;
@@ -45,7 +46,6 @@ mod money_matrix;
 mod nfo_realized_pnl;
 mod oauth_loopback;
 mod options_realized_pnl;
-mod journal_manual_fill;
 mod outbox;
 mod recent_trades;
 mod resolve_kill_switch_broker;
@@ -515,6 +515,7 @@ pub struct AgentConfig {
     /// Licensed Binance HistoryBook coverage (`AGENT_HISTORY_DB_PATH`). Not TickBook.
     pub history_db_path: PathBuf,
     pub today_db_path: PathBuf,
+    pub journal_n2_db_path: PathBuf,
     pub instruments_db_path: PathBuf,
     pub kill_switch_audit_db_path: PathBuf,
     pub kill_latch_db_path: PathBuf,
@@ -662,6 +663,13 @@ impl AgentConfig {
                 p.push("tradeautopsy-agent-today.db");
                 p
             });
+        let journal_n2_db_path = std::env::var("AGENT_JOURNAL_N2_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                let mut p = std::env::temp_dir();
+                p.push("tradeautopsy-agent-journal-n2.db");
+                p
+            });
         let instruments_db_path = std::env::var("AGENT_INSTRUMENTS_DB_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -701,6 +709,7 @@ impl AgentConfig {
             recent_trades_db_path,
             history_db_path,
             today_db_path,
+            journal_n2_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
             kill_latch_db_path,
@@ -781,6 +790,8 @@ impl AgentConfig {
         history_db_path.push(format!("rta-history-{port}.db"));
         let mut today_db_path = std::env::temp_dir();
         today_db_path.push(format!("rta-today-{port}.db"));
+        let mut journal_n2_db_path = std::env::temp_dir();
+        journal_n2_db_path.push(format!("rta-journal-n2-{port}.db"));
         let mut instruments_db_path = std::env::temp_dir();
         instruments_db_path.push(format!("rta-instruments-{port}.db"));
         let mut kill_switch_audit_db_path = std::env::temp_dir();
@@ -804,6 +815,7 @@ impl AgentConfig {
             recent_trades_db_path,
             history_db_path,
             today_db_path,
+            journal_n2_db_path,
             instruments_db_path,
             kill_switch_audit_db_path,
             kill_latch_db_path,
@@ -1443,6 +1455,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
     )?));
     let candle_builders = Arc::new(std::sync::Mutex::new(crate::data::CandleBuilders::new()));
     let today_store = TodayStore::open(&config.today_db_path)?;
+    let journal_n2 = journal_n2::JournalN2Store::open(&config.journal_n2_db_path)?;
     let kill_switch_audit = KillSwitchAuditStore::open(&config.kill_switch_audit_db_path)?;
     let kill_latch = kill_latch::KillLatchStore::open(&config.kill_latch_db_path)?;
     let kill_policy = KillPolicyStore::open(&config.kill_switch_audit_db_path)?;
@@ -1761,6 +1774,7 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         last_applied_level: Arc::new(std::sync::Mutex::new(None)),
         kill_policy,
         today_service: today_service.clone(),
+        journal_n2,
         device_login_pending: Arc::new(std::sync::Mutex::new(None)),
         station_token_store,
         live_book,

@@ -971,6 +971,7 @@ public final class NotchViewModel: ObservableObject {
     private var toolbarShowCoalesceTask: Task<Void, Never>?
     private var barLiveStateKickoffTask: Task<Void, Never>?
     private var barLiveStateFetchInFlight = false
+    private var workingInvalidationWasBreached = false
     /// Consecutive live-state chrome misses — not the hybrid-armed reconcile counter.
     private var barLiveStateStripFailures: Int = 0
     /// Incremented when `live-state` fails while [hybrid armed](BarOptimisticArmedSnapshot) is active; cleared on 200.
@@ -1241,6 +1242,55 @@ public final class NotchViewModel: ObservableObject {
     private func stopBarLiveStatePolling() {
         barLiveStateKickoffTask?.cancel()
         barLiveStateKickoffTask = nil
+    }
+
+    /// Log a Working rule fire on the N2 journal object (Wave 7).
+    func postJournalConditionFire(
+        declarationId: String,
+        ruleId: String,
+        working: [String: Any]? = nil
+    ) async {
+        let decl = declarationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rule = ruleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !decl.isEmpty, !rule.isEmpty else { return }
+        guard let url = URL(string: baseURL() + "/api/daemon/journal/condition-fire") else { return }
+        var body: [String: Any] = [
+            "declaration_id": decl,
+            "rule_id": rule,
+            "fired_at_ms": Int(Date().timeIntervalSince1970 * 1000),
+        ]
+        if let working { body["working"] = working }
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+        var req = authorizedRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    func syncWorkingConditionFireEdge(
+        invalidated: Bool,
+        declarationId: String?,
+        last: Double?,
+        lastStatus: String,
+        invalidationKind: String?,
+        invalidationPrice: Double?
+    ) {
+        let id = declarationId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if invalidated, !workingInvalidationWasBreached, !id.isEmpty {
+            workingInvalidationWasBreached = true
+            let snap = BarJournalConditionFire.workingSnapshotJSON(
+                invalidated: true,
+                last: last,
+                lastStatus: lastStatus,
+                invalidationKind: invalidationKind,
+                invalidationPrice: invalidationPrice
+            )
+            Task { await postJournalConditionFire(declarationId: id, ruleId: "invalidation_price", working: snap) }
+        }
+        if !invalidated {
+            workingInvalidationWasBreached = false
+        }
     }
 
     func fetchBarLiveState() async {

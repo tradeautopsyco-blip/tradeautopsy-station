@@ -24,6 +24,9 @@ public enum JournalCardPaint {
         if (card.snapshot.stance ?? "").lowercased() == "reactive" {
             chips.append("Reactive")
         }
+        if card.isPostDue {
+            chips.append("Due")
+        }
         return chips
     }
 
@@ -46,6 +49,21 @@ public enum JournalCardPaint {
         rows.append(JournalDrawerRow(label: "Pre", value: emptyDash(card.notes.pre)))
         rows.append(JournalDrawerRow(label: "Live", value: emptyDash(card.notes.live)))
         rows.append(JournalDrawerRow(label: "Post", value: emptyDash(card.notes.post)))
+        if let n2 = card.n2DaySheet {
+            rows.append(JournalDrawerRow(label: "N2 · Plan", value: snapLine(card)))
+            rows.append(
+                JournalDrawerRow(
+                    label: "N2 · Working",
+                    value: n2.hasWorkingSnapshot ? "Snapshot on Mac" : "—"
+                )
+            )
+            let momentC = n2.debrief.momentCNote.isEmpty ? n2.debrief.momentCContext : n2.debrief.momentCNote
+            rows.append(JournalDrawerRow(label: "N2 · Debrief C", value: emptyDash(momentC)))
+            if !n2.conditionFires.isEmpty {
+                let fireLine = n2.conditionFires.map(\.ruleId).joined(separator: ", ")
+                rows.append(JournalDrawerRow(label: "Condition fires", value: fireLine))
+            }
+        }
         return rows
     }
 

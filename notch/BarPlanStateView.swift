@@ -198,6 +198,17 @@ struct BarPlanStateView: View {
                 onDone: { showRecalibrateSheet = false },
             )
         }
+        .onChange(of: workingPriceInvalidated) { _, invalidated in
+            let pending = payload?.pendingDeclaration
+            viewModel.syncWorkingConditionFireEdge(
+                invalidated: invalidated,
+                declarationId: workingDeclarationId,
+                last: viewModel.deskQuoteLast,
+                lastStatus: viewModel.deskLastStatus,
+                invalidationKind: pending?.planSnapshot?.resolvedInvalidationKind,
+                invalidationPrice: pending?.planSnapshot?.resolvedInvalidationPrice
+            )
+        }
     }
 
     // MARK: - Banner ladder (sync → thesis → plan)
@@ -228,6 +239,10 @@ struct BarPlanStateView: View {
             kind: snap?.resolvedInvalidationKind,
             price: snap?.resolvedInvalidationPrice
         )
+    }
+
+    private var workingDeclarationId: String? {
+        payload?.pendingDeclaration?.id.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var invalidatedWorkingBanner: some View {
@@ -1474,14 +1489,17 @@ struct BarPlanStateView: View {
         switch acc {
         case .none:
             EmptyView()
-        case .manageInWebBar:
+        case .openKill:
             if interactionsEnabled {
-                Text(
-                    "Resolve this intervention through the daemon or broker — the Notch does not open the web dashboard.",
-                )
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(Color.white.opacity(0.55))
-                .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    viewModel.presentPlanKillWarning()
+                } label: {
+                    Text("Kill desk")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(BarDS.Accent.red)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Kill desk")
             } else {
                 EmptyView()
             }
