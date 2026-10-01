@@ -405,6 +405,19 @@ impl TodayService {
         self.store.fetch_journal_trip_cites_between(start, end)
     }
 
+    /// Persist Journal cite rows from Console `test_only` fill-matched success (never local matched flip).
+    pub fn try_record_console_test_fill_matched_cite(
+        &self,
+        request_body: &serde_json::Value,
+        response_body: &serde_json::Value,
+    ) -> bool {
+        crate::today::journal_trip_cite_record::try_record_console_test_fill_matched_cite(
+            &self.store,
+            request_body,
+            response_body,
+        )
+    }
+
     pub fn build_payload(&self) -> anyhow::Result<TodayPayload> {
         let desk = self.active_desk_fields();
         if let Some(reason) = self.degraded_reason() {

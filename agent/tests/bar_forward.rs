@@ -576,3 +576,140 @@ async fn bar_test_fill_matched_proxies_post_to_internal_upstream() {
 
     handle.abort();
 }
+
+#[tokio::test]
+async fn bar_test_fill_matched_forwards_console_404_when_flag_off() {
+    const AGENT_PORT: u16 = 39_611;
+    let upstream = Router::new().route(
+        "/api/internal/bar/v1/test/fill-matched",
+        post(|| async { (StatusCode::NOT_FOUND, Json(json!({ "error": "disabled" }))) }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let path = "/api/daemon/bar/test/fill-matched";
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let payload = json!({
+        "declaration_id": "00000000-0000-4000-8000-000000000099",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "quantity": 0.001,
+        "price": 50000.0
+    });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+
+    assert_eq!(resp.status(), 404);
+    handle.abort();
+}
+
+#[tokio::test]
+async fn bar_test_fill_matched_records_journal_trip_cite_when_console_returns_trip_cite() {
+    const AGENT_PORT: u16 = 39_612;
+    const DECL_ID: &str = "00000000-0000-4000-8000-000000000088";
+    let upstream = Router::new().route(
+        "/api/internal/bar/v1/test/fill-matched",
+        post(|| async {
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "test_only": true,
+                    "status": "matched",
+                    "trade_id": "t-harness",
+                    "fidelity": { "ok": true },
+                    "trip_cite": { "net": 4.25, "currency": "USD" }
+                })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("bind upstream");
+    let upstream_port = listener.local_addr().expect("addr").port();
+    tokio::spawn(async move {
+        axum::serve(listener, upstream)
+            .await
+            .expect("upstream serve");
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{upstream_port}"));
+    let handle = spawn_test_agent_with_options(AGENT_PORT, opts);
+    tokio::time::sleep(Duration::from_millis(320)).await;
+
+    let inject_path = "/api/daemon/bar/test/fill-matched";
+    let inject_url = format!("http://127.0.0.1:{AGENT_PORT}{inject_path}");
+    let payload = json!({
+        "declaration_id": DECL_ID,
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "quantity": 0.001,
+        "price": 50000.0
+    });
+    let body_bytes = serde_json::to_vec(&payload).expect("json");
+    let resp = apply_wire_v1(
+        client()
+            .post(&inject_url)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body_bytes.clone()),
+        "POST",
+        inject_path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("agent");
+    assert_eq!(resp.status(), 200);
+
+    let cites_path = "/api/daemon/journal/trip-cites";
+    let cites_url = format!("http://127.0.0.1:{AGENT_PORT}{cites_path}");
+    let cites_resp = apply_wire_v1(
+        client().get(&cites_url),
+        "GET",
+        cites_path,
+        &[],
+        WireHeaderOverrides::default(),
+    )
+    .send()
+    .await
+    .expect("trip-cites");
+    assert_eq!(cites_resp.status(), 200);
+    let cites: Value = cites_resp.json().await.expect("json");
+    let items = cites["items"].as_array().expect("items");
+    assert!(
+        items.iter().any(|row| {
+            row.get("declarationId").and_then(|v| v.as_str()) == Some(DECL_ID)
+                && row.get("net").and_then(|v| v.as_f64()) == Some(4.25)
+        }),
+        "expected journal trip cite for inject declaration"
+    );
+
+    handle.abort();
+}

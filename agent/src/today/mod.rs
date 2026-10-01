@@ -1,4 +1,5 @@
 pub mod service;
+mod journal_trip_cite_record;
 mod signals;
 mod store;
 

@@ -41,6 +41,11 @@
           "method": "POST",
           "path": "/api/daemon/bar/test/fill-matched",
           "notes": "Harness-only loopback forward; Console requires BAR_TEST_INJECT_FILL_MATCHED=1"
+        },
+        "journal_trip_cites": {
+          "method": "GET",
+          "path": "/api/daemon/journal/trip-cites",
+          "notes": "Station-owned closed-trip P&L keyed by declarationId for Journal cite (Wave J)"
         }
       },
       "agent_to_brain_bar": {

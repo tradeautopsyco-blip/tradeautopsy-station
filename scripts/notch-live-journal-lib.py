@@ -361,6 +361,30 @@ def build_fill_matched_inject_body(
     }
 
 
+def fetch_journal_trip_cites(
+    wire_fn: Callable[..., HttpResult],
+) -> list[dict[str, Any]]:
+    res = wire_fn("GET", "/api/daemon/journal/trip-cites")
+    body = res.json()
+    if not isinstance(body, dict):
+        return []
+    items = body.get("items")
+    if isinstance(items, list):
+        return [x for x in items if isinstance(x, dict)]
+    return []
+
+
+def find_journal_trip_cite(
+    items: list[dict[str, Any]], declaration_id: str
+) -> Optional[dict[str, Any]]:
+    for row in items:
+        for key in ("declarationId", "declaration_id"):
+            val = row.get(key)
+            if isinstance(val, str) and val.strip() == declaration_id:
+                return row
+    return None
+
+
 def inject_fill_matched(
     wire_fn: Callable[..., HttpResult],
     declaration_id: str,
@@ -992,6 +1016,20 @@ def run_harness(
                             report.fidelity["inject_fidelity"] = json.dumps(fid)
                     if not ok:
                         report.errors.append("inject-matched failed")
+                    elif ok:
+                        cites = fetch_journal_trip_cites(wire)
+                        cite_row = find_journal_trip_cite(cites, decl_id)
+                        if cite_row is not None:
+                            net = cite_row.get("net")
+                            ccy = cite_row.get("currency")
+                            report.fidelity["journal_trip_cite"] = (
+                                f"PASS net={net} currency={ccy}"
+                            )
+                        else:
+                            report.fidelity["journal_trip_cite"] = (
+                                "not_ready (Console matched but no trip_cite on inject — "
+                                "Journal cite needs trip_cite in fill-matched response)"
+                            )
             if wait_closed_sec > 0:
                 closed_item = wait_for_closed_trip(wire, decl_id, wait_closed_sec, log)
                 if closed_item:

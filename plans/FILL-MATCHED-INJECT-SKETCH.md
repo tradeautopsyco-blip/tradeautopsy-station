@@ -14,7 +14,7 @@ Harness **journal sink** Debrief works on `pending` declarations (Console upsert
 | Auth | Station Caller Bearer (same as other bar daemon forwards) |
 | Console route | `POST /api/internal/bar/v1/test/fill-matched` |
 | Body | `{ "declaration_id", "symbol", "side", "quantity", "price" }` — no broker HTTP |
-| Response | `test_only`, `status: "matched"`, `trade_id`, `matched_at_ms`, `fidelity` |
+| Response | `test_only`, `status: "matched"`, `trade_id`, `matched_at_ms`, `fidelity`, optional `trip_cite: { net, currency }` for Journal cite (Wave 0.4) |
 
 ## Station (this repo)
 
@@ -23,6 +23,7 @@ Harness **journal sink** Debrief works on `pending` declarations (Console upsert
 | Agent route | `POST /api/daemon/bar/test/fill-matched` → forwards to Console internal route |
 | Wire | Documented in `station-wire/v1.json` (`test_fill_matched` hops) |
 | Harness | `scripts/notch-live-journal.sh` / `notch-live-journal-lib.py` — `--inject-matched` after declare; fails clearly on 404 or non-2xx |
+| Journal cite | On `test_only` + `matched`, agent may persist `trip_cite` → `GET /api/daemon/journal/trip-cites` (Wave 0.3 UI). Never flips local declaration status. |
 | Poll | Use with `--wait-closed-sec` so scoreboard **Match fidelity** shows matched (not `not_ready`) |
 
 ### Example
