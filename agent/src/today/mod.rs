@@ -6,4 +6,4 @@ pub use service::{
     open_inventory_from_fills, OpenInventoryRow, TodayDegradedReason, TodayHeroPayload,
     TodayPayload, TodayService,
 };
-pub use store::TodayStore;
+pub use store::{JournalTripCiteRow, TodayStore};

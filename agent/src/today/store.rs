@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS daily_snapshots (
   unknown_basis_count INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS journal_trip_cites (
+  declaration_id TEXT PRIMARY KEY,
+  net REAL NOT NULL,
+  currency TEXT NOT NULL,
+  local_close_date TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journal_trip_cites_close ON journal_trip_cites(local_close_date DESC);
 "#,
         )?;
         Ok(Self {
@@ -204,6 +212,68 @@ CREATE TABLE IF NOT EXISTS daily_snapshots (
         }
         Ok(out)
     }
+
+    pub fn upsert_journal_trip_cite(
+        &self,
+        declaration_id: &str,
+        net: f64,
+        currency: &str,
+        local_close_date: NaiveDate,
+    ) -> anyhow::Result<()> {
+        let guard = self.conn.lock().expect("today sqlite mutex poisoned");
+        guard.execute(
+            r#"INSERT INTO journal_trip_cites (declaration_id, net, currency, local_close_date)
+               VALUES (?1, ?2, ?3, ?4)
+               ON CONFLICT(declaration_id) DO UPDATE SET
+                 net=excluded.net,
+                 currency=excluded.currency,
+                 local_close_date=excluded.local_close_date"#,
+            params![
+                declaration_id,
+                net,
+                currency.to_ascii_uppercase(),
+                local_close_date.format("%Y-%m-%d").to_string(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn fetch_journal_trip_cites_between(
+        &self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> anyhow::Result<Vec<JournalTripCiteRow>> {
+        let guard = self.conn.lock().expect("today sqlite mutex poisoned");
+        let mut stmt = guard.prepare(
+            r#"SELECT declaration_id, net, currency, local_close_date
+               FROM journal_trip_cites
+               WHERE local_close_date >= ?1 AND local_close_date <= ?2
+               ORDER BY local_close_date DESC, declaration_id ASC"#,
+        )?;
+        let start_s = start.format("%Y-%m-%d").to_string();
+        let end_s = end.format("%Y-%m-%d").to_string();
+        let rows = stmt.query_map(params![start_s, end_s], |r| {
+            Ok(JournalTripCiteRow {
+                declaration_id: r.get(0)?,
+                net: r.get(1)?,
+                currency: r.get(2)?,
+                local_close_date: r.get(3)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct JournalTripCiteRow {
+    pub declaration_id: String,
+    pub net: f64,
+    pub currency: String,
+    pub local_close_date: String,
 }
 
 #[derive(Debug, Clone)]
@@ -227,4 +297,34 @@ fn trip_key(symbol: &str, closed_at: DateTime<Utc>) -> String {
 
 fn local_date(ts: DateTime<Utc>) -> NaiveDate {
     ts.with_timezone(&chrono::Local).date_naive()
+}
+
+#[cfg(test)]
+mod journal_trip_cite_tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    #[test]
+    fn journal_trip_cites_filter_by_local_close_week() {
+        let dir = std::env::temp_dir().join(format!(
+            "rta-journal-trip-cites-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("today.db");
+        let store = TodayStore::open(&path).unwrap();
+        let d11 = NaiveDate::from_ymd_opt(2026, 9, 11).unwrap();
+        let d5 = NaiveDate::from_ymd_opt(2026, 9, 5).unwrap();
+        store
+            .upsert_journal_trip_cite("decl-in-week", 100.0, "inr", d11)
+            .unwrap();
+        store
+            .upsert_journal_trip_cite("decl-out-week", 50.0, "USD", d5)
+            .unwrap();
+        let rows = store.fetch_journal_trip_cites_between(d11, d11).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].declaration_id, "decl-in-week");
+        assert_eq!(rows[0].currency, "INR");
+    }
 }

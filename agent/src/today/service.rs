@@ -396,6 +396,15 @@ impl TodayService {
         Ok(open_inventory_from_fills(&fills))
     }
 
+    /// Closed-trip cites for Journal week list (Station-owned P&L; never Console FIFO).
+    pub fn journal_trip_cites_for_local_dates(
+        &self,
+        start: chrono::NaiveDate,
+        end: chrono::NaiveDate,
+    ) -> anyhow::Result<Vec<crate::today::JournalTripCiteRow>> {
+        self.store.fetch_journal_trip_cites_between(start, end)
+    }
+
     pub fn build_payload(&self) -> anyhow::Result<TodayPayload> {
         let desk = self.active_desk_fields();
         if let Some(reason) = self.degraded_reason() {

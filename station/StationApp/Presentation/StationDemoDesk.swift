@@ -6,6 +6,7 @@ public enum StationDemoDesk {
         public let payload: TodayAgentPayload
         public let positions: [DeskPosition]
         public let journalPayload: JournalWeekPayload
+        public let journalTripInventoryRows: [JournalClosedTripInventoryRow]
     }
 
     public static func istCalendar() -> Calendar {
@@ -61,6 +62,31 @@ public enum StationDemoDesk {
                 firstFilledAt: firstFilledAt
             ),
         ]
+        let matchedDue = JournalDeclarationCard(
+            id: "demo-reliance-matched",
+            status: "matched",
+            declarationKind: "intraday",
+            symbol: "RELIANCE",
+            side: "BUY",
+            quantity: 50,
+            quantityFilled: 50,
+            localDate: localDate,
+            protectiveSlConsent: true,
+            snapshot: JournalSnapshot(
+                setupLabel: "Pullback",
+                invalidationLine: "VWAP loss",
+                invalidationKind: "behaviour",
+                calmScale: 2,
+                confidenceScale: 4,
+                stopLoss: 1_260,
+                target: 1_320
+            ),
+            notes: JournalNotes(pre: "Declared.", live: "Closed.", post: ""),
+            fidelity: JournalFidelity(score: 80, dimensions: .honoured),
+            attachments: JournalAttachments(shots: 0, voice: false),
+            citedNet: nil,
+            citedCurrency: nil
+        )
         let pending = JournalDeclarationCard(
             id: "demo-reliance-pending",
             status: "pending",
@@ -90,10 +116,22 @@ public enum StationDemoDesk {
             timezone: "Asia/Kolkata",
             weekStart: localDate,
             weekEnd: localDate,
-            items: [pending],
+            items: [matchedDue, pending],
             days: [JournalWeekDay(localDate: localDate, sheet: nil)]
         )
-        return Fixture(payload: payload, positions: positions, journalPayload: journalPayload)
+        let inventoryRows = [
+            JournalClosedTripInventoryRow(
+                declarationId: "demo-reliance-matched",
+                net: -800,
+                currency: quoteCurrency ?? "INR"
+            ),
+        ]
+        return Fixture(
+            payload: payload,
+            positions: positions,
+            journalPayload: journalPayload,
+            journalTripInventoryRows: inventoryRows
+        )
     }
 
     private static func trade(closedAt: String, net: Double) -> TodayTradeRowPayload {

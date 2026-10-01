@@ -40,7 +40,19 @@ public struct StationSidebarList: View {
 
             Section("Desk") {
                 ForEach(StationRoute.deskRoutes, id: \.self) { route in
-                    Label(route.rawValue, systemImage: route.sfSymbol).tag(route)
+                    HStack(spacing: 6) {
+                        Label(route.rawValue, systemImage: route.sfSymbol)
+                        if route == .journal, coordinator.journalViewModel.sidebarDue {
+                            Text("Due")
+                                .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .semibold))
+                                .foregroundStyle(StationDS.Accent.amber)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(StationDS.Accent.amber.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .tag(route)
                 }
             }
             .collapsible(false)

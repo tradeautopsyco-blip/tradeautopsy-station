@@ -70,6 +70,7 @@ public struct JournalView: View {
                 Text("Matched").tag(JournalFacet.matched)
                 Text("Pending").tag(JournalFacet.pending)
                 Text("Unmatched").tag(JournalFacet.unmatched)
+                Text("Post due").tag(JournalFacet.due)
                 Text("Impulsive").tag(JournalFacet.impulsive)
             }
             .pickerStyle(.segmented)
@@ -151,8 +152,10 @@ public struct JournalView: View {
     private var takeaway: some View {
         let unmatched = viewModel.week.declarations.filter(\.isUnmatched).count
         let pending = viewModel.week.declarations.filter(\.isPending).count
+        let postDue = viewModel.week.sidebarDue
         return Text(
             "Capture is still Notch. This page is the frozen plan — matched, pending, expired, cancelled. "
+            + (postDue ? "Post due on matched rows with empty debrief. " : "")
             + (unmatched > 0 ? "\(unmatched) never filled. " : "")
             + (pending > 0 ? "\(pending) still pending." : "")
         )
@@ -228,6 +231,11 @@ public struct JournalView: View {
             Text(JournalCardPaint.snapLine(card))
                 .font(StationDS.bodyFont(StationDS.FontSize.bodyXS))
                 .foregroundStyle(StationDS.Text.muted)
+            if let net = card.citedNet, let ccy = card.citedCurrency {
+                Text("Matched net \(JournalCardPaint.numberText(net)) \(ccy)")
+                    .font(StationDS.bodyFont(StationDS.FontSize.bodyXS, weight: .medium))
+                    .foregroundStyle(StationDS.Text.secondary)
+            }
             chips(card)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,6 +309,9 @@ public struct JournalView: View {
         HStack(spacing: 6) {
             ForEach(JournalCardPaint.statusChips(card), id: \.self) { text in
                 pill(text, tone: statusTone(card.status))
+            }
+            if card.isPostDue {
+                pill("Post due", tone: .due)
             }
         }
     }
