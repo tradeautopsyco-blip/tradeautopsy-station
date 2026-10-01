@@ -106,8 +106,9 @@ pub async fn accept_handler(
         Ok(ProcessNowResult::DeadLetter { reason }) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(json!({
-                "error_class": "VALIDATION",
+                "error_class": "DEAD_LETTER",
                 "message": reason,
+                "reason": reason,
                 "retry_after_ms": Value::Null,
                 "request_id": request_id,
             })),

@@ -172,6 +172,32 @@ async fn upstream_retry_then_accept(
     )
 }
 
+async fn upstream_always_503(
+    State(state): State<UpstreamCapture>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    state
+        .calls
+        .lock()
+        .expect("calls mutex")
+        .push((request_id, body.clone()));
+    *state.headers.lock().expect("headers mutex") = Some(headers);
+    *state.body.lock().expect("body mutex") = Some(body);
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({
+            "success": false,
+            "error": { "code": "UPSTREAM_ERROR", "message": "unavailable" }
+        })),
+    )
+}
+
 async fn upstream_validation_error(
     State(state): State<UpstreamCapture>,
     headers: HeaderMap,
@@ -274,6 +300,24 @@ fn spawn_upstream_retry_then_accept(
             post(upstream_retry_then_accept),
         )
         .with_state(behavior);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let handle = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .expect("bind upstream");
+        axum::serve(listener, router).await.expect("serve upstream");
+    });
+    (handle, state)
+}
+
+fn spawn_upstream_always_503(port: u16) -> (tokio::task::JoinHandle<()>, UpstreamCapture) {
+    let state = UpstreamCapture::default();
+    let router = Router::new()
+        .route(
+            "/api/daemon/journal/toolbar-capture/accept",
+            post(upstream_always_503),
+        )
+        .with_state(state.clone());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let handle = tokio::spawn(async move {
         let listener = tokio::net::TcpListener::bind(addr)
@@ -1068,6 +1112,15 @@ async fn validation_error_goes_dead_letter_without_retry_loop() {
     .await
     .expect("request");
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let response_json: Value = resp.json().await.expect("response json");
+    assert_eq!(
+        response_json["error_class"],
+        Value::String("DEAD_LETTER".to_string())
+    );
+    assert_eq!(
+        response_json["reason"],
+        Value::String("validation".to_string())
+    );
 
     let dead = wait_for_count_state(&db_path, "DEAD_LETTER", 1, 3_000).await;
     assert!(
@@ -1148,10 +1201,73 @@ async fn outbox_status_endpoint_surfaces_dead_letter_for_settings() {
         Value::String("idem-status-deadletter".to_string())
     );
     assert_eq!(first["reason"], Value::String("validation".to_string()));
+    assert!(
+        status_json["data"]["active_deliveries"].is_array(),
+        "status should include in-flight delivery tracking"
+    );
 
     agent_handle.abort();
     upstream_handle.abort();
     std::env::remove_var("TRADEAUTOPSY_SERVER_BASE_URL");
     std::env::remove_var("AGENT_OUTBOX_DB_PATH");
+    let _ = std::fs::remove_file(db_path);
+}
+
+#[tokio::test]
+#[serial]
+async fn retry_exhaustion_dead_letters_with_max_attempts_reason() {
+    const AGENT_PORT: u16 = 19_468;
+    const UPSTREAM_PORT: u16 = 19_469;
+    let path = "/api/daemon/journal/toolbar-capture/accept";
+    let db_path = temp_outbox_path("max-attempts-deadletter");
+
+    let (upstream_handle, _upstream) = spawn_upstream_always_503(UPSTREAM_PORT);
+    std::env::set_var(
+        "TRADEAUTOPSY_SERVER_BASE_URL",
+        format!("http://127.0.0.1:{UPSTREAM_PORT}"),
+    );
+    std::env::set_var("AGENT_OUTBOX_DB_PATH", &db_path);
+    std::env::set_var("AGENT_OUTBOX_MAX_ATTEMPTS", "2");
+    std::env::set_var("AGENT_OUTBOX_BASE_BACKOFF_MS", "1");
+    std::env::set_var("AGENT_OUTBOX_MAX_BACKOFF_MS", "2");
+
+    let agent_handle = spawn_test_agent(AGENT_PORT);
+    assert!(wait_for_agent_health(AGENT_PORT, 2_000).await);
+
+    let body = json!({
+        "draftText": "retry cap",
+        "tradeId": null,
+        "explicitPending": true,
+        "idempotencyKey": "idem-max-attempts",
+        "r2Key": null
+    });
+    let body_bytes = serde_json::to_vec(&body).expect("body json");
+    let url = format!("http://127.0.0.1:{AGENT_PORT}{path}");
+    let resp = apply_wire_v1(
+        client().post(&url).body(body_bytes.clone()),
+        "POST",
+        path,
+        &body_bytes,
+        WireHeaderOverrides::default(),
+    )
+    .header("content-type", "application/json")
+    .send()
+    .await
+    .expect("request");
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+    let dead = wait_for_count_state(&db_path, "DEAD_LETTER", 1, 8_000).await;
+    assert!(dead, "persistent 503 should dead-letter after max attempts");
+    let row = read_last_outbox_row(&db_path).expect("row");
+    assert_eq!(row.0, "DEAD_LETTER");
+    assert_eq!(row.2.as_deref(), Some("max_attempts"));
+
+    agent_handle.abort();
+    upstream_handle.abort();
+    std::env::remove_var("TRADEAUTOPSY_SERVER_BASE_URL");
+    std::env::remove_var("AGENT_OUTBOX_DB_PATH");
+    std::env::remove_var("AGENT_OUTBOX_MAX_ATTEMPTS");
+    std::env::remove_var("AGENT_OUTBOX_BASE_BACKOFF_MS");
+    std::env::remove_var("AGENT_OUTBOX_MAX_BACKOFF_MS");
     let _ = std::fs::remove_file(db_path);
 }

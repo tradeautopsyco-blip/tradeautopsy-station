@@ -17,6 +17,7 @@ pub async fn handler(State(state): State<AppState>) -> Json<Value> {
                 dead_letter: 0,
             },
             dead_letters: Vec::new(),
+            active_deliveries: Vec::new(),
         });
 
     Json(json!({

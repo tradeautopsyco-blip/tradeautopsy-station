@@ -12,6 +12,7 @@ enum DaemonProtocolErrorClass: String, Decodable {
     case protoVersion = "PROTO_VERSION"
     case sigInvalid = "SIG_INVALID"
     case validation = "VALIDATION"
+    case deadLetter = "DEAD_LETTER"
     case rateLimited = "RATE_LIMITED"
     case unknown = "UNKNOWN"
 }
