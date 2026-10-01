@@ -281,6 +281,7 @@ public final class AgentSupervisor: AgentSupervising {
         let process = Process()
         process.executableURL = binaryURL
         var environment = StationDotEnv.merge(into: ProcessInfo.processInfo.environment)
+        StationDotEnv.applyShippedDefaults(&environment)
         environment[AgentDaemonSecret.envKey] = daemonSecret
         process.environment = environment
         process.terminationHandler = { [weak self] proc in

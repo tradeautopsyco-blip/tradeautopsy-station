@@ -31,4 +31,14 @@ struct StationDotEnvTests {
         #expect(merged["WORKOS_STATION_CLIENT_ID"] == "from_process")
         #expect(merged["OTHER"] == "file_only")
     }
+
+    @Test func shippedDefaultsFillBlankKeysOnly() {
+        var env = [
+            "TRADEAUTOPSY_SERVER_BASE_URL": "https://localhost:3000",
+            "WORKOS_STATION_CLIENT_ID": "  ",
+        ]
+        StationDotEnv.applyShippedDefaults(&env)
+        #expect(env["TRADEAUTOPSY_SERVER_BASE_URL"] == "https://localhost:3000")
+        #expect(env["WORKOS_STATION_CLIENT_ID"] == StationShippedConfig.workosStationClientID)
+    }
 }

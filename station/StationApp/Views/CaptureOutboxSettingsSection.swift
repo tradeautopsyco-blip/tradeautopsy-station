@@ -69,14 +69,20 @@ struct CaptureOutboxSettingsSection: View {
 
     private func refresh() async {
         let secret = AgentDaemonSecret.resolveForSession()
-        guard let snap = await CaptureOutboxStatusClient.fetch(
-            port: AgentLoopback.port,
-            daemonSecret: secret
-        ) else {
-            loadError = "Agent did not return capture outbox status."
-            return
+        // Agent is spawned at launch; the first Settings paint can race it.
+        for attempt in 0..<8 {
+            if let snap = await CaptureOutboxStatusClient.fetch(
+                port: AgentLoopback.port,
+                daemonSecret: secret
+            ) {
+                loadError = nil
+                snapshot = snap
+                return
+            }
+            if attempt < 7 {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
         }
-        loadError = nil
-        snapshot = snap
+        loadError = "Agent did not return capture outbox status."
     }
 }

@@ -1,7 +1,15 @@
 import Foundation
 
+/// Production values baked into every shipped Station. A `~/.tradeautopsy/station.env`
+/// file is a developer override only — downloaders do not create one.
+public enum StationShippedConfig {
+    public static let consoleBaseURL = "https://www.tradeautopsy.in"
+    /// Public WorkOS AuthKit client id (same app as Console). Not a secret.
+    public static let workosStationClientID = "client_01KBEHG7XWN269N97M1EAKXV07"
+}
+
 /// Loads untracked Station ops env (`~/.tradeautopsy/station.env`) into the spawned agent.
-/// GUI `open` does not inherit a shell profile, so WorkOS / Console URLs must come from this file.
+/// Missing keys fall back to `StationShippedConfig`.
 public enum StationDotEnv {
     public static var defaultURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -44,5 +52,18 @@ public enum StationDotEnv {
             }
         }
         return out
+    }
+
+    /// Production Console + WorkOS client when the process and `station.env` left them blank.
+    public static func applyShippedDefaults(_ environment: inout [String: String]) {
+        fillIfBlank(&environment, key: "TRADEAUTOPSY_SERVER_BASE_URL", value: StationShippedConfig.consoleBaseURL)
+        fillIfBlank(&environment, key: "WORKOS_STATION_CLIENT_ID", value: StationShippedConfig.workosStationClientID)
+    }
+
+    private static func fillIfBlank(_ environment: inout [String: String], key: String, value: String) {
+        let current = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if current.isEmpty {
+            environment[key] = value
+        }
     }
 }

@@ -224,7 +224,10 @@ impl UpstreamConfig {
     pub fn from_env(daemon_secret: &str) -> Self {
         let base_url = std::env::var("TRADEAUTOPSY_SERVER_BASE_URL")
             .or_else(|_| std::env::var("TRADEAUTOPSY_API_URL"))
-            .unwrap_or_else(|_| "https://localhost:3000".to_string());
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "https://www.tradeautopsy.in".to_string());
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
             daemon_secret: daemon_secret.to_string(),

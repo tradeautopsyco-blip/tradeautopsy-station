@@ -20,17 +20,24 @@ fn anyhow_message(err: &anyhow::Error) -> String {
         .join(": ")
 }
 
+/// Public AuthKit client id shipped with Station. Env overrides for local WorkOS apps.
+const SHIPPED_WORKOS_STATION_CLIENT_ID: &str = "client_01KBEHG7XWN269N97M1EAKXV07";
+
 fn workos_station_client_id() -> Result<String, String> {
-    std::env::var("WORKOS_STATION_CLIENT_ID")
-        .map(|s| s.trim().to_string())
-        .map_err(|_| "WORKOS_STATION_CLIENT_ID is not set".to_string())
-        .and_then(|s| {
-            if s.is_empty() {
-                Err("WORKOS_STATION_CLIENT_ID is empty".to_string())
-            } else {
-                Ok(s)
-            }
-        })
+    let from_env = std::env::var("WORKOS_STATION_CLIENT_ID")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let id = if from_env.is_empty() {
+        SHIPPED_WORKOS_STATION_CLIENT_ID.to_string()
+    } else {
+        from_env
+    };
+    if id.is_empty() {
+        Err("WORKOS_STATION_CLIENT_ID is empty".to_string())
+    } else {
+        Ok(id)
+    }
 }
 
 pub async fn station_auth_begin_handler(State(state): State<AppState>) -> Response {
