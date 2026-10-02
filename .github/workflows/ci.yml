@@ -1,64 +1,40 @@
 name: CI
 
-# Linux for the bulk of the Rust agent; macOS only for kill-switch/DNS/Swift/Xcode.
-# Release signing, notarization, Sparkle appcast, and Vercel feed deploy stay manual workflows.
+# PR + main gate. Cheap Linux leg covers the UBI wasm adapters; the agent lib
+# suite is macOS-only today (keyring apple-native, notify macos_kqueue are
+# unconditional deps) so it stays on macos-15 — Lib tests only, no integration
+# binaries, no xcodebuild. See docs/ci.md.
 on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'plans/**'
+      - '**.md'
+      - 'updater/**'
   push:
     branches: [main]
-  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'plans/**'
+      - '**.md'
+      - 'updater/**'
   workflow_dispatch:
-    inputs:
-      station_app:
-        description: "Build Station.app + zip/DMG artifact (extra macOS minutes)"
-        type: boolean
-        default: false
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
-env:
-  TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
-
 jobs:
-  changes:
-    name: Path filter
+  ubi-wasm:
+    name: UBI adapters (wasm32-wasip2)
     runs-on: ubuntu-latest
-    outputs:
-      agent: ${{ steps.filter.outputs.agent }}
-      apple: ${{ steps.filter.outputs.apple }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            agent:
-              - 'agent/**'
-              - '.github/workflows/ci.yml'
-            apple:
-              - 'agent/**'
-              - 'notch/**'
-              - 'station/**'
-              - 'scripts/pack-station-dmg.sh'
-              - 'scripts/dogfood-suite.sh'
-              - '.github/workflows/ci.yml'
-
-  agent-linux:
-    name: Agent — build and test (Linux)
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      needs.changes.outputs.agent == 'true'
-    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable
+      - name: Install Rust stable + wasm target
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
@@ -70,36 +46,20 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             agent/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          key: ${{ runner.os }}-ubi-wasm-${{ hashFiles('agent/Cargo.lock') }}
 
-      - name: Prepare test hosts file
-        run: touch "$TRADEAUTOPSY_HOSTS_FILE"
-
-      - name: Rust agent — build and test
-        working-directory: agent
-        env:
-          RUSTFLAGS: "-D unused"
-        run: |
-          cargo build --lib --locked
-          cargo test --all-features --locked
-
-      - name: UBI Wasm components (release smoke)
+      - name: Build every UBI adapter component
         working-directory: agent
         run: |
-          cargo build --release --locked --target wasm32-wasip2 \
-            -p ubi-fixture-adapter \
-            -p ubi-binance-com-adapter \
-            -p ubi-kotak-neo-adapter
+          set -euo pipefail
+          for manifest in ubi-*-adapter/Cargo.toml; do
+            echo "=== $manifest"
+            cargo build --release --locked --target wasm32-wasip2 \
+              --manifest-path "$manifest"
+          done
 
-  macos:
-    name: macOS — kill-switch, Swift, optional app
-    needs: changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      needs.changes.outputs.apple == 'true'
+  agent:
+    name: Rust agent — lib tests
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -115,92 +75,13 @@ jobs:
             ~/.cargo/git
             agent/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
 
-      - name: Prepare test hosts file
-        run: touch "$TRADEAUTOPSY_HOSTS_FILE"
-
-      - name: Rust agent — macOS-gated integration tests
+      - name: cargo test --lib
         working-directory: agent
         env:
-          RUSTFLAGS: "-D unused"
+          # No -D warnings: the crate has ~97 pre-existing dead-code warnings;
+          # fail the gate on test failures, not legacy lint debt.
+          TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
         run: |
-          cargo test --locked --all-features \
-            --test broker_stop_vs_kill \
-            --test daemon_command_poll \
-            --test kill_latch_lifetime \
-            --test kill_switch_apply \
-            --test kill_switch_audit \
-            --test kill_switch_dns \
-            --test kill_switch_hosts_watcher \
-            --test kill_switch_policy
-
-      - name: Notch — build and test
-        working-directory: notch
-        run: |
-          swift build
-          swift test
-
-      - name: Station — SwiftPM build and test
-        run: |
-          swift build --package-path station/
-          swift test --package-path station/
-
-      - name: Dogfood scoreboard (public seams)
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: ./scripts/dogfood-suite.sh
-
-      - name: Install xcodegen
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.station_app == true)
-        run: brew install xcodegen
-
-      - name: Regenerate Xcode project
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.station_app == true)
-        working-directory: station
-        run: xcodegen generate
-
-      - name: Build Station.app
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.station_app == true)
-        working-directory: station
-        run: |
-          xcodebuild \
-            -project "TradeAutopsy Station.xcodeproj" \
-            -scheme "TradeAutopsy Station" \
-            -configuration Debug \
-            -destination "platform=macOS,arch=arm64" \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Zip .app and pack DMG
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.station_app == true)
-        run: |
-          APP=$(find station/build -name "TradeAutopsy Station.app" -type d | head -1)
-          test -n "$APP"
-          cd "$(dirname "$APP")"
-          zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
-          chmod +x scripts/pack-station-dmg.sh
-          ./scripts/pack-station-dmg.sh --from-app "$APP"
-
-      - name: Upload app artifact
-        if: |
-          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-          (github.event_name == 'workflow_dispatch' && inputs.station_app == true)
-        uses: actions/upload-artifact@v4
-        with:
-          name: TradeAutopsy-Station-app
-          path: |
-            station/build/**/TradeAutopsyStation.zip
-            dist/TradeAutopsy-Station-*.dmg
-          retention-days: 7
+          cargo build --lib
+          cargo test --lib

@@ -14,7 +14,8 @@ struct AgentBrokerSyncControlTests {
 
         try await control.startSync(for: .binanceComProd)
 
-        #expect(store.readCallCount == 1)
+        #expect(store.hasCredentialsCallCount == 1)
+        #expect(store.readCallCount == 0)
         #expect(runtime.lastStartedIdentity == .binanceComProd)
         #expect(runtime.startSyncCallCount == 1)
     }

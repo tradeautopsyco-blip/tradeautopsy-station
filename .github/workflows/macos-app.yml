@@ -1,0 +1,115 @@
+name: macOS App
+
+# Mac-gated: only runs when Swift/Xcode surfaces change. PRs get a Debug build
+# (no DMG); push to main and manual runs also pack and upload the artifact.
+# See docs/ci.md.
+on:
+  pull_request:
+    paths:
+      - 'station/**'
+      - 'notch/**'
+      - '.github/workflows/macos-app.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'station/**'
+      - 'notch/**'
+      - '.github/workflows/macos-app.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: macos-app-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  swift:
+    name: Notch + Station SwiftPM
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Notch — build and test
+        working-directory: notch
+        run: |
+          swift build
+          swift test
+
+      - name: Station — SwiftPM build and test
+        run: |
+          swift build --package-path station/
+          swift test --package-path station/
+
+  app:
+    name: Station.app xcodebuild
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            agent/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('agent/Cargo.lock') }}
+
+      - name: Build tradeautopsy-agent (bundle input)
+        working-directory: agent
+        run: cargo build --release --locked --bin tradeautopsy-agent
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Regenerate Xcode project
+        working-directory: station
+        run: xcodegen generate
+
+      - name: Build Station.app (Debug)
+        working-directory: station
+        run: |
+          xcodebuild \
+            -project "TradeAutopsy Station.xcodeproj" \
+            -scheme "TradeAutopsy Station" \
+            -configuration Debug \
+            -destination "platform=macOS,arch=arm64" \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Locate .app
+        id: locate
+        run: |
+          APP=$(find station/build -name "TradeAutopsy Station.app" -type d | head -1)
+          test -n "$APP"
+          echo "app_path=$APP" >> "$GITHUB_OUTPUT"
+
+      - name: Zip .app and pack DMG
+        if: github.event_name != 'pull_request'
+        run: |
+          APP="${{ steps.locate.outputs.app_path }}"
+          cd "$(dirname "$APP")"
+          zip -r TradeAutopsyStation.zip "TradeAutopsy Station.app"
+          cd "$GITHUB_WORKSPACE"
+          chmod +x scripts/pack-station-dmg.sh
+          ./scripts/pack-station-dmg.sh --from-app "$APP"
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradeAutopsy-Station-app
+          path: |
+            station/build/**/TradeAutopsyStation.zip
+            dist/TradeAutopsy-Station-*.dmg
+          retention-days: 7

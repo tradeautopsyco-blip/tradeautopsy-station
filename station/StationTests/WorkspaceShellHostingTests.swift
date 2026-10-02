@@ -43,6 +43,7 @@ struct WorkspaceShellHostingTests {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.contentView = host
         window.orderBack(nil)
         defer { window.close() }
