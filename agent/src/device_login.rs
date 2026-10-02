@@ -337,6 +337,15 @@ pub async fn refresh_stored_station_tokens(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::BAD_REQUEST {
+        // Console's body is an error code (e.g. INVALID_REFRESH_TOKEN), never
+        // token material — and it is what distinguishes a burned family from an
+        // expired one. Bounded so an unexpected HTML body cannot flood the log.
+        let detail: String = text.chars().take(160).collect();
+        tracing::warn!(
+            status = status.as_u16(),
+            detail = %detail,
+            "Console refused Station refresh grant; clearing stored tokens"
+        );
         let _ = store.clear();
         return Err(StationRefreshError::Revoked);
     }

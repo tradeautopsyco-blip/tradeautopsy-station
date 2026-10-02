@@ -484,21 +484,54 @@ impl UpstreamClient {
     }
 }
 
+/// Dedupes quiet-refresh WARN lines: one warn per contiguous failure spell.
+/// A successful refresh re-arms the warn for the next spell. The loop keeps
+/// polling so a fresh device login resumes rotation without a restart.
+#[derive(Default)]
+struct QuietRefreshWarnGate(Option<QuietRefreshWarnKind>);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum QuietRefreshWarnKind {
+    Revoked,
+    Transient,
+}
+
+impl QuietRefreshWarnGate {
+    fn fire(&mut self, kind: QuietRefreshWarnKind) -> bool {
+        if self.0 == Some(kind) {
+            return false;
+        }
+        self.0 = Some(kind);
+        true
+    }
+
+    fn reset(&mut self) {
+        self.0 = None;
+    }
+}
+
 /// Rotate the paired-device access JWT before it expires. No UI prompt.
 /// Failures are logged without token material.
 fn spawn_quiet_station_refresh(upstream: Arc<UpstreamClient>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         interval.tick().await;
+        let mut warns = QuietRefreshWarnGate::default();
         loop {
             interval.tick().await;
             match upstream.ensure_fresh_station_access(None).await {
-                Ok(()) => {}
+                Ok(()) => warns.reset(),
                 Err(StationRefreshError::Revoked) => {
-                    tracing::warn!("Station quiet refresh revoked; device login required");
+                    if warns.fire(QuietRefreshWarnKind::Revoked) {
+                        tracing::warn!(
+                            "Station quiet refresh revoked; device login required"
+                        );
+                    }
                 }
                 Err(StationRefreshError::Transient(err)) => {
-                    tracing::warn!(error = %err, "Station quiet refresh deferred");
+                    if warns.fire(QuietRefreshWarnKind::Transient) {
+                        tracing::warn!(error = %err, "Station quiet refresh deferred");
+                    }
                 }
             }
         }
@@ -1005,7 +1038,10 @@ mod upstream_config_bridge_harden_tests {
 
 #[cfg(test)]
 mod station_refresh_gate_tests {
-    use super::{StationRefreshError, UpstreamClient, UpstreamConfig};
+    use super::{
+        QuietRefreshWarnGate, QuietRefreshWarnKind, StationRefreshError, UpstreamClient,
+        UpstreamConfig,
+    };
     use chrono::Utc;
     use serial_test::serial;
     use std::sync::atomic::Ordering;
@@ -1030,6 +1066,17 @@ mod station_refresh_gate_tests {
             matches!(err, StationRefreshError::Transient(_)),
             "Console refresh network failures must backoff as Transient"
         );
+    }
+
+    #[test]
+    fn quiet_refresh_warn_gate_fires_once_per_failure_spell() {
+        let mut gate = QuietRefreshWarnGate::default();
+        assert!(gate.fire(QuietRefreshWarnKind::Revoked));
+        assert!(!gate.fire(QuietRefreshWarnKind::Revoked));
+        assert!(gate.fire(QuietRefreshWarnKind::Transient));
+        assert!(!gate.fire(QuietRefreshWarnKind::Transient));
+        gate.reset();
+        assert!(gate.fire(QuietRefreshWarnKind::Revoked));
     }
 }
 
@@ -1713,7 +1760,6 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
         .station_token_store
         .unwrap_or_else(|| Arc::new(KeyringStationTokenStore));
     upstream.install_token_store(station_token_store.clone());
-    spawn_quiet_station_refresh(upstream.clone());
     let station_tokens_in_store = station_token_store.load().ok().flatten().is_some();
     let loopback_bootstrap_jwt = upstream.config.is_loopback_http_bootstrap()
         && std::env::var("STATION_ACCESS_TOKEN")
@@ -1972,6 +2018,11 @@ pub async fn run_agent(config: AgentConfig) -> anyhow::Result<()> {
             }
         })?;
     tracing::info!(%addr, "tradeautopsy-agent listening");
+
+    // Spawn only after the bind succeeds — a second instance that loses the
+    // port race must not start a refresh loop racing the live instance against
+    // the same rotating Keychain token.
+    spawn_quiet_station_refresh(state.upstream.clone());
 
     let shutdown = async {
         let ctrl_c = async {
