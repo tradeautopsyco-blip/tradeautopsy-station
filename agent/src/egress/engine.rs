@@ -78,7 +78,10 @@ pub struct MeterPosture {
 
 pub struct VenueEgress {
     clock: Arc<dyn Clock>,
-    slots: Mutex<HashMap<&'static str, Slot>>,
+    /// `Arc` so an admitted `Permit` can release its own concurrency slot when
+    /// it is dropped without `record()` — async cancellation kills the holder
+    /// mid-send, and the slot must not leak with it.
+    slots: Arc<Mutex<HashMap<&'static str, Slot>>>,
     events: Mutex<Option<Arc<EventBus>>>,
     /// Ring 3: mirror an IP ban into `/etc/hosts` so nothing on this Mac can keep
     /// knocking. Off unless explicitly enabled, because it shells out to `sudo`
@@ -94,7 +97,7 @@ impl VenueEgress {
             .collect();
         Self {
             clock,
-            slots: Mutex::new(slots),
+            slots: Arc::new(Mutex::new(slots)),
             events: Mutex::new(None),
             hosts_backstop: std::sync::atomic::AtomicBool::new(false),
         }
@@ -202,6 +205,24 @@ impl VenueEgress {
             forecast_cost: cost,
             issued_at_ms: now,
             recorded: false,
+            on_unrecorded_drop: Some(self.leak_release()),
+        })
+    }
+
+    /// The hook a `Permit` carries so an unrecorded drop still returns its
+    /// concurrency slot. Deliberately release-only: the forecast stays spent
+    /// (the call may already have left the Mac) and no posture changes, because
+    /// an unobserved outcome is not a venue instruction.
+    fn leak_release(&self) -> Arc<dyn Fn(&'static str, &'static str) + Send + Sync> {
+        let slots = Arc::clone(&self.slots);
+        Arc::new(move |slot_id, meter_id| {
+            if let Ok(mut slots) = slots.lock() {
+                if let Some(slot) = slots.get_mut(slot_id) {
+                    if let Some(meter) = slot.meters.get_mut(meter_id) {
+                        meter.release();
+                    }
+                }
+            }
         })
     }
 
@@ -252,6 +273,7 @@ impl VenueEgress {
             forecast_cost: weight_hint,
             issued_at_ms: now,
             recorded: false,
+            on_unrecorded_drop: Some(self.leak_release()),
         })
     }
 
@@ -867,6 +889,21 @@ mod tests {
                 .inflight,
             0
         );
+    }
+
+    #[test]
+    fn a_permit_dropped_unrecorded_still_frees_the_concurrency_slot() {
+        // Async cancellation kills the holder mid-send — axum drops the handler
+        // when the client goes away — and nobody calls record(). The permit's
+        // own drop must release the slot so the venue does not leak it forever.
+        let (_clock, engine) = engine();
+        let mut held: Vec<Permit> = (0..8).map(|_| admit_ok(&engine, &depth(SPOT))).collect();
+        let cap_refusal = refusal(&engine, &depth(SPOT));
+        assert_eq!(cap_refusal.kind, RefuseKind::OverBudget);
+        assert_eq!(cap_refusal.until_ms, None, "concurrency cap, not budget");
+
+        held.pop(); // the cancelled call drops its permit unrecorded
+        assert!(admits(&engine, &depth(SPOT)), "dropped permit must free a slot");
     }
 
     // ---- Ban lifecycle. ----

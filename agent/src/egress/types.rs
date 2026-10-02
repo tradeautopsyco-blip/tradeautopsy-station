@@ -1,5 +1,7 @@
 //! Core egress vocabulary. Shared by every slot; blended by none.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 
 /// Which reserve lane a call draws from. Lanes exist so a market-data flood can
@@ -122,7 +124,6 @@ impl std::fmt::Display for RefuseReason {
 /// Proof of admission. Deliberately **not** `Clone` and not constructible outside
 /// this module: an outcome cannot be recorded against a meter it was not drawn
 /// from, and a single admission cannot be spent twice.
-#[derive(Debug)]
 pub struct Permit {
     pub(crate) slot: &'static str,
     pub(crate) meter: &'static str,
@@ -133,19 +134,42 @@ pub struct Permit {
     /// recorded has leaked a concurrency slot and thrown away whatever the venue
     /// said — including a 429 or a 418. Loud, because it is silent otherwise.
     pub(crate) recorded: bool,
+    /// Installed by the engine at admission: gives the concurrency slot back
+    /// when this permit is dropped unrecorded — async cancellation kills a
+    /// holder mid-send (axum drops handlers when the client goes away), and the
+    /// slot must not leak with it. The forecast stays spent: the call may
+    /// already have left the Mac, so it is not refunded, and no posture changes
+    /// because an unobserved outcome is not a venue instruction.
+    pub(crate) on_unrecorded_drop: Option<Arc<dyn Fn(&'static str, &'static str) + Send + Sync>>,
+}
+
+impl std::fmt::Debug for Permit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Permit")
+            .field("slot", &self.slot)
+            .field("meter", &self.meter)
+            .field("lane", &self.lane)
+            .field("forecast_cost", &self.forecast_cost)
+            .field("issued_at_ms", &self.issued_at_ms)
+            .field("recorded", &self.recorded)
+            .finish()
+    }
 }
 
 impl Drop for Permit {
     fn drop(&mut self) {
-        if !self.recorded {
-            tracing::error!(
-                slot = self.slot,
-                meter = self.meter,
-                "VenueEgress: permit dropped without record() — concurrency slot \
-                 leaked and the venue's response was not accounted"
-            );
-            debug_assert!(false, "egress permit dropped without record()");
+        if self.recorded {
+            return;
         }
+        if let Some(release) = self.on_unrecorded_drop.take() {
+            release(self.slot, self.meter);
+        }
+        tracing::warn!(
+            slot = self.slot,
+            meter = self.meter,
+            "VenueEgress: permit dropped without record() — slot released; the \
+             venue's response was not accounted"
+        );
     }
 }
 
