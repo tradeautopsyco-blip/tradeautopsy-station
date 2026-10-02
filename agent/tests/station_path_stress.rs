@@ -15,7 +15,7 @@ use axum::extract::Request;
 use axum::response::IntoResponse;
 use axum::{Json, Router};
 use common::{
-    apply_wire_v1, spawn_test_agent_with_options, wait_ready, TestAgentOptions,
+    apply_wire_v1, spawn_test_agent_with_options, TestAgentOptions,
     WireHeaderOverrides, TEST_SECRET,
 };
 use futures::future::join_all;
@@ -76,7 +76,12 @@ struct Row {
     gate: String,
 }
 
-#[tokio::test]
+// Multi-thread runtime on purpose: the agent under test is spawned in-process
+// via tokio::spawn, so the default current_thread flavor would interleave
+// client, stub Console, and server on one OS thread. Results from that setup
+// are a single-thread lower bound; worker_threads=4 matches the committed
+// report's 4-CPU baseline.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn station_path_stress_ramp() {
     if std::env::var("STATION_STRESS").ok().as_deref() != Some("1") {
         eprintln!("station_path_stress: skip (set STATION_STRESS=1 or run scripts/station-path-stress.sh)");
@@ -107,22 +112,39 @@ async fn station_path_stress_ramp() {
             .expect("stub console");
     });
 
-    let agent_port = free_port();
-    let mut opts = TestAgentOptions::default();
-    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{stub_port}"));
-    let vault: Arc<dyn BrokerCredentialVault> = Arc::new(MemoryBrokerCredentialVault::new());
-    opts.credential_vault = Some(vault);
-    opts.plant_binance_options_depth = true;
-    opts.plant_binance_s2_history = true;
-    opts.plant_binance_spot_funds = true;
-    let agent = spawn_test_agent_with_options(agent_port, opts);
-    wait_ready(agent_port).await;
-
     let client = reqwest::Client::builder()
         .pool_max_idle_per_host(128)
         .tcp_nodelay(true)
         .build()
         .expect("http client");
+
+    // free_port() drops its probe listener before the agent binds — another
+    // process can steal the port in between, so retry instead of trusting one
+    // race. TestAgentOptions isn't Clone, so agent_opts() builds a fresh one
+    // per attempt.
+    let mut agent = None;
+    let mut agent_port = 0u16;
+    for attempt in 0..3 {
+        let port = free_port();
+        let handle = spawn_test_agent_with_options(port, agent_opts(stub_port));
+        for _ in 0..50 {
+            if agent_ready(&client, port).await {
+                break;
+            }
+            if handle.is_finished() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(80)).await;
+        }
+        if agent_ready(&client, port).await {
+            agent = Some(handle);
+            agent_port = port;
+            break;
+        }
+        eprintln!("station_path_stress: agent did not bind :{port} (attempt {})", attempt + 1);
+        handle.abort();
+    }
+    let agent = agent.expect("test agent failed to bind a port after 3 attempts");
     let base = format!("http://127.0.0.1:{agent_port}");
     let table = probes();
     let mut rows = Vec::with_capacity(table.len() + 1);
@@ -143,6 +165,11 @@ async fn station_path_stress_ramp() {
             row.max_pass_concurrency, row.first_failure
         );
         rows.push(row);
+        // fire_l1 arms the desk latch; clear it so later probes don't measure a
+        // killed desk (the dismiss probe below reads cleaner on an unarmed desk).
+        if probe.name == "fire_l1" {
+            disarm_latch(&client, &base).await;
+        }
         agent_up = health_ok(&client, &base, timeout).await;
     }
 
@@ -585,7 +612,10 @@ fn probes() -> Vec<Probe> {
             false,
             "stub Console",
         ),
-        // Kill latch (L1 only — no DNS hosts write)
+        // Kill latch (L1 only — no DNS hosts write).
+        // NOTE: ordering is load-bearing — fire_l1 arms the real latch, and the
+        // main loop calls disarm_latch() right after its row so audit/ack below
+        // don't measure a killed desk. Keep fire_l1 before dismiss/audit.
         p(
             "kill_latch",
             "kill",
@@ -1571,6 +1601,47 @@ fn free_port() -> u16 {
     listener.local_addr().expect("addr").port()
 }
 
+fn agent_opts(stub_port: u16) -> TestAgentOptions {
+    let mut opts = TestAgentOptions::default();
+    opts.upstream_base_url_override = Some(format!("http://127.0.0.1:{stub_port}"));
+    let vault: Arc<dyn BrokerCredentialVault> = Arc::new(MemoryBrokerCredentialVault::new());
+    opts.credential_vault = Some(vault);
+    opts.plant_binance_options_depth = true;
+    opts.plant_binance_s2_history = true;
+    opts.plant_binance_spot_funds = true;
+    opts
+}
+
+/// Non-panicking readiness probe — unlike wait_ready, returns false so the
+/// caller can retry after a lost free_port race.
+async fn agent_ready(client: &reqwest::Client, port: u16) -> bool {
+    let req = apply_wire_v1(
+        client.get(format!("http://127.0.0.1:{port}/api/daemon/health")),
+        "GET",
+        "/api/daemon/health",
+        b"",
+        WireHeaderOverrides::default(),
+    );
+    matches!(
+        req.timeout(Duration::from_millis(400)).send().await,
+        Ok(r) if r.status().is_success()
+    )
+}
+
+/// Clear the L1 desk latch after the fire_l1 ramp leaves it armed.
+async fn disarm_latch(client: &reqwest::Client, base: &str) {
+    let _ = apply_wire_v1(
+        client.post(format!("{base}/api/daemon/dismiss-kill-switch")),
+        "POST",
+        "/api/daemon/dismiss-kill-switch",
+        b"",
+        WireHeaderOverrides::default(),
+    )
+    .timeout(Duration::from_secs(5))
+    .send()
+    .await;
+}
+
 fn parse_ladder() -> Vec<u32> {
     let raw = std::env::var("STATION_STRESS_LADDER")
         .unwrap_or_else(|_| "1,4,16,32,64,128,256,512".into());
@@ -1582,6 +1653,8 @@ fn parse_ladder() -> Vec<u32> {
     if out.is_empty() {
         out = vec![1, 4, 16, 32, 64, 128, 256, 512];
     }
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
