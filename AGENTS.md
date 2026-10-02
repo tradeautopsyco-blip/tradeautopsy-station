@@ -141,3 +141,16 @@ The five canonical triage roles use their default names, plus dispatch states ow
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+---
+
+## Cursor Cloud specific instructions
+
+Linux Cloud Agents run the Rust daemon in `agent/`. `station/` and `notch/` are macOS Swift and are not built here. The agent listens on `127.0.0.1:9137` (metrics `9138`, OAuth loopback `9140`).
+
+- Rust **stable** and the `wasm32-wasip2` target. Do not export `RUSTFLAGS="-D unused"`: that flag is for the macOS CI job and fails on Linux where macOS-only code is compiled out.
+- Loopback dev secret for the booted agent: `$HOME/.config/tradeautopsy/dev-daemon-secret`. `/api/daemon/health` requires wire v1 (`x-proto-version: 1`, `x-daemon-secret`, UUID `x-user-id`, ULID `x-request-id`, RFC3339 `x-timestamp`, 16-byte base64 `x-nonce`, base64 HMAC-SHA256 `x-signature`).
+- Release Wasm adapters land in `agent/target/wasm32-wasip2/release/`. Phase 1 fill-contract tests also look for `agent/ubi-fixture-adapter/target/wasm32-wasip2/release/ubi_fixture_adapter.wasm` (workspace builds write the first path; copy the fixture wasm to the second).
+- `b6_gate_only_signed_first_pair_is_enabled` reads `../../issues/brokers/sheets` from `agent/` (founder layout `/Users/bishnu/issues/brokers/sheets`). That sibling tree is not in this checkout, so the test fails here.
+- Integration tests that boot an agent share `/tmp/tradeautopsy-agent-outbox.db`. Groww mint unit tests share one process-global guard. Run `cargo test --manifest-path agent/Cargo.toml -- --test-threads=1` so those do not false-fail.
+- Canonical checks from `agent/`: `cargo test --locked --lib`, `cargo test --locked --test health`, `cargo test --locked --test ubi_fill_contract`.
