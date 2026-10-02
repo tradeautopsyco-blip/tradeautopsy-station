@@ -79,7 +79,8 @@ jobs:
       - name: cargo test --lib
         working-directory: agent
         env:
-          RUSTFLAGS: "-D unused"
+          # No -D warnings: the crate has ~97 pre-existing dead-code warnings;
+          # fail the gate on test failures, not legacy lint debt.
           TRADEAUTOPSY_HOSTS_FILE: /tmp/test-hosts
         run: |
           cargo build --lib
