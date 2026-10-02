@@ -728,12 +728,13 @@ pub async fn kill_switch_audit_handler(
     Query(query): Query<AuditTailQuery>,
 ) -> Response {
     let tail = query.tail.unwrap_or(10).clamp(1, 100);
-    match state.kill_switch_audit.tail(tail) {
-        Ok(rows) => {
-            let entries: Vec<Value> = rows
-                .into_iter()
+    let store = state.kill_switch_audit.clone();
+    let signer = state.audit_signer.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        store.tail(tail).map(|rows| {
+            rows.into_iter()
                 .map(|row| {
-                    let verified = state.audit_signer.verify_record(&row);
+                    let verified = signer.verify_record_cached(&row);
                     json!({
                         "id": row.id,
                         "event_type": row.event_type,
@@ -747,19 +748,33 @@ pub async fn kill_switch_audit_handler(
                         "verified": verified,
                     })
                 })
-                .collect();
+                .collect::<Vec<Value>>()
+        })
+    })
+    .await;
+    match result {
+        Ok(Ok(entries)) => (
+            StatusCode::OK,
+            Json(json!({
+                "ok": true,
+                "tail": tail,
+                "entries": entries,
+            })),
+        )
+            .into_response(),
+        Ok(Err(e)) => {
+            warn!("kill switch audit tail failed: {e}");
             (
-                StatusCode::OK,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
-                    "ok": true,
-                    "tail": tail,
-                    "entries": entries,
+                    "ok": false,
+                    "error": e.to_string(),
                 })),
             )
                 .into_response()
         }
         Err(e) => {
-            warn!("kill switch audit tail failed: {e}");
+            warn!("kill switch audit task join failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({

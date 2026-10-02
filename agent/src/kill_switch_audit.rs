@@ -7,10 +7,14 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 const CANONICAL_PREFIX: &str = "kill_switch_audit_v1";
+/// Verification memo ceiling — cleared wholesale when full (rows are append-only;
+/// a clear just re-verifies on next read, never weakens the check).
+const VERIFY_CACHE_MAX: usize = 8192;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KillSwitchAuditRecord {
@@ -38,6 +42,7 @@ pub struct KillSwitchAuditAppend {
 pub struct KillSwitchAuditSigner {
     key: Arc<SigningKey>,
     public_key_id: String,
+    verify_cache: Arc<Mutex<HashMap<[u8; 32], bool>>>,
 }
 
 impl KillSwitchAuditSigner {
@@ -47,6 +52,7 @@ impl KillSwitchAuditSigner {
         Self {
             key: Arc::new(key),
             public_key_id,
+            verify_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -70,6 +76,7 @@ impl KillSwitchAuditSigner {
         Self {
             key: Arc::new(key),
             public_key_id,
+            verify_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -103,6 +110,37 @@ impl KillSwitchAuditSigner {
             &record.hosts_json,
             &record.signature_b64,
         )
+    }
+
+    /// Verify with a per-process memo keyed on the signed content + signature.
+    /// Rows are append-only, so identical content verifies once; tampered content
+    /// yields a different key and is re-verified, so tamper-evidence is unchanged.
+    pub fn verify_record_cached(&self, record: &KillSwitchAuditRecord) -> bool {
+        let msg = canonical_audit_message(
+            &record.event_type,
+            record.fired_at_ms,
+            record.level,
+            &record.broker,
+            record.trigger.as_deref(),
+            &record.hosts_json,
+        );
+        let mut h = Sha256::new();
+        h.update(msg.as_bytes());
+        h.update(record.signature_b64.as_bytes());
+        let cache_key: [u8; 32] = h.finalize().into();
+        {
+            let cache = self.verify_cache.lock().expect("verify cache poisoned");
+            if let Some(hit) = cache.get(&cache_key) {
+                return *hit;
+            }
+        }
+        let verified = self.verify_record(record);
+        let mut cache = self.verify_cache.lock().expect("verify cache poisoned");
+        if cache.len() >= VERIFY_CACHE_MAX {
+            cache.clear();
+        }
+        cache.insert(cache_key, verified);
+        verified
     }
 }
 
@@ -341,6 +379,44 @@ mod tests {
         assert_eq!(tail.len(), 1);
         assert_eq!(tail[0].event_type, "fire");
         assert!(signer.verify_record(&tail[0]));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn cached_verify_reverifies_tampered_content() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("rta-audit-cache-{}.db", uuid::Uuid::new_v4()));
+        let _ = std::fs::remove_file(&path);
+
+        let store = KillSwitchAuditStore::open(&path).expect("open store");
+        let signer = KillSwitchAuditSigner::from_seed([11u8; 32]);
+        let record = store
+            .append_signed(
+                &signer,
+                KillSwitchAuditAppend {
+                    event_type: "fire".to_string(),
+                    level: 2,
+                    broker: "binance_com".to_string(),
+                    trigger: Some("test".to_string()),
+                    hosts: vec!["api.binance.com".to_string()],
+                },
+            )
+            .expect("append");
+
+        // First read populates the memo; second read hits it.
+        assert!(signer.verify_record_cached(&record));
+        assert!(signer.verify_record_cached(&record));
+
+        // Tampered content produces a different memo key → re-verified → false.
+        let mut tampered = record.clone();
+        tampered.hosts_json = r#"["tampered.example.com"]"#.to_string();
+        assert!(!signer.verify_record_cached(&tampered));
+
+        // Forged signature likewise re-verifies → false.
+        let mut forged = record;
+        forged.signature_b64 = B64.encode([0u8; 64]);
+        assert!(!signer.verify_record_cached(&forged));
 
         let _ = std::fs::remove_file(path);
     }
