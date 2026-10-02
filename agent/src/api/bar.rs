@@ -1,6 +1,8 @@
 //! Bar v1 — forward Notch calls to hosted `/api/bar/v1/*` (Station Bearer identity).
 
-use crate::api::capture::{forward_daemon_json_with_optional_429_retry, upstream_json_response};
+use crate::api::capture::{
+    console_error_code, forward_daemon_json_with_optional_429_retry, upstream_json_response,
+};
 use crate::api::journal_n2::enrich_week_declarations;
 use crate::api::AppState;
 use crate::live_book::LiveBookEvent;
@@ -218,31 +220,17 @@ pub async fn cancel_declaration_handler(
             .into_response();
     };
 
-    let upstream_path = format!("/api/bar/v1/declarations/{declaration_id}/cancel");
-    let upstream_body = json!({ "cancel_reason_chip": chip });
-
-    match forward_daemon_json_with_optional_429_retry(
-        &state.upstream,
-        reqwest::Method::POST,
-        &upstream_path,
-        request_id,
-        Some(&upstream_body),
-        false,
-    )
-    .await
-    {
+    match post_cancel(&state, declaration_id, chip, request_id).await {
         Ok((st, text)) if st.is_success() => {
-            state.live_book.apply(LiveBookEvent::Cancel {
-                declaration_id: declaration_id.to_string(),
-            });
+            clear_pending(&state, declaration_id);
             upstream_json_response(st, text)
         }
-        Ok((st, text)) if st.as_u16() == 409 => upstream_json_response(st, text),
+        Ok((st, text)) if st.as_u16() == 409 => {
+            finish_cancel_conflict(&state, declaration_id, chip, request_id, st, text).await
+        }
         Ok((st, text)) if st.is_client_error() => upstream_json_response(st, text),
         Ok((st, text)) => {
-            state.live_book.apply(LiveBookEvent::Cancel {
-                declaration_id: declaration_id.to_string(),
-            });
+            clear_pending(&state, declaration_id);
             archive_kept_response(
                 declaration_id.to_string(),
                 request_id,
@@ -251,11 +239,216 @@ pub async fn cancel_declaration_handler(
             )
         }
         Err(msg) => {
-            state.live_book.apply(LiveBookEvent::Cancel {
-                declaration_id: declaration_id.to_string(),
-            });
+            clear_pending(&state, declaration_id);
             archive_kept_response(declaration_id.to_string(), request_id, 502, Some(&msg))
         }
+    }
+}
+
+/// Console code when the row is not `pending` (already cancelled, superseded, matched, …).
+const DECLARATION_NOT_CANCELLABLE: &str = "declaration_not_cancellable";
+
+fn clear_pending(state: &AppState, declaration_id: &str) {
+    state.live_book.apply(LiveBookEvent::Cancel {
+        declaration_id: declaration_id.to_string(),
+    });
+}
+
+async fn post_cancel(
+    state: &AppState,
+    declaration_id: &str,
+    chip: &str,
+    request_id: Option<&str>,
+) -> Result<(reqwest::StatusCode, String), String> {
+    let upstream_path = format!("/api/bar/v1/declarations/{declaration_id}/cancel");
+    let upstream_body = json!({ "cancel_reason_chip": chip });
+    forward_daemon_json_with_optional_429_retry(
+        &state.upstream,
+        reqwest::Method::POST,
+        &upstream_path,
+        request_id,
+        Some(&upstream_body),
+        false,
+    )
+    .await
+}
+
+/// `cancelled` and `superseded` have already retired the declaration.
+/// A repeat cancel, or a cancel that lost the race to a concurrent declare's
+/// supersede, is success: the row is not pending. `matched` and other
+/// statuses stay a real 409 (`declaration_cancel_blocked` is untouched).
+pub(crate) fn cancel_status_is_idempotent(status: &str) -> bool {
+    matches!(
+        status.trim().to_ascii_lowercase().as_str(),
+        "cancelled" | "canceled" | "superseded"
+    )
+}
+
+fn same_declaration_id(left: &str, right: &str) -> bool {
+    match (uuid::Uuid::parse_str(left), uuid::Uuid::parse_str(right)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => left == right,
+    }
+}
+
+fn push_declaration_rows<'a>(out: &mut Vec<&'a Value>, node: &'a Value) {
+    let Some(obj) = node.as_object() else {
+        return;
+    };
+    for key in ["items", "declarations"] {
+        if let Some(arr) = obj.get(key).and_then(Value::as_array) {
+            out.extend(arr);
+        }
+    }
+    if let Some(days) = obj.get("days").and_then(Value::as_array) {
+        for day in days {
+            push_declaration_rows(out, day);
+        }
+    }
+    if let Some(data) = obj.get("data").filter(|v| v.is_object()) {
+        push_declaration_rows(out, data);
+    }
+}
+
+fn row_declaration_id(row: &Value) -> Option<&str> {
+    for key in ["id", "declarationId", "declaration_id"] {
+        if let Some(raw) = row.get(key).and_then(Value::as_str) {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+    None
+}
+
+fn row_status(row: &Value) -> Option<&str> {
+    for key in ["status", "declarationStatus", "declaration_status"] {
+        if let Some(raw) = row.get(key).and_then(Value::as_str) {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn declaration_status_in_list(body: &str, declaration_id: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let mut rows = Vec::new();
+    push_declaration_rows(&mut rows, &value);
+    let want = declaration_id.trim();
+    for row in rows {
+        let Some(id) = row_declaration_id(row) else {
+            continue;
+        };
+        if same_declaration_id(id, want) {
+            return row_status(row).map(str::to_string);
+        }
+    }
+    None
+}
+
+async fn fetch_declaration_status(
+    state: &AppState,
+    declaration_id: &str,
+    request_id: Option<&str>,
+) -> Option<String> {
+    let mut fallback: Option<String> = None;
+    for scope in ["recent", "week"] {
+        let path = format!("/api/bar/v1/declarations?scope={scope}");
+        let Ok((st, text)) = forward_daemon_json_with_optional_429_retry(
+            &state.upstream,
+            reqwest::Method::GET,
+            &path,
+            request_id,
+            None,
+            false,
+        )
+        .await
+        else {
+            continue;
+        };
+        if !st.is_success() {
+            continue;
+        }
+        let Some(status) = declaration_status_in_list(&text, declaration_id) else {
+            continue;
+        };
+        if cancel_status_is_idempotent(&status) {
+            return Some(status);
+        }
+        if fallback.is_none() {
+            fallback = Some(status);
+        }
+    }
+    fallback
+}
+
+fn idempotent_cancel_response(state: &AppState, declaration_id: &str, status: &str) -> Response {
+    clear_pending(state, declaration_id);
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ok": true,
+            "idempotent": true,
+            "declarationId": declaration_id,
+            "status": status,
+        })),
+    )
+        .into_response()
+}
+
+/// 409 `declaration_not_cancellable` after a concurrent declare superseded the
+/// row, or a second cancel of an already-cancelled id. Read the row: terminal
+/// retirements are idempotent success. A row that is still `pending` lost the
+/// compare-and-swap — retry the cancel once.
+async fn finish_cancel_conflict(
+    state: &AppState,
+    declaration_id: &str,
+    chip: &str,
+    request_id: Option<&str>,
+    original_status: reqwest::StatusCode,
+    original_body: String,
+) -> Response {
+    if console_error_code(&original_body).as_deref() != Some(DECLARATION_NOT_CANCELLABLE) {
+        return upstream_json_response(original_status, original_body);
+    }
+
+    let status = fetch_declaration_status(state, declaration_id, request_id).await;
+    if let Some(status) = status.as_deref() {
+        if cancel_status_is_idempotent(status) {
+            return idempotent_cancel_response(state, declaration_id, status);
+        }
+    }
+
+    let still_pending = status
+        .as_deref()
+        .is_some_and(|s| s.eq_ignore_ascii_case("pending"));
+    if !still_pending {
+        return upstream_json_response(original_status, original_body);
+    }
+
+    match post_cancel(state, declaration_id, chip, request_id).await {
+        Ok((st, text)) if st.is_success() => {
+            clear_pending(state, declaration_id);
+            upstream_json_response(st, text)
+        }
+        Ok((st, text)) if st.as_u16() == 409 => {
+            if console_error_code(&text).as_deref() == Some(DECLARATION_NOT_CANCELLABLE) {
+                if let Some(status) =
+                    fetch_declaration_status(state, declaration_id, request_id).await
+                {
+                    if cancel_status_is_idempotent(&status) {
+                        return idempotent_cancel_response(state, declaration_id, &status);
+                    }
+                }
+            }
+            upstream_json_response(st, text)
+        }
+        Ok((st, text)) => upstream_json_response(st, text),
+        Err(_) => upstream_json_response(original_status, original_body),
     }
 }
 
@@ -514,19 +707,17 @@ pub async fn capture_working_condition_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    state.live_book.apply(LiveBookEvent::CaptureWorkingCondition {
-        last,
-        last_status,
-        declaration_id,
-    });
+    state
+        .live_book
+        .apply(LiveBookEvent::CaptureWorkingCondition {
+            last,
+            last_status,
+            declaration_id,
+        });
     if let Some(book) = state.live_book.snapshot() {
         return livebook_json("local", book);
     }
-    (
-        StatusCode::OK,
-        Json(json!({ "ok": true })),
-    )
-        .into_response()
+    (StatusCode::OK, Json(json!({ "ok": true }))).into_response()
 }
 
 /// POST test-only matched fill inject — forward to Console internal route (env-gated on brain).
@@ -632,4 +823,42 @@ fn archive_kept_response(
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cancel_status_is_idempotent, declaration_status_in_list};
+
+    #[test]
+    fn retired_statuses_are_idempotent_cancels() {
+        assert!(cancel_status_is_idempotent("superseded"));
+        assert!(cancel_status_is_idempotent(" SUPERSEDED "));
+        assert!(cancel_status_is_idempotent("cancelled"));
+        assert!(cancel_status_is_idempotent("canceled"));
+        assert!(!cancel_status_is_idempotent("pending"));
+        assert!(!cancel_status_is_idempotent("matched"));
+        assert!(!cancel_status_is_idempotent("expired"));
+    }
+
+    #[test]
+    fn status_lookup_reads_recent_items_and_week_days() {
+        let id = "aab1e2b2-a83a-4056-96ef-7890366f112e";
+        let recent = format!(
+            r#"{{"items":[{{"id":"{id}","status":"superseded"}},{{"id":"other","status":"pending"}}]}}"#
+        );
+        assert_eq!(
+            declaration_status_in_list(&recent, id).as_deref(),
+            Some("superseded")
+        );
+        let week = format!(
+            r#"{{"days":[{{"items":[{{"declarationId":"{id}","declarationStatus":"cancelled"}}]}}]}}"#
+        );
+        assert_eq!(
+            declaration_status_in_list(&week, &id.to_ascii_uppercase()).as_deref(),
+            Some("cancelled")
+        );
+        assert!(
+            declaration_status_in_list(&recent, "00000000-0000-4000-8000-000000000001").is_none()
+        );
+    }
 }
