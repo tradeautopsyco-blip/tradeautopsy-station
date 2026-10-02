@@ -8,6 +8,7 @@ See plans/STATION-LIVE-STRESS-SOAK.md.
 from __future__ import annotations
 
 import argparse
+import glob
 import importlib.util
 import json
 import math
@@ -33,11 +34,9 @@ WRITE_LEVELS = (1, 2, 4, 8, 16, 32)
 TOTP_CARD_SECONDS = 12 * 60 * 60
 APPCAST_URL = "https://updates.tradeautopsy.in/appcast.xml"
 DEBUG_APP_GLOBS = (
-    os.path.expanduser(
-        "~/Library/Developer/Xcode/DerivedData/"
-        "TradeAutopsy_Station-ccdwmgacytrtxkdikkdnlwopgfkd/"
-        "Build/Products/Debug/TradeAutopsy Station.app"
-    ),
+    "~/Library/Developer/Xcode/DerivedData/"
+    "TradeAutopsy_Station-*/"
+    "Build/Products/Debug/TradeAutopsy Station.app",
 )
 RELEASE_APP = "/Applications/TradeAutopsy Station.app"
 STATION_DEFAULTS_DOMAIN = "in.tradeautopsy.station"
@@ -413,10 +412,9 @@ class Soak:
         if preview.status != 200:
             return Probe(False, f"risk/preview HTTP {preview.status}", http=preview.status)
         parsed = preview.json() if isinstance(preview.json(), dict) else {}
-        if not isinstance(parsed.get("reason"), str) and "reason" not in parsed:
-            # Shape may nest the reason. Any 200 JSON object is the local sizer.
-            if not isinstance(parsed, dict) or not parsed:
-                return Probe(False, "risk/preview empty", http=preview.status)
+        # Any 200 JSON object is the local sizer; the reason field may nest.
+        if not parsed:
+            return Probe(False, "risk/preview empty", http=preview.status)
         limits = self.wire("GET", "/api/daemon/bar/profile/loss-limits")
         if limits.status >= 500:
             return Probe(False, f"loss-limits HTTP {limits.status}", http=limits.status)
@@ -697,6 +695,8 @@ def funds_target(slug: str) -> tuple[str, str]:
 
 def totp_card_note() -> str:
     """Read local broker metadata timestamps only. Does not touch Keychain or mint."""
+    if sys.platform != "darwin":
+        return "UserDefaults unavailable off macOS; mint POST withheld"
     try:
         raw = subprocess.check_output(
             ["defaults", "export", STATION_DEFAULTS_DOMAIN, "-"],
@@ -786,7 +786,14 @@ def running_app_version(agent_pid: Optional[int]) -> str:
 def launch_station(lib: Any, host: str, port: int, log: Callable[[str], None]) -> str:
     if lib.port_open(host, port):
         return "Agent already listening; soak did not launch Station."
-    candidates = [p for p in (*DEBUG_APP_GLOBS, RELEASE_APP) if os.path.isdir(p)]
+    if sys.platform != "darwin":
+        return "BLOCKER: port 9137 closed and app launch is macOS-only (`open`)."
+    candidates = [
+        p
+        for g in (*DEBUG_APP_GLOBS, RELEASE_APP)
+        for p in glob.glob(os.path.expanduser(g))
+        if os.path.isdir(p)
+    ]
     if not candidates:
         return "BLOCKER: port 9137 closed and no Station.app bundle found."
     for app in candidates:
