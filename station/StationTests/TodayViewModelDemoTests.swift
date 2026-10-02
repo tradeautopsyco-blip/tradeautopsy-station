@@ -111,8 +111,8 @@ struct TodayViewModelDemoTests {
         let input = viewModel.detectCardInput(declarations: journalVM.weekDeclarations)
         #expect(input?.planStop == 1_260)
         #expect(input?.entry == nil)
-        #expect(journalVM.week.declarations.map(\.symbol) == ["RELIANCE"])
-        #expect(journalVM.week.declarations.first?.status == "pending")
+        #expect(journalVM.week.declarations.map(\.symbol) == ["RELIANCE", "RELIANCE"])
+        #expect(journalVM.week.declarations.map(\.status) == ["matched", "pending"])
     }
 
     @Test func demoKillBannerStillReadsLiveSessionModel() async {

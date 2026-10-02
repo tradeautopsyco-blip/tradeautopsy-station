@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import Notch
 
+@MainActor
 struct DeskHotkeyDispatchTests {
     @Test func killHotkeyOpensWarningAndDoesNotLatch() {
         let vm = NotchViewModel(planSurfaceOnly: true)

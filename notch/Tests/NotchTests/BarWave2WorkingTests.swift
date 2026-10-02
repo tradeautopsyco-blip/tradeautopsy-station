@@ -36,6 +36,7 @@ struct BarWave2WorkingTests {
                 entryPrice: 95_000,
                 emotionIn: nil,
                 invalidation: nil,
+                conditionAtClose: nil,
             ),
             filledQty: nil,
             avgFill: nil,
@@ -194,7 +195,8 @@ struct BarWave2WorkingTests {
                 bookId: nil,
                 entryPrice: nil,
                 emotionIn: nil,
-                invalidation: nil
+                invalidation: nil,
+                conditionAtClose: nil
             ),
             filledQty: 2,
             avgFill: 1420,
