@@ -182,7 +182,7 @@ jobs:
             for (const issue of batch) {
               const needsMacos = names(issue).includes('needs-macos');
               const macosNote = needsMacos
-                ? `\n## Build constraint\n\nThis ticket touches Swift/Xcode code. You are running in a Linux container and CANNOT build or test it. Keep the diff tight and minimal, follow the existing patterns closely, and state clearly in the PR description that a local macOS build is required to verify. CI runs on macos-14.\n`
+                ? `\n## Build constraint\n\nThis ticket touches Swift/Xcode code. You are running in a Linux container and CANNOT build or test it. Keep the diff tight and minimal, follow the existing patterns closely, and state clearly in the PR description that a local macOS build is required to verify. CI runs Swift and macOS-gated agent tests on macos-15 when station/, notch/, or agent/ change.\n`
                 : '';
 
               const prompt = [
