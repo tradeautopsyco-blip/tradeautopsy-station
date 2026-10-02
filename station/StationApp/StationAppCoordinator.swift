@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Notch
 
@@ -5,6 +6,10 @@ import Notch
 public final class StationAppCoordinator: ObservableObject {
     @Published public private(set) var activeRoute: StationRoute
     @Published public private(set) var agentHealthWarning: AgentHealthWarning?
+    /// The agent is healthy but holds no usable Station session — drives the
+    /// status-item nudge and the window banner so a revoked device login is
+    /// never silent.
+    @Published public private(set) var stationLoginRequired = false
     public let sessionModel: SessionModel
     public let brokersViewModel: BrokersViewModel
     public let marketDataKeysViewModel: MarketDataKeysViewModel
@@ -37,6 +42,7 @@ public final class StationAppCoordinator: ObservableObject {
     /// permanent home in the toolbar and isn't part of this).
     public var currentNotification: StationNotification? {
         StationNotification.current(
+            stationLoginRequired: stationLoginRequired,
             inputMonitoringWarning: inputMonitoringWarning,
             inputMonitoringRestartReminder: inputMonitoringRestartReminder,
             showLoginItemPrompt: showLoginItemPrompt
@@ -66,6 +72,8 @@ public final class StationAppCoordinator: ObservableObject {
     private var manualSessionPickAt: Date?
     private var notchAndPollingStarted = false
     private var pollingStoppedForUnhealthyAgent = false
+    private var stationAuthPollTask: Task<Void, Never>?
+    private var phaseObservers = Set<AnyCancellable>()
     private var inputMonitoringWarningShownAt: Date?
     private var inputMonitoringPollTask: Task<Void, Never>?
     private var didShowInputMonitoringRestartReminder = false
@@ -193,6 +201,9 @@ public final class StationAppCoordinator: ObservableObject {
                 self?.handleAgentHealthChange(isHealthy: isHealthy)
             }
         }
+        deviceLoginViewModel.$phase
+            .sink { [weak self] _ in self?.syncStationLoginRequired() }
+            .store(in: &phaseObservers)
         hotkeyPrefsRelay.coordinator = self
     }
 
@@ -309,6 +320,13 @@ public final class StationAppCoordinator: ObservableObject {
         launchStore.setWasWindowVisibleBeforeQuit(true)
     }
 
+    /// Status-item / banner entry point: bring the window up and land on the
+    /// device-login section of Settings.
+    public func openStationForDeviceLogin() {
+        openStation()
+        navigateTo(.settings)
+    }
+
     public func toggleNotch() {
         floatingNotch.toggle()
     }
@@ -375,6 +393,7 @@ public final class StationAppCoordinator: ObservableObject {
         todayViewModel.stopSessionMirrorPolling()
         await agentSupervisor.shutdown()
         sessionPolling.stopPolling()
+        stopStationAuthPolling()
         floatingNotch.dismiss()
         sessionHost.dismiss()
     }
@@ -397,6 +416,7 @@ public final class StationAppCoordinator: ObservableObject {
         floatingNotch.start()
         sessionPolling.startPolling()
         sessionModel.startPolling()
+        startStationAuthPolling()
         notchAndPollingStarted = true
         pollingStoppedForUnhealthyAgent = false
         await todayViewModel.load()
@@ -407,6 +427,36 @@ public final class StationAppCoordinator: ObservableObject {
     private func syncAgentHealthFromSupervisor() {
         agentHealthWarning = agentSupervisor.currentWarning
         statusItemController.updateAgentStatus(isHealthy: agentSupervisor.isHealthy)
+        syncStationLoginRequired()
+    }
+
+    /// The agent quietly refreshes the Keychain session in the background; when
+    /// the refresh family is burned, nothing else looks at the session endpoint
+    /// unless Settings is open. Poll it here so a revoked login surfaces in the
+    /// status item and window banner within a minute instead of silently.
+    private func startStationAuthPolling() {
+        guard stationAuthPollTask == nil else { return }
+        stationAuthPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.deviceLoginViewModel.refreshSession()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+
+    private func stopStationAuthPolling() {
+        stationAuthPollTask?.cancel()
+        stationAuthPollTask = nil
+    }
+
+    private func syncStationLoginRequired() {
+        // Only nag when the agent can actually answer — an unhealthy agent
+        // already owns the red tint and its own warning surface.
+        let required = agentSupervisor.isHealthy && !deviceLoginViewModel.isSessionEstablished
+        if stationLoginRequired != required {
+            stationLoginRequired = required
+        }
+        statusItemController.updateStationLoginRequired(required)
     }
 
     private func handleAgentHealthChange(isHealthy: Bool) {
@@ -422,12 +472,14 @@ public final class StationAppCoordinator: ObservableObject {
                 sessionPolling.startPolling()
                 sessionModel.startPolling()
                 todayViewModel.startSessionMirrorPolling()
+                startStationAuthPolling()
                 pollingStoppedForUnhealthyAgent = false
             }
         } else if notchAndPollingStarted {
             sessionPolling.stopPolling()
             sessionModel.stopPolling()
             todayViewModel.stopSessionMirrorPolling()
+            stopStationAuthPolling()
             pollingStoppedForUnhealthyAgent = true
         }
     }

@@ -26,6 +26,20 @@ public final class DeviceLoginViewModel: ObservableObject {
         self.openURL = openURL
     }
 
+    /// True while a Station session is live or a login flow is in flight.
+    /// `.idle`/`.error` mean the agent holds no usable tokens — the app-wide
+    /// "device login required" surface keys off this, because the quiet
+    /// refresh loop can burn the Keychain family without ever opening
+    /// Settings, where this view model is otherwise only refreshed.
+    public var isSessionEstablished: Bool {
+        switch phase {
+        case .signedIn, .starting, .awaitingBrowser, .completing:
+            return true
+        case .idle, .error:
+            return false
+        }
+    }
+
     public func refreshSession() async {
         errorMessage = nil
         do {

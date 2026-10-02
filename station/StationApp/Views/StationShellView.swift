@@ -51,6 +51,10 @@ public struct StationShellView: View {
     @ViewBuilder
     private var notificationBanner: some View {
         switch coordinator.currentNotification {
+        case .deviceLoginRequired:
+            DeviceLoginRequiredView {
+                coordinator.openStationForDeviceLogin()
+            }
         case .inputMonitoringWarning(let warning):
             InputMonitoringWarningView(warning: warning) {
                 coordinator.dismissInputMonitoringWarning()

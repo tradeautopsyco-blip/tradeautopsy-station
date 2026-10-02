@@ -1,11 +1,13 @@
 import Foundation
 
 /// The single onboarding-related notification to show, if any. Priority-ordered:
-/// input monitoring warning first, then its restart reminder, then the login-item
-/// prompt — these are inherently sequential, so showing at most one never hides
+/// device login first — a burned Station session disables the product outright —
+/// then input monitoring warning, its restart reminder, then the login-item
+/// prompt — those are inherently sequential, so showing at most one never hides
 /// something the user still needs to see. Agent health has its own permanent home
 /// in the toolbar and is not part of this type.
 public enum StationNotification: Equatable {
+    case deviceLoginRequired
     case inputMonitoringWarning(InputMonitoringWarning)
     case inputMonitoringRestartReminder(String)
     case loginItemPrompt
@@ -13,10 +15,14 @@ public enum StationNotification: Equatable {
 
 public extension StationNotification {
     static func current(
+        stationLoginRequired: Bool,
         inputMonitoringWarning: InputMonitoringWarning?,
         inputMonitoringRestartReminder: String?,
         showLoginItemPrompt: Bool
     ) -> StationNotification? {
+        if stationLoginRequired {
+            return .deviceLoginRequired
+        }
         if let inputMonitoringWarning {
             return .inputMonitoringWarning(inputMonitoringWarning)
         }

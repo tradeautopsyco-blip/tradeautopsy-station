@@ -23,4 +23,12 @@ final class FakeStatusItemController: StatusItemControlling {
         updateLaunchAtLoginEnabledCallCount += 1
         lastLaunchAtLoginEnabled = enabled
     }
+
+    private(set) var updateStationLoginRequiredCallCount = 0
+    private(set) var lastStationLoginRequired: Bool?
+
+    func updateStationLoginRequired(_ required: Bool) {
+        updateStationLoginRequiredCallCount += 1
+        lastStationLoginRequired = required
+    }
 }

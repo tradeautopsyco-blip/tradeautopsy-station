@@ -44,6 +44,9 @@ public protocol StatusItemControlling: AnyObject {
     func install(coordinator: StationAppCoordinator)
     func updateAgentStatus(isHealthy: Bool)
     func updateLaunchAtLoginEnabled(_ enabled: Bool)
+    /// The agent is healthy but holds no usable Station session — surface a
+    /// persistent nudge in the menu so a revoked device login is not silent.
+    func updateStationLoginRequired(_ required: Bool)
 }
 
 @MainActor

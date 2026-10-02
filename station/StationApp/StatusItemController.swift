@@ -4,7 +4,10 @@ import AppKit
 public final class StatusItemController: StatusItemControlling {
     private var statusItem: NSStatusItem?
     private var launchAtLoginItem: NSMenuItem?
+    private var stationLoginItem: NSMenuItem?
     private weak var coordinator: StationAppCoordinator?
+    private var agentHealthy = false
+    private var stationLoginRequired = false
 
     public init() {}
 
@@ -27,7 +30,27 @@ public final class StatusItemController: StatusItemControlling {
     }
 
     public func updateAgentStatus(isHealthy: Bool) {
-        statusItem?.button?.contentTintColor = isHealthy ? nil : .systemRed
+        agentHealthy = isHealthy
+        applyTint()
+    }
+
+    public func updateStationLoginRequired(_ required: Bool) {
+        stationLoginRequired = required
+        stationLoginItem?.isHidden = !required
+        applyTint()
+    }
+
+    /// Red is reserved for an unhealthy agent; orange marks "agent up, session
+    /// dead" so the two failure shapes stay distinguishable at a glance.
+    private func applyTint() {
+        let tint: NSColor? = if !agentHealthy {
+            .systemRed
+        } else if stationLoginRequired {
+            .systemOrange
+        } else {
+            nil
+        }
+        statusItem?.button?.contentTintColor = tint
     }
 
     public func updateLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -36,6 +59,16 @@ public final class StatusItemController: StatusItemControlling {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+
+        let loginItem = NSMenuItem(
+            title: "Device login required — Open Station to sign in",
+            action: #selector(openStationForDeviceLogin(_:)),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        loginItem.isHidden = true
+        menu.addItem(loginItem)
+        stationLoginItem = loginItem
 
         let openItem = NSMenuItem(title: "Open Station", action: #selector(openStation(_:)), keyEquivalent: "")
         openItem.target = self
@@ -63,6 +96,10 @@ public final class StatusItemController: StatusItemControlling {
 
     @objc private func openStation(_ sender: Any?) {
         coordinator?.openStation()
+    }
+
+    @objc private func openStationForDeviceLogin(_ sender: Any?) {
+        coordinator?.openStationForDeviceLogin()
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: Any?) {
