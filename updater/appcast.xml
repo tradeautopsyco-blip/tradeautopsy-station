@@ -3,20 +3,17 @@
     <channel>
         <title>TradeAutopsy Station</title>
         <item>
-            <title>0.2.4</title>
-            <pubDate>Thu, 01 Oct 2026 15:46:18 +0000</pubDate>
+            <title>0.2.5</title>
+            <pubDate>Sat, 03 Oct 2026 13:22:57 +0000</pubDate>
             <link>https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases</link>
-            <sparkle:version>8</sparkle:version>
-            <sparkle:shortVersionString>0.2.4</sparkle:shortVersionString>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.2.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[Release 0.2.4.
-
-- Sign in works on a fresh Mac. No ~/.tradeautopsy/station.env file. Station uses https://www.tradeautopsy.in and the public WorkOS client.
-- Journal capture status waits briefly for the local agent instead of failing on the first paint.
+            <description><![CDATA[Refresh-token hardening (lost rotations no longer burn the session), revoked Station login now surfaced in the window and status item, egress slot-leak fix, quieter startup and console output, dead-code cleanup.
 
 **Unsigned build:** After download, drag to Applications, then **right-click → Open → Open** (or System Settings → Open Anyway). Quarantine applies to Sparkle updates too until we ship notarized builds.]]></description>
-            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.4/TradeAutopsy-Station.dmg" length="22462662" type="application/octet-stream" sparkle:edSignature="42gVpwk6F14FRNAkTC4Dku0SFhbSwjIgZw746Cmv/5frh8F0jyK10MWRzCC8Mn7BelW+r472/BIf8KHXZzqjCg=="/>
+            <enclosure url="https://github.com/tradeautopsyco-blip/tradeautopsy-station/releases/download/v0.2.5/TradeAutopsy-Station.dmg" length="22504432" type="application/octet-stream" sparkle:edSignature="s2z4L4okcx4yCFLHTfyuNbrc28iophytJGQ2bkw2hkJLt/+eQhssEhQmjS/n1S8DKFCnyk4fOf9ohPZ1CfXSBg=="/>
         </item>
     </channel>
 </rss>
