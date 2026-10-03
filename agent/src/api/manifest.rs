@@ -1193,7 +1193,7 @@ fn enrich_kotak_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> O
     envelope
 }
 
-fn enrich_kotak_nfo_instruments(state: &AppState, envelope: ObtainEnvelope) -> ObtainEnvelope {
+fn enrich_kotak_nfo_instruments(state: &AppState, mut envelope: ObtainEnvelope) -> ObtainEnvelope {
     enrich_kotak_fo_instruments_for_book(
         state,
         envelope,

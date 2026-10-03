@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 use super::descriptor::{
-    KOTAK_NSE_BSE_CASH_BOOK_ID,
+    KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID,
 };
 

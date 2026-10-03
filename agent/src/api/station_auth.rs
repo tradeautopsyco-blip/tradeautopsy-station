@@ -220,7 +220,7 @@ pub async fn station_auth_sign_out_handler(State(state): State<AppState>) -> Res
     }
 }
 
-fn public_to_json(public: &DeviceLoginPublic, _console_base: &str) -> Value {
+fn public_to_json(public: &DeviceLoginPublic, console_base: &str) -> Value {
     // Explicit map so we never accidentally serialize private fields.
     // Same URL as verification_uri_complete — one browser sign-in (AuthKit device), not Console OAuth first.
     json!({

@@ -86,9 +86,13 @@ pub use apply::{apply_quote, ApplyError};
 pub use binance_coinm_exchange_info::{
     coinm_step_size_for, coinm_tick_size_for, ensure_coinm_exchange_info, CoinmExchangeInfoCache,
 };
-pub use binance_coinm_depth::ensure_coinm_depth;
+pub use binance_coinm_depth::{
+    depth_snapshot_from_dapi_json, ensure_coinm_depth, coinm_depth_query, COINM_DEPTH_HOST,
+    COINM_DEPTH_PATH,
+};
 pub use binance_coinm_klines::{
-    ensure_coinm_klines, COINM_KLINES_PATH, DEFAULT_COINM_HISTORY_INTERVAL,
+    ensure_coinm_klines, series_from_dapi_klines_json, validate_coinm_kline_request,
+    COINM_KLINES_HOST, COINM_KLINES_PATH, COINM_KLINE_INTERVALS, DEFAULT_COINM_HISTORY_INTERVAL,
 };
 pub use binance_coinm_private::{
     ensure_coinm_balance, ensure_coinm_force_orders, ensure_coinm_positions,
@@ -142,11 +146,15 @@ pub use binance_spot_private::{ensure_spot_account, ensure_spot_open_orders};
 pub use binance_spot_ticker::await_binance_spot_ticker_price;
 pub use binance_usdm_exchange_info::{
     ensure_usdm_exchange_info, step_size_for, tick_size_for, UsdmExchangeInfoCache,
+    UsdmSymbolFilters,
 };
-pub use binance_usdm_depth::ensure_usdm_depth;
+pub use binance_usdm_depth::{
+    depth_snapshot_from_fapi_json, ensure_usdm_depth, usdm_depth_query, USDM_DEPTH_HOST,
+    USDM_DEPTH_PATH,
+};
 pub use binance_usdm_klines::{
-    ensure_usdm_klines,
-    DEFAULT_USDM_HISTORY_INTERVAL, USDM_KLINES_PATH,
+    ensure_usdm_klines, series_from_fapi_klines_json, validate_usdm_kline_request,
+    DEFAULT_USDM_HISTORY_INTERVAL, USDM_KLINES_HOST, USDM_KLINES_PATH, USDM_KLINE_INTERVALS,
 };
 pub use binance_usdm_private::{
     ensure_usdm_balance, ensure_usdm_force_orders, ensure_usdm_positions,
@@ -155,9 +163,10 @@ pub use binance_usdm_private::{
 pub use binance_usdm_ticker::{
     await_binance_usdm_ticker, normalize_usdm_instrument, quote_tick_from_usdm_ticker_json,
 };
-pub use book_identity::{book_accepts_symbol, query_symbol};
+pub use book_identity::{book_accepts_symbol, is_com_spot_book_id, query_symbol};
 pub use candle_builder::{
-    apply_history_series_and_seed, overlay_json_candles, CandleBuilders,
+    apply_history_series_and_seed, overlay_forming, overlay_json_candles, seed_builders_from_book,
+    CandleBuilder, CandleBuilders,
 };
 pub use connection::BrokerConnectionRuntime;
 pub use contracts::{extract_contracts, extract_contracts_from_rows, ContractRow};
@@ -168,6 +177,7 @@ pub use descriptor::{
     BINANCE_COM_SPOT_BOOK_ID, BINANCE_COM_USDM_BOOK_ID, KOTAK_NEO_ADAPTER_ID,
     KOTAK_MCX_FUTURE_BOOK_ID, KOTAK_NSE_BSE_CASH_BOOK_ID, KOTAK_NSE_CDS_BOOK_ID,
     KOTAK_NSE_NFO_BOOK_ID,
+    ZERODHA_KITE_ADAPTER_ID,
     ZERODHA_NSE_BSE_CASH_BOOK_ID, ZERODHA_NSE_NFO_BOOK_ID,
     UPSTOX_NSE_BSE_CASH_BOOK_ID, UPSTOX_NSE_NFO_BOOK_ID,
     FYERS_NSE_BSE_CASH_BOOK_ID, FYERS_NSE_NFO_BOOK_ID,
@@ -179,7 +189,8 @@ pub use extract::{
     QuoteStatus,
 };
 pub use force_order::{
-    observation_from_rest, ForceOrderBook, LossyStatus,
+    observation_from_rest, ForceOrderBook, ForceOrderEnvelope, LossyStatus,
+    LOSSY_CANNOT_CLAIM_COMPLETE,
 };
 pub use glance::{
     chain_input_honesty, extract_chain, extract_chain_from, extract_index, extract_open_interest,
@@ -188,7 +199,7 @@ pub use glance::{
 };
 pub use greeks::{extract_greeks, extract_greeks_from_mark, GreeksEnvelope, GreeksStatus};
 pub use history::{
-    extract_coinm_history, extract_gap_vendor_history, extract_history,
+    apply_history_series, extract_coinm_history, extract_gap_vendor_history, extract_history,
     extract_licensed_history, extract_options_history, extract_usdm_history,
     futures_history_obtain_data, gap_history_obtain_data, history_obtain_data, HistoryEnvelope,
     HistoryStatus,
@@ -216,7 +227,7 @@ pub use kotak_depth::{
 };
 pub use kotak_private::{
     ensure_kotak_funds, ensure_kotak_holdings, ensure_kotak_orders, ensure_kotak_positions,
-    kotak_cash_limits_jdata_body, kotak_nfo_limits_jdata_body,
+    kotak_cash_limits_jdata_body, kotak_jdata_form_body, kotak_nfo_limits_jdata_body,
 };
 pub use kotak_quotes::{
     is_cds_segment, is_mcx_segment, is_nfo_segment, kotak_quote_book_id,
@@ -236,7 +247,7 @@ pub use resample::extract_resample;
 pub use resolve::{resolve_among, resolve_desk_instrument};
 pub use router::RouteOutcome;
 pub use source_manifest::{
-    describe, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest,
+    describe, kotak_neo_nfo_manifest, kotak_neo_s1k_manifest, zerodha_kite_nfo_manifest,
     load_first_party_manifests,
     manifest_for_book_id, obtain, shared_budget, shipping_book_id_for_slug, ObtainEnvelope,
     ObtainStatus, SourceManifest,
@@ -251,3 +262,4 @@ pub use tick::{QuoteTick, Transport};
 pub use tickbook::TickBook;
 pub use vendor_health::vendor_health_rows;
 pub use vendor_registry::{binding_for, clamp_budget};
+pub use india_book_stack::{missing_desk_paths, KOTAK_NEO_FOUR_BOOKS};
