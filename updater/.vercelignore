@@ -1,3 +1,5 @@
 README.md
 vercel.json
 .vercelignore
+.env.local
+.vercel
