@@ -2,7 +2,6 @@
 //!
 //! Law: [issues/brokers/playbooks/INDIA-MULTI-BOOK-STACK.md](https://github.com/FExEVIL/tradeautopsy-issues/blob/main/brokers/playbooks/INDIA-MULTI-BOOK-STACK.md)
 
-use super::manifest_for_book_id;
 use super::source_manifest::SourceManifest;
 use crate::money_matrix::shipping_money_matrix;
 
