@@ -26,13 +26,16 @@ public final class AgentSupervisor: AgentSupervising {
     private let daemonSecret: String
     private let healthLaunchTimeout: TimeInterval
     private let attachOnly: Bool
+    /// Silent refused-connection gate; tests inject a stub that always accepts.
+    private let tcpProbe: @Sendable (UInt16) async -> Bool
 
     public init(
         port: UInt16 = AgentSupervisor.defaultPort,
         session: URLSession = .shared,
         daemonSecret: String,
         launchTimeout: TimeInterval = AgentSupervisor.launchTimeout,
-        attachOnly: Bool? = nil
+        attachOnly: Bool? = nil,
+        tcpProbe: @escaping @Sendable (UInt16) async -> Bool = { await LoopbackTCPProbe.accepts(port: $0) }
     ) {
         self.port = port
         self.session = session
@@ -40,6 +43,7 @@ public final class AgentSupervisor: AgentSupervising {
         self.healthLaunchTimeout = launchTimeout
         self.attachOnly = attachOnly
             ?? (ProcessInfo.processInfo.environment["STATION_DEV_ATTACH"] == "1")
+        self.tcpProbe = tcpProbe
     }
 
     public func start() async {
@@ -101,7 +105,8 @@ public final class AgentSupervisor: AgentSupervising {
 
     /// Reads `GET /api/daemon/kill-switch/state` (Wave 3). Missing endpoint or errors → not latched.
     public func isKillLatched() async -> Bool {
-        guard let request = signedKillSwitchStateRequest() else { return false }
+        guard await tcpProbe(port),
+              let request = signedKillSwitchStateRequest() else { return false }
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
@@ -272,9 +277,13 @@ public final class AgentSupervisor: AgentSupervising {
 
         // Reap any leftover agent from a previous Station that didn't shut down cleanly.
         // Never reap a latched orphan — attach on the next start instead.
-        let portListening = await portHasListener()
-        let killLatched = await isKillLatched()
-        if !(portListening && killLatched) {
+        // `isKillLatched` only matters when something is listening; short-circuit
+        // avoids a wasted signed request against a dead port.
+        var killLatched = false
+        if await portHasListener() {
+            killLatched = await isKillLatched()
+        }
+        if !killLatched {
             killBundledAgentOrphans()
         }
 
@@ -305,7 +314,9 @@ public final class AgentSupervisor: AgentSupervising {
         var delay: UInt64 = 200_000_000
 
         while Date() < deadline {
-            if await isTradeAutopsyAgentListening() {
+            // TCP probe first: a refused POSIX connect is silent, whereas every
+            // refused URLSession request dumps CFNetwork noise to stderr.
+            if await tcpProbe(port), await isTradeAutopsyAgentListening() {
                 isHealthy = true
                 currentWarning = nil
                 onHealthChange?(true)
@@ -340,7 +351,7 @@ public final class AgentSupervisor: AgentSupervising {
             return
         }
 
-        if await isTradeAutopsyAgentListening() {
+        if await tcpProbe(port), await isTradeAutopsyAgentListening() {
             if !isHealthy || currentWarning != nil {
                 recoverFromRuntimeDisconnect()
             }
@@ -409,6 +420,7 @@ public final class AgentSupervisor: AgentSupervising {
     }
 
     private func classifyListener() async -> ListenerClassification {
+        guard await tcpProbe(port) else { return .noListener }
         guard let request = signedHealthRequest() else { return .noListener }
 
         do {

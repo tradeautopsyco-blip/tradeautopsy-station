@@ -267,17 +267,23 @@ struct BarMetric: View {
 private struct PulsingDot: View {
     let color: Color
     let duration: Double
+    @State private var pulsing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            let amp = 0.5 + 0.5 * sin(t * (2 * .pi / duration))
-            let op = reduceMotion ? 1.0 : (0.3 + 0.7 * amp)
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-                .opacity(op)
+        // Opacity animates on the compositor — a TimelineView would re-render
+        // the window every frame (Tahoe logs a CGImage copy per composited image).
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .opacity(reduceMotion || !pulsing ? 1.0 : 0.3)
+            .onAppear { startPulse() }
+    }
+
+    private func startPulse() {
+        guard !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: duration / 2).repeatForever(autoreverses: true)) {
+            pulsing = true
         }
     }
 }

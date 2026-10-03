@@ -263,17 +263,33 @@ struct CollapsedNotchView: View {
     @ViewBuilder
     private func tiltPulseRing(_ p: CollapsedNotchPresentation) -> some View {
         if p.pillPulseAmber {
-            if accessibilityReduceMotion {
-                Capsule(style: .continuous)
-                    .stroke(BarDS.Accent.amber.opacity(0.55), lineWidth: 1.0)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let phase = 0.38 + 0.28 * sin(t * (2 * .pi / 1.8))
-                    Capsule(style: .continuous)
-                        .stroke(BarDS.Accent.amber.opacity(phase), lineWidth: 1.2)
-                }
-            }
+            TiltPulseRing(reduceMotion: accessibilityReduceMotion)
+        }
+    }
+}
+
+/// Amber capsule ring pulsing on the compositor — a TimelineView here re-rendered
+/// the notch window every frame (Tahoe logs a CGImage copy per composited image).
+private struct TiltPulseRing: View {
+    let reduceMotion: Bool
+    @State private var pulsing = false
+
+    var body: some View {
+        if reduceMotion {
+            Capsule(style: .continuous)
+                .stroke(BarDS.Accent.amber.opacity(0.55), lineWidth: 1.0)
+        } else {
+            Capsule(style: .continuous)
+                .stroke(BarDS.Accent.amber, lineWidth: 1.2)
+                .opacity(pulsing ? 0.38 : 0.66)
+                .onAppear { startPulse() }
+        }
+    }
+
+    private func startPulse() {
+        guard !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            pulsing = true
         }
     }
 }

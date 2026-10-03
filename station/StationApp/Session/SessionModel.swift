@@ -77,8 +77,15 @@ public final class SessionModel: ObservableObject {
 
     private let urlSession: URLSession
 
-    public init(urlSession: URLSession = .shared) {
+    /// Silent refused-connection gate before URLSession polls; tests inject a stub.
+    private let tcpProbe: @Sendable (UInt16) async -> Bool
+
+    public init(
+        urlSession: URLSession = .shared,
+        tcpProbe: @escaping @Sendable (UInt16) async -> Bool = { await LoopbackTCPProbe.accepts(port: $0) }
+    ) {
         self.urlSession = urlSession
+        self.tcpProbe = tcpProbe
     }
 
     /// Inject a cached kill-switch timestamp (unit tests only).
@@ -133,6 +140,14 @@ public final class SessionModel: ObservableObject {
             while !Task.isCancelled {
                 self.connectionFSM.onConnectStart()
                 self.daemonConnectionState = self.connectionFSM.state
+                // Silent TCP probe first — a refused URLSession attempt dumps
+                // CFNetwork noise to stderr; a refused POSIX connect does not.
+                guard await self.tcpProbe(self.daemonPort) else {
+                    self.connectionFSM.onTransportFailure()
+                    self.daemonConnectionState = self.connectionFSM.state
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    continue
+                }
                 await self.refreshPinnedAgentTrust()
                 guard self.pinnedAgentSsePubKeyB64 != nil else {
                     self.connectionFSM.onTransportFailure()
@@ -351,7 +366,8 @@ public final class SessionModel: ObservableObject {
     }
 
     public func fetchPositions() async {
-        guard let url = URL(string: baseURL() + "/api/daemon/positions") else { return }
+        guard await tcpProbe(daemonPort),
+              let url = URL(string: baseURL() + "/api/daemon/positions") else { return }
         do {
             let (data, resp) = try await urlSession.data(for: authorizedRequest(url: url))
             let statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 0

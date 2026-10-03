@@ -146,6 +146,63 @@ struct AgentSupervisorTests {
         await supervisor.shutdown()
     }
 
+    // POSIX probe accepts a bound loopback listener and refuses a dead port —
+    // and produces no CFNetwork stderr noise either way.
+    @Test func tcpProbeAcceptsListenerAndRefusesDeadPort() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        #expect(fd >= 0)
+        defer { close(fd) }
+
+        var yes: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let bound = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        #expect(bound == 0)
+        #expect(listen(fd, 1) == 0)
+
+        var actual = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        withUnsafeMutablePointer(to: &actual) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                _ = getsockname(fd, $0, &len)
+            }
+        }
+        let port = UInt16(bigEndian: actual.sin_port)
+
+        #expect(LoopbackTCPProbe.connectable(port: port))
+        close(fd)
+        // Port released: connect must now refuse.
+        #expect(LoopbackTCPProbe.connectable(port: port) == false)
+    }
+
+    // Probe gate: with the port dead, no signed request is ever attempted.
+    @Test func deadPortSkipsSignedRequests() async {
+        MockLoopbackURLProtocol.reset(defaultResponse: .healthyAgent)
+        let probeCalls = ProbeCounter()
+        let supervisor = AgentSupervisor(
+            session: .shared,
+            daemonSecret: "test-secret",
+            launchTimeout: 0.4,
+            attachOnly: true,
+            tcpProbe: { _ in
+                probeCalls.increment()
+                return false
+            }
+        )
+        await supervisor.start()
+        #expect(probeCalls.count > 0)
+        #expect(MockLoopbackURLProtocol.requestCount == 0)
+        #expect(supervisor.isHealthy == false)
+    }
+
     private func makeSupervisor(
         launchTimeout: TimeInterval = AgentSupervisor.launchTimeout,
         attachOnly: Bool? = nil
@@ -157,7 +214,9 @@ struct AgentSupervisorTests {
             session: session,
             daemonSecret: "test-secret",
             launchTimeout: launchTimeout,
-            attachOnly: attachOnly
+            attachOnly: attachOnly,
+            // MockLoopbackURLProtocol simulates the port; no real listener needed.
+            tcpProbe: { _ in true }
         )
     }
 }
@@ -166,6 +225,21 @@ private enum MockLoopbackResponse {
     case healthyAgent
     case agentWireRejected
     case foreignProcess
+}
+
+private final class ProbeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _count = 0
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _count
+    }
+    func increment() {
+        lock.lock()
+        _count += 1
+        lock.unlock()
+    }
 }
 
 private final class MockLoopbackURLProtocol: URLProtocol {
