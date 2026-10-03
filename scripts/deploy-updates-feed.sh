@@ -14,7 +14,10 @@ fi
 isolated_deploy() {
   local tmp
   tmp="$(mktemp -d)"
-  cp "${UPDATER}/appcast.xml" "${UPDATER}/vercel.json" "${UPDATER}/.vercelignore" "$tmp/"
+  # Project rootDirectory is "updater" — the deploy source must contain an
+  # updater/ subtree, mirroring the repo layout the Git integration builds.
+  mkdir -p "$tmp/updater"
+  cp "${UPDATER}/appcast.xml" "${UPDATER}/.vercelignore" "${UPDATER}/vercel.json" "$tmp/updater/"
   if [[ -f "${UPDATER}/.vercel/project.json" ]]; then
     mkdir -p "$tmp/.vercel"
     cp "${UPDATER}/.vercel/project.json" "$tmp/.vercel/"

@@ -416,7 +416,9 @@ jobs:
         run: |
           set -euo pipefail
           TMP="$(mktemp -d)"
-          cp updater/appcast.xml updater/vercel.json updater/.vercelignore "$TMP/"
+          # Project rootDirectory is "updater" — mirror the repo layout.
+          mkdir -p "$TMP/updater"
+          cp updater/appcast.xml updater/.vercelignore updater/vercel.json "$TMP/updater/"
           mkdir -p "$TMP/.vercel"
           printf '%s\n' "{\"projectId\":\"${VERCEL_PROJECT_ID}\",\"orgId\":\"${VERCEL_ORG_ID}\",\"projectName\":\"updater\"}" \
             > "$TMP/.vercel/project.json"
